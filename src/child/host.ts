@@ -46,7 +46,7 @@ import {
   type ToolCallEvent,
   type ToolCallEventResult,
 } from "@earendil-works/pi-coding-agent";
-import type { HostToParent, ParentToHost } from "../shared/contract";
+import type { HostToParent, ParentToHost, StreamingBehavior } from "../shared/contract";
 import { createApprovalGate, type ApprovalGate } from "../shared/approvalGate.ts";
 import { trustPostureFrom } from "../shared/trustInfo.ts";
 
@@ -141,6 +141,15 @@ async function main(): Promise<void> {
     const session = runtime.session;
     unsubscribe = session.subscribe((event: AgentSessionEvent) => {
       emit({ kind: "event", event });
+      // The SDK's `agent_settled` is the authoritative end of a run: it fires once,
+      // in the run's finalizer, after the streaming loop has drained *every* queued
+      // steer and followUp (ADR-0003). That makes it the single source of truth for
+      // "done" — including the followUp case, where the queued prompt() resolves
+      // immediately (so runPrompt never emits done) yet leaves the UI stuck at
+      // "streaming". Rely on it alone so each run yields exactly one done.
+      if (event.type === "agent_settled") {
+        emit({ kind: "done" });
+      }
     });
     if (reason === "boot") {
       emit({
@@ -351,26 +360,22 @@ async function main(): Promise<void> {
  * to the chosen working directory.
  */
 
-/** Run a prompt, then signal completion (or a hard error) to the parent. */
+/** Run a prompt; the SDK streams it, and completion is signalled via `agent_settled`. */
 function runPrompt(
   session: AgentSession,
   text: string,
-  streamingBehavior?: "steer" | "followUp",
+  streamingBehavior?: StreamingBehavior,
 ): void {
-  // If the SDK is already running a turn, `streamingBehavior` makes prompt()
-  // queue the message (steer/followUp) and resolves immediately — that is NOT a
-  // finished turn, so we must not emit "done". Only a prompt that starts a turn
-  // (idle at submission) ends with "done".
-  const queued = isBusy(session) && streamingBehavior !== undefined;
-  session
-    .prompt(text, streamingBehavior ? { streamingBehavior } : undefined)
-    .then(() => {
-      if (!queued) emit({ kind: "done" });
-    })
-    .catch((err: unknown) => {
-      emit({ kind: "log", level: "error", message: String(err) });
-      if (!queued) emit({ kind: "done" });
-    });
+  // Completion is signalled by the session's `agent_settled` event (see
+  // bindSession), not here: it fires once in the run's finalizer — after any
+  // queued steer/followUp has been drained — so the UI lands on "done" instead
+  // of staying stuck at "streaming". The SDK runs `agent_settled` in a `finally`,
+  // so both success and mid-run error settle to a single "done"; a pre-run
+  // preflight failure (e.g. a missing model) never settles, but it surfaces as an
+  // error log, which the reducer reflects as the `error` status.
+  session.prompt(text, streamingBehavior ? { streamingBehavior } : undefined).catch((err: unknown) => {
+    emit({ kind: "log", level: "error", message: String(err) });
+  });
 }
 
 main().catch((err: unknown) => {

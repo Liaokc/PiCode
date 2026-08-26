@@ -11,6 +11,7 @@ import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { join } from "node:path";
 import { SessionService } from "./sessionService";
 import type { ApprovalChoice, SessionCommand } from "../shared/api";
+import type { StreamingBehavior } from "../shared/contract";
 import { IPC, type SelectDirectoryResult } from "../shared/ipc";
 import { indexSessionScope, type IndexedSession } from "../shared/sessionIndex";
 
@@ -81,7 +82,7 @@ function main(): void {
     }
   });
 
-  ipcMain.on(IPC.submitPrompt, (_event, text: string, streamingBehavior?: "steer" | "followUp") => {
+  ipcMain.on(IPC.submitPrompt, (_event, text: string, streamingBehavior?: StreamingBehavior) => {
     sessionService.submitPrompt(text, streamingBehavior);
   });
 

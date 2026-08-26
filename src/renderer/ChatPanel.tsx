@@ -158,7 +158,7 @@ export function ChatPanel({
               rows={3}
             />
             {streaming && (
-              <div className="composer-bahavior" role="group" aria-label="发送方式">
+              <div className="composer-behavior" role="group" aria-label="发送方式">
                 <span className="behavior-label">发送方式</span>
                 <button
                   className={`behavior-btn ${behavior === "steer" ? "active" : ""}`}

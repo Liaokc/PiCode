@@ -2,15 +2,14 @@
 
 **Type:** task
 
-**Status:** ready-for-agent
+**Status:** done
 
 **What to build:** preserve Pi Agent's native "inject vs queue" input capability.
 When a turn is in flight, the user can either **inject** a new prompt
 (`streamingBehavior: "steer"` — delivered mid-turn, after the current assistant
 turn's tool calls, before the next LLM call; no interruption) or **queue** it
 (`streamingBehavior: "followUp"` — run after the agent otherwise stops). The app
-must also surface the pending queues in the UI and let the user remove queued
-messages.
+must also surface the pending queues in the UI and let the user clear them.
 
 **Why:** the initial 08 flag (D2 in `closeout.md`) found that the MVP **dropped**
 a prompt arriving while busy and left a phantom user entry stuck at "生成…".
@@ -25,8 +24,10 @@ the SDK natively supports. Decision recorded in `docs/adr/0003`.
 - Q3: **only `prompt` gets inject/queue**; `session-command` / `set-model` /
   `set-thinking` stay refused while busy (SDK has no injection semantics for them).
 - Q4 B: **full queue UI** — composer-adjacent panel, visible while streaming,
-  showing pending steering + follow-up message text with per-item **remove**
-  (via `session.clearQueue()`).
+  showing pending steering + follow-up message text. Implemented as a **single
+  clear action** (`session.clearQueue()` clears both arrays), with a known
+  deviation from the planned per-item remove (deviation Q10-B: the SDK's
+  `session.clearQueue()` exposes **no per-item API**).
 - Q5 A: send button enabled during streaming and sends per the user's chosen
   inject/queue — no more disabled-button-but-Enter-fires inconsistency.
 - Q6 A: no extra transcript marker beyond position.
@@ -58,7 +59,8 @@ the SDK natively supports. Decision recorded in `docs/adr/0003`.
    `ChatState.queue: { steering: string[]; followUp: string[] }` (reset on
    session switch). Keep `user-submitted` pushing the entry (Q2/Q6).
 4. `src/renderer/ChatPanel.tsx` — composer: streaming-time inject/queue select +
-   enabled send; queue panel (visible while streaming) with per-item remove.
+   enabled send; queue panel (visible while streaming) with a single clear action
+   (deviation Q10-B: no per-item remove — SDK `clearQueue()` clears both arrays).
 5. Tests: reducer folds queue_update → state; host-level via smoke if feasible.
 
 **Also update** `closeout.md` D2 to point at this ticket's resolution and ADR-0003.
@@ -67,4 +69,14 @@ the SDK natively supports. Decision recorded in `docs/adr/0003`.
 
 ## Answer
 
-Interview-settled 2026-08-25; see ADR-0003. Not yet implemented.
+Interview-settled 2026-08-25; see ADR-0003. Implemented.
+
+**Follow-up defect fixed (2026-08-26):** after a `followUp` queue drained, the UI
+stuck at `streaming` forever — `runPrompt` (host) only emitted `done` for a
+non-queued prompt, and the followUp turn drains inside the *original* run without
+re-entering `runPrompt`. Fixed by making the SDK's `agent_settled` event (emitted
+once in the run finalizer, after every queued steer/followUp is drained) the
+single source of truth for `done` in the host: the session subscriber emits
+`{ kind: "done" }` on `agent_settled`, and `runPrompt` no longer emits `done`
+itself — so each run yields exactly one `done`, covering normal, steer, and
+followUp paths. Regression test in `src/shared/chatReduce.test.ts`.

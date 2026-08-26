@@ -652,13 +652,13 @@ button.send {
 }
 
 /* --- Inject/queue selector + queue panel (ticket 08) --- */
-.composer-bahavior {
+.composer-behavior {
   display: flex;
   flex-direction: column;
   gap: 4px;
   align-items: stretch;
 }
-.composer-bahavior .behavior-label {
+.composer-behavior .behavior-label {
   font-size: 11px;
   color: var(--text-dim, #888);
   text-align: center;

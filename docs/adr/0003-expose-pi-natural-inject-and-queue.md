@@ -16,8 +16,13 @@ because Enter bypassed the button guard, left a phantom user entry that stuck th
 UI at "生成中…" forever. We replace both with: renderer lets the user pick
 inject/**queue at send time**; the host calls `session.prompt(text, { streamingBehavior })`
 so the SDK queues rather than drops; the reducer folds `queue_update` into a
-visible, actionable queue panel; and the user can remove pending queued messages
+visible, actionable queue panel; and the user can clear the pending queues
 (host calls `session.clearQueue()`).
+
+> Deviation Q10-B (recorded here): clearing is a **single** action — the SDK's
+> `session.clearQueue()` clears both steering and follow-up arrays and has **no
+> per-item API**. The queue panel therefore offers one "清空队列" action rather
+> than the per-message remove originally planned.
 
 Scope: only text `prompt` gets inject/queue. `session-command` (new/resume/fork),
 `set-model`, `set-thinking` remain refused while busy — the SDK has no injection
@@ -29,6 +34,6 @@ Status: accepted
 Consequences: the transcript can carry steered messages injected mid-turn; the
 composer's disabled-during-streaming send button becomes a working inject/queue
 control; a small queue panel (composer-adjacent, visible while streaming) shows
-pending steering and follow-up messages with per-item remove. Matching queued text
-to consumption uses string equality, which under unusual content can leave a stale
-queue entry (known, minor).
+pending steering and follow-up messages with a single clear action (see deviation
+Q10-B above). Matching queued text to consumption uses string equality, which
+under unusual content can leave a stale queue entry (known, minor).

@@ -3,7 +3,7 @@
  * by the React UI. Purely a type contract — every member resolves to plain,
  * serializable values across the IPC boundary.
  */
-import type { HostToParent, TrustInfo } from "./contract";
+import type { HostToParent, StreamingBehavior, TrustInfo } from "./contract";
 import type { SelectDirectoryResult } from "./ipc";
 import type { IndexedSession } from "./sessionIndex";
 
@@ -34,7 +34,7 @@ export interface PiCodeApi {
   /** Fork the agent host scoped to `cwd`. */
   startSession(cwd: string): Promise<{ ok: boolean; reason?: string }>;
   /** Forward a user prompt to the host, with an optional inject/queue mode. */
-  submitPrompt(text: string, streamingBehavior?: "steer" | "followUp"): void;
+  submitPrompt(text: string, streamingBehavior?: StreamingBehavior): void;
   /** Clear Pi's pending steering/follow-up queues (ticket 08, queue panel). */
   clearQueue(): void;
   /** Abort the current turn. */

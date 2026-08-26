@@ -110,6 +110,9 @@ export type HostToParent =
   /** The available, auth-validated models for the settings panel (ticket 06). */
   | { kind: "models"; models: ModelInfo[] };
 
+/** How Pi queues a prompt submitted while a turn is in flight (ADR-0003). */
+export type StreamingBehavior = "steer" | "followUp";
+
 /** Commands the parent sends into the child-process host. */
 export type ParentToHost =
   | {
@@ -124,7 +127,7 @@ export type ParentToHost =
        */
       kind: "prompt";
       text: string;
-      streamingBehavior?: "steer" | "followUp";
+      streamingBehavior?: StreamingBehavior;
     }
   | { kind: "abort" }
   | { kind: "shutdown" }

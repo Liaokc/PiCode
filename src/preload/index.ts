@@ -8,7 +8,7 @@
  */
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from "electron";
 import type { ApprovalChoice, PiCodeApi, SessionCommand } from "../shared/api";
-import type { HostToParent } from "../shared/contract";
+import type { HostToParent, StreamingBehavior } from "../shared/contract";
 import type { IndexedSession } from "../shared/sessionIndex";
 import { IPC, type SelectDirectoryResult } from "../shared/ipc";
 
@@ -19,7 +19,7 @@ const api: PiCodeApi = {
   startSession: (cwd: string): Promise<{ ok: boolean; reason?: string }> =>
     ipcRenderer.invoke(IPC.startSession, cwd),
 
-  submitPrompt: (text: string, streamingBehavior?: "steer" | "followUp"): void =>
+  submitPrompt: (text: string, streamingBehavior?: StreamingBehavior): void =>
     ipcRenderer.send(IPC.submitPrompt, text, streamingBehavior),
 
   clearQueue: (): void => ipcRenderer.send(IPC.clearQueue),

@@ -575,4 +575,33 @@ describe("inject/queue state over the agent-host contract (ticket 08)", () => {
     ]);
     expect(state.queue.steering).toEqual(["a"]);
   });
+
+  it("returns to done after a followUp turn drains, not stuck streaming (ticket 08 regression)", () => {
+    // A followUp is queued while the original turn streams. The SDK drains it in
+    // the same run, then the host emits a single `done` (on `agent_settled`).
+    // The reducer must converge to done — never stay parked at "streaming".
+    const mid = run([
+      ready,
+      { kind: "user-submitted", text: "original" },
+      // followUp gets queued mid-turn (the user picked 注入/排队 → 排队).
+      queueUpdate([], ["follow-up request"]),
+      // The original turn keeps streaming its answer.
+      { kind: "event", event: textDelta("original answer ") },
+      // The queue drains (SDK consumed the followUp text) and its turn streams.
+      queueUpdate([], []),
+      { kind: "event", event: textDelta("follow-up answer") },
+    ]);
+    // While the queued followUp runs, the UI stays streaming.
+    expect(mid.status).toBe("streaming");
+    expect(mid.queue.followUp).toEqual([]);
+
+    // The run settles → host emits done → status returns to done.
+    const settled = reduce(mid, { kind: "done" });
+    expect(settled.status).toBe("done");
+    // Both turns' text is on the transcript.
+    expect(settled.entries.map((e) => e.text)).toEqual([
+      "original",
+      "original answer follow-up answer",
+    ]);
+  });
 });

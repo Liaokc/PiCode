@@ -12,7 +12,7 @@
  * (see shared/contract.ts).
  */
 import { fork, type ChildProcess } from "node:child_process";
-import type { ApprovalResponse, HostToParent, ParentToHost } from "../shared/contract";
+import type { ApprovalResponse, HostToParent, ParentToHost, StreamingBehavior } from "../shared/contract";
 
 export interface SessionServiceOptions {
   /** Absolute path to the child host entry (src/child/host.ts). */
@@ -83,7 +83,7 @@ export class SessionService {
     return this.child !== null && !this.child.killed;
   }
 
-  submitPrompt(text: string, streamingBehavior?: "steer" | "followUp"): void {
+  submitPrompt(text: string, streamingBehavior?: StreamingBehavior): void {
     this.send({ kind: "prompt", text, streamingBehavior });
   }
 
