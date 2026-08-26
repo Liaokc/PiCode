@@ -1,0 +1,2 @@
+PiCode e2e scratch file
+Created by the pi coding agent as part of an end-to-end tool test.

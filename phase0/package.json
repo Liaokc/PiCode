@@ -1,0 +1,15 @@
+{
+  "name": "picode-phase0",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Phase 0 feasibility host: run Pi's real SDK in a forked child process and observe streamed text + tool events crossing the boundary.",
+  "scripts": {
+    "driver": "node src/driver.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "typescript": "^5.9.3"
+  }
+}
