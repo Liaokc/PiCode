@@ -79,13 +79,27 @@ Pi 原生支持的注入/排队能力**(`grill-with-docs` 二轮访谈,ADRD 见 
 - `chatReduce.ts` 折叠 `queue_update` → `ChatState.queue`;
 - `ChatPanel.tsx` 增加发送方式选择(注入/排队)+ 待发送队列面板(清空)。
 
-`typecheck` / `vitest`(47 测试,新增 5 条队列用例)/ `electron-vite build` 全绿;Pi SDK
-未修改(mtime 未变)。
+`typecheck` / `vitest` / `electron-vite build` 全绿;Pi SDK 与 `~/.pi/agent` 未修改
+(mtime 未变)。
 
-**待裁决 / 已知偏差(非阻断):** 用户 Q10 选"每条队列消息带移除"按钮,但 **Pi SDK 的
-`clearQueue()` 是清空全部**(无 per-item 移除公共 API)。当前落地为**单"清空"动作**;
-per-item 移除需自造(clearQueue 后重排队,风险高),列为后续候选,未实现。见
-`.scratch/picode-mvp/issues/08-prompt-inject-and-queue.md`。
+**后续两轴审查 (code-review, 2026-08-26):** Standards 无硬性违规(判断项:
+`"steer"|"followUp"` 联合类型 8 处重复、`composer-bahavior` 拼写);Spec 发现一条
+真缺陷 + 一条未记录偏差,均已在新会话修复(commit `861044c`,已核验):
+- **followUp 卡 streaming(真缺陷,已修):** 入队的 followUp 由 SDK 内部排空、不重进
+  `runPrompt`,原实现没有任何东西发 `done`,界面永远停在 streaming——正是本工单要
+  消灭的"卡在生成中"。修法:`host.ts` 改为以 SDK 的 **`agent_settled`** 事件作为
+  `done` 的唯一真源(它在 run finalizer 里、排空所有 steer/followUp 后恰好触发一次),
+  `runPrompt` 不再自行发 done;每个 run 恰好一个 done,覆盖 normal/steer/followUp,
+  预检失败则以 error 状态呈现。
+- **Q10-B 偏差(已记录):** 用户 Q10 选"每条带移除",但 **Pi SDK 的 `clearQueue()`
+  只清空全部**(无 per-item 公共 API),落地为**单"清空"动作**;per-item 移除需自造
+  (clearQueue 后重排队,风险高),列后续候选,未实现。此偏差已写入 ticket 08 与
+  ADR-0003。
+- **Standards 判断项(已处理):** `StreamingBehavior` 收敛到 `contract.ts` 一处导出、
+  消除 8 处重复联合;`composer-bahavior` → `composer-behavior`。
+
+验证:`typecheck` / `vitest`(48 测试,含 followUp 回归用例)/ `electron-vite build`
+全绿;Pi SDK mtime 未变。
 
 ## ◯ 仍属已知限制 / 后续候选 (非本次偏差)
 
