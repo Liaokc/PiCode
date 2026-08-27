@@ -4,11 +4,7 @@ import { createWindowOptions } from './window-options'
 
 function createMainWindow(): BrowserWindow {
   const win = new BrowserWindow(createWindowOptions(path.join(__dirname, '../preload/index.js')))
-  win.webContents.once('did-finish-load', () => console.log('[shell] renderer finished loading'))
-  win.once('ready-to-show', () => {
-    console.log('[shell] showing main window')
-    win.show()
-  })
+  win.once('ready-to-show', () => win.show())
 
   const devServerUrl = process.env['ELECTRON_RENDERER_URL']
   if (devServerUrl) {

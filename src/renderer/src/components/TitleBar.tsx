@@ -1,7 +1,7 @@
 import type { Dispatch, JSX } from 'react'
 import type { ShellUiAction, ShellUiState } from '../../../shared/layout-model'
 import { ChevronLeftIcon, ChevronRightIcon, HelpCircleIcon, PanelLeftIcon, PanelRightIcon } from './icons'
-import { WINDOW_TITLE_BRAND } from '../brand'
+import { APP_NAME } from '../../../shared/brand'
 
 interface TitleBarProps {
   ui: ShellUiState
@@ -33,7 +33,7 @@ export default function TitleBar({ ui, dispatch }: TitleBarProps): JSX.Element {
         </button>
       </div>
 
-      <div className="titlebar-title">{WINDOW_TITLE_BRAND}</div>
+      <div className="titlebar-title">{APP_NAME}</div>
 
       <div className="titlebar-cluster titlebar-cluster-right">
         <button type="button" className="tb-btn" aria-label="Help">

@@ -6,6 +6,13 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   reactHooks.configs.flat.recommended,
   {
+    files: ['**/*.d.ts'],
+    rules: {
+      // Ambient interface merging (e.g. ImportMetaEnv augmentation) looks "unused" to the rule.
+      '@typescript-eslint/no-unused-vars': 'off'
+    }
+  },
+  {
     rules: {
       '@typescript-eslint/consistent-type-imports': 'error'
     }

@@ -1,6 +1,7 @@
 import type { BrowserWindowConstructorOptions } from 'electron'
+import { APP_NAME } from '../shared/brand'
 
-export const WINDOW_TITLE = 'PiCode'
+export const WINDOW_TITLE = APP_NAME
 
 /**
  * Window options for the main shell. Pure (no Electron runtime needed) so the
