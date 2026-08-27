@@ -6,3 +6,4 @@ dist/
 
 # ZCode session bookkeeping
 .zcode/
+.worktrees/

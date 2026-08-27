@@ -116,5 +116,14 @@ Pi 原生支持的注入/排队能力**(`grill-with-docs` 二轮访谈,ADRD 见 
 
 MVP 全链路(输入 → 思考 → 工具执行 → 输出 → 文件改动 diff,会话树/分叉/设置/信任/
 错误/干净退出)经 spec↔实现逐条核对,**21/21 全部验证通过**;三项已知取舍与 spec 预期
-一致。两份内容差异:一条已按事实修正记录(07 勾选),一条已开新工单 08(busy-drop 反馈)
-待裁决。无代码改动。
+一致。
+
+> **MVP Phase 2 收口 (2026-08-26):**
+> 工单 01–07 `resolved`、08 `done`,spec 21/21、无其它未闭环 us/ticket。
+> 08(busy-drop 反馈)→ 访谈定案 ADR-0003(保留 Pi 注入/排队)→ 落地 → 两轴审查 →
+> followUp 缺陷修复(`861044c`,以 SDK `agent_settled` 为 done 唯一真源)→ 核验(
+> typecheck / vitest **48/48** / `electron-vite build` 全绿;Pi SDK 与 `~/.pi/agent`
+> mtime 未变;工作树干净)。两份内容差异均已闭环:D1 记录修正(07 勾选)、
+> D2 已落地(见上 D2 小节与 ADR-0003)。Q10-B 偏差(计划 per-item 移除 → 落地单清空,
+> SDK `clearQueue()` 仅清全部)已记录,列入后续候选,归属 Phase 3 范畴。
+> **MVP Phase 2 全量闭环。**

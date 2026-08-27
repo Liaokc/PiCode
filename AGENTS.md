@@ -15,3 +15,22 @@ Default vocabulary: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-
 ### Domain docs
 
 Single-context: `CONTEXT.md` at the repo root plus `docs/adr/`. See `docs/agents/domain.md`.
+
+## Parallel development (git worktrees)
+
+- Worktrees live **inside this repo** at `.worktrees/<wt-NN>-<slug>/`; never create checkouts outside this folder.
+- One ticket per branch named `t<NN>-<slug>`; run `npm install` in each new worktree (node_modules is not shared).
+- **Dev-app serialization**: at most one worktree at a time may run the Electron dev app, e2e or smoke scripts (fixed dev-server ports + single-instance lock). Worktrees that are not running the app limit themselves to vitest unit tests and typecheck.
+- Merge fast: a ticket that passed code-review merges to `main` immediately; every other active worktree rebases onto `main` before its next slice.
+- While any parallel ticket is in flight, shared-contract additions (IPC message types) are **additive-only** — no renames, no removals.
+- Keep total concurrent implement sessions ≤ 3.
+
+### Standard commands
+
+```bash
+mkdir -p .worktrees && grep -qx ".worktrees/" .gitignore || echo ".worktrees/" >> .gitignore
+git worktree add .worktrees/wt-<NN> -b t<NN>-<slug>
+cd .worktrees/wt-<NN> && npm install && npm run typecheck
+# rebase an older worktree after main moved on:
+git fetch --all 2>/dev/null; git rebase main   # from inside the worktree branch
+```

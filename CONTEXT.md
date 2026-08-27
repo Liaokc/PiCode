@@ -1,44 +1,72 @@
 # PiCode
 
-A local desktop GUI for the Pi coding agent. Pi Agent is the execution kernel; PiCode is an Electron shell that mimics ZCode's interaction logic (streaming output, tool-call visibility, session tree). PiCode does not wrap or embed ZCode; it drives Pi directly via its official RPC/SDK protocol.
+给 Pi Agent 套一个 ZCode 外壳的桌面应用：**外观与交互属于 ZCode，大脑属于 Pi**。
 
 ## Language
 
-**Pi Agent (Pi)**:
-The coding-agent CLI (`@earendil-works/pi-coding-agent`) that PiCode wraps. It is the kernel: it runs the model, executes tools, and owns the session. It is a TUI in `interactive` mode, and an event-streaming daemon in `--mode rpc`.
-_Avoid_: kernel, agent
+### 系统
 
-**PiCode**:
-This project's Electron desktop app. It provides the GUI shell, drives Pi through RPC/SDK, and renders Pi's events as a ZCode-like interface.
-_Avoid_: ZCode, the GUI
+**PiCode**：
+本项目。桌面端 Agent 应用，UI/交互复刻 ZCode，内部逻辑完全由 Pi 提供。
+_Avoid_: 壳、客户端（指代不清）
 
-**RPC mode**:
-Pi's non-interactive `--mode rpc` subprocess protocol: JSON commands on stdin, JSONL events on stdout. It is the external-integration surface PiCode targets first.
-_Avoid_: the protocol, pipe mode
+**Pi Agent（Pi）**：
+命令行 coding harness，是 agent 行为、模型调用与会话格式的唯一权威实现。作为依赖被嵌入，永不被修改。
+_Avoid_: pi-cli、内核
 
-**Session**:
-A Pi conversational transcript stored as a JSONL file with a tree structure (`id`/`parentId`). PiCode surfaces sessions in a sidebar and can fork/resume them.
-_Avoid_: conversation, chat
+**ZCode**：
+现有桌面 App，仅作为 UI/交互的参照物。其代码与其本地数据一律不读取、不修改。
+_Avoid_: 参考项目
 
-**Tool execution**:
-A single tool running inside Pi (bash, edit, write, grep, …). Pi emits `tool_execution_start/update/end` events for it. This is a visibility unit, not (necessarily) an approval gate.
-_Avoid_: tool call card, tool invoke
+### 会话
 
-**Trust**:
-Pi's gate for whether project-local resources (`.pi/settings.json`, extensions, skills) are loaded into the session. It is an input-loading guard, not a per-tool-call allow/deny. RPC mode never prompts; a saved/global decision is followed silently.
-_Avoid_: permission, approval
+**会话（Session）**：
+一次连续的人机协作记录，格式与管理完全归 Pi 所有。TUI 与 PiCode 打开的是同一个会话存储。
+_Avoid_: 聊天记录、对话、历史
 
-**Streaming output**:
-The incremental rendering of the assistant's response text (text deltas) and file edits as they arrive from Pi.
-_Avoid_: live text, chat stream
+**无缝衔接（Handoff）**：
+同一会话可在 TUI 与 PiCode 任意一侧打开并继续工作，无需转换。
+_Avoid_: 同步、迁移、导入导出
 
-## Decisions
+**只读跟随（Live Follow）**：
+PiCode 旁观一个正在另一端（如 TUI）运行的会话并实时刷新展示；只看不发。
+_Avoid_: 实时同步、接管
 
-- **Pi is consumed read-only.** The installed Pi Agent package (`@earendil-works/pi-coding-agent`) and its `~/.pi/agent` config must never be modified or patched. PiCode only imports Pi's public, exported SDK/RPC surfaces and reads its config/session files; any capability that would require editing the install is off the table.
-- Electron + React + Vite shell, written in TypeScript throughout.
-- Pi kernel runs in a **child process** (SDK `createAgentSession` forked into a separate process); Electron IPC bridges structured events to the renderer. Fallback: raw `--mode rpc` subprocess. Remote-socket control (`PiClient`/`RemoteSession`) is a later evolutionary direction, not MVP.
-- **Session truth source** is Pi's own JSONL files (`~/.pi/agent/sessions/`), consumed read-only; PiCode maintains a derived index for the sidebar, never copying session data.
-- **Working-directory model**: PiCode binds one working directory as the session scope on launch (mirrors ZCode's "open a project"); new session = new fork in the same scope; switching directory re-binds Pi.
-- **Single active session** in the MVP sidebar; history rendered as a tree. Concurrent multi-session panes are a Phase 3 candidate, not MVP.
-- Interaction semantics borrow from ZCode; visuals are self-contained, not a clone of ZCode's UI.
-- MVP scope = streaming output + tool-execution visibility **plus a per-execution approval gate** (Phase 0 proved a viable interception channel; the "show, don't intercept" default is superseded).
+### 用量
+
+**用量（Usage）**：
+从 Pi 会话记录中推导出的 token 消耗统计口径。凡不在 Pi 会话记录中的消耗一概不计。
+_Avoid_: 统计、监控（含义过宽）
+
+**估算成本（Estimated Cost）**：
+按公开定价折算的费用数字，UI 上必须显式标注为估算。
+_Avoid_: 花费（暗示精确）
+
+### 界面语言
+
+布局与控件形态复刻 ZCode，但 **UI 文案一律使用英文**；以下术语是界面元素绑定的精确含义：
+
+**Task**：
+侧边栏与会话列表中的单个条目，一个 Task 就是一个会话（Session）。UI 上显示为“New Task”等文案，内部一律称 Session。
+_Avoid_: 对话、聊天室、Conversation
+
+**侧边面板（Side Panel）**：
+主区右侧可展开的标签页容器。1.0 承载两类标签：终端（Terminal）、审查（Review）。浏览器标签不属于本项目。
+_Avoid_: 右侧栏、抽屉
+
+**访问模式（Access Mode）**：
+Composer 上的「完全访问」等芯片，映射为审批闸门的预设策略档位。
+_Avoid_: 权限（与 trust 混淆）
+
+**思考档位（Thinking Level）**：
+Composer 上的「最高」等下拉项，直通 Pi 的 thinkingLevel。
+_Avoid_: 推理强度
+
+**桥接（Bridge）**：
+把 agent 正在执行的 bash 工具输出投屏到终端标签的单向观察通道。
+_Avoid_: 共享终端（暗示双向接管）
+
+## Constraints（词汇化的边界）
+
+**红线**：
+不修改 Pi 安装目录与 ZCode 应用内部的任何代码和数据；所有改动只发生在本仓库内。
