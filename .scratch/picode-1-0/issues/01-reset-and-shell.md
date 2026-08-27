@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] reset 提交落盘：移除旧实现残留，仓库处于"全新起点 + 文档资产"状态
 - [ ] `npm run dev` 启动无报错窗口，typecheck/lint/test 脚本可用且绿
