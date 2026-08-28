@@ -11,6 +11,7 @@
  *   spent, so every usage-bearing entry in the file counts (ADR-0002).
  */
 import { parseSessionFile } from './parse.ts'
+import { addDays, mondayOf } from './dates.ts'
 import type { EstimatedCost, SessionFileInfo, UsageEvent } from './types.ts'
 
 export interface DayModelCell {
@@ -183,11 +184,6 @@ export interface SnapshotOptions {
   timeZone?: string
   /** ISO instant treated as "now"; defaults to the real clock. */
   now?: string
-}
-
-function addDays(dateStr: string, n: number): string {
-  const [y, m, d] = dateStr.split('-').map(Number)
-  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10)
 }
 
 function consecutiveRunEnding(activeDays: Set<string>, endDate: string): { days: number; startDate: string } | null {
@@ -410,12 +406,6 @@ export function buildUsageSnapshot(files: Iterable<SessionFileUsage>, opts?: Sna
     modelTotals,
     sessionDays: sessionRows.sort((a, b) => a.date.localeCompare(b.date) || String(a.sessionId).localeCompare(String(b.sessionId)))
   }
-}
-
-function mondayOf(dateStr: string): string {
-  const [y, m, d] = dateStr.split('-').map(Number)
-  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay() // 0 = Sunday
-  return addDays(dateStr, -(dow + 6) % 7)
 }
 
 function diffDays(from: string, to: string): number {

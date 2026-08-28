@@ -1,6 +1,7 @@
 import type { JSX } from 'react'
 import { heatmapGrid, type HeatCell, type HeatmapMode } from '../../../shared/usage/charts'
 import { formatShortDate, formatTokenCount } from '../../../shared/usage/format'
+import { addDays } from '../../../shared/usage/dates'
 
 interface HeatmapViewProps {
   cells: HeatCell[]
@@ -54,9 +55,4 @@ export default function HeatmapView({ cells, mode, onPick }: HeatmapViewProps): 
       </div>
     </div>
   )
-}
-
-function addDays(dateStr: string, n: number): string {
-  const [y, m, d] = dateStr.split('-').map(Number)
-  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10)
 }

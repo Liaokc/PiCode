@@ -5,6 +5,7 @@
  * data the SVG components render verbatim. No file access, no DOM.
  */
 import type { HeatCell, ModelUsageSlice, TrendView, UsageSnapshot } from './aggregate.ts'
+import { addDays, mondayOf } from './dates.ts'
 import { formatDurationMs, formatMonthLabel, formatShortDate, formatStreakDays, formatTokenCount } from './format.ts'
 
 export type { HeatCell, ModelUsageSlice, TrendView, UsageSnapshot }
@@ -71,17 +72,6 @@ export interface HeatGrid {
   mode: HeatmapMode
   max: number
   columns: HeatColumn[]
-}
-
-function addDays(dateStr: string, n: number): string {
-  const [y, m, d] = dateStr.split('-').map(Number)
-  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10)
-}
-
-function mondayOf(dateStr: string): string {
-  const [y, m, d] = dateStr.split('-').map(Number)
-  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay() // 0 = Sunday
-  return addDays(dateStr, -(dow + 6) % 7)
 }
 
 function levelOf(value: number, max: number): 0 | 1 | 2 | 3 | 4 {

@@ -1,5 +1,5 @@
 import type { Dispatch, JSX } from 'react'
-import type { TrendRange, SettingsUiAction } from '../../../shared/settings-model'
+import type { DrillDownSelection, TrendRange, SettingsUiAction } from '../../../shared/settings-model'
 import type { HeatmapMode, TrendView, UsageSnapshot } from '../../../shared/usage/charts'
 import { modelColor, statCards } from '../../../shared/usage/charts'
 import { trendView } from '../../../shared/usage/aggregate'
@@ -15,7 +15,7 @@ interface UsagePageProps {
   error: string | null
   heatmapMode: HeatmapMode
   trendRange: TrendRange
-  drillDown: { date: string | null; dateTo: string | null; model: string | null } | null
+  drillDown: DrillDownSelection | null
   dispatch: Dispatch<SettingsUiAction>
   onOpenTask: () => void
 }
