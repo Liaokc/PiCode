@@ -14,7 +14,7 @@
 
 ## Comments
 
-- **Commit:** `8151a36` feat(sessions) + `da55979` review refactor（分支 `t04-sessions-sidebar`，基于 main `e33117b`）。**合并请执行：** `cd ~/PiCode && git merge --no-ff t04-sessions-sidebar`
+- **Commit:** `8151a36` feat(sessions) + `da55979` review refactor，已 rebase 到 main `36d2673`（解决与 t06/t10 的冲突 + 修复合并后暴露的两个竞态：时钟偏斜导致活跃点丢失、被替换 host 的 host_exit 清空新会话，见 `27d2350`）。**已合入 main：`57eb61b`**（合并后 main 全绿：210 tests / typecheck / eslint / 双冒烟重跑通过）。
 - **Unit/type/lint:** 112 vitest tests green（新增 31：sessions-parse 15、sessions-group 9、sessions-index 6...）；`npm run typecheck` 双 tsconfig green；eslint green。
 - **Headless contract smoke**（`npm run build && node scripts/smoke/host-contract-smoke.mjs`，真 SDK）：SMOKE PASS —— 新会话流式+中断+第二轮 → shutdown → 以同一文件 resume（`resumed=true`，history_loaded 回放 4 条）→ `set_session_label` 写回（`session_renamed` + 树内可见）→ `navigate_tree` 落叶到指定 entry（leaf 移动、旧分支保留在文件）→ `fork_session`（position 'at'，新 session 文件，路径仅含根→目标）→ PASS。双向 Handoff 即证：resume 打开的就是 SDK/TUI 写的那个文件。
 - **Electron smoke**（`PICODE_SMOKE=1 npx electron .`）：SMOKE PASS 全链 —— 聊天回路 + renderer DOM + `sidebar_index_ok`（本 smoke 创建的会话经真实 index→IPC→DOM 出现在侧边栏）+ Live Follow 三步（向非活跃会话文件模拟 TUI 追加一行 → 行内出现活跃圆点 `follow_live_state_ok` → 点击行打开只读视图 `follow_view_opened` → 追加内容实时出现 `follow_streamed_ok`）。退出无孤儿 host 进程。
