@@ -74,6 +74,16 @@ export type HostToParent =
   | { type: 'message_start' }
   /** Streaming text increment for the currently open assistant message. */
   | { type: 'text_delta'; delta: string }
+  /** Streaming thinking increment for the currently open assistant message. */
+  | { type: 'thinking_delta'; delta: string }
+  /** The currently open thinking block closed; `durationMs` was measured by the host. */
+  | { type: 'thinking_end'; durationMs: number }
+  /** A tool call began executing. */
+  | { type: 'tool_start'; toolCallId: string; name: string; args: Record<string, unknown> }
+  /** Live partial output from a running tool call (appended to prior updates). */
+  | { type: 'tool_update'; toolCallId: string; partial: string }
+  /** A tool call finished; `output` is the serialized final result and replaces any partials. */
+  | { type: 'tool_end'; toolCallId: string; output: string; isError: boolean }
   /** The currently open assistant message finished. */
   | { type: 'message_end' }
   /** The agent run finished; streaming state must settle. */

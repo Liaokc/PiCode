@@ -8,6 +8,7 @@ import { HostSupervisor, defaultHostEntryPath } from './host-supervisor'
 import { collectReview } from './review/collect'
 import { SessionIndexService, type FollowUpdate } from './sessions/index-service'
 import { startSmokeIfEnabled } from './smoke'
+import { startVisualIfEnabled } from './visual'
 import { createUsageService } from './usage/service'
 
 let supervisor: HostSupervisor | null = null
@@ -55,6 +56,7 @@ app.whenReady().then(() => {
     onHostLog: (stream, chunk) => console.log(`[host ${stream}]`, chunk.trimEnd())
   })
   smokeTap = startSmokeIfEnabled(supervisor, () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  startVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
 
   // Renderer → host relay (Seam-1: the only chat channel the renderer has).
   ipcMain.on('chat:to-host', (_event, message: ParentToHost) => {

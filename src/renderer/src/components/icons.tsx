@@ -291,6 +291,40 @@ export function CloseIcon({ size, className }: IconProps): JSX.Element {
   )
 }
 
+export function CheckIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="m5 12.5 4.5 4.5L19 7.5" />
+    </svg>
+  )
+}
+
+export function CopyIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5.5 14.5A1.5 1.5 0 0 1 4 13V5.5A1.5 1.5 0 0 1 5.5 4H13a1.5 1.5 0 0 1 1.5 1.5" />
+    </svg>
+  )
+}
+
+export function SparklesIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M12 4.5 13.8 9.7 19 11.5 13.8 13.3 12 18.5 10.2 13.3 5 11.5 10.2 9.7Z" />
+      <path d="M19 16.5 19.7 18.3 21.5 19 19.7 19.7 19 21.5 18.3 19.7 16.5 19 18.3 18.3Z" />
+    </svg>
+  )
+}
+
+export function LoaderIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M12 3.5v3.4M12 17.1v3.4M3.5 12h3.4M17.1 12h3.4M6 6l2.4 2.4M15.6 15.6 18 18M18 6l-2.4 2.4M8.4 15.6 6 18" />
+    </svg>
+  )
+}
+
 export function RefreshIcon({ size, className }: IconProps): JSX.Element {
   return (
     <svg {...svgProps(size, className)}>

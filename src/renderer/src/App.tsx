@@ -89,7 +89,7 @@ export default function App(): JSX.Element {
   }, [])
 
   useEffect(() => {
-    return window.picode.chat.onHostEvent((event) => {
+    const unsubscribe = window.picode.chat.onHostEvent((event) => {
       chatDispatch(event)
       switch (event.type) {
         case 'session_created': {
@@ -132,6 +132,10 @@ export default function App(): JSX.Element {
           break
       }
     })
+    // Marker for harness/e2e drivers: the Seam-1 subscription is live and no
+    // contract event emitted before this point was seen by the reducer.
+    document.documentElement.dataset.chatSubscribed = 'true'
+    return unsubscribe
   }, [refreshSessions])
 
   useEffect(() => {
@@ -279,7 +283,7 @@ export default function App(): JSX.Element {
 
   const showError = chat.error !== null && chat.error !== dismissedError
   const showFollow = followedFile !== null
-  const showTranscript = chat.messages.length > 0 || chat.session !== null
+  const showTranscript = chat.entries.length > 0 || chat.session !== null
 
   if (ui.view === 'settings') {
     return (

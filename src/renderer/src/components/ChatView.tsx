@@ -1,8 +1,13 @@
-import { useEffect, useRef, useState, type JSX } from 'react'
-import type { ChatState } from '../../../shared/chat-reducer'
+import { Fragment, useEffect, useRef, useState, type JSX } from 'react'
+import type { AssistantEntry, ChatEntry, ChatState } from '../../../shared/chat-reducer'
 import type { SessionTreePayload } from '../../../shared/sessions/types'
 import Composer from './Composer'
 import TreePanel from './TreePanel'
+import Markdown from './Markdown'
+import ThinkingRow from './ThinkingRow'
+import ToolCard from './ToolCard'
+import WorkingLine from './WorkingLine'
+import MessageActions from './MessageActions'
 import { ChevronDownIcon, PencilIcon } from './icons'
 
 interface ChatViewProps {
@@ -49,11 +54,11 @@ export default function ChatView({
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
-    const grew = chat.messages.length !== lastLength.current
-    lastLength.current = chat.messages.length
+    const grew = chat.entries.length !== lastLength.current
+    lastLength.current = chat.entries.length
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 160
     if (grew || nearBottom) el.scrollTop = el.scrollHeight
-  }, [chat.messages])
+  }, [chat.entries])
 
   function startRename(): void {
     setDraft(tree?.name ?? '')
@@ -68,6 +73,7 @@ export default function ChatView({
 
   const title = tree?.name ?? chat.session?.cwd.split('/').pop() ?? 'Session'
   const noSession = chat.session === null
+  const lastUserIndex = findLastUserIndex(chat.entries)
 
   return (
     <div className="chat-view">
@@ -106,18 +112,13 @@ export default function ChatView({
       </div>
       <div ref={scrollRef} className="chat-scroll">
         <div className="chat-thread">
-          {chat.messages.map((message) =>
-            message.role === 'user' ? (
-              <div key={message.id} className="msg msg-user">
-                {message.text}
-              </div>
-            ) : (
-              <div key={message.id} className="msg msg-assistant">
-                {message.text}
-                {message.streaming && <span className="msg-caret" aria-hidden="true" />}
-              </div>
-            )
-          )}
+          {chat.entries.map((entry, index) => (
+            <Fragment key={entry.id}>
+              {renderEntry(entry)}
+              {chat.agentRunning && index === lastUserIndex && <WorkingLine />}
+            </Fragment>
+          ))}
+          {chat.agentRunning && lastUserIndex === -1 && <WorkingLine />}
         </div>
       </div>
       <div className="chat-dock">
@@ -135,6 +136,49 @@ export default function ChatView({
           onStop={onStop}
         />
       </div>
+    </div>
+  )
+}
+
+function findLastUserIndex(entries: ChatEntry[]): number {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    if (entries[i].role === 'user') return i
+  }
+  return -1
+}
+
+function renderEntry(entry: ChatEntry): JSX.Element {
+  switch (entry.role) {
+    case 'user':
+      return <div className="msg msg-user">{entry.text}</div>
+    case 'assistant':
+      return <AssistantBlock entry={entry} />
+    case 'tool':
+      return <ToolCard entry={entry} />
+  }
+}
+
+function AssistantBlock({ entry }: { entry: AssistantEntry }): JSX.Element {
+  const fullText = entry.parts
+    .filter((p) => p.kind === 'text')
+    .map((p) => p.text)
+    .join('\n\n')
+  const lastPart = entry.parts[entry.parts.length - 1]
+
+  return (
+    <div className="msg msg-assistant">
+      {entry.parts.map((part, index) =>
+        part.kind === 'thinking' ? (
+          <ThinkingRow key={index} part={part} />
+        ) : (
+          <Markdown
+            key={index}
+            text={part.text}
+            streaming={entry.streaming && part === lastPart && lastPart.kind === 'text'}
+          />
+        )
+      )}
+      {!entry.streaming && fullText.trim() !== '' && <MessageActions text={fullText} />}
     </div>
   )
 }

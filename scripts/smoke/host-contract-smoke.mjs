@@ -5,7 +5,9 @@
  *
  *   Round A (fresh session)
  *   session_created → prompt → agent_start → text_delta… → abort → agent_end
- *   → prompt → agent_start → text_delta… → agent_end → shutdown → exit 0
+ *   → prompt → agent_start → tool_start → tool_update? → tool_end
+ *   → text_delta… → agent_end → shutdown → exit 0
+ *   (ticket 03: round 2 drives a real tool call and counts thinking deltas)
  *
  *   Round B (ticket 04: resume / rename / tree / fork against the SAME file)
  *   resume → session_created(resumed) → history_loaded → session_tree
@@ -35,7 +37,17 @@ let timeout = armTimeout()
 let sessionFile = null
 let firstEntryId = null
 let navTargetId = null
-const seen = { agent_start: 0, text_delta: 0, agent_end: 0 }
+const seen = {
+  agent_start: 0,
+  text_delta: 0,
+  agent_end: 0,
+  user_message: 0,
+  tool_start: 0,
+  tool_update: 0,
+  tool_end: 0,
+  thinking_delta: 0
+}
+let toolRoundSucceeded = false
 
 function armTimeout() {
   return setTimeout(() => {
@@ -78,7 +90,7 @@ function onHostExit(exited, code) {
   }
   if (step === 'clean exit') {
     if (code !== 0) fail(`expected clean exit 0, got ${code}`)
-    console.log('SMOKE PASS host contract smoke complete (chat loop + resume/rename/tree/fork)')
+    console.log('SMOKE PASS host contract smoke complete (chat loop + tool round + resume/rename/tree/fork)')
     process.exit(0)
   }
   console.error(`SMOKE FAIL host exited during step '${step}' with code ${code}`)
@@ -89,6 +101,10 @@ function onEvent(event) {
   console.log(`[contract] ${JSON.stringify(event).slice(0, 200)}`)
   const fatal = new Set(['session_error', 'turn_error', 'session_command_error'])
   if (fatal.has(event.type)) fail(`${event.type}: ${event.message}`)
+  // Ticket 03 coverage: these arrive around the step transitions, so count
+  // them globally (never asserted — model-dependent — only reported).
+  if (event.type === 'user_message') seen.user_message++
+  if (event.type === 'thinking_delta') seen.thinking_delta++
 
   switch (step) {
     // ---------- Round A: fresh session, live chat loop ----------
@@ -124,24 +140,43 @@ function onEvent(event) {
       if (event.type !== 'agent_end') return
       seen.agent_end++
       if (seen.text_delta < 3) fail('fewer than 3 text deltas before abort')
-      console.log('SMOKE abort ok — streaming round 2')
+      console.log('SMOKE abort ok — streaming round 2 (tool round)')
       step = 'A agent_start 2'
-      child.send({ type: 'prompt', text: 'Reply with exactly: PICODE_SMOKE_OK' })
+      child.send({
+        type: 'prompt',
+        text: 'Use the bash tool to run exactly: echo picode_tool_round. Then report the command\'s output.'
+      })
       return
     }
     case 'A agent_start 2': {
       if (event.type === 'agent_start') {
         seen.agent_start++
-        step = 'A agent_end 2'
+        step = 'A tools 2'
+        console.log('SMOKE agent_start (round 2 — tool round)')
       }
       return
     }
-    case 'A agent_end 2': {
-      if (event.type !== 'agent_end') return
-      seen.agent_end++
-      console.log(`SMOKE contract events ok: ${JSON.stringify(seen)}`)
-      step = 'A shutdown'
-      child.send({ type: 'shutdown' })
+    case 'A tools 2': {
+      if (event.type === 'tool_start') {
+        seen.tool_start++
+        if (!event.toolCallId || !event.name) fail('tool_start missing fields')
+        console.log(`SMOKE tool_start ok (${event.name})`)
+      } else if (event.type === 'tool_update') {
+        seen.tool_update++
+      } else if (event.type === 'tool_end') {
+        seen.tool_end++
+        if (!event.isError) toolRoundSucceeded = true
+      } else if (event.type === 'text_delta') {
+        seen.text_delta++
+      } else if (event.type === 'agent_end') {
+        seen.agent_end++
+        if (seen.tool_start < 1) fail('no tool_start in the tool round')
+        if (!toolRoundSucceeded) fail('no successful tool_end in the tool round')
+        console.log(`SMOKE tool round ok: ${JSON.stringify({ tool_start: seen.tool_start, tool_update: seen.tool_update, tool_end: seen.tool_end })}`)
+        console.log(`SMOKE contract events ok: ${JSON.stringify(seen)}`)
+        step = 'A shutdown'
+        child.send({ type: 'shutdown' })
+      }
       return
     }
 

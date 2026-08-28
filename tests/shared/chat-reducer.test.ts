@@ -21,6 +21,13 @@ function deepFreeze<T>(value: T): T {
   return value
 }
 
+const TOOL_START: HostToParent = {
+  type: 'tool_start',
+  toolCallId: 'tc-1',
+  name: 'bash',
+  args: { command: 'npm test' }
+}
+
 /** A complete one-turn streaming exchange ending in a settled state. */
 function streamedTurn(text: string): HostToParent[] {
   return [
@@ -35,10 +42,10 @@ function streamedTurn(text: string): HostToParent[] {
 }
 
 describe('chatReducer — session lifecycle', () => {
-  it('starts with no session, no messages, no error', () => {
+  it('starts with no session, no entries, no error', () => {
     expect(initialChatState()).toEqual({
       session: null,
-      messages: [],
+      entries: [],
       agentRunning: false,
       error: null
     })
@@ -47,7 +54,7 @@ describe('chatReducer — session lifecycle', () => {
   it('session_created installs the session and clears stale state', () => {
     const state = run(initialChatState(), { type: 'session_error', message: 'boom' }, SESSION_CREATED)
     expect(state.session).toEqual({ sessionId: 's-1', cwd: '/tmp/proj', model: 'claude-opus-4-5' })
-    expect(state.messages).toEqual([])
+    expect(state.entries).toEqual([])
     expect(state.agentRunning).toBe(false)
     expect(state.error).toBeNull()
   })
@@ -61,7 +68,7 @@ describe('chatReducer — session lifecycle', () => {
     )
     const rebuilt = chatReducer(afterCrash, { ...SESSION_CREATED, sessionId: 's-2' })
     expect(rebuilt.session?.sessionId).toBe('s-2')
-    expect(rebuilt.messages).toEqual([])
+    expect(rebuilt.entries).toEqual([])
     expect(rebuilt.error).toBeNull()
     expect(rebuilt.agentRunning).toBe(false)
   })
@@ -74,16 +81,16 @@ describe('chatReducer — session lifecycle', () => {
 })
 
 describe('chatReducer — streaming turn', () => {
-  it('user_message appends a user message', () => {
+  it('user_message appends a user entry', () => {
     const state = run(initialChatState(), SESSION_CREATED, { type: 'user_message', text: 'hi there' })
-    expect(state.messages).toEqual([{ id: 'm0', role: 'user', text: 'hi there', streaming: false }])
+    expect(state.entries).toEqual([{ id: 'm0', role: 'user', text: 'hi there' }])
   })
 
-  it('streams text deltas into one assistant message and settles on agent_end', () => {
+  it('streams text deltas into one assistant entry and settles on agent_end', () => {
     const state = run(initialChatState(), SESSION_CREATED, ...streamedTurn(' there'))
-    expect(state.messages).toEqual([
-      { id: 'm0', role: 'user', text: 'hello', streaming: false },
-      { id: 'm1', role: 'assistant', text: 'Hel there', streaming: false }
+    expect(state.entries).toEqual([
+      { id: 'm0', role: 'user', text: 'hello' },
+      { id: 'm1', role: 'assistant', parts: [{ kind: 'text', text: 'Hel there' }], streaming: false }
     ])
     expect(state.agentRunning).toBe(false)
     expect(state.error).toBeNull()
@@ -95,25 +102,49 @@ describe('chatReducer — streaming turn', () => {
     expect(chatReducer(once, { type: 'agent_start' })).toBe(once)
   })
 
-  it('message_start opens an empty streaming assistant message', () => {
+  it('message_start opens an empty streaming assistant entry', () => {
     const state = run(initialChatState(), SESSION_CREATED, { type: 'user_message', text: 'q' }, { type: 'message_start' })
-    expect(state.messages[1]).toEqual({ id: 'm1', role: 'assistant', text: '', streaming: true })
+    expect(state.entries[1]).toEqual({ id: 'm1', role: 'assistant', parts: [], streaming: true })
     expect(state.agentRunning).toBe(false) // only agent_start owns the running flag
   })
 
-  it('text_delta without an open message defensively opens one', () => {
+  it('text_delta without an open entry defensively opens one', () => {
     const state = chatReducer(initialChatState(), { type: 'text_delta', delta: 'orphan' })
-    expect(state.messages).toEqual([{ id: 'm0', role: 'assistant', text: 'orphan', streaming: true }])
+    expect(state.entries).toEqual([
+      { id: 'm0', role: 'assistant', parts: [{ kind: 'text', text: 'orphan' }], streaming: true }
+    ])
   })
 
-  it('message_end closes the open streaming message', () => {
+  it('text_delta after a closed entry starts a new assistant entry', () => {
+    const state = run(
+      initialChatState(),
+      { type: 'message_start' },
+      { type: 'text_delta', delta: 'first' },
+      { type: 'message_end' },
+      { type: 'text_delta', delta: 'second' }
+    )
+    expect(state.entries).toHaveLength(2)
+    expect(state.entries[1]).toEqual({
+      id: 'm1',
+      role: 'assistant',
+      parts: [{ kind: 'text', text: 'second' }],
+      streaming: true
+    })
+  })
+
+  it('message_end closes the open streaming entry', () => {
     const state = run(
       initialChatState(),
       { type: 'message_start' },
       { type: 'text_delta', delta: 'partial' },
       { type: 'message_end' }
     )
-    expect(state.messages[0]).toEqual({ id: 'm0', role: 'assistant', text: 'partial', streaming: false })
+    expect(state.entries[0]).toEqual({
+      id: 'm0',
+      role: 'assistant',
+      parts: [{ kind: 'text', text: 'partial' }],
+      streaming: false
+    })
   })
 
   it('message_end on a settled transcript is a no-op', () => {
@@ -121,7 +152,7 @@ describe('chatReducer — streaming turn', () => {
     expect(chatReducer(settled, { type: 'message_end' })).toBe(settled)
   })
 
-  it('agent_end finalizes messages still marked streaming', () => {
+  it('agent_end finalizes entries still marked streaming', () => {
     const state = run(
       initialChatState(),
       { type: 'agent_start' },
@@ -130,7 +161,12 @@ describe('chatReducer — streaming turn', () => {
       { type: 'agent_end' }
     )
     expect(state.agentRunning).toBe(false)
-    expect(state.messages[0]).toEqual({ id: 'm0', role: 'assistant', text: 'cut short', streaming: false })
+    expect(state.entries[0]).toEqual({
+      id: 'm0',
+      role: 'assistant',
+      parts: [{ kind: 'text', text: 'cut short' }],
+      streaming: false
+    })
   })
 
   it('supports a second turn after the first settles', () => {
@@ -145,12 +181,273 @@ describe('chatReducer — streaming turn', () => {
       { type: 'message_end' },
       { type: 'agent_end' }
     )
-    expect(state.messages.map((m) => [m.role, m.text])).toEqual([
+    expect(state.entries.map((e) => [e.role, e.role === 'user' ? e.text : e.role === 'assistant' ? e.parts : null])).toEqual([
       ['user', 'hello'],
-      ['assistant', 'Hel there'],
+      ['assistant', [{ kind: 'text', text: 'Hel there' }]],
       ['user', 'again'],
-      ['assistant', 'round two']
+      ['assistant', [{ kind: 'text', text: 'round two' }]]
     ])
+    expect(state.agentRunning).toBe(false)
+  })
+})
+
+describe('chatReducer — thinking blocks', () => {
+  it('thinking_delta opens a streaming thinking part inside the open assistant entry', () => {
+    const state = run(
+      initialChatState(),
+      SESSION_CREATED,
+      { type: 'message_start' },
+      { type: 'thinking_delta', delta: 'Let me think' }
+    )
+    expect(state.entries[0]).toEqual({
+      id: 'm0',
+      role: 'assistant',
+      parts: [{ kind: 'thinking', text: 'Let me think', streaming: true, durationMs: null }],
+      streaming: true
+    })
+  })
+
+  it('further thinking_deltas accumulate into the same part', () => {
+    const state = run(
+      initialChatState(),
+      { type: 'message_start' },
+      { type: 'thinking_delta', delta: 'a' },
+      { type: 'thinking_delta', delta: 'b' },
+      { type: 'thinking_delta', delta: 'c' }
+    )
+    const parts = state.entries[0].role === 'assistant' ? state.entries[0].parts : []
+    expect(parts).toEqual([{ kind: 'thinking', text: 'abc', streaming: true, durationMs: null }])
+  })
+
+  it('thinking_end closes the thinking part with its measured duration', () => {
+    const state = run(
+      initialChatState(),
+      { type: 'message_start' },
+      { type: 'thinking_delta', delta: 'reasoning…' },
+      { type: 'thinking_end', durationMs: 29_000 }
+    )
+    // The assistant entry itself is still open — text may follow.
+    expect(state.entries[0]).toEqual({
+      id: 'm0',
+      role: 'assistant',
+      parts: [{ kind: 'thinking', text: 'reasoning…', streaming: false, durationMs: 29_000 }],
+      streaming: true
+    })
+  })
+
+  it('thinking_end with no open thinking part is a no-op (same state)', () => {
+    const state = run(initialChatState(), { type: 'message_start' }, { type: 'text_delta', delta: 'plain' })
+    expect(chatReducer(state, { type: 'thinking_end', durationMs: 5_000 })).toBe(state)
+  })
+
+  it('thinking_delta without an open assistant entry defensively opens one', () => {
+    const state = chatReducer(initialChatState(), { type: 'thinking_delta', delta: 'orphan thought' })
+    expect(state.entries).toEqual([
+      {
+        id: 'm0',
+        role: 'assistant',
+        parts: [{ kind: 'thinking', text: 'orphan thought', streaming: true, durationMs: null }],
+        streaming: true
+      }
+    ])
+  })
+
+  it('text_delta after thinking closes the open thinking part and appends a text part', () => {
+    const state = run(
+      initialChatState(),
+      { type: 'message_start' },
+      { type: 'thinking_delta', delta: 'hmm' },
+      { type: 'text_delta', delta: 'answer' }
+    )
+    expect(state.entries[0]).toEqual({
+      id: 'm0',
+      role: 'assistant',
+      parts: [
+        { kind: 'thinking', text: 'hmm', streaming: false, durationMs: null },
+        { kind: 'text', text: 'answer' }
+      ],
+      streaming: true
+    })
+  })
+
+  it('message_end closes a thinking part that never saw thinking_end', () => {
+    const state = run(
+      initialChatState(),
+      { type: 'agent_start' },
+      { type: 'message_start' },
+      { type: 'thinking_delta', delta: 'cut' },
+      { type: 'message_end' },
+      { type: 'agent_end' }
+    )
+    expect(state.entries[0]).toEqual({
+      id: 'm0',
+      role: 'assistant',
+      parts: [{ kind: 'thinking', text: 'cut', streaming: false, durationMs: null }],
+      streaming: false
+    })
+  })
+
+  it('supports two thinking blocks in one entry (interleaved with text)', () => {
+    const state = run(
+      initialChatState(),
+      { type: 'message_start' },
+      { type: 'thinking_delta', delta: 'first pass' },
+      { type: 'thinking_end', durationMs: 1_000 },
+      { type: 'text_delta', delta: 'draft' },
+      { type: 'thinking_delta', delta: 'revisit' },
+      { type: 'thinking_end', durationMs: 2_000 },
+      { type: 'text_delta', delta: ' final' }
+    )
+    expect(state.entries[0]).toEqual({
+      id: 'm0',
+      role: 'assistant',
+      parts: [
+        { kind: 'thinking', text: 'first pass', streaming: false, durationMs: 1_000 },
+        { kind: 'text', text: 'draft' },
+        { kind: 'thinking', text: 'revisit', streaming: false, durationMs: 2_000 },
+        { kind: 'text', text: ' final' }
+      ],
+      streaming: true
+    })
+  })
+})
+
+describe('chatReducer — tool calls', () => {
+  it('tool_start appends a running tool entry', () => {
+    const state = run(initialChatState(), SESSION_CREATED, { type: 'message_start' }, { type: 'message_end' }, TOOL_START)
+    expect(state.entries[1]).toEqual({
+      id: 'tc-1',
+      role: 'tool',
+      name: 'bash',
+      args: { command: 'npm test' },
+      state: 'running',
+      output: ''
+    })
+  })
+
+  it('tool_start works with no assistant entry in the transcript (defensive)', () => {
+    const state = chatReducer(initialChatState(), TOOL_START)
+    expect(state.entries).toHaveLength(1)
+    expect(state.entries[0]).toMatchObject({ id: 'tc-1', role: 'tool', state: 'running' })
+  })
+
+  it('tool_update appends partial output to the matching entry', () => {
+    const state = run(initialChatState(), TOOL_START, { type: 'tool_update', toolCallId: 'tc-1', partial: 'line 1\n' })
+    expect(state.entries[0]).toMatchObject({ id: 'tc-1', state: 'running', output: 'line 1\n' })
+    const state2 = run(state, { type: 'tool_update', toolCallId: 'tc-1', partial: 'line 2' })
+    expect(state2.entries[0]).toMatchObject({ output: 'line 1\nline 2' })
+  })
+
+  it('tool_update for an unknown tool call is a no-op (same state)', () => {
+    const state = run(initialChatState(), TOOL_START)
+    expect(chatReducer(state, { type: 'tool_update', toolCallId: 'nope', partial: 'x' })).toBe(state)
+  })
+
+  it('tool_end marks the card done and installs the final full output', () => {
+    const state = run(
+      initialChatState(),
+      TOOL_START,
+      { type: 'tool_update', toolCallId: 'tc-1', partial: 'partial…' },
+      { type: 'tool_end', toolCallId: 'tc-1', output: 'all tests passed', isError: false }
+    )
+    expect(state.entries[0]).toEqual({
+      id: 'tc-1',
+      role: 'tool',
+      name: 'bash',
+      args: { command: 'npm test' },
+      state: 'done',
+      output: 'all tests passed'
+    })
+  })
+
+  it('tool_end with isError surfaces the error state (failure path)', () => {
+    const state = run(
+      initialChatState(),
+      TOOL_START,
+      { type: 'tool_end', toolCallId: 'tc-1', output: 'command not found: fizz', isError: true }
+    )
+    expect(state.entries[0]).toMatchObject({ id: 'tc-1', state: 'error', output: 'command not found: fizz' })
+    // Tool-level errors do not hijack the run-level error banner.
+    expect(state.error).toBeNull()
+    expect(state.agentRunning).toBe(false)
+  })
+
+  it('tool_end for an unknown tool call is a no-op (same state)', () => {
+    const state = run(initialChatState(), TOOL_START)
+    expect(chatReducer(state, { type: 'tool_end', toolCallId: 'nope', output: 'x', isError: false })).toBe(state)
+  })
+
+  it('a full tool round keeps transcript order: message → tool → follow-up message', () => {
+    const state = run(
+      initialChatState(),
+      SESSION_CREATED,
+      { type: 'user_message', text: 'run the tests' },
+      { type: 'agent_start' },
+      { type: 'message_start' },
+      { type: 'thinking_delta', delta: 'need to check' },
+      { type: 'thinking_end', durationMs: 3_000 },
+      { type: 'text_delta', delta: 'Checking now.' },
+      { type: 'message_end' },
+      TOOL_START,
+      { type: 'tool_update', toolCallId: 'tc-1', partial: 'ok' },
+      { type: 'tool_end', toolCallId: 'tc-1', output: '3 passed', isError: false },
+      { type: 'message_start' },
+      { type: 'text_delta', delta: 'All green.' },
+      { type: 'message_end' },
+      { type: 'agent_end' }
+    )
+    expect(state.entries.map((e) => e.role)).toEqual(['user', 'assistant', 'tool', 'assistant'])
+    expect(state.agentRunning).toBe(false)
+    expect(state.error).toBeNull()
+  })
+
+  it('agent_end settles a tool that never finished into an error state', () => {
+    const state = run(
+      initialChatState(),
+      SESSION_CREATED,
+      { type: 'agent_start' },
+      { type: 'message_start' },
+      { type: 'message_end' },
+      TOOL_START,
+      { type: 'tool_update', toolCallId: 'tc-1', partial: 'working…' },
+      { type: 'agent_end' }
+    )
+    expect(state.entries[1]).toEqual({
+      id: 'tc-1',
+      role: 'tool',
+      name: 'bash',
+      args: { command: 'npm test' },
+      state: 'error',
+      output: 'working…'
+    })
+    expect(state.agentRunning).toBe(false)
+  })
+
+  it('agent_end settling an output-less tool writes an explanatory placeholder', () => {
+    const state = run(initialChatState(), { type: 'agent_start' }, TOOL_START, { type: 'agent_end' })
+    expect(state.entries[0]).toMatchObject({ id: 'tc-1', state: 'error', output: 'The tool call ended without a result.' })
+  })
+
+  it('turn_error mid-tool settles the tool as failed and raises the agent error', () => {
+    const state = run(
+      initialChatState(),
+      SESSION_CREATED,
+      { type: 'agent_start' },
+      TOOL_START,
+      { type: 'turn_error', message: 'rate limited' }
+    )
+    expect(state.entries[0]).toMatchObject({ id: 'tc-1', state: 'error' })
+    expect(state.error).toEqual({ kind: 'agent', message: 'rate limited' })
+    expect(state.agentRunning).toBe(false)
+    expect(state.session).toEqual({ sessionId: 's-1', cwd: '/tmp/proj', model: 'claude-opus-4-5' })
+  })
+
+  it('host_exit crash mid-tool keeps the settled transcript and reports the host error', () => {
+    const beforeCrash = run(initialChatState(), SESSION_CREATED, { type: 'agent_start' }, TOOL_START)
+    const state = chatReducer(beforeCrash, { type: 'host_exit', clean: false, code: 1, signal: null })
+    expect(state.session).toBeNull()
+    expect(state.error).toEqual({ kind: 'host', message: 'Agent host exited unexpectedly (exit code 1).', cwd: '/tmp/proj' })
+    expect(state.entries[0]).toMatchObject({ id: 'tc-1', state: 'error' })
     expect(state.agentRunning).toBe(false)
   })
 })
@@ -168,7 +465,12 @@ describe('chatReducer — errors', () => {
     )
     expect(state.error).toEqual({ kind: 'agent', message: 'rate limited' })
     expect(state.agentRunning).toBe(false)
-    expect(state.messages[1]).toEqual({ id: 'm1', role: 'assistant', text: 'partial out', streaming: false })
+    expect(state.entries[1]).toEqual({
+      id: 'm1',
+      role: 'assistant',
+      parts: [{ kind: 'text', text: 'partial out' }],
+      streaming: false
+    })
     expect(state.session).toEqual({ sessionId: 's-1', cwd: '/tmp/proj', model: 'claude-opus-4-5' })
   })
 
@@ -177,7 +479,7 @@ describe('chatReducer — errors', () => {
     const state = chatReducer(beforeCrash, { type: 'host_exit', clean: false, code: 1, signal: null })
     expect(state.session).toBeNull()
     expect(state.error).toEqual({ kind: 'host', message: 'Agent host exited unexpectedly (exit code 1).', cwd: '/tmp/proj' })
-    expect(state.messages).toHaveLength(2)
+    expect(state.entries).toHaveLength(2)
     expect(state.agentRunning).toBe(false)
   })
 
@@ -197,7 +499,7 @@ describe('chatReducer — errors', () => {
     const state = chatReducer(before, { type: 'host_exit', clean: true, code: 0, signal: null })
     expect(state.session).toBeNull()
     expect(state.error).toBeNull()
-    expect(state.messages).toHaveLength(2)
+    expect(state.entries).toHaveLength(2)
   })
 })
 
@@ -212,9 +514,9 @@ describe('chatReducer — resumed history (ticket 04)', () => {
 
   it('history_loaded installs the replayed transcript with stable entry ids', () => {
     const state = run(initialChatState(), SESSION_CREATED, HISTORY_LOADED)
-    expect(state.messages).toEqual([
-      { id: 'e1', role: 'user', text: 'earlier question', streaming: false },
-      { id: 'e2', role: 'assistant', text: 'earlier answer', streaming: false }
+    expect(state.entries).toEqual([
+      { id: 'e1', role: 'user', text: 'earlier question' },
+      { id: 'e2', role: 'assistant', parts: [{ kind: 'text', text: 'earlier answer' }], streaming: false }
     ])
     expect(state.error).toBeNull()
   })
@@ -224,27 +526,57 @@ describe('chatReducer — resumed history (ticket 04)', () => {
       type: 'history_loaded',
       items: [{ id: 'e1', role: 'user', text: 'earlier question', timestamp: 't1' }]
     })
-    expect(navigated.messages).toEqual([{ id: 'e1', role: 'user', text: 'earlier question', streaming: false }])
+    expect(navigated.entries).toEqual([{ id: 'e1', role: 'user', text: 'earlier question' }])
   })
 
   it('a fresh turn after resume appends to the replayed transcript', () => {
     const state = run(initialChatState(), SESSION_CREATED, HISTORY_LOADED, ...streamedTurn(' there'))
-    expect(state.messages.map((m) => m.text)).toEqual(['earlier question', 'earlier answer', 'hello', 'Hel there'])
-    expect(state.messages[3]?.streaming).toBe(false)
+    const texts = state.entries.map((entry) =>
+      entry.role === 'assistant'
+        ? entry.parts.map((part) => (part.kind === 'text' ? part.text : '')).join('')
+        : entry.role === 'user'
+          ? entry.text
+          : `[tool:${entry.name}]`
+    )
+    expect(texts).toEqual(['earlier question', 'earlier answer', 'hello', 'Hel there'])
+    const last = state.entries[state.entries.length - 1]
+    expect(last?.role === 'assistant' && last.streaming).toBe(false)
   })
 })
 
 describe('chatReducer — purity', () => {
   it('is deterministic: identical event sequences produce identical states', () => {
-    const a = run(initialChatState(), SESSION_CREATED, ...streamedTurn(' there'))
-    const b = run(initialChatState(), SESSION_CREATED, ...streamedTurn(' there'))
+    const events: HostToParent[] = [
+      SESSION_CREATED,
+      { type: 'user_message', text: 'go' },
+      { type: 'agent_start' },
+      { type: 'message_start' },
+      { type: 'thinking_delta', delta: 'hmm' },
+      { type: 'thinking_end', durationMs: 1_500 },
+      { type: 'text_delta', delta: 'hi' },
+      { type: 'message_end' },
+      TOOL_START,
+      { type: 'tool_end', toolCallId: 'tc-1', output: 'done', isError: false },
+      { type: 'agent_end' }
+    ]
+    const a = run(initialChatState(), ...events)
+    const b = run(initialChatState(), ...events)
     expect(a).toEqual(b)
   })
 
   it('never mutates the incoming state or its nested data', () => {
     const frozen = deepFreeze(run(initialChatState(), SESSION_CREATED, { type: 'user_message', text: 'q' }))
     expect(() =>
-      run(frozen, { type: 'agent_start' }, { type: 'message_start' }, { type: 'text_delta', delta: 'x' })
+      run(
+        frozen,
+        { type: 'agent_start' },
+        { type: 'message_start' },
+        { type: 'thinking_delta', delta: 'x' },
+        { type: 'thinking_end', durationMs: 1 },
+        { type: 'text_delta', delta: 'y' },
+        TOOL_START,
+        { type: 'tool_update', toolCallId: 'tc-1', partial: 'z' }
+      )
     ).not.toThrow()
   })
 })
