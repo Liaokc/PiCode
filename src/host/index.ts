@@ -380,11 +380,17 @@ function pullEcho(text: string): void {
   if (index !== -1) pendingEchoes.splice(index, 1)
 }
 
-/** Explicit Steer: inject into the RUNNING turn (renderer chose the mode). */
+/** Explicit Steer: inject into the RUNNING turn (renderer chose the mode).
+ * If the run already ended (render/Enter race), deliver as a normal prompt
+ * so the text can never silently rot in an invisible queue. */
 async function handleQueued(kind: 'steer_prompt' | 'follow_up_prompt', text: string, images?: ImageAttachment[]): Promise<void> {
   const agentSession = runtime?.session
   if (!agentSession) {
     send({ type: 'session_command_error', message: 'No session is open.' })
+    return
+  }
+  if (settled) {
+    handlePrompt(text, images)
     return
   }
   try {

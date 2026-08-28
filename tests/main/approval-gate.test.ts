@@ -2,12 +2,6 @@ import { describe, expect, it } from 'vitest'
 import { ApprovalGate, type GateAnswer } from '../../src/host/approval-gate'
 import type { HostToParent } from '../../src/shared/contract'
 
-function emittedBy(gate: ApprovalGate, toolCallId: string): HostToParent[] {
-  const out: HostToParent[] = []
-  gate.request({ toolCallId, toolName: 'bash', args: { command: 'ls' } }, (event) => out.push(event))
-  return out
-}
-
 describe('ApprovalGate — tier decisions', () => {
   it('defaults to the standard tier', () => {
     expect(new ApprovalGate().getMode()).toBe('standard')
@@ -100,5 +94,3 @@ describe('ApprovalGate — answer shapes', () => {
     expect(answer.reason).toBe('Do not touch src/')
   })
 })
-// Keep the unused-helper lint honest: emittedBy documents the emit contract.
-void emittedBy

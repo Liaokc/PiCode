@@ -111,10 +111,10 @@ export default function App(): JSX.Element {
           const pendingImages = pendingImagesRef.current
           pendingPromptRef.current = null
           pendingImagesRef.current = null
-          if (pending !== null || (pendingImages !== null && pendingImages.length > 0)) {
+          if (pending !== null || pendingImages !== null) {
             window.picode.chat.sendToHost({
               type: 'prompt',
-              text: pending ?? 'Describe the attached images.',
+              text: pending !== null && pending.trim() !== '' ? pending : 'Describe the attached images.',
               images: pendingImages ?? undefined
             })
           }
@@ -196,12 +196,11 @@ export default function App(): JSX.Element {
     const cwd = await window.picode.chat.pickWorkingDirectory()
     if (!cwd) return
     setCreating(true)
-    pendingPromptRef.current = images.length > 0 ? null : text
+    // Both survive the folder pick: text AND images are delivered together
+    // as the first prompt once the session exists.
+    pendingPromptRef.current = text
+    pendingImagesRef.current = images.length > 0 ? images : null
     window.picode.chat.sendToHost({ type: 'create_session', cwd })
-    if (images.length > 0) {
-      // The first prompt carries the images once the session exists.
-      pendingImagesRef.current = images
-    }
   }
 
   function handleSteer(text: string, images: ImageAttachment[] = []): void {

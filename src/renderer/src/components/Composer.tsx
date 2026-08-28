@@ -180,7 +180,6 @@ export default function Composer({
     }
     if (menu === 'slash' || menu === 'files') setMenu(null)
   }
-
   function handleMenuKey(event: KeyboardEvent<HTMLTextAreaElement>): boolean {
     if (menu !== 'slash' && menu !== 'files') return false
     if (event.key === 'ArrowDown') {
