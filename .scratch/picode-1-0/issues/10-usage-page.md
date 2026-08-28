@@ -4,7 +4,7 @@
 
 **Blocked by:** 09 Usage 聚合器、01 净场与脚手架。
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] 全部图形数据来自聚合缓存而非现场扫文件
 - [ ] 五卡/热力格/折线/环形对照截图 09 的版式结构一致
