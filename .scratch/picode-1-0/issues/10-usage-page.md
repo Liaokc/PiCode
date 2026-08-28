@@ -4,7 +4,7 @@
 
 **Blocked by:** 09 Usage 聚合器、01 净场与脚手架。
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] 全部图形数据来自聚合缓存而非现场扫文件
 - [x] 五卡/热力格/折线/环形对照截图 09 的版式结构一致
@@ -25,3 +25,4 @@
   - 已知边界：Open task 目前跳回工作区（会话深链待 ticket 04 侧边栏落地）；视觉像素对照是人工关卡，请用 `npm run dev` + `VITE_PICODE_VIEW=settings` 核对截图 09。
   - 合并请在根工作区执行：`cd ~/PiCode && git merge --no-ff t10-usage-page`
 - 2026-08-28 (merge session): 分支已由先前的合并流程带入 main（merge commit `e33117b`）；合并后 main 复核 typecheck 绿、210 vitest 全过。**注意：tracker 提交 2495b19 只记录 ready-for-human，未见人工目检（截图 09 对照，`VITE_PICODE_VIEW=settings npm run dev`）的验收记录** —— 操作者确认目检通过后，本票才改标 resolved。worktree `wt-10-usage-page` 与分支 `t10-usage-page` 已清理（不影响任何已合并内容）。
+- 2026-08-28 (merge session): **操作者已验收**（截图 09 目检确认）→ 改标 resolved。验收口径：`e33117b` 合入 + 目检通过；main 现行 HEAD 复核 244 vitest 全绿（含本票 68 个）。
