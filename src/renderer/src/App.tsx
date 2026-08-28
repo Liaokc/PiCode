@@ -493,7 +493,7 @@ export default function App(): JSX.Element {
         panel={panel}
         dispatch={panelDispatch}
         onCollapse={() => dispatch({ type: 'close-side-panel' })}
-        reviewCwd={chat.session?.cwd ?? null}
+        workspaceCwd={chat.session?.cwd ?? null}
         previewTarget={previewTarget}
         onPreviewNavigate={handlePreviewNavigate}
       />

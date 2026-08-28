@@ -21,9 +21,11 @@ export function visualEnabled(): boolean {
   return process.env['PICODE_VISUAL'] === '1'
 }
 
-function outDir(): string {
+export function visualOutDir(): string {
   return process.env['PICODE_VISUAL_OUT'] || path.join(process.cwd(), '.scratch', 'visual')
 }
+
+const outDir = visualOutDir
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -43,11 +45,13 @@ async function waitForWindow(getWindow: () => BrowserWindow | null): Promise<Bro
 }
 
 /** Inject `event` into every window, exactly like the supervisor relay does. */
-function emit(event: HostToParent): void {
+export function emitContractEvent(event: HostToParent): void {
   for (const win of BrowserWindow.getAllWindows()) {
     win.webContents.send('chat:from-host', event)
   }
 }
+
+const emit = emitContractEvent
 
 async function streamText(chunks: string[], delayMs = 26): Promise<void> {
   for (const delta of chunks) {

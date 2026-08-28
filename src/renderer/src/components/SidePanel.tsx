@@ -4,6 +4,7 @@ import type { PanelAction, PanelState } from '../../../shared/panel-model'
 import type { PreviewSelection } from '../../../shared/preview/view-model'
 import ReviewTab from './ReviewTab'
 import PreviewTab from './PreviewTab'
+import TerminalTab from './TerminalTab'
 import { ChevronDownIcon, CloseIcon, CodeIcon, FileTextIcon, PlusIcon, TerminalSquareIcon } from './icons'
 
 const TAB_ICONS: Record<SidePanelTab, JSX.Element> = {
@@ -25,8 +26,8 @@ interface SidePanelProps {
   dispatch: Dispatch<PanelAction>
   /** Collapse the whole panel (chevron in the strip, per screenshot 08). */
   onCollapse: () => void
-  /** Working directory of the active task, feeding the Review tab. */
-  reviewCwd: string | null
+  /** Working directory of the active task, feeding Review, Preview + Terminal. */
+  workspaceCwd: string | null
   /** Deep-link target for the File Preview tab (ticket 07); null = empty state. */
   previewTarget: PreviewSelection | null
   /** In-tab navigation (breadcrumbs, directory rows) retargets via the App shell. */
@@ -34,20 +35,17 @@ interface SidePanelProps {
 }
 
 /**
- * Side panel container (ticket 06 + 07): draggable width, a multi-tab strip,
- * and the screenshot-03 "Open a Tab" picker whenever no tab content is
- * showing. The Review and Preview tabs are live; the Terminal tab hosts its
- * placeholder until ticket 08 wires the PTY.
- *
+ * Side panel container (ticket 06–08): draggable width, a multi-tab strip, and
+ * the screenshot-03 "Open a Tab" picker whenever no tab content is showing.
  * Open tabs stay mounted (hidden with display:none) while another tab is
- * active, so Preview navigation state survives tab flips.
+ * active — switching tabs must not kill a live shell or Preview state.
  */
 export default function SidePanel({
   open,
   panel,
   dispatch,
   onCollapse,
-  reviewCwd,
+  workspaceCwd,
   previewTarget,
   onPreviewNavigate
 }: SidePanelProps): JSX.Element | null {
@@ -76,15 +74,9 @@ export default function SidePanel({
   const showPicker = panel.pickerOpen || panel.openTabs.length === 0
 
   function tabBody(tab: SidePanelTab): JSX.Element {
-    if (tab === 'review') return <ReviewTab cwd={reviewCwd} onOpenFile={reviewCwd !== null ? (path) => onPreviewNavigate(reviewCwd, path) : undefined} />
+    if (tab === 'review') return <ReviewTab cwd={workspaceCwd} onOpenFile={workspaceCwd !== null ? (path) => onPreviewNavigate(workspaceCwd, path) : undefined} />
     if (tab === 'preview') return <PreviewTab target={previewTarget} onNavigate={onPreviewNavigate} />
-    return (
-      <div className="review-empty">
-        <TerminalSquareIcon size={28} />
-        <p className="review-empty-title">Terminal</p>
-        <p className="review-empty-hint">The interactive terminal is not wired up yet.</p>
-      </div>
-    )
+    return <TerminalTab cwd={workspaceCwd} />
   }
 
   return (
@@ -141,9 +133,19 @@ export default function SidePanel({
         </div>
       </div>
 
-      <div className="panel-content">
-        {showPicker ? (
-          <div className="panel-empty" role="tabpanel">
+      <div className="panel-content" role="tabpanel">
+        {/* Open tab bodies stay mounted; the picker overlays them instead of
+            replacing them — opening the picker must not kill a live shell. */}
+        {panel.openTabs.map((tab) => (
+          <div
+            key={tab}
+            className={`panel-tab-body${panel.activeTab === tab ? '' : ' panel-tab-body-hidden'}`}
+          >
+            {tabBody(tab)}
+          </div>
+        ))}
+        {showPicker && (
+          <div className={`panel-empty${panel.openTabs.length > 0 ? ' panel-empty-overlay' : ''}`}>
             <h2 className="panel-empty-title">Open a Tab</h2>
             <p className="panel-empty-hint">Choose which tab to open in the side panel.</p>
             <div className="panel-empty-cards">
@@ -161,18 +163,6 @@ export default function SidePanel({
               ))}
             </div>
           </div>
-        ) : (
-          panel.openTabs.map((tab) => (
-            <div
-              key={tab}
-              className="panel-tab-body"
-              role="tabpanel"
-              aria-label={`${TAB_LABELS[tab]} tab`}
-              style={{ display: tab === panel.activeTab ? undefined : 'none' }}
-            >
-              {tabBody(tab)}
-            </div>
-          ))
         )}
       </div>
     </aside>
