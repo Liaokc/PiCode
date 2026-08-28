@@ -22,3 +22,5 @@
 - Human pass remaining: eyeball `.scratch/visual/*.png` against `.scratch/reference/screenshots` 截屏 18.54.03 / 18.54.27, and optionally `npm run dev` with a real conversation; copy-click and expand/collapse are mouse interactions not covered by the smokes.
 - Merge from the root worktree: `cd ~/PiCode && git merge --no-ff t03-chat-thread-full`.
 - 2026-08-28 (merge session): **resolved** — merged into main as `1a8891f`。验收口径：操作者人工验收通过（对照截图 18.54.03/18.54.27 的排版清单 + 交互项）；rebase 到含 t04 的 main 时解了两批功能的接线冲突（host wireSessionEvents、App/ChatView 装配、icons 并集、smoke 双覆盖 union、history_loaded 移植到 entries 模型），解后 typecheck/lint/244 vitest 全绿，并重跑真机 contract smoke：Round A abort+工具轮与 Round B resume/rename/tree/fork 全链 SMOKE PASS。worktree 与分支已清理。
+
+- **验收（主会话，8/28）**：合并 sha `1a8891f`。独立复验：typecheck 干净，main 上 26 个测试文件 244/244 通过。rebase 二次风暴（vs t04）已由合并会话解决，图标去重与 ElapsedSeconds 复用符合增量纪律。关闭。

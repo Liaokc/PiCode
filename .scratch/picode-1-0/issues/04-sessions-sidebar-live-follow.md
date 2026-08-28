@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 Host 活体。
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] TUI 新建的会话自动出现在对应项目分组，时间/置顶/重命名生效
 - [x] 双向无缝衔接：这里 resume 的会话与 TUI 继续的是同一条历史
@@ -21,3 +21,5 @@
 - **Zero-write 结构性保证：** Live Follow 全路径只读（`open('r')`/`readFile`），FollowView 无 composer；唯二写点均有意为之：rename 写回（本票要求）与经 host 的会话写入（SDK）。
 - **决策记录（已与既有策略一致）：** ①"活跃态"= 会话文件 120s 内有写入（无法在不引入平台特定手段时区分"TUI 打开但空闲"）；②非活跃会话重命名由主进程按 SDK 同形 append `session_info`（链到文件序 leaf，防御半行尾）；活跃会话重命名走 host `setSessionName`，避免 host 内存 leaf 失配；③fork 改走 SDK `AgentSessionRuntime.fork`（与 TUI 同语义，in-host 切换），`fork_created` 事件保留但不再触发 resume。
 - **对照截图 01/02：** 左栏形态已复刻（New Task/Search 行 + ⌘N/⌘K、分组/项目 pills、筛选行、Pinned 区、项目分组行含 chevron/grip、行内相对时间、底部账户区显示当前会话）；像素级人工验收留待操作者（spec 硬关卡）。
+
+- **验收（主会话，8/28）**：合并 sha `57eb61b`（操作者已于合并前目检验收）。复验：Live Follow 零写入、树导航、label 写回均按票面验收标准落地。关闭。

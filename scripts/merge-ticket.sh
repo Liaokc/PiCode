@@ -34,6 +34,19 @@ if [[ -n "$(git -C "$WT" status --porcelain)" ]]; then
   git -C "$WT" status --short >&2; exit 1
 fi
 
+# Watchdog: a stalled rebase/merge left by a dead session must be handled BEFORE we start.
+GD="$(git -C "$WT" rev-parse --git-dir)"
+if [[ -d "$GD/rebase-merge" || -d "$GD/rebase-apply" ]]; then
+  echo "✗ worktree has a STALLED REBASE in progress — resolving it is not this script's job." >&2
+  echo "  Finish it:     git -C $WT rebase --continue   (after resolving conflicts)" >&2
+  echo "  Or discard:    git -C $WT rebase --abort" >&2
+  echo "  Then re-run this script." >&2; exit 1
+fi
+if [[ -f "$GD/MERGE_HEAD" ]]; then
+  echo "✗ worktree has an unfinished MERGE — finish or abort it first:" >&2
+  echo "  git -C $WT merge --continue | git -C $WT merge --abort" >&2; exit 1
+fi
+
 TICKET="$(git -C "$MAIN_ROOT" ls-files ".scratch/picode-1-0/issues/${NN}-*.md" | head -1)"
 if [[ -n "$TICKET" ]]; then
   STATUS="$(git -C "$MAIN_ROOT" show "main:$TICKET" | grep -m1 '^\*\*Status:\*\*' || true)"
