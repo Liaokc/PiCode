@@ -2,6 +2,7 @@
 import type { HostToParent, ParentToHost } from '../shared/contract'
 import type { FollowUpdate, SessionSummary, TranscriptItem } from '../../shared/sessions/types'
 import type { ReviewResult } from '../shared/review/types'
+import type { PreviewResult } from '../shared/preview/types'
 
 import type { UsageSnapshot } from '../../shared/usage/aggregate'
 
@@ -37,6 +38,11 @@ interface PicodeReviewBridge {
   load(cwd: string): Promise<ReviewResult>
 }
 
+interface PicodePreviewBridge {
+  /** Open a file (content) or directory (listing) for the Preview tab. */
+  load(cwd: string, target: string): Promise<PreviewResult>
+}
+
 declare global {
   interface Window {
     picode: {
@@ -52,6 +58,7 @@ declare global {
         snapshot: () => Promise<UsageSnapshot>
       }
       review: PicodeReviewBridge
+      preview: PicodePreviewBridge
     }
   }
 }

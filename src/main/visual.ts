@@ -67,7 +67,11 @@ async function capture(win: BrowserWindow, name: string): Promise<string> {
       assistants: document.querySelectorAll('.msg-assistant').length,
       tools: document.querySelectorAll('.tool-card').length,
       working: document.querySelectorAll('.working-line').length,
-      banner: document.querySelectorAll('.error-banner').length
+      banner: document.querySelectorAll('.error-banner').length,
+      previewMd: document.querySelectorAll('.preview-md').length,
+      previewCrumbs: document.querySelectorAll('.preview-crumb').length,
+      previewCodeLines: document.querySelectorAll('.code-line').length,
+      previewListRows: document.querySelectorAll('.preview-list-row').length
     }))()`
   )
   console.log(`VISUAL captured ${file} ${JSON.stringify(sig)}`)
@@ -160,6 +164,121 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       )
       await sleep(500)
       await capture(win, '3-expanded')
+
+      // ---- Preview tab (ticket 07): deep-link + markdown/source/crumbs ----
+      // Re-anchor the visual session on this repository so the preview reader
+      // has real files, then drive the same deep-link path a human clicks.
+      const repoCwd = process.cwd()
+      emit({ type: 'session_created', sessionId: 'visual-preview', cwd: repoCwd, model: 'claude-opus-4-5' })
+      await sleep(200)
+      emit({
+        type: 'tool_start',
+        toolCallId: 'tc-visual-md',
+        name: 'write',
+        args: { path: 'CONTEXT.md', content: '…' }
+      })
+      emit({ type: 'tool_end', toolCallId: 'tc-visual-md', output: 'Wrote CONTEXT.md', isError: false })
+      await sleep(300)
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const link = document.querySelector('.tool-card-preview-link')
+          if (link instanceof HTMLElement) link.click()
+          return link !== null
+        })()`
+      )
+      await sleep(700)
+      await capture(win, '4-preview-markdown')
+
+      // Source file deep-link: highlighted code with the line-number gutter.
+      emit({
+        type: 'tool_start',
+        toolCallId: 'tc-visual-src',
+        name: 'edit',
+        args: { path: 'src/shared/preview/policy.ts' }
+      })
+      emit({ type: 'tool_end', toolCallId: 'tc-visual-src', output: 'Patched', isError: false })
+      await sleep(200)
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const cards = [...document.querySelectorAll('.tool-card')]
+          const link = cards[cards.length - 1]?.querySelector('.tool-card-preview-link')
+          if (link instanceof HTMLElement) link.click()
+          return link !== undefined
+        })()`
+      )
+      await sleep(700)
+      await capture(win, '5-preview-source')
+
+      // Wrap/truncate display toggle (ticket 07 feedback): flip to truncated.
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const toggle = document.querySelector('.preview-wrap-toggle')
+          if (toggle instanceof HTMLElement) toggle.click()
+          return toggle !== null
+        })()`
+      )
+      await sleep(400)
+      await capture(win, '5b-preview-truncated')
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const toggle = document.querySelector('.preview-wrap-toggle')
+          if (toggle instanceof HTMLElement) toggle.click()
+          return true
+        })()`
+      )
+      await sleep(200)
+
+      // Breadcrumb fallback: click the workspace-root crumb → listing.
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const crumb = document.querySelector('button.preview-crumb')
+          if (crumb instanceof HTMLElement) crumb.click()
+          return crumb !== null
+        })()`
+      )
+      await sleep(500)
+      await capture(win, '6-preview-directory')
+
+      // Review file tree deep-link: picker → Review tab → hover Open chip.
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const add = document.querySelector('.panel-add-tab')
+          if (add instanceof HTMLElement) add.click()
+          return true
+        })()`
+      )
+      let reviewCard = false
+      for (let waited = 0; waited < 5_000 && !reviewCard; waited += 100) {
+        await sleep(100)
+        reviewCard = await win.webContents.executeJavaScript(
+          `(() => {
+            const card = document.querySelector('.panel-tab-card[aria-label="Open Review tab"]')
+            if (card instanceof HTMLElement) {
+              card.click()
+              return true
+            }
+            return false
+          })()`
+        )
+      }
+      if (!reviewCard) throw new Error('visual harness: review picker card never appeared')
+      let reviewChip = false
+      for (let waited = 0; waited < 10_000 && !reviewChip; waited += 200) {
+        reviewChip = await win.webContents.executeJavaScript(
+          `document.querySelector('.review-tree-open') !== null`
+        )
+        if (!reviewChip) await sleep(200)
+      }
+      if (!reviewChip) throw new Error('visual harness: review tree never rendered')
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const chip = document.querySelector('.review-tree-open')
+          if (chip instanceof HTMLElement) chip.click()
+          return true
+        })()`
+      )
+      await sleep(700)
+      await capture(win, '7-review-deeplink')
 
       console.log('VISUAL done')
       app.exit(0)

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState, type JSX } from 'react'
 import { chatReducer, initialChatState, type ChatError } from '../../shared/chat-reducer'
+import { resolvePreviewPath } from '../../shared/preview/policy'
+import type { PreviewSelection } from '../../shared/preview/view-model'
 import { initialShellUiState, shellUiReducer } from '../../shared/layout-model'
 import { initialPanelState, panelReducer } from '../../shared/panel-model'
 import { isSessionLive } from '../../shared/sessions/group'
@@ -48,6 +50,8 @@ export default function App(): JSX.Element {
   }))
   /** Panel tab framework state (tabs, picker, dragged width) — ticket 06. */
   const [panel, panelDispatch] = useReducer(panelReducer, undefined, initialPanelState)
+  /** File Preview deep-link target (ticket 07) — token increments force reloads. */
+  const [previewTarget, setPreviewTarget] = useState<PreviewSelection | null>(null)
   const [chat, chatDispatch] = useReducer(chatReducer, undefined, initialChatState)
   /** True between create/resume and its terminal event. */
   const [creating, setCreating] = useState(false)
@@ -281,6 +285,30 @@ export default function App(): JSX.Element {
     window.picode.chat.sendToHost({ type: 'fork_session', entryId })
   }
 
+  // ---- File Preview deep-links (ticket 07) ----
+
+  /** Open any path (file or folder) in the side panel's Preview tab. */
+  const openPreview = useCallback(
+    (cwd: string, rawPath: string): void => {
+      const absolute = resolvePreviewPath(cwd, rawPath)
+      if (absolute === null) return
+      setPreviewTarget((prev) => ({ cwd, path: absolute, token: (prev?.token ?? 0) + 1 }))
+      panelDispatch({ type: 'open-tab', tab: 'preview' })
+      dispatch({ type: 'open-side-panel' })
+    },
+    [panelDispatch, dispatch]
+  )
+
+  const handleOpenFileFromTranscript = useCallback(
+    (path: string): void => {
+      const cwd = chat.session?.cwd
+      if (cwd) openPreview(cwd, path)
+    },
+    [chat.session?.cwd, openPreview]
+  )
+
+  const handlePreviewNavigate = useCallback(openPreview, [openPreview])
+
   const showError = chat.error !== null && chat.error !== dismissedError
   const showFollow = followedFile !== null
   const showTranscript = chat.entries.length > 0 || chat.session !== null
@@ -345,6 +373,7 @@ export default function App(): JSX.Element {
             onCloseTree={() => setTreeOpen(false)}
             onSend={handleComposerSend}
             onStop={handleStop}
+            onOpenFile={handleOpenFileFromTranscript}
           />
         ) : (
           <EmptyState creating={creating} onSend={handleComposerSend} />
@@ -356,6 +385,8 @@ export default function App(): JSX.Element {
         dispatch={panelDispatch}
         onCollapse={() => dispatch({ type: 'close-side-panel' })}
         reviewCwd={chat.session?.cwd ?? null}
+        previewTarget={previewTarget}
+        onPreviewNavigate={handlePreviewNavigate}
       />
     </div>
   )

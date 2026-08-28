@@ -2545,3 +2545,331 @@ button.heat:hover {
 .cmp-stop:hover {
   background: var(--send-bg-hover);
 }
+
+/* ---------- file preview tab (ticket 07, screenshots 04/08) ---------- */
+
+.panel-tab-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.preview-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.preview-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  background: var(--bg-main);
+}
+
+.preview-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  white-space: nowrap;
+  padding: 4px 0;
+}
+
+.preview-crumbs::-webkit-scrollbar {
+  display: none;
+}
+
+.preview-crumb-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.preview-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 5px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-crumb svg {
+  flex-shrink: 0;
+}
+
+button.preview-crumb:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.preview-crumb-file {
+  color: var(--text-primary);
+  font-weight: 600;
+  cursor: default;
+}
+
+.preview-crumb-sep {
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.preview-toolbar .review-segmented button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.preview-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+}
+
+.preview-notice {
+  flex-shrink: 0;
+  padding: 7px 14px;
+  font-size: 11.5px;
+  color: #8a5a18;
+  background: #fbf3e4;
+  border-bottom: 1px solid var(--border);
+}
+
+.preview-md {
+  padding: 18px 20px 28px;
+  font-size: 13.5px;
+  user-select: text;
+}
+
+.preview-md table {
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+/* source view */
+
+.code-view {
+  font-family: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 19px;
+  padding: 8px 0 20px;
+  user-select: text;
+}
+
+.code-line {
+  display: flex;
+  min-width: max-content;
+  padding-right: 14px;
+}
+
+.code-line:hover {
+  background: var(--bg-inset);
+}
+
+.code-gutter {
+  width: 46px;
+  flex-shrink: 0;
+  padding-right: 10px;
+  text-align: right;
+  color: var(--text-faint);
+  font-size: 10.5px;
+  user-select: none;
+}
+
+.code-text {
+  white-space: pre;
+}
+
+.code-text:empty::before {
+  content: ' ';
+}
+
+.code-view-footer {
+  padding: 10px 14px 0;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+}
+
+.preview-show-more {
+  flex-shrink: 0;
+  margin: 4px 14px 14px;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-card);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.preview-show-more:hover {
+  background: var(--bg-hover);
+}
+
+/* directory listing (breadcrumb fallback) */
+
+.preview-list {
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  gap: 1px;
+}
+
+.preview-list-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.preview-list-row svg {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.preview-list-row:hover {
+  background: var(--bg-hover);
+}
+
+.preview-list-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-list-size {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-faint);
+  font-family: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, monospace;
+}
+
+.preview-list-empty {
+  padding: 18px;
+  text-align: center;
+}
+
+/* deep-link affordances */
+
+.review-tree-open {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  color: var(--text-secondary);
+  opacity: 0;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.review-tree-file:hover .review-tree-open,
+.review-tree-open:focus-visible {
+  opacity: 1;
+}
+
+.review-tree-open:hover {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.tool-card-preview-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: var(--bg-inset);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.tool-card-preview-link:hover {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+/* ---------- preview wrap/truncate toggle + wrap layout (ticket 07 feedback) ---------- */
+
+.preview-wrap-toggle {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.preview-wrap-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.preview-wrap-toggle-on {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+/* Wrapped mode (default): rows span the panel width, long lines break. */
+.code-view-wrap .code-line {
+  min-width: 0;
+}
+
+.code-view-wrap .code-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- freer side-panel width drag (ticket 07 feedback) ---------- */
+
+.panel-resizer {
+  left: -5px;
+  width: 11px;
+}
+
+/* Always-visible grip line so the drag affordance is discoverable.
+ * Hover feedback comes from the wider .panel-resizer overlay on top. */
+.side-panel::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  background: transparent;
+  z-index: 44;
+  cursor: col-resize;
+}
+
+.side-panel:hover::before {
+  background: var(--border-strong);
+}

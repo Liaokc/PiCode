@@ -6,8 +6,9 @@
 
 import { SIDE_PANEL_WIDTH_PX, type SidePanelTab } from './layout-model'
 
-export const PANEL_MIN_WIDTH_PX = 320
-export const PANEL_MAX_WIDTH_PX = 760
+export const PANEL_MIN_WIDTH_PX = 280
+/** Generous ceiling so the panel can be dragged freely wide (ticket 07 feedback). */
+export const PANEL_MAX_WIDTH_PX = 1200
 /** Default width keeps the screenshot-03 composition. */
 export const PANEL_DEFAULT_WIDTH_PX = SIDE_PANEL_WIDTH_PX
 

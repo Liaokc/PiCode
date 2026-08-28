@@ -23,6 +23,11 @@ describe('initialPanelState', () => {
     expect(PANEL_MIN_WIDTH_PX).toBeLessThan(PANEL_DEFAULT_WIDTH_PX)
     expect(PANEL_MAX_WIDTH_PX).toBeGreaterThan(PANEL_DEFAULT_WIDTH_PX)
   })
+
+  it('drags freely across a wide range (ticket 07 feedback): 280px to 1200px', () => {
+    expect(PANEL_MIN_WIDTH_PX).toBe(280)
+    expect(PANEL_MAX_WIDTH_PX).toBe(1200)
+  })
 })
 
 describe('panelReducer — tabs', () => {
