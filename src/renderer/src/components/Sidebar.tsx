@@ -1,85 +1,234 @@
-import type { JSX } from 'react'
+import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
+import type { SessionSummary } from '../../../shared/sessions/types'
 import {
+  filterSessions,
+  groupSessions,
+  isSessionLive,
+  relativeTime
+} from '../../../shared/sessions/group'
+import {
+  ChevronDownIcon,
   ExpandArrowsIcon,
   FilterIcon,
   FolderIcon,
   GearIcon,
   GripDotsIcon,
   HashIcon,
+  PinIcon,
   PlusIcon,
   ProjectsFolderIcon,
   SearchIcon,
   TrashIcon
 } from './icons'
 
-interface TaskRow {
-  title: string
-  time: string
-}
+/** Rows shown per project group before "Show more". */
+const SHOW_FIRST = 5
+
+export const FOCUS_FILTER_EVENT = 'picode-focus-filter'
 
 interface SidebarProps {
   open: boolean
+  sessions: SessionSummary[]
+  /** The session currently open in the chat view (highlighted row). */
+  activeSessionId: string | null
+  /** The session currently being followed read-only (highlighted row). */
+  followedFile: string | null
+  pinnedIds: ReadonlySet<string>
+  onTogglePin: (session: SessionSummary) => void
+  onOpenSession: (session: SessionSummary) => void
+  onRenameSession: (session: SessionSummary, name: string) => void
+  onNewTask: () => void
+  /** Open the settings window (ticket 10). */
   onOpenSettings: () => void
 }
 
-interface ProjectGroup {
-  name: string
-  tasks: TaskRow[]
-  showMore: boolean
+/** Re-render timer so relative timestamps stay honest. */
+function useNowTick(intervalMs: number): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), intervalMs)
+    return () => clearInterval(timer)
+  }, [intervalMs])
+  return now
 }
 
-const PINNED_TASKS: TaskRow[] = [{ title: 'Pull init-branch transform fixes', time: '2h ago' }]
+function TaskItem({
+  session,
+  now,
+  state,
+  pinned,
+  onOpen,
+  onTogglePin,
+  onRename
+}: {
+  session: SessionSummary
+  now: number
+  state: 'idle' | 'active' | 'followed'
+  pinned: boolean
+  onOpen: () => void
+  onTogglePin: () => void
+  onRename: (name: string) => void
+}): JSX.Element {
+  const [renaming, setRenaming] = useState(false)
+  const [draft, setDraft] = useState(session.title)
+  const inputRef = useRef<HTMLInputElement>(null)
 
-/**
- * Static skeleton rows shaped after screenshot 02's task list. Real Session
- * data starts flowing through the sidebar in ticket 04.
- */
-const PROJECT_GROUPS: ProjectGroup[] = [
-  {
-    name: 'API Gateway',
-    tasks: [
-      { title: 'Upload pipeline smoke pass', time: 'just now' },
-      { title: 'Fix redirect loop on login', time: '1h ago' },
-      { title: 'Rate-limit middleware review', time: '3h ago' },
-      { title: 'Draft v2 changelog', time: '6h ago' }
-    ],
-    showMore: true
-  },
-  {
-    name: 'PiCode',
-    tasks: [
-      { title: 'Close out milestone M1', time: '1d ago' },
-      { title: 'ADR notes: usage aggregator', time: '2d ago' }
-    ],
-    showMore: true
+  useEffect(() => {
+    if (renaming) inputRef.current?.select()
+  }, [renaming])
+
+  function commit(): void {
+    const name = draft.trim()
+    setRenaming(false)
+    if (name !== '' && name !== session.title) onRename(name)
   }
-]
 
-function TaskItem({ task, active = false }: { task: TaskRow; active?: boolean }): JSX.Element {
+  const cls =
+    state === 'active' ? 'sb-task sb-task-active' : state === 'followed' ? 'sb-task sb-task-followed' : 'sb-task'
+
   return (
-    <div className={active ? 'sb-task sb-task-active' : 'sb-task'}>
-      <span className="sb-task-title">{task.title}</span>
-      <span className="sb-task-time">{task.time}</span>
+    <div
+      className={cls}
+      onClick={onOpen}
+      onDoubleClick={() => {
+        setDraft(session.name ?? session.title)
+        setRenaming(true)
+      }}
+      title={`${session.title} — ${session.cwd}`}
+    >
+      {isSessionLive(session, now) && state !== 'active' && (
+        <span className="sb-live-dot" aria-label="Running in another window" />
+      )}
+      {renaming ? (
+        <input
+          ref={inputRef}
+          className="sb-rename-input"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onClick={(e) => e.stopPropagation()}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            e.stopPropagation()
+            if (e.key === 'Enter') commit()
+            if (e.key === 'Escape') setRenaming(false)
+          }}
+          autoFocus
+        />
+      ) : (
+        <span className="sb-task-title">{session.title}</span>
+      )}
+      <button
+        type="button"
+        className={pinned ? 'sb-pin-btn sb-pin-on' : 'sb-pin-btn'}
+        aria-label={pinned ? 'Unpin task' : 'Pin task'}
+        title={pinned ? 'Unpin' : 'Pin'}
+        onClick={(e) => {
+          e.stopPropagation()
+          onTogglePin()
+        }}
+      >
+        <PinIcon size={13} />
+      </button>
+      <span className="sb-task-time">{relativeTime(session.modifiedAt, now)}</span>
     </div>
   )
 }
 
-export default function Sidebar({ open, onOpenSettings }: SidebarProps): JSX.Element | null {
+export default function Sidebar({
+  open,
+  sessions,
+  activeSessionId,
+  followedFile,
+  pinnedIds,
+  onTogglePin,
+  onOpenSession,
+  onRenameSession,
+  onNewTask,
+  onOpenSettings
+}: SidebarProps): JSX.Element | null {
+  const now = useNowTick(30_000)
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [view, setView] = useState<'projects' | 'groups'>('projects')
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
+  const filterRef = useRef<HTMLInputElement>(null)
+
+  // ⌘K opens and focuses the task filter (user story 49).
+  useEffect(() => {
+    const focus = (): void => {
+      setFilterOpen(true)
+      requestAnimationFrame(() => filterRef.current?.focus())
+    }
+    window.addEventListener(FOCUS_FILTER_EVENT, focus)
+    return () => window.removeEventListener(FOCUS_FILTER_EVENT, focus)
+  }, [])
+
+  const filtered = useMemo(() => filterSessions(sessions, query), [sessions, query])
+  const grouped = useMemo(() => groupSessions(filtered, pinnedIds), [filtered, pinnedIds])
+  const filtering = query.trim() !== ''
+  const visibleGroups = view === 'projects' ? grouped.groups : [{ cwd: '', project: 'All tasks', sessions: filtered.filter((s) => !pinnedIds.has(s.id)) }]
+  const activeSession = sessions.find((s) => s.id === activeSessionId) ?? null
+
+  function toggleExpanded(cwd: string): void {
+    setExpanded((prev) => {
+      const next = new Set(prev)
+      if (next.has(cwd)) next.delete(cwd)
+      else next.add(cwd)
+      return next
+    })
+  }
+
   if (!open) return null
 
   return (
     <aside className="sidebar">
       <nav className="sb-actions">
-        <button type="button" className="sb-action-row">
+        <button
+          type="button"
+          className="sb-action-row"
+          onClick={() => {
+            onNewTask()
+          }}
+        >
           <PlusIcon />
           <span>New Task</span>
           <kbd>⌘N</kbd>
         </button>
-        <button type="button" className="sb-action-row">
+        <button
+          type="button"
+          className="sb-action-row"
+          onClick={() => {
+            setFilterOpen(true)
+            requestAnimationFrame(() => filterRef.current?.focus())
+          }}
+        >
           <SearchIcon />
           <span>Search</span>
           <kbd>⌘K</kbd>
         </button>
+        {filterOpen && (
+          <div className="sb-filter-row">
+            <SearchIcon size={13} />
+            <input
+              ref={filterRef}
+              className="sb-filter-input"
+              placeholder="Filter tasks"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  setQuery('')
+                  setFilterOpen(false)
+                }
+              }}
+            />
+            {query !== '' && (
+              <button type="button" className="sb-icon-btn" aria-label="Clear filter" onClick={() => setQuery('')}>
+                ×
+              </button>
+            )}
+          </div>
+        )}
       </nav>
 
       <div className="sb-section-tools">
@@ -87,17 +236,35 @@ export default function Sidebar({ open, onOpenSettings }: SidebarProps): JSX.Ele
           <ExpandArrowsIcon />
         </button>
         <div className="sb-view-pills">
-          <button type="button" className="sb-pill-btn" aria-label="Group view">
+          <button
+            type="button"
+            className={view === 'groups' ? 'sb-pill-btn sb-pill-active' : 'sb-pill-btn'}
+            aria-label="Group view"
+            onClick={() => setView('groups')}
+          >
             <HashIcon />
             Groups
           </button>
-          <button type="button" className="sb-pill-btn sb-pill-active" aria-label="Projects view">
+          <button
+            type="button"
+            className={view === 'projects' ? 'sb-pill-btn sb-pill-active' : 'sb-pill-btn'}
+            aria-label="Projects view"
+            onClick={() => setView('projects')}
+          >
             <ProjectsFolderIcon />
             Projects
           </button>
         </div>
         <div className="sb-tool-icons">
-          <button type="button" className="sb-icon-btn" aria-label="Filter tasks">
+          <button
+            type="button"
+            className={filterOpen ? 'sb-icon-btn sb-pill-active' : 'sb-icon-btn'}
+            aria-label="Filter tasks"
+            onClick={() => {
+              setFilterOpen((v) => !v)
+              requestAnimationFrame(() => filterRef.current?.focus())
+            }}
+          >
             <FilterIcon />
           </button>
           <button type="button" className="sb-icon-btn" aria-label="Deleted tasks">
@@ -107,10 +274,23 @@ export default function Sidebar({ open, onOpenSettings }: SidebarProps): JSX.Ele
       </div>
 
       <div className="sb-scroll">
-        <div className="sb-section-label">Pinned</div>
-        {PINNED_TASKS.map((t) => (
-          <TaskItem key={t.title} task={t} />
-        ))}
+        {grouped.pinned.length > 0 && (
+          <>
+            <div className="sb-section-label">Pinned</div>
+            {grouped.pinned.map((s) => (
+              <TaskItem
+                key={s.file}
+                session={s}
+                now={now}
+                state={s.id === activeSessionId ? 'active' : s.file === followedFile ? 'followed' : 'idle'}
+                pinned
+                onOpen={() => onOpenSession(s)}
+                onTogglePin={() => onTogglePin(s)}
+                onRename={(name) => onRenameSession(s, name)}
+              />
+            ))}
+          </>
+        )}
 
         <div className="sb-section-label sb-section-label-projects">
           <FolderIcon />
@@ -119,27 +299,63 @@ export default function Sidebar({ open, onOpenSettings }: SidebarProps): JSX.Ele
           <GripDotsIcon />
         </div>
 
-        {PROJECT_GROUPS.map((group) => (
-          <section key={group.name} className="sb-group">
-            <div className="sb-group-header">
-              <FolderIcon />
-              <span>{group.name}</span>
-              <span className="sb-section-spacer" />
-              <GripDotsIcon />
-            </div>
-            {group.tasks.map((task, i) => (
-              <TaskItem key={task.title} task={task} active={group.name === 'API Gateway' && i === 0} />
-            ))}
-            {group.showMore && <div className="sb-show-more">Show more</div>}
-          </section>
-        ))}
+        {visibleGroups.map((group) => {
+          const isExpanded = filtering || expanded.has(group.cwd)
+          const shown = isExpanded ? group.sessions : group.sessions.slice(0, SHOW_FIRST)
+          return (
+            <section key={group.cwd || 'all'} className="sb-group">
+              <div className="sb-group-header" onClick={() => group.cwd !== '' && toggleExpanded(group.cwd)}>
+                <FolderIcon />
+                <span>{group.project}</span>
+                <span className="sb-section-spacer" />
+                {group.sessions.length > SHOW_FIRST && (
+                  <ChevronDownIcon size={13} className={isExpanded ? 'sb-caret sb-caret-up' : 'sb-caret'} />
+                )}
+                <GripDotsIcon />
+              </div>
+              {group.sessions.length === 0 && filtering && (
+                <div className="sb-empty-hint">No matching tasks</div>
+              )}
+              {shown.map((s) => (
+                <TaskItem
+                  key={s.file}
+                  session={s}
+                  now={now}
+                  state={s.id === activeSessionId ? 'active' : s.file === followedFile ? 'followed' : 'idle'}
+                  pinned={false}
+                  onOpen={() => onOpenSession(s)}
+                  onTogglePin={() => onTogglePin(s)}
+                  onRename={(name) => onRenameSession(s, name)}
+                />
+              ))}
+              {!isExpanded && group.sessions.length > SHOW_FIRST && (
+                <div className="sb-show-more" onClick={() => toggleExpanded(group.cwd)}>
+                  Show more
+                </div>
+              )}
+              {isExpanded && !filtering && group.sessions.length > SHOW_FIRST && (
+                <div className="sb-show-more" onClick={() => toggleExpanded(group.cwd)}>
+                  Show less
+                </div>
+              )}
+            </section>
+          )
+        })}
+
+        {!filtering && sessions.length === 0 && (
+          <div className="sb-empty-hint">
+            No tasks yet — press ⌘N to start one.
+          </div>
+        )}
       </div>
 
       <footer className="sb-account-bar">
         <span className="sb-avatar" aria-hidden="true">
           P
         </span>
-        <span className="sb-account-name">No active session</span>
+        <span className="sb-account-name" title={activeSession ? `${activeSession.title} — ${activeSession.cwd}` : undefined}>
+          {activeSession ? activeSession.title : 'No active session'}
+        </span>
         <button type="button" className="sb-icon-btn" aria-label="Settings" onClick={onOpenSettings}>
           <GearIcon />
         </button>

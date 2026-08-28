@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 Host 活体。
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] TUI 新建的会话自动出现在对应项目分组，时间/置顶/重命名生效
 - [ ] 双向无缝衔接：这里 resume 的会话与 TUI 继续的是同一条历史

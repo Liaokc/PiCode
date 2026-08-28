@@ -201,6 +201,39 @@ describe('chatReducer — errors', () => {
   })
 })
 
+describe('chatReducer — resumed history (ticket 04)', () => {
+  const HISTORY_LOADED: HostToParent = {
+    type: 'history_loaded',
+    items: [
+      { id: 'e1', role: 'user', text: 'earlier question', timestamp: 't1' },
+      { id: 'e2', role: 'assistant', text: 'earlier answer', timestamp: 't2' }
+    ]
+  }
+
+  it('history_loaded installs the replayed transcript with stable entry ids', () => {
+    const state = run(initialChatState(), SESSION_CREATED, HISTORY_LOADED)
+    expect(state.messages).toEqual([
+      { id: 'e1', role: 'user', text: 'earlier question', streaming: false },
+      { id: 'e2', role: 'assistant', text: 'earlier answer', streaming: false }
+    ])
+    expect(state.error).toBeNull()
+  })
+
+  it('history is replaceable — tree navigation re-emits the new leaf path', () => {
+    const navigated = run(initialChatState(), SESSION_CREATED, HISTORY_LOADED, {
+      type: 'history_loaded',
+      items: [{ id: 'e1', role: 'user', text: 'earlier question', timestamp: 't1' }]
+    })
+    expect(navigated.messages).toEqual([{ id: 'e1', role: 'user', text: 'earlier question', streaming: false }])
+  })
+
+  it('a fresh turn after resume appends to the replayed transcript', () => {
+    const state = run(initialChatState(), SESSION_CREATED, HISTORY_LOADED, ...streamedTurn(' there'))
+    expect(state.messages.map((m) => m.text)).toEqual(['earlier question', 'earlier answer', 'hello', 'Hel there'])
+    expect(state.messages[3]?.streaming).toBe(false)
+  })
+})
+
 describe('chatReducer — purity', () => {
   it('is deterministic: identical event sequences produce identical states', () => {
     const a = run(initialChatState(), SESSION_CREATED, ...streamedTurn(' there'))

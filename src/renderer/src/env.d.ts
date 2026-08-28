@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 import type { HostToParent, ParentToHost } from '../shared/contract'
+import type { FollowUpdate, SessionSummary, TranscriptItem } from '../../shared/sessions/types'
 import type { ReviewResult } from '../shared/review/types'
 
 import type { UsageSnapshot } from '../../shared/usage/aggregate'
@@ -20,6 +21,17 @@ interface PicodeChatBridge {
   pickWorkingDirectory(): Promise<string | null>
 }
 
+interface PicodeSessionsBridge {
+  list(): Promise<SessionSummary[]>
+  /** Rename write-back for sessions NOT open in a host process. */
+  rename(file: string, name: string): Promise<SessionSummary | null>
+  /** Begin Live Follow tailing; resolves with the full transcript snapshot. */
+  follow(file: string): Promise<{ file: string; items: TranscriptItem[] } | null>
+  unfollow(): void
+  onIndexChanged(listener: () => void): () => void
+  onFollowUpdate(listener: (update: FollowUpdate) => void): () => void
+}
+
 interface PicodeReviewBridge {
   /** Collect a workspace-vs-HEAD diff snapshot for the given directory. */
   load(cwd: string): Promise<ReviewResult>
@@ -35,6 +47,7 @@ declare global {
         node: string
       }
       chat: PicodeChatBridge
+      sessions: PicodeSessionsBridge
       usage: {
         snapshot: () => Promise<UsageSnapshot>
       }
