@@ -11,42 +11,48 @@ interface TitleBarProps {
 /**
  * Frameless-window chrome: the whole strip drags the window, macOS traffic
  * lights float over the left edge (hiddenInset), and the app title stays
- * centered across the full window width (screenshots 02/03).
+ * centered across the full window width (screenshots 02/03). The settings
+ * shell drops the workspace toggles and retitles the window (screenshot 09).
  */
 export default function TitleBar({ ui, dispatch }: TitleBarProps): JSX.Element {
+  const settings = ui.view === 'settings'
   return (
     <header className="titlebar">
-      <div className="titlebar-cluster titlebar-cluster-left">
-        <button
-          type="button"
-          className="tb-btn"
-          aria-label={ui.sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
-          onClick={() => dispatch({ type: 'toggle-sidebar' })}
-        >
-          <PanelLeftIcon />
-        </button>
-        <button type="button" className="tb-btn tb-btn-disabled" aria-label="Back" disabled>
-          <ChevronLeftIcon />
-        </button>
-        <button type="button" className="tb-btn tb-btn-disabled" aria-label="Forward" disabled>
-          <ChevronRightIcon />
-        </button>
-      </div>
+      {!settings && (
+        <div className="titlebar-cluster titlebar-cluster-left">
+          <button
+            type="button"
+            className="tb-btn"
+            aria-label={ui.sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+            onClick={() => dispatch({ type: 'toggle-sidebar' })}
+          >
+            <PanelLeftIcon />
+          </button>
+          <button type="button" className="tb-btn tb-btn-disabled" aria-label="Back" disabled>
+            <ChevronLeftIcon />
+          </button>
+          <button type="button" className="tb-btn tb-btn-disabled" aria-label="Forward" disabled>
+            <ChevronRightIcon />
+          </button>
+        </div>
+      )}
 
-      <div className="titlebar-title">{APP_NAME}</div>
+      <div className="titlebar-title">{settings ? 'Settings' : APP_NAME}</div>
 
       <div className="titlebar-cluster titlebar-cluster-right">
         <button type="button" className="tb-btn" aria-label="Help">
           <HelpCircleIcon />
         </button>
-        <button
-          type="button"
-          className="tb-btn"
-          aria-label={ui.sidePanelOpen ? 'Close side panel' : 'Open side panel'}
-          onClick={() => dispatch({ type: 'toggle-side-panel' })}
-        >
-          <PanelRightIcon />
-        </button>
+        {!settings && (
+          <button
+            type="button"
+            className="tb-btn"
+            aria-label={ui.sidePanelOpen ? 'Close side panel' : 'Open side panel'}
+            onClick={() => dispatch({ type: 'toggle-side-panel' })}
+          >
+            <PanelRightIcon />
+          </button>
+        )}
       </div>
     </header>
   )

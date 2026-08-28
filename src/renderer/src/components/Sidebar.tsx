@@ -17,6 +17,11 @@ interface TaskRow {
   time: string
 }
 
+interface SidebarProps {
+  open: boolean
+  onOpenSettings: () => void
+}
+
 interface ProjectGroup {
   name: string
   tasks: TaskRow[]
@@ -59,7 +64,7 @@ function TaskItem({ task, active = false }: { task: TaskRow; active?: boolean })
   )
 }
 
-export default function Sidebar({ open }: { open: boolean }): JSX.Element | null {
+export default function Sidebar({ open, onOpenSettings }: SidebarProps): JSX.Element | null {
   if (!open) return null
 
   return (
@@ -135,7 +140,7 @@ export default function Sidebar({ open }: { open: boolean }): JSX.Element | null
           P
         </span>
         <span className="sb-account-name">No active session</span>
-        <button type="button" className="sb-icon-btn" aria-label="Settings">
+        <button type="button" className="sb-icon-btn" aria-label="Settings" onClick={onOpenSettings}>
           <GearIcon />
         </button>
       </footer>
