@@ -4,7 +4,7 @@
 
 **Blocked by:** 03 聊天主线程全量。
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] 各输入增强对真 SDK 生效：模板展开、skills 触发、图片作为消息附件送达
 - [x] busy 时 Steer 注入当前回合、Follow-up 入队排队，队列面板状态与清空即时一致
@@ -18,3 +18,4 @@
 - 实现要点：审批闸门 = Pi inline extension（`tool_call` hook，经 `extensionFactories` 注册，零 Pi 修改）；SDK 事件序为 tool_execution_start → gate → 结果，reducer 据此做药丸↔工具卡原地转换；deny 带 `terminate` 终止本轮，read-only 档自动拒绝不带 terminate（让模型改道）；remember 规则随档位持久（会话内，切档往返保留）；Steer/Follow-up 投递经 entry_appended/message_end 去重回显进转录。Access Mode 预设：Full Access / Standard(默认,变更类工具询问) / Read Only(变更类自动拒绝)。
 - 人工验收遗留：① 对照 `.scratch/visual/4-command-menu.png` 与截图 06；② `npm run dev` 里真实粘贴/选择图片、`@` 补全、`/review` 类模板展开与 skill 触发的手感目检（自动化只保证了契约出口与真实菜单数据源）。
 - 合并（在主 worktree 执行）：`cd ~/PiCode && git merge --no-ff t05-composer-approval`
+- 2026-08-28 (merge session): **resolved** — merged into main as `846be14`。验收口径：操作者目检通过（command-menu 对照截图 06 + dev 实测图片/`@`补全/`/`模板与 skill 触发）。rebase 到含 07 的 main 时解了 7 处 union（tracker 取 ours、证据图取本侧刷新版、visual.ts 双拍摄链拼接 05→07、app.css 双样式段并集、App/ChatView 装配并集——07 的 `onSend/onStop` props 由 05 的 `composerApi` 收编）；解后 typecheck/lint/352 vitest 全绿。worktree 与分支已清理。注：拼接后的 visual harness 未重跑（dev-app 槽位礼让），证据图仍为各分支生成版。
