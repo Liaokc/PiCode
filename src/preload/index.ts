@@ -1,14 +1,20 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { HostToParent, ParentToHost } from '../shared/contract'
+import type { FollowUpdate, SessionSummary, TranscriptItem } from '../shared/sessions/types'
 import type { UsageSnapshot } from '../shared/usage/aggregate'
 import type { ReviewResult } from '../shared/review/types'
 
 /**
  * Renderer-facing bridge. Ticket 01 exposed environment versions; ticket 02
  * added the Seam-1 chat channels (the renderer's only channel to the agent
- * host system); ticket 10 adds the usage snapshot query (Seam-2 contract,
- * ADR-0002); ticket 06 adds the review bridge: request/response for
- * workspace-vs-HEAD diffs.
+ * host system); ticket 04 adds the session index + Live Follow channels
+ * (read-only scan of the shared Pi session store); ticket 10 adds the usage
+ * snapshot query (Seam-2 contract, ADR-0002); ticket 06 adds the review
+ * bridge: request/response for workspace-vs-HEAD diffs.
+ *
+ * `sessions.rename` must only be called for sessions that are NOT currently
+ * open in a host process — the active session renames through the host
+ * (`set_session_label`) so its in-memory leaf stays consistent.
  */
 contextBridge.exposeInMainWorld('picode', {
   versions: {
@@ -29,6 +35,30 @@ contextBridge.exposeInMainWorld('picode', {
       }
     },
     pickWorkingDirectory: (): Promise<string | null> => ipcRenderer.invoke('chat:pick-directory')
+  },
+  sessions: {
+    list: (): Promise<SessionSummary[]> => ipcRenderer.invoke('sessions:list'),
+    rename: (file: string, name: string): Promise<SessionSummary | null> =>
+      ipcRenderer.invoke('sessions:rename', file, name),
+    follow: (file: string): Promise<{ file: string; items: TranscriptItem[] } | null> =>
+      ipcRenderer.invoke('sessions:follow', file),
+    unfollow: (): void => {
+      ipcRenderer.send('sessions:unfollow')
+    },
+    onIndexChanged: (listener: () => void): (() => void) => {
+      const wrapped = (): void => listener()
+      ipcRenderer.on('sessions:index-changed', wrapped)
+      return () => {
+        ipcRenderer.removeListener('sessions:index-changed', wrapped)
+      }
+    },
+    onFollowUpdate: (listener: (update: FollowUpdate) => void): (() => void) => {
+      const wrapped = (_event: IpcRendererEvent, update: FollowUpdate): void => listener(update)
+      ipcRenderer.on('sessions:follow-update', wrapped)
+      return () => {
+        ipcRenderer.removeListener('sessions:follow-update', wrapped)
+      }
+    }
   },
   usage: {
     snapshot: (): Promise<UsageSnapshot> => ipcRenderer.invoke('usage:snapshot')

@@ -227,6 +227,15 @@ export function SlidersIcon({ size, className }: IconProps): JSX.Element {
   )
 }
 
+export function PinIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M12 17v4" />
+      <path d="M8.5 4h7l-1 6 2.8 2.8a1 1 0 0 1-.7 1.7H7.4a1 1 0 0 1-.7-1.7L9.5 10Z" />
+    </svg>
+  )
+}
+
 export function PaletteIcon({ size, className }: IconProps): JSX.Element {
   return (
     <svg {...svgProps(size, className)}>
@@ -234,6 +243,15 @@ export function PaletteIcon({ size, className }: IconProps): JSX.Element {
       <circle cx="7.8" cy="10.5" r="1.1" fill="currentColor" stroke="none" />
       <circle cx="11" cy="7.3" r="1.1" fill="currentColor" stroke="none" />
       <circle cx="15.5" cy="8.3" r="1.1" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+export function PencilIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M4 20h4.5L20 8.5a2.1 2.1 0 0 0-3-3L5.5 17Z" />
+      <path d="m13.5 7 3 3" />
     </svg>
   )
 }
@@ -251,6 +269,16 @@ export function BarChartIcon({ size, className }: IconProps): JSX.Element {
   return (
     <svg {...svgProps(size, className)}>
       <path d="M4 20V10M10 20V4M16 20v-7M21 20H3.5" />
+    </svg>
+  )
+}
+
+export function HistoryIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M3.5 12a8.5 8.5 0 1 0 2.5-6L3.5 8.5" />
+      <path d="M3.5 3.5v5h5" />
+      <path d="M12 8v4.5l3 1.8" />
     </svg>
   )
 }
@@ -276,6 +304,17 @@ export function ArrowRightIcon({ size, className }: IconProps): JSX.Element {
   return (
     <svg {...svgProps(size, className)}>
       <path d="M4 12h16M14 6l6 6-6 6" />
+    </svg>
+  )
+}
+
+export function GitBranchIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <circle cx="6" cy="5" r="2.2" />
+      <circle cx="6" cy="19" r="2.2" />
+      <circle cx="18" cy="9" r="2.2" />
+      <path d="M6 7.2v9.6M18 11.2c0 3-2.5 4.3-5.5 4.6" />
     </svg>
   )
 }

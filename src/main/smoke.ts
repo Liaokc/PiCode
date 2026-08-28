@@ -117,6 +117,14 @@ export function startSmokeIfEnabled(
       log('renderer_dom_ok')
     })
 
+    // Ticket 04: the session index must reach the sidebar — the session this
+    // smoke just created (same store the TUI writes) appears as a Task row.
+    await withWindow(getWindow, async (win) => {
+      const listed = await waitForSidebarRows(win)
+      if (!listed) fail('sidebar never listed the session created by this smoke')
+      log('sidebar_index_ok')
+    })
+
     // Crash isolation: SIGKILL the host; supervisor must report it unclean.
     const pid = supervisor.hostPid
     if (!pid) fail('no host pid to kill')
@@ -128,10 +136,74 @@ export function startSmokeIfEnabled(
     if (exitEvent.clean) fail('host_exit should be unclean after SIGKILL')
     log('host_exit', `code=${exitEvent.code} signal=${exitEvent.signal ?? '-'}`)
 
-    // Rebuild on the same cwd, then shut the whole thing down cleanly.
+    // Rebuild on the same cwd, give it one real turn (a fresh session file is
+    // only written on the first assistant response), then exercise ticket 04's
+    // Live Follow.
     supervisor.createSession(cwd)
-    await waitFor((e) => e.type === 'session_created', 'rebuild session_created')
+    const rebuilt = (await waitFor((e) => e.type === 'session_created', 'rebuild session_created')) as Extract<
+      HostToParent,
+      { type: 'session_created' }
+    >
     log('rebuild_ok')
+
+    supervisor.handleParentCommand({ type: 'prompt', text: 'Reply with exactly: PICODE_SMOKE_OK' })
+    await waitFor((e) => e.type === 'agent_end', 'agent_end rebuild turn')
+    log('rebuild_turn_ok')
+
+    // Round 3: open a third session so the rebuilt one becomes inactive —
+    // Live Follow targets sessions running elsewhere, never the active one.
+    supervisor.createSession(cwd)
+    await waitFor((e) => e.type === 'session_created', 'round 3 session_created')
+    log('round3_ok')
+
+    // Live Follow: simulate the TUI appending to the (now inactive) session
+    // file, open it from the sidebar, and watch the line appear read-only.
+    // The row is addressed by data-file so real sessions on this machine
+    // (also live within the 120s window) can never steal the click.
+    if (!rebuilt.sessionFile) fail('rebuilt session did not report its file')
+    const appended = await appendSimulatedTuiTurn(rebuilt.sessionFile)
+    if (!appended) fail('could not find the leaf entry of the rebuilt session')
+    const rowSelector = `[data-file="${rebuilt.sessionFile}"]`
+    await withWindow(getWindow, async (win) => {
+      // The live dot proves the refreshed index (fresh mtime) reached the DOM.
+      const live = await waitForProbe(win, `document.querySelector('${rowSelector} .sb-live-dot') !== null`, 10_000)
+      if (!live) {
+        const diag = (await win.webContents.executeJavaScript(
+          `JSON.stringify({
+            rowExists: document.querySelector('${rowSelector}') !== null,
+            rowText: document.querySelector('${rowSelector}')?.textContent ?? null,
+            rowDots: document.querySelectorAll('${rowSelector} .sb-live-dot').length,
+            dotRows: document.querySelectorAll('.sb-task .sb-live-dot').length,
+            activeRow: document.querySelector('.sb-task-active')?.getAttribute('data-file') ?? null,
+            rowClasses: document.querySelector('${rowSelector}')?.className ?? null
+          })`,
+        ).catch(() => 'unavailable')) as string
+        fail(`appended session never showed live state; DOM: ${diag}`)
+      }
+      log('follow_live_state_ok')
+      const opened = await clickSessionRow(win, rowSelector)
+      if (!opened) fail('clicking the live session row never opened the Live Follow view')
+      log('follow_view_opened')
+      const streamed = await waitForProbe(
+        win,
+        `document.querySelector('.follow-badge') !== null &&
+         document.body.textContent.includes('${TUI_MARKER}')`,
+        10_000
+      )
+      if (!streamed) {
+        const diag = (await win.webContents.executeJavaScript(
+          `JSON.stringify({
+            badge: document.querySelector('.follow-badge')?.textContent ?? null,
+            dotRows: document.querySelectorAll('.sb-task .sb-live-dot').length,
+            taskCount: document.querySelectorAll('.sb-task').length,
+            markerInBody: document.body.textContent.includes('${TUI_MARKER}'),
+            userMsgs: document.querySelectorAll('.msg-user').length
+          })`,
+        ).catch(() => 'unavailable')) as string
+        fail(`follow view did not stream the TUI turn; DOM: ${diag}`)
+      }
+      log('follow_streamed_ok')
+    })
 
     supervisor.shutdownAll()
     log('done')
@@ -161,13 +233,75 @@ const DOM_EXCHANGE_PROBE = `(() => {
   return user.length > 0 && assistant.trim().length > 0
 })()`
 
+/** Marker text appended as a simulated TUI turn (distinctive, English). */
+const TUI_MARKER = 'PICODE_TUI_SIMULATED_TURN'
+
+/** Append one user message entry to a session file, chained to its leaf. */
+async function appendSimulatedTuiTurn(file: string): Promise<boolean> {
+  const { appendFile, readFile } = await import('node:fs/promises')
+  const text = await readFile(file, 'utf8')
+  const lines = text.split('\n').filter((l) => l.trim() !== '')
+  let leafId: string | null = null
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      const entry = JSON.parse(lines[i] as string) as { type?: string; id?: string }
+      if (entry.type !== 'session' && typeof entry.id === 'string') {
+        leafId = entry.id
+        break
+      }
+    } catch {
+      // half-written tail — keep looking upward
+    }
+  }
+  if (leafId === null) return false
+  const entry = {
+    type: 'message',
+    id: 'tuisim01',
+    parentId: leafId,
+    timestamp: new Date().toISOString(),
+    message: { role: 'user', content: [{ type: 'text', text: `${TUI_MARKER}: still counting over here` }] }
+  }
+  const separator = text.endsWith('\n') || text === '' ? '' : '\n'
+  await appendFile(file, separator + `${JSON.stringify(entry)}\n`)
+  return true
+}
+
+/** Click a specific session row (addressed by its data-file attribute). */
+const clickSessionRow = (win: BrowserWindow, rowSelector: string): Promise<boolean> =>
+  waitForProbe(
+    win,
+    `(() => {
+      const row = document.querySelector('${rowSelector}')
+      if (!row) return false
+      row.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      return true
+    })()`,
+    2_000
+  )
+
 /** Poll `win` until the DOM probe passes (max 5s). */
 function waitForDom(win: BrowserWindow): Promise<boolean> {
+  return waitForProbe(win, DOM_EXCHANGE_PROBE, 5000)
+}
+
+/** Sidebar probe: any Task row (or the empty hint) means the index reached the DOM. */
+const SIDEBAR_ROWS_PROBE = `(() => {
+  const rows = document.querySelectorAll('.sb-task').length
+  const emptyHint = document.querySelector('.sb-empty-hint')
+  return rows > 0 || emptyHint !== null
+})()`
+
+/** Poll `win` until a Task row appears (max 8s — index poll runs at 2s). */
+function waitForSidebarRows(win: BrowserWindow): Promise<boolean> {
+  return waitForProbe(win, SIDEBAR_ROWS_PROBE, 8000)
+}
+
+function waitForProbe(win: BrowserWindow, probe: string, budgetMs: number): Promise<boolean> {
   return new Promise((resolve) => {
     let elapsed = 0
     const poll = async (): Promise<void> => {
-      const ok = (await win.webContents.executeJavaScript(DOM_EXCHANGE_PROBE).catch(() => false)) as boolean
-      if (ok || elapsed >= 5000) {
+      const ok = (await win.webContents.executeJavaScript(probe).catch(() => false)) as boolean
+      if (ok || elapsed >= budgetMs) {
         resolve(ok)
         return
       }

@@ -1,14 +1,17 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { homedir } from 'node:os'
 import path from 'node:path'
 import type { HostToParent, ParentToHost } from '../shared/contract'
 import type { ReviewResult } from '../shared/review/types'
 import { createWindowOptions } from './window-options'
 import { HostSupervisor, defaultHostEntryPath } from './host-supervisor'
 import { collectReview } from './review/collect'
+import { SessionIndexService, type FollowUpdate } from './sessions/index-service'
 import { startSmokeIfEnabled } from './smoke'
 import { createUsageService } from './usage/service'
 
 let supervisor: HostSupervisor | null = null
+let sessionIndex: SessionIndexService | null = null
 
 function createMainWindow(): BrowserWindow {
   const win = new BrowserWindow(createWindowOptions(path.join(__dirname, '../preload/index.js')))
@@ -26,6 +29,12 @@ function createMainWindow(): BrowserWindow {
 function broadcastToWindows(event: HostToParent): void {
   for (const win of BrowserWindow.getAllWindows()) {
     win.webContents.send('chat:from-host', event)
+  }
+}
+
+function broadcastChannel(channel: string, payload: unknown): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send(channel, payload)
   }
 }
 
@@ -69,6 +78,27 @@ app.whenReady().then(() => {
     return collectReview(cwd)
   })
 
+  // Session index + Live Follow (ticket 04): read-only scan of the shared Pi
+  // session store; the only write is the rename write-back for non-active
+  // sessions (the active session renames through its host process).
+  sessionIndex = new SessionIndexService({
+    sessionsDir: path.join(homedir(), '.pi', 'agent', 'sessions'),
+    onIndexChanged: () => broadcastChannel('sessions:index-changed', null),
+    onFollowUpdate: (update: FollowUpdate) => broadcastChannel('sessions:follow-update', update)
+  })
+  ipcMain.handle('sessions:list', () => sessionIndex?.list())
+  ipcMain.handle('sessions:rename', (_event, file: string, name: string) => {
+    if (typeof file !== 'string' || typeof name !== 'string') return null
+    return sessionIndex?.renameSession(file, name)
+  })
+  ipcMain.handle('sessions:follow', async (_event, file: string) => {
+    if (typeof file !== 'string') return null
+    await sessionIndex?.startFollowing(file)
+    return sessionIndex?.followSnapshot(file)
+  })
+  ipcMain.on('sessions:unfollow', () => sessionIndex?.stopFollowing())
+  sessionIndex.start()
+
   mainWindow = createMainWindow()
 
   app.on('activate', () => {
@@ -83,4 +113,5 @@ app.on('window-all-closed', () => {
 // No orphaned agent hosts on quit (ticket acceptance): polite shutdown first.
 app.on('before-quit', () => {
   supervisor?.shutdownAll()
+  sessionIndex?.stop()
 })

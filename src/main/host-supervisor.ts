@@ -37,8 +37,15 @@ export class HostSupervisor {
       case 'create_session':
         this.createSession(message.cwd)
         break
+      case 'resume_session':
+        this.createSession(message.cwd, message.sessionFile)
+        break
       case 'prompt':
       case 'abort_turn':
+      case 'navigate_tree':
+      case 'fork_session':
+      case 'set_session_label':
+      case 'request_tree':
         this.child?.send(message)
         break
     }
@@ -46,15 +53,17 @@ export class HostSupervisor {
 
   /**
    * One host process per session (β shape): replacing a session means
-   * replacing the process. `cwd` is passed as argv[2] to the host entry.
+   * replacing the process. `cwd` is passed as argv[2]; an optional existing
+   * session file goes as argv[3] (resume instead of create).
    */
-  createSession(cwd: string): void {
+  createSession(cwd: string, sessionFile?: string): void {
+    const args = sessionFile ? [cwd, sessionFile] : [cwd]
     const previous = this.child
     if (previous) {
       this.expectedExit = previous
       this.terminateChild(previous)
     }
-    const child = fork(this.options.hostEntryPath, [cwd], {
+    const child = fork(this.options.hostEntryPath, args, {
       env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
       stdio: ['ignore', 'pipe', 'pipe', 'ipc']
     })
@@ -72,7 +81,14 @@ export class HostSupervisor {
       // renderer is alive to see is a crash it must be told about.
       const expected = this.quitting || this.expectedExit === child
       if (this.expectedExit === child) this.expectedExit = null
-      this.options.onHostEvent({ type: 'host_exit', clean: expected, code, signal })
+      // A replaced child's clean exit must NOT reach the renderer: a newer
+      // session may already be installed, and host_exit would detach it
+      // (rapid session switching is the norm since ticket 04). Crash exits
+      // and quit-time exits always flow.
+      const replaced = expected && !this.quitting
+      if (!replaced) {
+        this.options.onHostEvent({ type: 'host_exit', clean: expected, code, signal })
+      }
     })
   }
 

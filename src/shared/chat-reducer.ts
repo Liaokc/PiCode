@@ -86,6 +86,15 @@ export function chatReducer(state: ChatState, event: HostToParent): ChatState {
         messages: [...state.messages, { id: messageId(state.messages.length), role: 'user', text: event.text, streaming: false }]
       }
 
+    case 'history_loaded':
+      // Resume / tree navigation replay: the host's leaf path IS the
+      // transcript, so it replaces whatever was rendered before.
+      return {
+        ...state,
+        messages: event.items.map((item) => ({ id: item.id, role: item.role, text: item.text, streaming: false })),
+        error: null
+      }
+
     case 'agent_start':
       return state.agentRunning ? state : { ...state, agentRunning: true }
 
@@ -112,6 +121,14 @@ export function chatReducer(state: ChatState, event: HostToParent): ChatState {
 
     case 'turn_error':
       return { ...settle(state, false), error: { kind: 'agent', message: event.message } }
+
+    // UI-level events (tree payload, rename acks, fork handoff) carry chat-
+    // relevant info the App layer consumes; the transcript state is untouched.
+    case 'session_tree':
+    case 'session_renamed':
+    case 'fork_created':
+    case 'session_command_error':
+      return state
 
     case 'host_exit': {
       const cwd = state.session?.cwd ?? null
