@@ -3,9 +3,11 @@ import { homedir } from 'node:os'
 import path from 'node:path'
 import type { HostToParent, ParentToHost } from '../shared/contract'
 import type { ReviewResult } from '../shared/review/types'
+import type { PreviewResult } from '../shared/preview/types'
 import { createWindowOptions } from './window-options'
 import { HostSupervisor, defaultHostEntryPath } from './host-supervisor'
 import { collectReview } from './review/collect'
+import { readPreview } from './preview/read'
 import { SessionIndexService, type FollowUpdate } from './sessions/index-service'
 import { startSmokeIfEnabled } from './smoke'
 import { startVisualIfEnabled } from './visual'
@@ -78,6 +80,15 @@ app.whenReady().then(() => {
       return Promise.resolve({ ok: false, reason: 'failed', message: 'No working directory selected.' })
     }
     return collectReview(cwd)
+  })
+
+  // File Preview tab (ticket 07): file contents + directory listings for the
+  // breadcrumb navigation, read-only, with the policy's hard size cap.
+  ipcMain.handle('preview:load', (_event, cwd: unknown, target: unknown): Promise<PreviewResult> => {
+    if (typeof cwd !== 'string' || cwd.length === 0 || typeof target !== 'string') {
+      return Promise.resolve({ ok: false, reason: 'failed', message: 'No preview target selected.' })
+    }
+    return readPreview(cwd, target)
   })
 
   // Session index + Live Follow (ticket 04): read-only scan of the shared Pi

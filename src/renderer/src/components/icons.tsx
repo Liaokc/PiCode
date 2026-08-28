@@ -342,6 +342,23 @@ export function ArrowRightIcon({ size, className }: IconProps): JSX.Element {
   )
 }
 
+export function CodeIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="m8.5 8-4 4 4 4M15.5 8l4 4-4 4" />
+    </svg>
+  )
+}
+
+export function EyeIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" />
+      <circle cx="12" cy="12" r="2.7" />
+    </svg>
+  )
+}
+
 export function GitBranchIcon({ size, className }: IconProps): JSX.Element {
   return (
     <svg {...svgProps(size, className)}>

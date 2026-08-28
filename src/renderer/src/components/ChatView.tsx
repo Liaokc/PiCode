@@ -23,6 +23,8 @@ interface ChatViewProps {
   onCloseTree: () => void
   onSend: (text: string) => void
   onStop: () => void
+  /** Deep-link a file-arg tool call into the Preview tab (ticket 07). */
+  onOpenFile?: (path: string) => void
 }
 
 /**
@@ -43,7 +45,8 @@ export default function ChatView({
   onFork,
   onCloseTree,
   onSend,
-  onStop
+  onStop,
+  onOpenFile
 }: ChatViewProps): JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null)
   const lastLength = useRef(0)
@@ -114,7 +117,7 @@ export default function ChatView({
         <div className="chat-thread">
           {chat.entries.map((entry, index) => (
             <Fragment key={entry.id}>
-              {renderEntry(entry)}
+              {renderEntry(entry, onOpenFile)}
               {chat.agentRunning && index === lastUserIndex && <WorkingLine />}
             </Fragment>
           ))}
@@ -147,14 +150,14 @@ function findLastUserIndex(entries: ChatEntry[]): number {
   return -1
 }
 
-function renderEntry(entry: ChatEntry): JSX.Element {
+function renderEntry(entry: ChatEntry, onOpenFile?: (path: string) => void): JSX.Element {
   switch (entry.role) {
     case 'user':
       return <div className="msg msg-user">{entry.text}</div>
     case 'assistant':
       return <AssistantBlock entry={entry} />
     case 'tool':
-      return <ToolCard entry={entry} />
+      return <ToolCard entry={entry} onOpenFile={onOpenFile} />
   }
 }
 

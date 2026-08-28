@@ -1,17 +1,21 @@
 import { useRef, type Dispatch, type JSX, type PointerEvent } from 'react'
 import { PANEL_EMPTY_TABS, type SidePanelTab } from '../../../shared/layout-model'
 import type { PanelAction, PanelState } from '../../../shared/panel-model'
+import type { PreviewSelection } from '../../../shared/preview/view-model'
 import ReviewTab from './ReviewTab'
-import { ChevronDownIcon, CloseIcon, FileTextIcon, PlusIcon, TerminalSquareIcon } from './icons'
+import PreviewTab from './PreviewTab'
+import { ChevronDownIcon, CloseIcon, CodeIcon, FileTextIcon, PlusIcon, TerminalSquareIcon } from './icons'
 
 const TAB_ICONS: Record<SidePanelTab, JSX.Element> = {
   review: <FileTextIcon />,
-  terminal: <TerminalSquareIcon />
+  terminal: <TerminalSquareIcon />,
+  preview: <CodeIcon />
 }
 
 const TAB_LABELS: Record<SidePanelTab, string> = {
   review: 'Review',
-  terminal: 'Terminal'
+  terminal: 'Terminal',
+  preview: 'Preview'
 }
 
 interface SidePanelProps {
@@ -23,15 +27,30 @@ interface SidePanelProps {
   onCollapse: () => void
   /** Working directory of the active task, feeding the Review tab. */
   reviewCwd: string | null
+  /** Deep-link target for the File Preview tab (ticket 07); null = empty state. */
+  previewTarget: PreviewSelection | null
+  /** In-tab navigation (breadcrumbs, directory rows) retargets via the App shell. */
+  onPreviewNavigate: (cwd: string, path: string) => void
 }
 
 /**
- * Side panel container (ticket 06): draggable width, a multi-tab strip, and
- * the screenshot-03 "Open a Tab" picker whenever no tab content is showing.
- * The Review tab is live; the Terminal tab hosts its placeholder until
- * ticket 08 wires the PTY.
+ * Side panel container (ticket 06 + 07): draggable width, a multi-tab strip,
+ * and the screenshot-03 "Open a Tab" picker whenever no tab content is
+ * showing. The Review and Preview tabs are live; the Terminal tab hosts its
+ * placeholder until ticket 08 wires the PTY.
+ *
+ * Open tabs stay mounted (hidden with display:none) while another tab is
+ * active, so Preview navigation state survives tab flips.
  */
-export default function SidePanel({ open, panel, dispatch, onCollapse, reviewCwd }: SidePanelProps): JSX.Element | null {
+export default function SidePanel({
+  open,
+  panel,
+  dispatch,
+  onCollapse,
+  reviewCwd,
+  previewTarget,
+  onPreviewNavigate
+}: SidePanelProps): JSX.Element | null {
   const drag = useRef<{ startX: number; startWidth: number } | null>(null)
 
   if (!open) return null
@@ -55,6 +74,18 @@ export default function SidePanel({ open, panel, dispatch, onCollapse, reviewCwd
   }
 
   const showPicker = panel.pickerOpen || panel.openTabs.length === 0
+
+  function tabBody(tab: SidePanelTab): JSX.Element {
+    if (tab === 'review') return <ReviewTab cwd={reviewCwd} onOpenFile={reviewCwd !== null ? (path) => onPreviewNavigate(reviewCwd, path) : undefined} />
+    if (tab === 'preview') return <PreviewTab target={previewTarget} onNavigate={onPreviewNavigate} />
+    return (
+      <div className="review-empty">
+        <TerminalSquareIcon size={28} />
+        <p className="review-empty-title">Terminal</p>
+        <p className="review-empty-hint">The interactive terminal is not wired up yet.</p>
+      </div>
+    )
+  }
 
   return (
     <aside className="side-panel" style={{ width: panel.width }}>
@@ -110,9 +141,9 @@ export default function SidePanel({ open, panel, dispatch, onCollapse, reviewCwd
         </div>
       </div>
 
-      <div className="panel-content" role="tabpanel">
+      <div className="panel-content">
         {showPicker ? (
-          <div className="panel-empty">
+          <div className="panel-empty" role="tabpanel">
             <h2 className="panel-empty-title">Open a Tab</h2>
             <p className="panel-empty-hint">Choose which tab to open in the side panel.</p>
             <div className="panel-empty-cards">
@@ -130,14 +161,18 @@ export default function SidePanel({ open, panel, dispatch, onCollapse, reviewCwd
               ))}
             </div>
           </div>
-        ) : panel.activeTab === 'review' ? (
-          <ReviewTab cwd={reviewCwd} />
         ) : (
-          <div className="review-empty">
-            <TerminalSquareIcon size={28} />
-            <p className="review-empty-title">Terminal</p>
-            <p className="review-empty-hint">The interactive terminal is not wired up yet.</p>
-          </div>
+          panel.openTabs.map((tab) => (
+            <div
+              key={tab}
+              className="panel-tab-body"
+              role="tabpanel"
+              aria-label={`${TAB_LABELS[tab]} tab`}
+              style={{ display: tab === panel.activeTab ? undefined : 'none' }}
+            >
+              {tabBody(tab)}
+            </div>
+          ))
         )}
       </div>
     </aside>

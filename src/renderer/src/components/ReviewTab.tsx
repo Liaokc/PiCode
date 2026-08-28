@@ -3,6 +3,7 @@ import type { ReviewFileEntry, ReviewSnapshot } from '../../../shared/review/typ
 import { buildFileTree, flattenTree } from '../../../shared/review/tree'
 import { initialReviewTabState, reviewTabReducer } from '../../../shared/review/view-model'
 import DiffView from './DiffView'
+import PreviewLinkChip from './PreviewLinkChip'
 import { ArrowRightIcon, FileTextIcon, FolderIcon, RefreshIcon } from './icons'
 
 /**
@@ -14,6 +15,8 @@ import { ArrowRightIcon, FileTextIcon, FolderIcon, RefreshIcon } from './icons'
 interface ReviewTabProps {
   /** Active session working directory; null when no task is running. */
   cwd: string | null
+  /** Deep-link a changed file into the File Preview tab (ticket 07). */
+  onOpenFile?: (path: string) => void
 }
 
 function totalStat(files: ReviewFileEntry[]): { additions: number; deletions: number } {
@@ -23,7 +26,7 @@ function totalStat(files: ReviewFileEntry[]): { additions: number; deletions: nu
   )
 }
 
-export default function ReviewTab({ cwd }: ReviewTabProps): JSX.Element {
+export default function ReviewTab({ cwd, onOpenFile }: ReviewTabProps): JSX.Element {
   const [state, dispatch] = useReducer(reviewTabReducer, undefined, initialReviewTabState)
   const [refreshTick, setRefreshTick] = useState(0)
 
@@ -129,6 +132,7 @@ export default function ReviewTab({ cwd }: ReviewTabProps): JSX.Element {
               >
                 <FileTextIcon size={13} />
                 <span className="review-tree-name">{node.name}</span>
+                {onOpenFile && <PreviewLinkChip path={node.path} onOpen={onOpenFile} label={`Preview ${node.path}`} iconOnly className="review-tree-open" />}
                 <FileStat file={statsByPath.get(node.path)} />
               </button>
             )

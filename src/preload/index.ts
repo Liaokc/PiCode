@@ -3,6 +3,7 @@ import type { HostToParent, ParentToHost } from '../shared/contract'
 import type { FollowUpdate, SessionSummary, TranscriptItem } from '../shared/sessions/types'
 import type { UsageSnapshot } from '../shared/usage/aggregate'
 import type { ReviewResult } from '../shared/review/types'
+import type { PreviewResult } from '../shared/preview/types'
 
 /**
  * Renderer-facing bridge. Ticket 01 exposed environment versions; ticket 02
@@ -66,5 +67,9 @@ contextBridge.exposeInMainWorld('picode', {
   review: {
     /** Collect a workspace-vs-HEAD diff snapshot for the given directory. */
     load: (cwd: string): Promise<ReviewResult> => ipcRenderer.invoke('review:load', cwd)
+  },
+  preview: {
+    /** Open a file (content) or directory (listing) for the Preview tab. */
+    load: (cwd: string, target: string): Promise<PreviewResult> => ipcRenderer.invoke('preview:load', cwd, target)
   }
 })
