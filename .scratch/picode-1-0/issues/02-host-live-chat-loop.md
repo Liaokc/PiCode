@@ -4,10 +4,19 @@
 
 **Blocked by:** 01 净场与脚手架。
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
-- [ ] 选目录→建 Session→真实模型流式回复全程走通
-- [ ] 停止控制即时中止当前回合，应用保持可用
-- [ ] kill host 进程后 UI 出现清晰错误横幅并可重建会话，窗口不崩
-- [ ] 应用正常退出后系统内无残留子进程
-- [ ] reducer 纯函数测试就位：文本增量、agent_start/end、错误事件
+- [x] 选目录→建 Session→真实模型流式回复全程走通
+- [x] 停止控制即时中止当前回合，应用保持可用
+- [x] kill host 进程后 UI 出现清晰错误横幅并可重建会话，窗口不崩
+- [x] 应用正常退出后系统内无残留子进程
+- [x] reducer 纯函数测试就位：文本增量、agent_start/end、错误事件
+
+## Comments
+
+- 2026-08-28: implemented on `t02-host-live-chat-loop`, head `6d18336` (4 commits since `main` @ `1e2043f`).
+- Seam-1 established: `src/shared/contract.ts` (ParentToHost / HostControlCommand / HostToParent) is the renderer's only event source; `src/shared/chat-reducer.ts` is a pure fold, 21 unit tests incl. purity + a guardrail test that fails if renderer sources ever import Pi SDK packages.
+- Agent host: one forked process per Session (β shape), Pi SDK `@earendil-works/pi-coding-agent` pinned `0.84.3` exactly (ADR-0005); supervisor guarantees crash isolation (`host_exit`) and orphan-free teardown (shutdown → SIGTERM grace → disconnect self-exit; verified parent-SIGKILL self-cleanup).
+- Verified real loops: `npm run smoke:host` (plain Node, real SDK, real model — stream, mid-stream abort, second turn, clean exit) and `npm run smoke:electron` (`PICODE_SMOKE=1`: adds renderer DOM assertion, host SIGKILL → unclean `host_exit` → rebuild on same cwd → `app.exit(0)`, no orphan processes after). `typecheck`/`lint`/`test` all green (37 tests).
+- Human pass remaining: visual对照 screenshot 01 (streaming transcript + composer stop square) via `npm run dev`; pick-folder dialog, stop click and banner actions are dialog/mouse interactions not covered by the smokes.
+- Merge from the root worktree: `cd ~/PiCode && git merge --no-ff t02-host-live-chat-loop`.
