@@ -12,10 +12,14 @@ import { readPreview } from './preview/read'
 import { SessionIndexService, type FollowUpdate } from './sessions/index-service'
 import { startSmokeIfEnabled } from './smoke'
 import { startVisualIfEnabled } from './visual'
+import { startTerminalVisualIfEnabled } from './visual-terminal'
+import { TerminalService, type TerminalDataMessage, type TerminalExitMessage } from './terminal/service'
+import { nodePtyFactory } from './terminal/node-pty-factory'
 import { createUsageService } from './usage/service'
 
 let supervisor: HostSupervisor | null = null
 let sessionIndex: SessionIndexService | null = null
+let terminalService: TerminalService | null = null
 
 function createMainWindow(): BrowserWindow {
   const win = new BrowserWindow(createWindowOptions(path.join(__dirname, '../preload/index.js')))
@@ -60,6 +64,7 @@ app.whenReady().then(() => {
   })
   smokeTap = startSmokeIfEnabled(supervisor, () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   startVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  startTerminalVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
 
   // Renderer → host relay (Seam-1: the only chat channel the renderer has).
   ipcMain.on('chat:to-host', (_event, message: ParentToHost) => {
@@ -115,6 +120,40 @@ app.whenReady().then(() => {
     }
     return readPreview(cwd, target)
   })
+  // Terminal tab (ticket 08, Seam-3): the REAL pty lives here, behind the
+  // node-pty factory adapter; bytes flow over terminal-dedicated batched
+  // channels, never the chat contract stream (ADR-0004). Read-only guard:
+  // every channel validates types before touching the service.
+  const terminals = new TerminalService(nodePtyFactory(), {
+    data: (message: TerminalDataMessage) => broadcastChannel('terminal:data', message),
+    exit: (message: TerminalExitMessage) => broadcastChannel('terminal:exit', message)
+  })
+  terminalService = terminals
+  ipcMain.handle('terminal:start', (_event, id: unknown, cwd: unknown, cols: unknown, rows: unknown) => {
+    if (
+      typeof id !== 'string' ||
+      id.length === 0 ||
+      typeof cwd !== 'string' ||
+      cwd.length === 0 ||
+      typeof cols !== 'number' ||
+      typeof rows !== 'number'
+    ) {
+      return null
+    }
+    return terminals.start(id, { cwd, cols, rows })
+  })
+  ipcMain.on('terminal:input', (_event, id: unknown, data: unknown) => {
+    if (typeof id !== 'string' || typeof data !== 'string') return
+    terminals.write(id, data)
+  })
+  ipcMain.on('terminal:resize', (_event, id: unknown, cols: unknown, rows: unknown) => {
+    if (typeof id !== 'string' || typeof cols !== 'number' || typeof rows !== 'number') return
+    terminals.resize(id, cols, rows)
+  })
+  ipcMain.on('terminal:kill', (_event, id: unknown) => {
+    if (typeof id !== 'string') return
+    terminals.dispose(id)
+  })
 
   // Session index + Live Follow (ticket 04): read-only scan of the shared Pi
   // session store; the only write is the rename write-back for non-active
@@ -149,7 +188,9 @@ app.on('window-all-closed', () => {
 })
 
 // No orphaned agent hosts on quit (ticket acceptance): polite shutdown first.
+// Also no orphaned pty shells (ticket 08).
 app.on('before-quit', () => {
   supervisor?.shutdownAll()
   sessionIndex?.stop()
+  terminalService?.disposeAll()
 })

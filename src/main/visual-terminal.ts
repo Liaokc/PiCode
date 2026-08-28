@@ -1,0 +1,163 @@
+/**
+ * Terminal visual-QA harness (ticket 08). Enabled with PICODE_VISUAL=1 plus
+ * PICODE_VISUAL_TERMINAL=1 (and VITE_PICODE_PANEL_OPEN=1 so the side panel
+ * starts expanded). Opens the Terminal tab, lets the REAL user pty print its
+ * prompt, injects a bash Bridge sequence into the contract stream, and
+ * captures PNGs for the human visual pass:
+ *
+ *   terminal-1 — bridge mid-run (command header + streaming output) over the live shell
+ *   terminal-2 — bridge settled (✓/✗ end states)
+ *
+ * PNGs land in the visual out dir (default <cwd>/.scratch/visual/). Not part
+ * of `npm test`.
+ */
+
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { app, type BrowserWindow } from 'electron'
+import { emitContractEvent, visualOutDir } from './visual'
+import type { HostToParent } from '../shared/contract'
+
+export function terminalVisualEnabled(): boolean {
+  return process.env['PICODE_VISUAL_TERMINAL'] === '1'
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
+async function waitForChatSubscription(getWindow: () => BrowserWindow | null): Promise<BrowserWindow | null> {
+  for (let waited = 0; waited < 15_000; waited += 100) {
+    const win = getWindow()
+    if (win) {
+      const ready = await win.webContents
+        .executeJavaScript("document.documentElement.dataset['chatSubscribed'] === 'true'")
+        .catch(() => false)
+      if (ready === true) return win
+    }
+    await sleep(100)
+  }
+  return getWindow()
+}
+
+async function probe(win: BrowserWindow, expression: string): Promise<unknown> {
+  return win.webContents.executeJavaScript(expression).catch(() => null)
+}
+
+async function capture(win: BrowserWindow, name: string): Promise<void> {
+  const png = await win.webContents.capturePage()
+  const file = path.join(visualOutDir(), `${name}.png`)
+  writeFileSync(file, png.toPNG())
+  console.log(`VISUAL captured ${file}`)
+}
+
+export function startTerminalVisualIfEnabled(getWindow: () => BrowserWindow | null): void {
+  if (!terminalVisualEnabled()) return
+
+  void (async () => {
+    try {
+      mkdirSync(visualOutDir(), { recursive: true })
+      const win = await waitForChatSubscription(getWindow)
+      if (!win) throw new Error('terminal visual harness: no window')
+
+      // A session gives the Terminal tab its working directory (the user pty
+      // really spawns in /tmp for the capture).
+      emitContractEvent({
+        type: 'session_created',
+        sessionId: 'terminal-visual-session',
+        cwd: tmpdir(),
+        model: 'claude-opus-4-5'
+      })
+
+      // Open the Terminal tab from the picker card.
+      const opened = await probe(
+        win,
+        `(() => {
+          const card = document.querySelector('.panel-tab-card[aria-label="Open Terminal tab"]')
+          if (!card) return false
+          card.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+          return true
+        })()`
+      )
+      if (!opened) throw new Error('terminal picker card not found')
+      await sleep(2500) // login shell prompt lands in the user pane
+
+      const mounted = await probe(
+        win,
+        `(() => ({
+          xterms: document.querySelectorAll('.terminal-tab .xterm').length,
+          userPanes: document.querySelectorAll('.terminal-user').length,
+          bridgeHeader: document.querySelector('.terminal-bridge-title')?.textContent ?? null,
+          placeholder: document.querySelector('.terminal-bridge-placeholder')?.textContent ?? null
+        }))()`
+      )
+      console.log(`VISUAL terminal probe ${JSON.stringify(mounted)}`)
+
+      // Bridge sequence 1: a passing bash call with live partial output.
+      const base: Array<HostToParent> = [
+        { type: 'agent_start' },
+        { type: 'tool_start', toolCallId: 'tb-1', name: 'bash', args: { command: 'npm test -- src/routes' } }
+      ]
+      for (const event of base) emitContractEvent(event)
+      await sleep(400)
+      emitContractEvent({ type: 'tool_update', toolCallId: 'tb-1', partial: '→ Running vitest…\n' })
+      await sleep(500)
+      emitContractEvent({
+        type: 'tool_update',
+        toolCallId: 'tb-1',
+        partial: 'PASS src/routes/register.test.ts\n  ✓ validates email (4 ms)\n  ✓ hashes password (6 ms)\n'
+      })
+      await sleep(900)
+      await capture(win, 'terminal-1')
+
+      emitContractEvent({
+        type: 'tool_end',
+        toolCallId: 'tb-1',
+        output:
+          'PASS src/routes/register.test.ts\n  ✓ validates email (4 ms)\n  ✓ hashes password (6 ms)\n\nTest Files  1 passed (1)\n     Tests  2 passed (2)',
+        isError: false
+      })
+      await sleep(400)
+
+      // Bridge sequence 2: a failing bash call (error tail + failed status).
+      emitContractEvent({ type: 'tool_start', toolCallId: 'tb-2', name: 'bash', args: { command: 'npm run lint' } })
+      emitContractEvent({ type: 'tool_update', toolCallId: 'tb-2', partial: 'Linting 128 files…\n' })
+      await sleep(600)
+      emitContractEvent({
+        type: 'tool_end',
+        toolCallId: 'tb-2',
+        output: 'Linting 128 files…\nerror: 2 problems in src/routes/register.ts\n',
+        isError: true
+      })
+      await sleep(700)
+      await capture(win, 'terminal-2')
+
+      // Input-path proof: paste a command into the user pane and run it —
+      // fish must echo the marker back (keystroke path = onData → session →
+      // pty → shell). The bridge pane never receives such an input path.
+      const pasted = await probe(
+        win,
+        `(() => {
+          const ta = document.querySelector('.terminal-user textarea')
+          if (!ta) return false
+          ta.focus()
+          const dt = new DataTransfer()
+          dt.setData('text/plain', 'echo PICODE_TYPED_OK')
+          ta.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+          const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+          Object.defineProperty(enter, 'keyCode', { get: () => 13 })
+          ta.dispatchEvent(enter)
+          return true
+        })()`
+      )
+      if (!pasted) throw new Error('could not paste into the user terminal')
+      await sleep(1500)
+      await capture(win, 'terminal-3')
+
+      console.log('VISUAL terminal done')
+      app.exit(0)
+    } catch (err) {
+      console.error('VISUAL TERMINAL FAIL', err)
+      app.exit(1)
+    }
+  })()
+}

@@ -4,6 +4,7 @@ import type { FollowUpdate, SessionSummary, TranscriptItem } from '../shared/ses
 import type { UsageSnapshot } from '../shared/usage/aggregate'
 import type { ReviewResult } from '../shared/review/types'
 import type { PreviewResult } from '../shared/preview/types'
+import type { TerminalDataMessage, TerminalExitMessage } from '../shared/terminal/messages'
 
 /**
  * Renderer-facing bridge. Ticket 01 exposed environment versions; ticket 02
@@ -11,7 +12,8 @@ import type { PreviewResult } from '../shared/preview/types'
  * host system); ticket 04 adds the session index + Live Follow channels
  * (read-only scan of the shared Pi session store); ticket 10 adds the usage
  * snapshot query (Seam-2 contract, ADR-0002); ticket 06 adds the review
- * bridge: request/response for workspace-vs-HEAD diffs.
+ * bridge: request/response for workspace-vs-HEAD diffs; ticket 08 adds the
+ * terminal bridge: byte channels to the main-process pty (Seam-3).
  *
  * `sessions.rename` must only be called for sessions that are NOT currently
  * open in a host process — the active session renames through the host
@@ -73,5 +75,33 @@ contextBridge.exposeInMainWorld('picode', {
   preview: {
     /** Open a file (content) or directory (listing) for the Preview tab. */
     load: (cwd: string, target: string): Promise<PreviewResult> => ipcRenderer.invoke('preview:load', cwd, target)
+  },
+  terminal: {
+    /** Spawn the user's shell pty; resolves with its pid (null when taken). */
+    start: (id: string, cwd: string, cols: number, rows: number): Promise<number | null> =>
+      ipcRenderer.invoke('terminal:start', id, cwd, cols, rows),
+    write: (id: string, data: string): void => {
+      ipcRenderer.send('terminal:input', id, data)
+    },
+    resize: (id: string, cols: number, rows: number): void => {
+      ipcRenderer.send('terminal:resize', id, cols, rows)
+    },
+    kill: (id: string): void => {
+      ipcRenderer.send('terminal:kill', id)
+    },
+    onData: (listener: (message: TerminalDataMessage) => void): (() => void) => {
+      const wrapped = (_event: IpcRendererEvent, message: TerminalDataMessage): void => listener(message)
+      ipcRenderer.on('terminal:data', wrapped)
+      return () => {
+        ipcRenderer.removeListener('terminal:data', wrapped)
+      }
+    },
+    onExit: (listener: (message: TerminalExitMessage) => void): (() => void) => {
+      const wrapped = (_event: IpcRendererEvent, message: TerminalExitMessage): void => listener(message)
+      ipcRenderer.on('terminal:exit', wrapped)
+      return () => {
+        ipcRenderer.removeListener('terminal:exit', wrapped)
+      }
+    }
   }
 })

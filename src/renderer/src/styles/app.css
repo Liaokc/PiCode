@@ -1338,6 +1338,7 @@ button.heat:hover {
 }
 
 .panel-content {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -1356,6 +1357,15 @@ button.heat:hover {
   align-items: center;
   justify-content: center;
   padding-bottom: 22vh;
+}
+
+/* The picker shown over already-mounted tab bodies (ticket 08): opaque so
+   the hidden tabs don't bleed through. */
+.panel-empty-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  background: var(--bg-main);
 }
 
 .panel-empty-title {
@@ -3281,4 +3291,160 @@ button.preview-crumb:hover {
 .queue-panel-clear:hover {
   background: var(--bg-inset);
   color: var(--text-primary);
+}
+
+/* ---------- panel tab bodies (ticket 08: hidden tabs stay mounted) ---------- */
+
+.panel-tab-body {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.panel-tab-body > * {
+  flex: 1;
+  min-height: 0;
+}
+
+.panel-tab-body-hidden {
+  display: none;
+}
+
+/* ---------- side panel · terminal tab (ticket 08) ---------- */
+
+.terminal-tab {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg-card);
+}
+
+.terminal-bridge {
+  display: flex;
+  flex-direction: column;
+  height: 42%;
+  min-height: 132px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.terminal-bridge-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 12px;
+  flex-shrink: 0;
+  background: var(--bg-inset);
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.terminal-bridge-status {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.terminal-bridge-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
+.terminal-bridge-dot-running {
+  background: var(--accent-orange);
+  animation: terminal-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes terminal-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.terminal-bridge-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.terminal-bridge-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  color: var(--text-faint);
+  font-size: 12.5px;
+  line-height: 1.55;
+  text-align: center;
+  pointer-events: none;
+}
+
+.terminal-user {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  cursor: text;
+}
+
+.terminal-xterm-host {
+  position: absolute;
+  inset: 0;
+}
+
+.terminal-restart-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: var(--bg-inset);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.terminal-restart-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-card);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.terminal-restart-btn:hover {
+  background: var(--bg-hover);
+}
+
+/* xterm fills its host completely; the fit addon owns the geometry. */
+.terminal-tab .xterm {
+  height: 100%;
+}
+
+.terminal-tab .xterm-viewport {
+  background: transparent !important;
 }

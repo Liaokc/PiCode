@@ -5,6 +5,7 @@ import type { ReviewResult } from '../shared/review/types'
 import type { PreviewResult } from '../shared/preview/types'
 
 import type { UsageSnapshot } from '../../shared/usage/aggregate'
+import type { TerminalDataMessage, TerminalExitMessage } from '../../shared/terminal/messages'
 
 interface ImportMetaEnv {
   /** QA hook: pin the empty-state greeting hour so screenshot runs are deterministic. */
@@ -45,6 +46,18 @@ interface PicodePreviewBridge {
   load(cwd: string, target: string): Promise<PreviewResult>
 }
 
+interface PicodeTerminalBridge {
+  /** Spawn the user's shell pty; resolves with its pid (null when taken). */
+  start(id: string, cwd: string, cols: number, rows: number): Promise<number | null>
+  /** Keystrokes → pty stdin (user pane only; the Bridge has no write path). */
+  write(id: string, data: string): void
+  resize(id: string, cols: number, rows: number): void
+  kill(id: string): void
+  /** Batched pty output bytes for any terminal instance. */
+  onData(listener: (message: TerminalDataMessage) => void): () => void
+  onExit(listener: (message: TerminalExitMessage) => void): () => void
+}
+
 declare global {
   interface Window {
     picode: {
@@ -61,6 +74,7 @@ declare global {
       }
       review: PicodeReviewBridge
       preview: PicodePreviewBridge
+      terminal: PicodeTerminalBridge
     }
   }
 }
