@@ -4,7 +4,7 @@
 
 **Blocked by:** 04 会话体系与侧边栏、05 Composer 全量、10 用量统计页。
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] 设置修改后新建 Session 采用新默认值（对照 SettingsManager 行为）
 - [x] auth 状态真实反映凭据健康度，未配置时给出"去 TUI 登录"引导
@@ -21,3 +21,4 @@
 - 全局 toast：host_notice（compaction 等）+ session_command_error + 设置加载失败统一走右下角 toast 栈（info 4s / error 8s，同文案去重，上限 3 条）。
 - 空态走查补齐：空 transcript 提示行；其余（sidebar/usage/review/preview/terminal/follow/palette）文案检查一致。
 - 验证：437 vitest 全绿、typecheck/eslint 干净、smoke:host PASS、visual:transcript 无回归、visual:settings 新增 4 张截图（.scratch/visual/s1–s4）待人工对照。
+- 2026-08-28 (merge session): **resolved** — merged into main as `22bb4aa`（base 即当时 main tip，零冲突纯增量）。验收口径：操作者目检通过（per-provider auth 状态、session 默认、⌘K 任务面板、全局 toast 及 s1–s4 截图对照）；合并后 main 复核 46 文件 / 437 vitest 全绿。worktree 与分支已清理。
