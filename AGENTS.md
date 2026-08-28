@@ -37,3 +37,16 @@ git fetch --all 2>/dev/null; git rebase main   # from inside the worktree branch
 # merging a finished ticket (rebase + merge --no-ff + verify, all enforced):
 scripts/merge-ticket.sh <NN>
 ```
+
+### Verification & release
+
+```bash
+npm test                # vitest unit suite (the three spec test seams)
+npm run smoke           # full compatibility suite: build, host contract, pty,
+                        # usage aggregation, TUI↔SDK interop, electron app
+npm run package:verify  # pack release/PiCode.app + boot it with a real-session smoke
+npm run visual:transcript   # screenshot harnesses (see README "Visual QA")
+```
+
+Smoke stages 2/5/6 make real model calls — serialization rule applies (one
+worktree at a time runs the app). See `README.md` for details.

@@ -102,7 +102,9 @@ describe('heatmapGrid', () => {
       'daily'
     )
     expect(grid.columns.map((c) => c.start)).toEqual(['2026-08-24', '2026-08-31'])
-    expect(grid.columns.map((c) => c.monthLabel)).toEqual(['Aug', 'Sep'])
+    // The grid opens one week before the Sep boundary; the partial Aug label
+    // yields so the two adjacent labels can never paint over each other.
+    expect(grid.columns.map((c) => c.monthLabel)).toEqual([null, 'Sep'])
     expect(grid.columns[1].slots.find((s) => s.date === '2026-09-02')?.value).toBe(50)
   })
 
@@ -116,7 +118,7 @@ describe('heatmapGrid', () => {
       'weekly'
     )
     expect(grid.columns).toEqual([
-      { start: '2026-08-24', monthLabel: 'Aug', slots: [{ date: '2026-08-24', value: 140, level: 4 }] },
+      { start: '2026-08-24', monthLabel: null, slots: [{ date: '2026-08-24', value: 140, level: 4 }] },
       { start: '2026-08-31', monthLabel: 'Sep', slots: [{ date: '2026-08-31', value: 50, level: 2 }] }
     ])
   })

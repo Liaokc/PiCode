@@ -13,8 +13,10 @@
  */
 
 import { mkdirSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { app, BrowserWindow } from 'electron'
+import { terminalVisualEnabled } from './visual-terminal'
 import type { HostToParent } from '../shared/contract'
 
 export function visualEnabled(): boolean {
@@ -110,10 +112,57 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       const win = await waitForWindow(getWindow)
       if (!win) throw new Error('visual harness: no window')
 
+      // ---- reference 02: pristine empty state (greeting + composer + chips)
+      await sleep(700)
+      await capture(win, '0-empty-state')
+
+      // ---- reference 03: empty state + side-panel placeholder (tab picker)
+      // Skipped in terminal-harness runs: both harnesses share one window, and
+      // the picker click here races the terminal flow's own picker handling.
+      if (!terminalVisualEnabled()) {
+        // Track whether WE opened the panel: the terminal harness boots with
+        // the panel open (VITE flag) and needs it left open for its own flow.
+        const openedByHarness = await win.webContents.executeJavaScript(
+          `(() => {
+            const toggle = document.querySelector('button[aria-label="Open side panel"]')
+            if (toggle instanceof HTMLElement) {
+              toggle.click()
+              return true
+            }
+            return false
+          })()`
+        )
+        await sleep(400)
+        await win.webContents.executeJavaScript(
+          `(() => {
+            const add = document.querySelector('.panel-add-tab')
+            if (add instanceof HTMLElement) add.click()
+            return add !== null
+          })()`
+        )
+        await sleep(500)
+        await capture(win, '0b-empty-panel')
+        if (openedByHarness === true) {
+          // Collapse the panel again for the transcript shots.
+          await win.webContents.executeJavaScript(
+            `(() => {
+              const toggle = document.querySelector('button[aria-label="Close side panel"]')
+              if (toggle instanceof HTMLElement) toggle.click()
+              return toggle !== null
+            })()`
+          )
+          await sleep(300)
+        }
+      }
+
       emit({
         type: 'session_created',
         sessionId: 'visual-session',
-        cwd: '/Users/dev/projects/api-server',
+        // In terminal-harness runs the Terminal tab anchors on the ACTIVE
+        // session's cwd — a nonexistent fake path would spawn a shell that
+        // dies instantly. Reuse the terminal harness's real tmpdir (and the
+        // same key, so the workspace never remounts mid-capture).
+        cwd: terminalVisualEnabled() ? tmpdir() : '/Users/dev/projects/api-server',
         model: 'claude-opus-4-5'
       })
       await sleep(200)
@@ -240,6 +289,31 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       )
       await sleep(400)
       await captureMenu(win, '4-command-menu', { menuRows: '.cmp-popover .cmp-menu-row' })
+
+      // ---- reference 07: provider → model cascade menu ----
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const ta = document.querySelector('.composer-input')
+          if (!(ta instanceof HTMLTextAreaElement)) return false
+          const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+          setter.call(ta, '')
+          ta.dispatchEvent(new Event('input', { bubbles: true }))
+          window.dispatchEvent(new Event('picode:open-model-menu'))
+          return true
+        })()`
+      )
+      await sleep(400)
+      await captureMenu(win, '4b-model-menu', { providers: '.cmp-cascade-col .cmp-menu-row' })
+      // Close the cascade so the approval-pill shot shows the pill alone.
+      await win.webContents.executeJavaScript(
+        `(() => {
+          for (const target of [window, document]) {
+            target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+          }
+          return true
+        })()`
+      )
+      await sleep(300)
 
       // Approval pill + queue panel while a run is in flight. Close the `/`
       // menu first (clear the input) so the pill is fully visible.

@@ -58,6 +58,9 @@ export class TerminalService {
     pty.onExit(({ exitCode, signal }) => {
       // Deliver trailing bytes with the exit so nothing is lost or reordered.
       this.flush(id)
+      if (process.env['PICODE_PTY_DEBUG'] === '1') {
+        console.log(`[pty-debug] terminal ${id} exit code=${exitCode} signal=${signal ?? '-'} bufferTail=${JSON.stringify(terminal.buffer.join('').slice(-300))}`)
+      }
       this.sink.exit({ id, exitCode, signal })
       this.dispose(id)
     })

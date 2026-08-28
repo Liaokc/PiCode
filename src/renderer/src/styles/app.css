@@ -623,6 +623,11 @@ kbd {
   color: var(--text-primary);
   display: inline-flex;
   align-items: center;
+  gap: 7px;
+}
+
+.quick-chip svg {
+  color: var(--text-secondary);
 }
 
 .quick-chip:hover {
@@ -2611,7 +2616,8 @@ button.heat:hover {
   padding: 12px 14px;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: #f6f6f3;
+  /* reference 06: code blocks read WHITE against the warm page bg, not inset */
+  background: var(--bg-card);
   overflow-x: auto;
 }
 
@@ -3370,6 +3376,7 @@ button.preview-crumb:hover {
 
 .side-panel:hover::before {
   background: var(--border-strong);
+}
 
 /* ---------- composer menus (ticket 05, screenshot 06/07 shapes) ---------- */
 

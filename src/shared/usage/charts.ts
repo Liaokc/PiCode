@@ -79,6 +79,15 @@ function levelOf(value: number, max: number): 0 | 1 | 2 | 3 | 4 {
   return Math.min(4, Math.ceil((value / max) * 4)) as 0 | 1 | 2 | 3 | 4
 }
 
+/** When the grid opens ≤1 week before a month boundary, columns 0 and 1 both
+ * get labels one 18px column apart — they paint over each other (reference
+ * 09 shows one label per month). The partial first week's label yields. */
+function yieldCollidingFirstLabel(columns: HeatColumn[]): void {
+  if (columns.length >= 2 && columns[0].monthLabel !== null && columns[1].monthLabel !== null) {
+    columns[0].monthLabel = null
+  }
+}
+
 /**
  * Lay heatmap cells out GitHub-style: columns are Monday-start weeks; daily and
  * cumulative modes fill seven weekday slots per column (padded to whole weeks),
@@ -98,14 +107,16 @@ export function heatmapGrid(cells: HeatCell[], mode: HeatmapMode): HeatGrid {
     }
     const weeks = [...weekTotals.keys()].sort()
     const max = Math.max(...weekTotals.values())
+    const weeklyColumns = weeks.map((week, i) => ({
+      start: week,
+      monthLabel: i === 0 ? formatMonthLabel(week) : columnMonthLabel(week, addDays(week, 6)),
+      slots: [{ date: week, value: weekTotals.get(week) ?? 0, level: levelOf(weekTotals.get(week) ?? 0, max) }]
+    }))
+    yieldCollidingFirstLabel(weeklyColumns)
     return {
       mode,
       max,
-      columns: weeks.map((week, i) => ({
-        start: week,
-        monthLabel: i === 0 ? formatMonthLabel(week) : columnMonthLabel(week, addDays(week, 6)),
-        slots: [{ date: week, value: weekTotals.get(week) ?? 0, level: levelOf(weekTotals.get(week) ?? 0, max) }]
-      }))
+      columns: weeklyColumns
     }
   }
 
@@ -143,6 +154,7 @@ export function heatmapGrid(cells: HeatCell[], mode: HeatmapMode): HeatGrid {
     })
     colStart = nextColStart
   }
+  yieldCollidingFirstLabel(columns)
   return { mode, max, columns }
 }
 

@@ -18,7 +18,7 @@ import {
   makeSessionInfoLine,
   parseSessionLines,
   summarizeSession
-} from '../../shared/sessions/parse'
+} from '../../shared/sessions/parse.ts'
 import type { FollowUpdate, SessionSummary, TranscriptItem } from '../../shared/sessions/types'
 
 export type { FollowUpdate }
