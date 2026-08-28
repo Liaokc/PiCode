@@ -223,10 +223,6 @@ export function SlidersIcon({ size, className }: IconProps): JSX.Element {
       <circle cx="5" cy="12" r="2" />
       <circle cx="12" cy="16" r="2" />
       <circle cx="19" cy="8" r="2" />
-export function ChevronDownIcon({ size, className }: IconProps): JSX.Element {
-  return (
-    <svg {...svgProps(size, className)}>
-      <path d="m6 9.5 6 6 6-6" />
     </svg>
   )
 }
@@ -247,10 +243,6 @@ export function PaletteIcon({ size, className }: IconProps): JSX.Element {
       <circle cx="7.8" cy="10.5" r="1.1" fill="currentColor" stroke="none" />
       <circle cx="11" cy="7.3" r="1.1" fill="currentColor" stroke="none" />
       <circle cx="15.5" cy="8.3" r="1.1" fill="currentColor" stroke="none" />
-export function CheckIcon({ size, className }: IconProps): JSX.Element {
-  return (
-    <svg {...svgProps(size, className)}>
-      <path d="m5 12.5 4.5 4.5L19 7.5" />
     </svg>
   )
 }
@@ -269,10 +261,6 @@ export function CubeIcon({ size, className }: IconProps): JSX.Element {
     <svg {...svgProps(size, className)}>
       <path d="m12 3 8 4.5v9L12 21l-8-4.5v-9Z" />
       <path d="m4.2 7.7 7.8 4.3 7.8-4.3M12 12v9" />
-export function XIcon({ size, className }: IconProps): JSX.Element {
-  return (
-    <svg {...svgProps(size, className)}>
-      <path d="M6 6l12 12M18 6 6 18" />
     </svg>
   )
 }
@@ -281,11 +269,6 @@ export function BarChartIcon({ size, className }: IconProps): JSX.Element {
   return (
     <svg {...svgProps(size, className)}>
       <path d="M4 20V10M10 20V4M16 20v-7M21 20H3.5" />
-export function CopyIcon({ size, className }: IconProps): JSX.Element {
-  return (
-    <svg {...svgProps(size, className)}>
-      <rect x="9" y="9" width="11" height="11" rx="2" />
-      <path d="M5.5 14.5A1.5 1.5 0 0 1 4 13V5.5A1.5 1.5 0 0 1 5.5 4H13a1.5 1.5 0 0 1 1.5 1.5" />
     </svg>
   )
 }
@@ -304,6 +287,27 @@ export function CloseIcon({ size, className }: IconProps): JSX.Element {
   return (
     <svg {...svgProps(size, className)}>
       <path d="m6 6 12 12M18 6 6 18" />
+    </svg>
+  )
+}
+
+export function CheckIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="m5 12.5 4.5 4.5L19 7.5" />
+    </svg>
+  )
+}
+
+export function CopyIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5.5 14.5A1.5 1.5 0 0 1 4 13V5.5A1.5 1.5 0 0 1 5.5 4H13a1.5 1.5 0 0 1 1.5 1.5" />
+    </svg>
+  )
+}
+
 export function SparklesIcon({ size, className }: IconProps): JSX.Element {
   return (
     <svg {...svgProps(size, className)}>
