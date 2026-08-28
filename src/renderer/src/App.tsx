@@ -1,28 +1,109 @@
-import { useReducer, type JSX } from 'react'
+import { useEffect, useReducer, useRef, useState, type JSX } from 'react'
+import { chatReducer, initialChatState, type ChatError } from '../../shared/chat-reducer'
 import { initialShellUiState, shellUiReducer } from '../../shared/layout-model'
 import TitleBar from './components/TitleBar'
 import Sidebar from './components/Sidebar'
 import EmptyState from './components/EmptyState'
 import SidePanel from './components/SidePanel'
+import ChatView from './components/ChatView'
+import ErrorBanner from './components/ErrorBanner'
 
 /**
  * Window shell — three zones matching reference screenshots 02/03:
  * [nav sidebar | main zone | collapsible side panel], launched with the
  * panel collapsed and the sidebar visible.
  * `VITE_PICODE_PANEL_OPEN=1` expands the panel at startup (screenshot-QA hook).
+ *
+ * Chat state is folded exclusively from the Seam-1 IPC contract stream
+ * (window.picode.chat.onHostEvent → chatReducer); the composer only issues
+ * ParentToHost commands.
  */
 export default function App(): JSX.Element {
   const [ui, dispatch] = useReducer(shellUiReducer, undefined, () => ({
     ...initialShellUiState(),
     sidePanelOpen: import.meta.env.VITE_PICODE_PANEL_OPEN === '1'
   }))
+  const [chat, chatDispatch] = useReducer(chatReducer, undefined, initialChatState)
+  /** True between create_session and its terminal event. */
+  const [creating, setCreating] = useState(false)
+  /** Agent errors are dismissible; host/session errors keep their actions. */
+  const [dismissedError, setDismissedError] = useState<ChatError | null>(null)
+  /** First prompt typed before a folder exists; sent once the session is ready. */
+  const pendingPromptRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    return window.picode.chat.onHostEvent((event) => {
+      chatDispatch(event)
+      switch (event.type) {
+        case 'session_created': {
+          setCreating(false)
+          const pending = pendingPromptRef.current
+          pendingPromptRef.current = null
+          if (pending !== null) window.picode.chat.sendToHost({ type: 'prompt', text: pending })
+          break
+        }
+        case 'session_error':
+        case 'host_exit':
+          setCreating(false)
+          pendingPromptRef.current = null
+          break
+        default:
+          break
+      }
+    })
+  }, [])
+
+  async function handleComposerSend(text: string): Promise<void> {
+    if (chat.session) {
+      window.picode.chat.sendToHost({ type: 'prompt', text })
+      return
+    }
+    const cwd = await window.picode.chat.pickWorkingDirectory()
+    if (!cwd) return
+    setCreating(true)
+    pendingPromptRef.current = text
+    window.picode.chat.sendToHost({ type: 'create_session', cwd })
+  }
+
+  function handleStop(): void {
+    window.picode.chat.sendToHost({ type: 'abort_turn' })
+  }
+
+  function handleRebuild(): void {
+    const cwd = chat.error?.kind === 'host' ? chat.error.cwd : null
+    if (!cwd) return
+    setCreating(true)
+    window.picode.chat.sendToHost({ type: 'create_session', cwd })
+  }
+
+  async function handlePickAnotherFolder(): Promise<void> {
+    const cwd = await window.picode.chat.pickWorkingDirectory()
+    if (!cwd) return
+    setCreating(true)
+    window.picode.chat.sendToHost({ type: 'create_session', cwd })
+  }
+
+  const showError = chat.error !== null && chat.error !== dismissedError
+  const showTranscript = chat.messages.length > 0 || chat.session !== null
 
   return (
     <div className="app-shell">
       <TitleBar ui={ui} dispatch={dispatch} />
       <Sidebar open={ui.sidebarOpen} />
       <main className="main-zone">
-        <EmptyState />
+        {showError && chat.error && (
+          <ErrorBanner
+            error={chat.error}
+            onRebuild={handleRebuild}
+            onPickAnotherFolder={handlePickAnotherFolder}
+            onDismiss={() => setDismissedError(chat.error)}
+          />
+        )}
+        {showTranscript ? (
+          <ChatView chat={chat} creating={creating} onSend={handleComposerSend} onStop={handleStop} />
+        ) : (
+          <EmptyState creating={creating} onSend={handleComposerSend} />
+        )}
       </main>
       <SidePanel open={ui.sidePanelOpen} />
     </div>

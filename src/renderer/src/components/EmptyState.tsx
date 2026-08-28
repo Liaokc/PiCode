@@ -1,11 +1,6 @@
 import { useMemo, type JSX } from 'react'
 import { greetingForHour } from '../../../shared/greeting'
-import {
-  ArrowUpIcon,
-  GaugeIcon,
-  PlusIcon,
-  ShieldCheckIcon
-} from './icons'
+import Composer from './Composer'
 
 const QUICK_START_CHIPS = ['Weekly Report', 'Bug Fix', 'Slide Maker', 'Idle Tasks'] as const
 
@@ -21,12 +16,19 @@ function WatermarkPi(): JSX.Element {
   )
 }
 
+interface EmptyStateProps {
+  /** True while a session is being created after a folder pick. */
+  creating: boolean
+  /** First send from the empty state: App turns it into folder-pick + first prompt. */
+  onSend: (text: string) => void
+}
+
 /**
- * Empty state: greeting, centered static composer card and quick-start chip
- * slots, matching screenshot 02's composition. Functional wiring arrives with
- * the host loop in ticket 02 — controls render inert by design here.
+ * Empty state: greeting, centered composer card and quick-start chip slots,
+ * matching screenshot 02's composition. The first send picks a working
+ * directory, boots the agent host session, then runs the typed prompt.
  */
-export default function EmptyState(): JSX.Element {
+export default function EmptyState({ creating, onSend }: EmptyStateProps): JSX.Element {
   // `VITE_PICODE_FAKE_HOUR` pins the greeting for deterministic screenshot QA.
   const pinnedHour = Number(import.meta.env.VITE_PICODE_FAKE_HOUR)
   const greeting = useMemo(
@@ -39,36 +41,13 @@ export default function EmptyState(): JSX.Element {
       <WatermarkPi />
       <h1 className="empty-greeting">{greeting}</h1>
 
-      <section className="composer" aria-label="Composer">
-        <textarea
-          className="composer-input"
-          placeholder="Ask anything — @ to add context, / for commands"
-          aria-label="Message composer"
-        />
-        <footer className="composer-footer">
-          <button type="button" className="cmp-icon-btn" aria-label="Attach file">
-            <PlusIcon />
-          </button>
-          <button type="button" className="cmp-chip cmp-access">
-            <ShieldCheckIcon />
-            <span>Full Access</span>
-            <span className="cmp-caret">⌄</span>
-          </button>
-          <span className="composer-spring" />
-          <button type="button" className="cmp-chip cmp-muted">
-            <span>Select Model</span>
-            <span className="cmp-caret">⌄</span>
-          </button>
-          <button type="button" className="cmp-chip cmp-muted">
-            <GaugeIcon />
-            <span>Max</span>
-            <span className="cmp-caret">⌄</span>
-          </button>
-          <button type="button" className="cmp-send" aria-label="Send message">
-            <ArrowUpIcon />
-          </button>
-        </footer>
-      </section>
+      <Composer
+        busy={false}
+        disabled={creating}
+        placeholder={creating ? 'Starting session…' : 'Ask anything — @ to add context, / for commands'}
+        onSend={onSend}
+        onStop={() => {}}
+      />
 
       <div className="quick-chips" role="list" aria-label="Quick starts">
         {QUICK_START_CHIPS.map((label) => (

@@ -199,3 +199,11 @@ export function TerminalSquareIcon({ size, className }: IconProps): JSX.Element 
     </svg>
   )
 }
+
+export function StopIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
