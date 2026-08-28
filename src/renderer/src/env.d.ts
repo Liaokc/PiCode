@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 import type { HostToParent, ParentToHost } from '../shared/contract'
+import type { ReviewResult } from '../shared/review/types'
 
 import type { UsageSnapshot } from '../../shared/usage/aggregate'
 
@@ -19,6 +20,11 @@ interface PicodeChatBridge {
   pickWorkingDirectory(): Promise<string | null>
 }
 
+interface PicodeReviewBridge {
+  /** Collect a workspace-vs-HEAD diff snapshot for the given directory. */
+  load(cwd: string): Promise<ReviewResult>
+}
+
 declare global {
   interface Window {
     picode: {
@@ -32,6 +38,7 @@ declare global {
       usage: {
         snapshot: () => Promise<UsageSnapshot>
       }
+      review: PicodeReviewBridge
     }
   }
 }
