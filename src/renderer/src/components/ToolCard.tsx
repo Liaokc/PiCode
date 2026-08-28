@@ -1,7 +1,7 @@
 import { useState, type JSX } from 'react'
 import type { ToolEntry } from '../../../shared/chat-reducer'
 import { toolSummary } from '../../../shared/tool-format'
-import { CheckIcon, ChevronDownIcon, LoaderIcon, XIcon } from './icons'
+import { CheckIcon, ChevronDownIcon, CloseIcon, LoaderIcon } from './icons'
 
 /**
  * Tool call card (screenshot 01: compact one-line tool row; ticket: name,
@@ -61,5 +61,5 @@ export default function ToolCard({ entry }: { entry: ToolEntry }): JSX.Element {
 function StatusIcon({ state }: { state: ToolEntry['state'] }): JSX.Element {
   if (state === 'running') return <LoaderIcon size={13} className="tool-card-status-icon spin" />
   if (state === 'done') return <CheckIcon size={13} className="tool-card-status-icon tool-card-status-done" />
-  return <XIcon size={13} className="tool-card-status-icon tool-card-status-error" />
+  return <CloseIcon size={13} className="tool-card-status-icon tool-card-status-error" />
 }
