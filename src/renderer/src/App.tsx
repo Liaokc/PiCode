@@ -7,12 +7,15 @@ import EmptyState from './components/EmptyState'
 import SidePanel from './components/SidePanel'
 import ChatView from './components/ChatView'
 import ErrorBanner from './components/ErrorBanner'
+import SettingsWindow from './components/SettingsWindow'
 
 /**
  * Window shell — three zones matching reference screenshots 02/03:
  * [nav sidebar | main zone | collapsible side panel], launched with the
- * panel collapsed and the sidebar visible.
- * `VITE_PICODE_PANEL_OPEN=1` expands the panel at startup (screenshot-QA hook).
+ * panel collapsed and the sidebar visible. The settings window shell
+ * (screenshot 09) replaces the workspace zones while open.
+ * `VITE_PICODE_PANEL_OPEN=1` expands the panel at startup and
+ * `VITE_PICODE_VIEW=settings` opens the settings shell (screenshot-QA hooks).
  *
  * Chat state is folded exclusively from the Seam-1 IPC contract stream
  * (window.picode.chat.onHostEvent → chatReducer); the composer only issues
@@ -21,7 +24,8 @@ import ErrorBanner from './components/ErrorBanner'
 export default function App(): JSX.Element {
   const [ui, dispatch] = useReducer(shellUiReducer, undefined, () => ({
     ...initialShellUiState(),
-    sidePanelOpen: import.meta.env.VITE_PICODE_PANEL_OPEN === '1'
+    sidePanelOpen: import.meta.env.VITE_PICODE_PANEL_OPEN === '1',
+    view: import.meta.env.VITE_PICODE_VIEW === 'settings' ? ('settings' as const) : initialShellUiState().view
   }))
   const [chat, chatDispatch] = useReducer(chatReducer, undefined, initialChatState)
   /** True between create_session and its terminal event. */
@@ -86,10 +90,19 @@ export default function App(): JSX.Element {
   const showError = chat.error !== null && chat.error !== dismissedError
   const showTranscript = chat.messages.length > 0 || chat.session !== null
 
+  if (ui.view === 'settings') {
+    return (
+      <div className="app-shell">
+        <TitleBar ui={ui} dispatch={dispatch} />
+        <SettingsWindow dispatchShell={dispatch} />
+      </div>
+    )
+  }
+
   return (
     <div className="app-shell">
       <TitleBar ui={ui} dispatch={dispatch} />
-      <Sidebar open={ui.sidebarOpen} />
+      <Sidebar open={ui.sidebarOpen} onOpenSettings={() => dispatch({ type: 'open-settings' })} />
       <main className="main-zone">
         {showError && chat.error && (
           <ErrorBanner

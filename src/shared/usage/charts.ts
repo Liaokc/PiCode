@@ -7,6 +7,8 @@
 import type { HeatCell, ModelUsageSlice, TrendView, UsageSnapshot } from './aggregate.ts'
 import { formatDurationMs, formatMonthLabel, formatShortDate, formatStreakDays, formatTokenCount } from './format.ts'
 
+export type { HeatCell, ModelUsageSlice, TrendView, UsageSnapshot }
+
 // --- headline cards ----------------------------------------------------------
 
 export interface StatCards {
@@ -80,10 +82,6 @@ function mondayOf(dateStr: string): string {
   const [y, m, d] = dateStr.split('-').map(Number)
   const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay() // 0 = Sunday
   return addDays(dateStr, -(dow + 6) % 7)
-}
-
-function isMonthStart(dateStr: string): boolean {
-  return dateStr.endsWith('-01')
 }
 
 function levelOf(value: number, max: number): 0 | 1 | 2 | 3 | 4 {

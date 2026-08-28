@@ -4,6 +4,7 @@ import type { HostToParent, ParentToHost } from '../shared/contract'
 import { createWindowOptions } from './window-options'
 import { HostSupervisor, defaultHostEntryPath } from './host-supervisor'
 import { startSmokeIfEnabled } from './smoke'
+import { createUsageService } from './usage/service'
 
 let supervisor: HostSupervisor | null = null
 
@@ -27,6 +28,11 @@ function broadcastToWindows(event: HostToParent): void {
 }
 
 app.whenReady().then(() => {
+  // Usage charts consume only this aggregated snapshot — the renderer never
+  // scans session files (ADR-0002 / Seam-2 contract).
+  const usageService = createUsageService()
+  ipcMain.handle('usage:snapshot', () => usageService.snapshot())
+
   let smokeTap: ((event: HostToParent) => void) | null = null
   let mainWindow: BrowserWindow | null = null
   supervisor = new HostSupervisor({

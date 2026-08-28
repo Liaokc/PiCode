@@ -8,9 +8,9 @@ import {
 } from '../../src/shared/layout-model'
 
 describe('initial shell UI state', () => {
-  it('opens with the sidebar visible and the side panel collapsed', () => {
+  it('opens on the workspace with the sidebar visible and the side panel collapsed', () => {
     // Composition must match reference screenshot 02 on launch.
-    expect(initialShellUiState()).toEqual({ sidebarOpen: true, sidePanelOpen: false })
+    expect(initialShellUiState()).toEqual({ sidebarOpen: true, sidePanelOpen: false, view: 'workspace' })
   })
 })
 
@@ -37,6 +37,15 @@ describe('shellUiReducer', () => {
     const closed = toggle({ type: 'close-side-panel' })(opened)
     expect(closed.sidePanelOpen).toBe(false)
     expect(toggle({ type: 'close-side-panel' })(closed)).toEqual(closed)
+  })
+
+  it('navigates between the workspace and the settings shell idempotently', () => {
+    const opened = toggle({ type: 'open-settings' })(initialShellUiState())
+    expect(opened.view).toBe('settings')
+    expect(toggle({ type: 'open-settings' })(opened)).toEqual(opened)
+    const back = toggle({ type: 'back-to-workspace' })(opened)
+    expect(back.view).toBe('workspace')
+    expect(toggle({ type: 'back-to-workspace' })(back)).toEqual(back)
   })
 
   it('never mutates the previous state', () => {

@@ -30,6 +30,8 @@ export type TrendRange = 7 | 30
 
 export interface DrillDownSelection {
   date: string | null
+  /** Inclusive range end (weekly heatmap cells drill into a whole week). */
+  dateTo: string | null
   model: string | null
 }
 
@@ -49,7 +51,7 @@ export type SettingsUiAction =
   | { type: 'select-section'; section: SettingsSection }
   | { type: 'set-heatmap-mode'; mode: HeatmapMode }
   | { type: 'set-trend-range'; rangeDays: TrendRange }
-  | { type: 'open-drilldown'; date: string | null; model: string | null }
+  | { type: 'open-drilldown'; date: string | null; dateTo?: string | null; model: string | null }
   | { type: 'close-drilldown' }
 
 export function settingsUiReducer(state: SettingsUiState, action: SettingsUiAction): SettingsUiState {
@@ -61,7 +63,7 @@ export function settingsUiReducer(state: SettingsUiState, action: SettingsUiActi
     case 'set-trend-range':
       return state.trendRange === action.rangeDays ? state : { ...state, trendRange: action.rangeDays }
     case 'open-drilldown':
-      return { ...state, drillDown: { date: action.date, model: action.model } }
+      return { ...state, drillDown: { date: action.date, dateTo: action.dateTo ?? null, model: action.model } }
     case 'close-drilldown':
       return state.drillDown === null ? state : { ...state, drillDown: null }
     default:

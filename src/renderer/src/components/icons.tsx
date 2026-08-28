@@ -207,3 +207,50 @@ export function StopIcon({ size, className }: IconProps): JSX.Element {
     </svg>
   )
 }
+
+export function SlidersIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M5 4v6m0 4v6M12 4v10m0 4v2m7-16v2m0 4v10" />
+      <circle cx="5" cy="12" r="2" />
+      <circle cx="12" cy="16" r="2" />
+      <circle cx="19" cy="8" r="2" />
+    </svg>
+  )
+}
+
+export function PaletteIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M12 21a9 9 0 1 1 9-9c0 2.5-1.7 3.6-3.4 3.6h-2a2.1 2.1 0 0 0-1.6 3.5c.5.6.2 1.9-2 1.9Z" />
+      <circle cx="7.8" cy="10.5" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="11" cy="7.3" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="15.5" cy="8.3" r="1.1" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+export function CubeIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="m12 3 8 4.5v9L12 21l-8-4.5v-9Z" />
+      <path d="m4.2 7.7 7.8 4.3 7.8-4.3M12 12v9" />
+    </svg>
+  )
+}
+
+export function BarChartIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M4 20V10M10 20V4M16 20v-7M21 20H3.5" />
+    </svg>
+  )
+}
+
+export function CloseIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="m6 6 12 12M18 6 6 18" />
+    </svg>
+  )
+}
