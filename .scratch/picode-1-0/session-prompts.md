@@ -5,7 +5,10 @@
 
 ## 当前状态
 
-- **01 净场与脚手架**：进行中（主工作区 `~/PiCode`，main 分支）。主工作区从此只当**合并枢纽**，不再接工单。
+- **已合入 main**：01 净场与脚手架、02 Host 活体（合并提交 `24b7e1f`，与 t09 的冲突已解）、09 Usage 聚合器
+- **进行中**：10 Usage 页（worktree `wt-10-usage-page`）
+- **下一步**：W3 可开 —— 03 ∥ 04 ∥ 06（主工作区 `~/PiCode` 只当**合并枢纽**，不接工单）
+- 已合并票的 worktree/分支请随手清理（命令见文末「完成后验收」第 3 步）
 
 ## 操作者流程（每张工单固定四步）
 
@@ -39,11 +42,11 @@ cd ~/PiCode && git merge --no-ff t<NN>-<slug>
 
 ---
 
-## T02 — Host 活体：最小聊天闭环（阻塞：01 已合入）
+## T02 — Host 活体：最小聊天闭环 ✅ 已合入（合并提交 24b7e1f）
 
 ```bash
 cd ~/PiCode
-git worktree add .worktrees/wt-02-host-live-chat-loop -b t02-host-live-chat-loop
+git worktree add .worktrees/wt-02-host-live-chat-loop -b t02-host-live-chat-loop main
 cd .worktrees/wt-02-host-live-chat-loop && npm install
 ```
 
@@ -70,7 +73,7 @@ cd .worktrees/wt-02-host-live-chat-loop && npm install
 
 ```bash
 cd ~/PiCode
-git worktree add .worktrees/wt-03-chat-thread-full -b t03-chat-thread-full
+git worktree add .worktrees/wt-03-chat-thread-full -b t03-chat-thread-full main
 cd .worktrees/wt-03-chat-thread-full && npm install
 ```
 
@@ -96,7 +99,7 @@ Status 改 ready-for-human + Comments 记 sha。
 
 ```bash
 cd ~/PiCode
-git worktree add .worktrees/wt-04-sessions-sidebar -b t04-sessions-sidebar
+git worktree add .worktrees/wt-04-sessions-sidebar -b t04-sessions-sidebar main
 cd .worktrees/wt-04-sessions-sidebar && npm install
 ```
 
@@ -123,7 +126,7 @@ Status 改 ready-for-human + Comments 记 sha。
 
 ```bash
 cd ~/PiCode
-git worktree add .worktrees/wt-06-panel-review -b t06-panel-review
+git worktree add .worktrees/wt-06-panel-review -b t06-panel-review main
 cd .worktrees/wt-06-panel-review && npm install
 ```
 
@@ -150,7 +153,7 @@ Status 改 ready-for-human + Comments 记 sha。
 
 ```bash
 cd ~/PiCode
-git worktree add .worktrees/wt-05-composer-approval -b t05-composer-approval
+git worktree add .worktrees/wt-05-composer-approval -b t05-composer-approval main
 cd .worktrees/wt-05-composer-approval && npm install
 ```
 
@@ -178,7 +181,7 @@ Status 改 ready-for-human + Comments 记 sha。
 
 ```bash
 cd ~/PiCode
-git worktree add .worktrees/wt-07-file-preview -b t07-file-preview
+git worktree add .worktrees/wt-07-file-preview -b t07-file-preview main
 cd .worktrees/wt-07-file-preview && npm install
 ```
 
@@ -203,7 +206,7 @@ Status 改 ready-for-human + Comments 记 sha。
 
 ```bash
 cd ~/PiCode
-git worktree add .worktrees/wt-08-terminal-bridge -b t08-terminal-bridge
+git worktree add .worktrees/wt-08-terminal-bridge -b t08-terminal-bridge main
 cd .worktrees/wt-08-terminal-bridge && npm install
 ```
 
@@ -225,11 +228,11 @@ Status 改 ready-for-human + Comments 记 sha。
 
 ---
 
-## T09 — Usage 聚合器（无阻塞；随时可开工，纯函数无 UI）
+## T09 — Usage 聚合器 ✅ 已合入
 
 ```bash
 cd ~/PiCode
-git worktree add .worktrees/wt-09-usage-aggregator -b t09-usage-aggregator
+git worktree add .worktrees/wt-09-usage-aggregator -b t09-usage-aggregator main
 cd .worktrees/wt-09-usage-aggregator && npm install
 ```
 
@@ -257,7 +260,7 @@ ready-for-human + Comments 记 sha。
 
 ```bash
 cd ~/PiCode
-git worktree add .worktrees/wt-10-usage-page -b t10-usage-page
+git worktree add .worktrees/wt-10-usage-page -b t10-usage-page main
 cd .worktrees/wt-10-usage-page && npm install
 ```
 
@@ -284,7 +287,7 @@ Status 改 ready-for-human + Comments 记 sha。
 
 ```bash
 cd ~/PiCode
-git worktree add .worktrees/wt-11-settings-polish -b t11-settings-polish
+git worktree add .worktrees/wt-11-settings-polish -b t11-settings-polish main
 cd .worktrees/wt-11-settings-polish && npm install
 ```
 
@@ -311,7 +314,7 @@ Status 改 ready-for-human + Comments 记 sha。
 
 ```bash
 cd ~/PiCode
-git worktree add .worktrees/wt-12-final-qa -b t12-final-qa
+git worktree add .worktrees/wt-12-final-qa -b t12-final-qa main
 cd .worktrees/wt-12-final-qa && npm install
 ```
 
@@ -337,7 +340,10 @@ Comments 记 sha。
 ## 附：完成后验收（操作者手工环节）
 
 1. 合并前在 worktree 里跑 `npm run dev` 对照该票截图亲自过目（Q15 红线）；
-2. 合并：`cd ~/PiCode && git merge --no-ff t<NN>-<slug>`；
-3. 有其他活跃 worktree 时逐个 `git rebase main`；
-4. 票的 Status 已是 ready-for-human → 你验收满意后把 Status 改为
+2. 合并：`cd ~/PiCode && git merge --no-ff t<NN>-<slug>`；冲突双取并集解掉后，
+   在主工作区补 `npm install`（依赖可能变了）再跑 `npm run typecheck && npm test`，绿了才提交合并；
+3. 清理已合并票：`git worktree remove .worktrees/wt-<NN>-<slug> && git branch -d t<NN>-<slug>`
+   （先 cd 出该 worktree；`-d` 只删已合入的分支，安全）；
+4. 有其他活跃 worktree 时逐个 `git rebase main`；
+5. 票的 Status 已是 ready-for-human → 你验收满意后把 Status 改为
    `resolved`（或直接进入下一票，验收随里程碑一起做）。

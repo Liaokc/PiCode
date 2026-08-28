@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately — 与 01 并行泳道)。
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] fixture 样本全绿：正常流、追加式增长、compaction、半行截断
 - [x] 抽取一个真实历史会话人工核对统计数字一致
@@ -22,3 +22,5 @@
   - 真实库幂等：连续两次扫描输出逐字节一致；冻结副本上追加一行后增量 == 全量重建（delta 恰为 1100 tokens / 1 event）。
   - 决策记录：① 日界 = 条目时间戳的本地日（时区可注入，默认系统）；② 树分支上被放弃路径的 usage 也计入（真实花费，ADR-0002 精神）；③ 周桶以周一为界；④ current streak 今日未活跃时回看昨日。
   - 合并请在根工作区执行：`cd ~/PiCode && git merge --no-ff t09-usage-aggregator`
+
+- **验收（主会话）**：合并 sha `5c7a169` 后独立复验——typecheck 干净、56/56 tests 通过；核阅 fixture 覆盖（截断/追加/compaction/时区）与四条决策记录，符合 ADR-0002 与 Seam-2 契约。工单关闭。

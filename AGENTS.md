@@ -34,4 +34,6 @@ git worktree add .worktrees/wt-<NN>-<slug> -b t<NN>-<slug>
 cd .worktrees/wt-<NN>-<slug> && npm install && npm run typecheck
 # rebase an older worktree after main moved on:
 git fetch --all 2>/dev/null; git rebase main   # from inside the worktree branch
+# merging a finished ticket (rebase + merge --no-ff + verify, all enforced):
+scripts/merge-ticket.sh <NN>
 ```
