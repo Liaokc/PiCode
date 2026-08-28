@@ -1,0 +1,297 @@
+import { useEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react'
+import type { AccessMode, ThinkingLevel } from '../../../../shared/contract'
+import { ACCESS_MODES, accessModeHint, accessModeLabel } from '../../../../shared/composer/access'
+import { CheckIcon, ChevronRightIcon, ShieldCheckIcon } from '../icons'
+
+/** English labels for Pi thinking levels (the dropdown under "Max"). */
+export const THINKING_LABELS: Record<ThinkingLevel, string> = {
+  off: 'Off',
+  minimal: 'Minimal',
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  xhigh: 'XHigh',
+  max: 'Max'
+}
+
+export function thinkingLabel(level: ThinkingLevel): string {
+  return THINKING_LABELS[level] ?? level
+}
+
+/** Floating card docked above the composer (screenshot 06's menu shape). */
+export function ComposerPopover({
+  children,
+  align = 'left',
+  onClose,
+  label,
+  captureKeys = false
+}: {
+  children: JSX.Element
+  align?: 'left' | 'right'
+  onClose: () => void
+  label: string
+  /** Steal focus so chip-opened menus own the keyboard directly. */
+  captureKeys?: boolean
+}): JSX.Element {
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function onDown(event: MouseEvent): void {
+      if (ref.current && !ref.current.contains(event.target as Node)) onClose()
+    }
+    function onKey(event: globalThis.KeyboardEvent): void {
+      if (event.key === 'Escape') {
+        event.stopPropagation()
+        onClose()
+      }
+    }
+    // mousedown (not click) so picking a row inside another card still works.
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [onClose])
+
+  return (
+    <div
+      ref={ref}
+      className={`cmp-popover cmp-popover-${align}`}
+      role="dialog"
+      aria-label={label}
+      tabIndex={captureKeys ? -1 : undefined}
+      autoFocus={captureKeys || undefined}
+    >
+      {children}
+    </div>
+  )
+}
+
+interface MenuRowProps {
+  selected: boolean
+  onSelect: () => void
+  onHover?: () => void
+  children: JSX.Element
+}
+
+/** One navigable row of a popover menu. */
+export function MenuRow({ selected, onSelect, onHover, children }: MenuRowProps): JSX.Element {
+  return (
+    <button
+      type="button"
+      className={selected ? 'cmp-menu-row cmp-menu-row-selected' : 'cmp-menu-row'}
+      role="option"
+      aria-selected={selected}
+      onClick={onSelect}
+      onMouseEnter={onHover}
+    >
+      {children}
+    </button>
+  )
+}
+
+/** Shared keyboard handling for flat menus: returns the action for a key. */
+export function flatMenuKey(event: KeyboardEvent, count: number, index: number, onIndex: (i: number) => void, onPick: (i: number) => void, onClose: () => void): boolean {
+  if (event.key === 'ArrowDown') {
+    event.preventDefault()
+    onIndex(count === 0 ? 0 : (index + 1) % count)
+    return true
+  }
+  if (event.key === 'ArrowUp') {
+    event.preventDefault()
+    onIndex(count === 0 ? 0 : (index - 1 + count) % count)
+    return true
+  }
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    if (count > 0) onPick(index)
+    return true
+  }
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    onClose()
+    return true
+  }
+  return false
+}
+
+/** Footer hint line shared by the command/file menus. */
+export function MenuHint(): JSX.Element {
+  return (
+    <div className="cmp-menu-hint">
+      <span className="cmp-menu-hint-icon">⌕</span>
+      Type to search commands and skills · ↑↓ navigate · Enter run · Esc close
+    </div>
+  )
+}
+
+/** Access Mode chip menu — the three approval-gate tiers (NOT trust). */
+export function AccessMenu({
+  current,
+  onPick,
+  onClose
+}: {
+  current: AccessMode
+  onPick: (mode: AccessMode) => void
+  onClose: () => void
+}): JSX.Element {
+  const [index, setIndex] = useState(Math.max(0, ACCESS_MODES.indexOf(current)))
+
+  function pick(mode: AccessMode): void {
+    onPick(mode)
+    onClose()
+  }
+
+  return (
+    <ComposerPopover label="Access Mode" onClose={onClose} captureKeys>
+      <div className="cmp-menu-list" role="listbox" aria-label="Access Mode" onKeyDown={(e) => flatMenuKey(e, ACCESS_MODES.length, index, setIndex, (i) => pick(ACCESS_MODES[i]!), onClose)}>
+        {ACCESS_MODES.map((mode, i) => (
+          <MenuRow key={mode} selected={i === index} onSelect={() => pick(mode)} onHover={() => setIndex(i)}>
+            <span className="cmp-access-row">
+              <ShieldCheckIcon size={14} />
+              <span className="cmp-access-row-text">
+                <span className="cmp-menu-title">{accessModeLabel(mode)}</span>
+                <span className="cmp-menu-desc">{accessModeHint(mode)}</span>
+              </span>
+              {current === mode && (
+                <span className="cmp-menu-check">
+                  <CheckIcon size={13} />
+                </span>
+              )}
+            </span>
+          </MenuRow>
+        ))}
+      </div>
+    </ComposerPopover>
+  )
+}
+
+/** Thinking Level dropdown — straight through to the session's levels. */
+export function ThinkingMenu({
+  levels,
+  current,
+  onPick,
+  onClose
+}: {
+  levels: ThinkingLevel[]
+  current: ThinkingLevel | null
+  onPick: (level: ThinkingLevel) => void
+  onClose: () => void
+}): JSX.Element {
+  const [index, setIndex] = useState(Math.max(0, levels.indexOf(current ?? 'off')))
+
+  function pick(level: ThinkingLevel): void {
+    onPick(level)
+    onClose()
+  }
+
+  return (
+    <ComposerPopover label="Thinking Level" align="right" onClose={onClose} captureKeys>
+      <div
+        className="cmp-menu-list"
+        role="listbox"
+        aria-label="Thinking Level"
+        onKeyDown={(e) => flatMenuKey(e, levels.length, index, setIndex, (i) => pick(levels[i]!), onClose)}
+      >
+        {levels.map((level, i) => (
+          <MenuRow key={level} selected={i === index} onSelect={() => pick(level)} onHover={() => setIndex(i)}>
+            <span className="cmp-inline-row">
+              <span className="cmp-menu-title">{thinkingLabel(level)}</span>
+              {current === level && (
+                <span className="cmp-menu-check">
+                  <CheckIcon size={13} />
+                </span>
+              )}
+            </span>
+          </MenuRow>
+        ))}
+      </div>
+    </ComposerPopover>
+  )
+}
+
+/** Provider → model cascade (screenshot 07): providers left, models right. */
+export function ModelMenu({
+  providers,
+  current,
+  onPick,
+  onClose
+}: {
+  providers: { providerId: string; name: string; models: { providerId: string; modelId: string; name: string }[] }[]
+  current: { providerId: string; modelId: string } | null
+  onPick: (providerId: string, modelId: string) => void
+  onClose: () => void
+}): JSX.Element {
+  const activeProvider = current ? Math.max(0, providers.findIndex((p) => p.providerId === current.providerId)) : 0
+  const [providerIndex, setProviderIndex] = useState(activeProvider)
+  const group = providers[providerIndex]
+  const [modelIndex, setModelIndex] = useState(0)
+
+  // Keep the highlighted model inside the active provider's list.
+  const modelCount = group?.models.length ?? 0
+  const clampedIndex = modelCount === 0 ? 0 : Math.min(modelIndex, modelCount - 1)
+
+  function onKey(event: KeyboardEvent): void {
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      event.preventDefault()
+      if (providers.length > 0) setProviderIndex((providerIndex + (event.key === 'ArrowRight' ? 1 : -1) + providers.length) % providers.length)
+      return
+    }
+    if (flatMenuKey(event, modelCount, clampedIndex, setModelIndex, (i) => pick(i), onClose)) return
+  }
+
+  function pick(i: number): void {
+    const model = group?.models[i]
+    if (!model) return
+    onPick(model.providerId, model.modelId)
+    onClose()
+  }
+
+  return (
+    <ComposerPopover label="Select model" align="right" onClose={onClose} captureKeys>
+      <div className="cmp-cascade" role="listbox" aria-label="Select model" onKeyDown={onKey}>
+        <div className="cmp-cascade-col">
+          {providers.map((provider, i) => (
+            <MenuRow
+              key={provider.providerId}
+              selected={i === providerIndex}
+              onSelect={() => setProviderIndex(i)}
+              onHover={() => setProviderIndex(i)}
+            >
+              <span className="cmp-inline-row">
+                <span className="cmp-menu-title">{provider.name}</span>
+                <span className="cmp-menu-spring" />
+                {current?.providerId === provider.providerId && (
+                  <span className="cmp-menu-check">
+                    <CheckIcon size={13} />
+                  </span>
+                )}
+                <ChevronRightIcon size={12} />
+              </span>
+            </MenuRow>
+          ))}
+        </div>
+        <div className="cmp-cascade-col">
+          {group?.models.map((model, i) => (
+            <MenuRow
+              key={model.modelId}
+              selected={i === clampedIndex}
+              onSelect={() => pick(i)}
+              onHover={() => setModelIndex(i)}
+            >
+              <span className="cmp-inline-row">
+                <span className="cmp-menu-title">{model.name}</span>
+                {current?.providerId === model.providerId && current?.modelId === model.modelId && (
+                  <span className="cmp-menu-check">
+                    <CheckIcon size={13} />
+                  </span>
+                )}
+              </span>
+            </MenuRow>
+          ))}
+        </div>
+      </div>
+    </ComposerPopover>
+  )
+}

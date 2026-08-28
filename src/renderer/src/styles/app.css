@@ -2872,4 +2872,413 @@ button.preview-crumb:hover {
 
 .side-panel:hover::before {
   background: var(--border-strong);
+
+/* ---------- composer menus (ticket 05, screenshot 06/07 shapes) ---------- */
+
+.composer {
+  position: relative;
+}
+
+.composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 18px 0;
+}
+
+.composer-attachment {
+  position: relative;
+  margin: 0;
+  width: 52px;
+  height: 52px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--bg-inset);
+}
+
+.composer-attachment img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.composer-attachment-remove {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(20, 20, 18, 0.72);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cmp-popover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 60;
+  min-width: 380px;
+  max-width: min(560px, 100%);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 12px 36px rgba(30, 30, 25, 0.14);
+  overflow: hidden;
+  outline: none;
+}
+
+.cmp-popover-right {
+  left: auto;
+  right: 0;
+}
+
+.cmp-menu-list {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.cmp-menu-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.cmp-menu-row:hover,
+.cmp-menu-row-selected {
+  background: var(--bg-inset);
+}
+
+.cmp-menu-row:focus-visible {
+  outline: none;
+}
+
+.cmp-cmd-row,
+.cmp-file-row,
+.cmp-inline-row,
+.cmp-access-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cmp-inline-row,
+.cmp-access-row {
+  align-items: center;
+}
+
+.cmp-cmd-name {
+  font-weight: 600;
+  font-family: var(--font-mono, ui-monospace, 'SF Mono', Menlo, monospace);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.cmp-menu-desc {
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cmp-file-dir {
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.cmp-file-name {
+  font-weight: 600;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.cmp-menu-title {
+  font-weight: 500;
+}
+
+.cmp-menu-check {
+  color: #2b9e4e;
+  display: inline-flex;
+}
+
+.cmp-menu-spring {
+  flex: 1;
+}
+
+.cmp-menu-empty {
+  padding: 14px 12px;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+}
+
+.cmp-menu-hint {
+  border-top: 1px solid var(--border);
+  padding: 7px 12px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-inset);
+}
+
+.cmp-access-soft {
+  color: var(--text-primary);
+}
+
+/* cascade model menu (screenshot 07): providers | models */
+.cmp-cascade {
+  display: flex;
+  max-height: 320px;
+}
+
+.cmp-cascade-col {
+  width: 190px;
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.cmp-cascade-col + .cmp-cascade-col {
+  border-left: 1px solid var(--border);
+  background: #fbfbfa;
+}
+
+/* steer / follow-up explicit choice (screenshot 01 busy state) */
+.cmp-queued-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  overflow: hidden;
+  margin-left: 4px;
+}
+
+.cmp-queued-opt {
+  height: 26px;
+  padding: 0 8px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.cmp-queued-opt + .cmp-queued-opt {
+  border-left: 1px solid var(--border-strong);
+}
+
+.cmp-queued-opt-on {
+  background: var(--send-bg);
+  color: #ffffff;
+}
+
+/* ---------- approval pills (ticket 05, inline in the conversation) ---------- */
+
+.approval-pill {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-card);
+  padding: 10px 12px;
+  max-width: 620px;
+  box-shadow: 0 4px 16px rgba(30, 30, 25, 0.07);
+}
+
+.approval-pill-pending {
+  border-color: var(--accent-orange);
+}
+
+.approval-pill-approved {
+  opacity: 0.75;
+}
+
+.approval-pill-denied {
+  border-color: #e0b4b4;
+  background: #faf6f5;
+}
+
+.approval-pill-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--accent-orange);
+  min-width: 0;
+}
+
+.approval-pill-denied .approval-pill-head {
+  color: #b3402e;
+}
+
+.approval-pill-approved .approval-pill-head {
+  color: #2b9e4e;
+}
+
+.approval-pill-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.approval-pill-verb {
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.approval-pill-tool {
+  font-family: var(--font-mono, ui-monospace, 'SF Mono', Menlo, monospace);
+  font-size: 12px;
+  background: var(--bg-inset);
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+
+.approval-pill-args {
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.approval-pill-reason {
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: #b3402e;
+}
+
+.approval-pill-actions,
+.approval-pill-deny {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.approval-pill-reason-input {
+  flex: 1;
+  height: 30px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 0 10px;
+  font-size: 12.5px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+.approval-btn {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.approval-btn:hover {
+  background: var(--bg-inset);
+}
+
+.approval-btn-primary {
+  background: var(--send-bg);
+  border-color: var(--send-bg);
+  color: #ffffff;
+}
+
+.approval-btn-primary:hover {
+  background: var(--send-bg-hover);
+}
+
+.approval-btn-danger {
+  color: #b3402e;
+  border-color: #e0b4b4;
+}
+
+/* ---------- queue panel (ticket 05) ---------- */
+
+.queue-panel {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 6px;
+}
+
+.queue-panel-items {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.queue-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-card);
+  padding: 5px 10px;
+  font-size: 12.5px;
+  min-width: 0;
+}
+
+.queue-item-tag {
+  flex: none;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border-radius: 5px;
+  padding: 1px 6px;
+}
+
+.queue-item-steer .queue-item-tag {
+  color: var(--accent-orange);
+  background: rgba(236, 121, 49, 0.12);
+}
+
+.queue-item-followup .queue-item-tag {
+  color: var(--text-secondary);
+  background: var(--bg-inset);
+}
+
+.queue-item-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.queue-panel-clear {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.queue-panel-clear:hover {
+  background: var(--bg-inset);
+  color: var(--text-primary);
 }

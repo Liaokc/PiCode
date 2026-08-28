@@ -1,7 +1,8 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import { homedir } from 'node:os'
 import path from 'node:path'
-import type { HostToParent, ParentToHost } from '../shared/contract'
+import fs from 'node:fs/promises'
+import type { HostToParent, ImageAttachment, ParentToHost } from '../shared/contract'
 import type { ReviewResult } from '../shared/review/types'
 import type { PreviewResult } from '../shared/preview/types'
 import { createWindowOptions } from './window-options'
@@ -72,6 +73,30 @@ app.whenReady().then(() => {
       properties: ['openDirectory']
     })
     return result.canceled ? null : (result.filePaths[0] ?? null)
+  })
+
+  // Composer image attachments (ticket 05): picked images are read in the
+  // main process and delivered to the renderer as base64 contract payloads.
+  ipcMain.handle('chat:pick-images', async (event): Promise<ImageAttachment[]> => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const result = await dialog.showOpenDialog(win as BrowserWindow, {
+      title: 'Attach images',
+      properties: ['openFile', 'multiSelections'],
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'] }]
+    })
+    if (result.canceled) return []
+    const attachments: ImageAttachment[] = []
+    for (const file of result.filePaths) {
+      try {
+        const buffer = await fs.readFile(file)
+        const ext = path.extname(file).toLowerCase().replace('.', '')
+        const mimeType = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`
+        attachments.push({ mimeType, data: buffer.toString('base64') })
+      } catch {
+        // Unreadable file — skip it rather than failing the whole pick.
+      }
+    }
+    return attachments
   })
 
   // Review tab (ticket 06): git workspace-vs-HEAD snapshots, read-only.

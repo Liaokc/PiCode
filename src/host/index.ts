@@ -23,10 +23,26 @@ import type {
   SessionManager,
   SessionStartEvent
 } from '@earendil-works/pi-coding-agent'
-import type { HostToParent } from '../shared/contract'
+import type {
+  AccessMode,
+  HostToParent,
+  ImageAttachment,
+  ModelRef,
+  ThinkingLevel
+} from '../shared/contract'
 import { buildSessionTree, extractTranscriptItems, type RawSessionEntry } from '../shared/sessions/parse'
 import type { SessionTreePayload } from '../shared/sessions/types'
 import { toolResultText } from '../shared/tool-format'
+import { ApprovalGate } from './approval-gate'
+import {
+  PICODE_BUILTIN_COMMANDS,
+  buildSlashCommands,
+  groupModelsByProvider,
+  toModelRef,
+  type SdkModelLike
+} from './composer-list'
+import { listRelativeFiles } from './files'
+import { createApprovalGateExtension, toImageContents } from './gate-extension'
 
 const cwd = process.argv[2]
 const resumeFile = process.argv[3]
@@ -57,6 +73,15 @@ let settled = true // true = no agent run in flight
 /** Error from the latest failed assistant message, surfaced only if the run
  * actually ends in failure (auto-retry may still recover). */
 let pendingTurnError: string | null = null
+
+/** The approval gate (one per host process = per Session) + its extension. */
+const gate = new ApprovalGate()
+const approvalExtension = createApprovalGateExtension(gate, send)
+
+/** User messages this process already echoed via the `prompt` command; used
+ * to de-duplicate the `entry_appended` relay so delivered Steer/Follow-up
+ * messages surface exactly once (ticket 05 queue semantics). */
+const pendingEchoes: string[] = []
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -146,6 +171,11 @@ function wireSessionEvents(agentSession: AgentSession): void {
         break
       }
       case 'message_end': {
+        if (event.message.role === 'user') {
+          // Steer/Follow-up deliveries surface as injected user messages.
+          relayDeliveredUserText(userEntryText(event.message.content))
+          break
+        }
         if (event.message.role !== 'assistant') break
         send({ type: 'message_end' })
         // Hold the error: auto-retry may still recover; only a run that ends
@@ -164,6 +194,8 @@ function wireSessionEvents(agentSession: AgentSession): void {
           break
         }
         settled = true
+        // Any pill still pending dies with the run (abort/compaction paths).
+        gate.cancelAll('The turn ended before a decision.')
         if (pendingTurnError !== null) {
           send({ type: 'turn_error', message: pendingTurnError })
           pendingTurnError = null
@@ -171,11 +203,73 @@ function wireSessionEvents(agentSession: AgentSession): void {
         send({ type: 'agent_end' })
         break
       }
+      // ---- ticket 05: queue, delivery echoes, thinking tier, compaction ----
+      case 'queue_update':
+        send({ type: 'queue_update', steering: [...event.steering], followUp: [...event.followUp] })
+        break
+      case 'entry_appended':
+        relayAppendedUserEntry(event.entry)
+        break
+      case 'thinking_level_changed':
+        send({
+          type: 'thinking_level_changed',
+          level: event.level as ThinkingLevel,
+          availableLevels: agentSession.getAvailableThinkingLevels() as ThinkingLevel[]
+        })
+        break
+      case 'compaction_start':
+        send({ type: 'host_notice', level: 'info', message: 'Compacting conversation context…' })
+        break
+      case 'compaction_end':
+        send(
+          event.aborted || event.errorMessage
+            ? {
+                type: 'host_notice',
+                level: 'error',
+                message: `Compaction failed${event.errorMessage ? `: ${event.errorMessage}` : ''}.`
+              }
+            : { type: 'host_notice', level: 'info', message: 'Context compacted.' }
+        )
+        break
       default:
         break
     }
   })
   unwireSession = unsubscribe
+}
+
+/** A user message delivered mid-run (Steer/Follow-up) surfaces in the
+ * transcript exactly once: prompt echoes are pre-recorded and consumed, and
+ * a small recent-set guards the double path (message_end + entry_appended). */
+const recentRelays: string[] = []
+
+function relayDeliveredUserText(text: string | null): void {
+  if (text === null || text === '') return
+  const echoIndex = pendingEchoes.indexOf(text)
+  if (echoIndex !== -1) {
+    pendingEchoes.splice(echoIndex, 1)
+    return
+  }
+  if (recentRelays.includes(text)) return
+  recentRelays.push(text)
+  if (recentRelays.length > 20) recentRelays.shift()
+  send({ type: 'user_message', text })
+}
+
+function relayAppendedUserEntry(entry: SessionEntry): void {
+  const candidate = entry as { type?: string; message?: { role?: string; content?: unknown } }
+  if (candidate.type !== 'message' || candidate.message?.role !== 'user') return
+  relayDeliveredUserText(userEntryText(candidate.message.content))
+}
+
+function userEntryText(content: unknown): string | null {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return null
+  const parts: string[] = []
+  for (const block of content) {
+    if (isRecord(block) && block.type === 'text' && typeof block.text === 'string') parts.push(block.text)
+  }
+  return parts.join('\n')
 }
 
 function announceCurrentSession(resumed: boolean): void {
@@ -189,9 +283,49 @@ function announceCurrentSession(resumed: boolean): void {
     name: agentSession.sessionManager.getSessionName() ?? null,
     resumed
   })
+  // Composer state travels with the session announcement so a fresh renderer
+  // (or a fork/rebuild) sees model/thinking/access mode atomically.
+  send(composerState())
+  send(modelsAvailable())
+  send(slashCommands())
   if (resumed) {
     sendHistory()
     sendTree()
+  }
+}
+
+// ---- ticket 05: composer state builders ----
+
+function modelRefOrNull(model: AgentSession['model']): ModelRef | null {
+  return model ? toModelRef(model) : null
+}
+
+function composerState(): Extract<HostToParent, { type: 'composer_state' }> {
+  const agentSession = runtime!.session
+  return {
+    type: 'composer_state',
+    model: modelRefOrNull(agentSession.model),
+    thinkingLevel: (agentSession.thinkingLevel ?? null) as ThinkingLevel | null,
+    availableLevels: agentSession.getAvailableThinkingLevels() as ThinkingLevel[],
+    accessMode: gate.getMode()
+  }
+}
+
+function modelsAvailable(): Extract<HostToParent, { type: 'models_available' }> {
+  const modelRuntime = runtime!.services.modelRuntime
+  const available = modelRuntime.getAvailableSnapshot() as readonly SdkModelLike[]
+  return {
+    type: 'models_available',
+    providers: groupModelsByProvider(available, (providerId) => modelRuntime.getProvider(providerId)?.name),
+    current: modelRefOrNull(runtime!.session.model)
+  }
+}
+
+function slashCommands(): Extract<HostToParent, { type: 'slash_commands' }> {
+  const loader = runtime!.services.resourceLoader
+  return {
+    type: 'slash_commands',
+    commands: buildSlashCommands(loader.getPrompts().prompts, loader.getSkills().skills, PICODE_BUILTIN_COMMANDS)
   }
 }
 
@@ -199,9 +333,13 @@ async function createSession(): Promise<void> {
   const sdk = await import('@earendil-works/pi-coding-agent')
   const manager = resumeFile ? sdk.SessionManager.open(resumeFile) : sdk.SessionManager.create(cwd)
   // The factory recreates cwd-bound services on every session replacement —
-  // the same shape the pi TUI hands to createAgentSessionRuntime.
+  // the same shape the pi TUI hands to createAgentSessionRuntime. The
+  // approval gate rides the resource loader's inline-extension pipeline.
   const factory = async (opts: { cwd: string; sessionManager: SessionManager; sessionStartEvent?: SessionStartEvent }) => {
-    const services = await sdk.createAgentSessionServices({ cwd: opts.cwd })
+    const services = await sdk.createAgentSessionServices({
+      cwd: opts.cwd,
+      resourceLoaderOptions: { extensionFactories: [approvalExtension] }
+    })
     const result = await sdk.createAgentSessionFromServices({
       services,
       sessionManager: opts.sessionManager,
@@ -218,23 +356,115 @@ async function createSession(): Promise<void> {
   announceCurrentSession(Boolean(resumeFile))
 }
 
-function handlePrompt(text: string): void {
+function handlePrompt(text: string, images?: ImageAttachment[]): void {
   const agentSession = runtime?.session
   if (!agentSession || !settled) {
     send({ type: 'turn_error', message: 'Cannot prompt while no session is ready or a run is in flight.' })
     return
   }
   send({ type: 'user_message', text })
+  pendingEchoes.push(text)
   try {
-    agentSession.prompt(text).catch((err: unknown) => send({ type: 'turn_error', message: errorText(err) }))
+    agentSession.prompt(text, { images: toImageContents(images) }).catch((err: unknown) => {
+      pullEcho(text)
+      send({ type: 'turn_error', message: errorText(err) })
+    })
   } catch (err) {
+    pullEcho(text)
     send({ type: 'turn_error', message: errorText(err) })
   }
+}
+
+function pullEcho(text: string): void {
+  const index = pendingEchoes.indexOf(text)
+  if (index !== -1) pendingEchoes.splice(index, 1)
+}
+
+/** Explicit Steer: inject into the RUNNING turn (renderer chose the mode). */
+async function handleQueued(kind: 'steer_prompt' | 'follow_up_prompt', text: string, images?: ImageAttachment[]): Promise<void> {
+  const agentSession = runtime?.session
+  if (!agentSession) {
+    send({ type: 'session_command_error', message: 'No session is open.' })
+    return
+  }
+  try {
+    const content = toImageContents(images)
+    if (kind === 'steer_prompt') await agentSession.steer(text, content)
+    else await agentSession.followUp(text, content)
+  } catch (err) {
+    send({ type: 'session_command_error', message: errorText(err) })
+  }
+}
+
+async function handleSetModel(providerId: string, modelId: string): Promise<void> {
+  if (!runtime) {
+    send({ type: 'session_command_error', message: 'No session is open.' })
+    return
+  }
+  const model = runtime.services.modelRuntime.getModel(providerId, modelId)
+  if (!model) {
+    send({ type: 'session_command_error', message: `Model ${providerId}/${modelId} is not available.` })
+    return
+  }
+  try {
+    await runtime.session.setModel(model)
+    send({
+      type: 'model_changed',
+      model: toModelRef(runtime.session.model!),
+      thinkingLevel: (runtime.session.thinkingLevel ?? null) as ThinkingLevel | null,
+      availableLevels: runtime.session.getAvailableThinkingLevels() as ThinkingLevel[]
+    })
+  } catch (err) {
+    send({ type: 'session_command_error', message: errorText(err) })
+  }
+}
+
+function handleSetThinkingLevel(level: ThinkingLevel): void {
+  const agentSession = runtime?.session
+  if (!agentSession) {
+    send({ type: 'session_command_error', message: 'No session is open.' })
+    return
+  }
+  try {
+    // setThinkingLevel clamps to model capabilities; when the effective level
+    // changes the SDK's thinking_level_changed event echoes it back.
+    agentSession.setThinkingLevel(level)
+  } catch (err) {
+    send({ type: 'session_command_error', message: errorText(err) })
+  }
+}
+
+function handleSetAccessMode(mode: AccessMode): void {
+  gate.setMode(mode)
+  send({ type: 'access_mode_changed', mode: gate.getMode() })
+}
+
+async function handleCompact(): Promise<void> {
+  const agentSession = runtime?.session
+  if (!agentSession) {
+    send({ type: 'session_command_error', message: 'No session is open.' })
+    return
+  }
+  try {
+    await agentSession.compact()
+    // compaction_start/end SDK events carry the notices to the renderer.
+  } catch (err) {
+    send({ type: 'host_notice', level: 'error', message: `Compaction failed: ${errorText(err)}` })
+  }
+}
+
+async function handleListFiles(requestId: string, query: string): Promise<void> {
+  void query // ranking happens renderer-side; the host returns the candidate set
+  const files = await listRelativeFiles(cwd)
+  send({ type: 'file_list', requestId, files })
 }
 
 async function handleAbort(): Promise<void> {
   const agentSession = runtime?.session
   if (!agentSession) return
+  // Pending pills die with the turn — resolve their waiters before abort so
+  // the agent loop never stays parked on a decision nobody will give.
+  gate.cancelAll('The turn was aborted.')
   try {
     await agentSession.abort()
   } catch (err) {
@@ -303,7 +533,55 @@ process.on('message', (message: unknown) => {
   if (!isRecord(message) || typeof message.type !== 'string') return
   switch (message.type) {
     case 'prompt':
-      if (typeof message.text === 'string') handlePrompt(message.text)
+      if (typeof message.text === 'string') {
+        handlePrompt(message.text, message.images as ImageAttachment[] | undefined)
+      }
+      break
+    case 'steer_prompt':
+    case 'follow_up_prompt':
+      if (typeof message.text === 'string') {
+        void handleQueued(message.type, message.text, message.images as ImageAttachment[] | undefined)
+      }
+      break
+    case 'clear_queue':
+      runtime?.session.clearQueue() // emits queue_update itself
+      break
+    case 'set_model':
+      if (typeof message.providerId === 'string' && typeof message.modelId === 'string') {
+        void handleSetModel(message.providerId, message.modelId)
+      }
+      break
+    case 'set_thinking_level':
+      if (typeof message.level === 'string') handleSetThinkingLevel(message.level as ThinkingLevel)
+      break
+    case 'set_access_mode':
+      if (typeof message.mode === 'string') handleSetAccessMode(message.mode as AccessMode)
+      break
+    case 'approve_tool':
+      if (typeof message.toolCallId === 'string') {
+        gate.resolve(message.toolCallId, {
+          approved: true,
+          reason: '',
+          remember: message.remember === true
+        })
+      }
+      break
+    case 'deny_tool':
+      if (typeof message.toolCallId === 'string') {
+        gate.resolve(message.toolCallId, {
+          approved: false,
+          reason: typeof message.reason === 'string' ? message.reason : '',
+          remember: false
+        })
+      }
+      break
+    case 'compact_session':
+      void handleCompact()
+      break
+    case 'list_files':
+      if (typeof message.requestId === 'string') {
+        void handleListFiles(message.requestId, typeof message.query === 'string' ? message.query : '')
+      }
       break
     case 'abort_turn':
       void handleAbort()
@@ -322,6 +600,7 @@ process.on('message', (message: unknown) => {
       break
     case 'shutdown':
       void (async () => {
+        gate.cancelAll('The session is shutting down.')
         try {
           await runtime?.dispose()
         } catch {
