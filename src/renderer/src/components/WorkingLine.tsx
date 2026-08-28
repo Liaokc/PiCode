@@ -1,4 +1,5 @@
-import { useEffect, useState, type JSX } from 'react'
+import { type JSX } from 'react'
+import { useElapsedSeconds } from './use-elapsed-seconds'
 import { LoaderIcon } from './icons'
 
 /**
@@ -7,12 +8,7 @@ import { LoaderIcon } from './icons'
  * flight. Seconds tick locally from mount — the reducer stays time-free.
  */
 export default function WorkingLine(): JSX.Element {
-  const [seconds, setSeconds] = useState(0)
-
-  useEffect(() => {
-    const timer = setInterval(() => setSeconds((s) => s + 1), 1000)
-    return () => clearInterval(timer)
-  }, [])
+  const seconds = useElapsedSeconds(true)
 
   return (
     <div className="working-line" role="status">

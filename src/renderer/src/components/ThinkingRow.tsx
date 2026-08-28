@@ -1,5 +1,6 @@
-import { useEffect, useState, type JSX } from 'react'
+import { useState, type JSX } from 'react'
 import type { ThinkingPart } from '../../../shared/chat-reducer'
+import { useElapsedSeconds } from './use-elapsed-seconds'
 import { ChevronDownIcon, SparklesIcon } from './icons'
 
 /**
@@ -10,13 +11,7 @@ import { ChevronDownIcon, SparklesIcon } from './icons'
  */
 export default function ThinkingRow({ part }: { part: ThinkingPart }): JSX.Element {
   const [open, setOpen] = useState(false)
-  const [tickSeconds, setTickSeconds] = useState(0)
-
-  useEffect(() => {
-    if (!part.streaming) return
-    const timer = setInterval(() => setTickSeconds((s) => s + 1), 1000)
-    return () => clearInterval(timer)
-  }, [part.streaming])
+  const tickSeconds = useElapsedSeconds(part.streaming)
 
   const seconds =
     part.streaming || part.durationMs === null ? Math.max(tickSeconds, 1) : Math.max(1, Math.round(part.durationMs / 1000))
