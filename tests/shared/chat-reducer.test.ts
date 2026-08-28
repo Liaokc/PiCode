@@ -47,7 +47,14 @@ describe('chatReducer — session lifecycle', () => {
       session: null,
       entries: [],
       agentRunning: false,
-      error: null
+      error: null,
+      model: null,
+      thinkingLevel: null,
+      availableLevels: [],
+      accessMode: 'standard',
+      providers: [],
+      slashCommands: [],
+      queue: { steering: [], followUp: [] }
     })
   })
 
@@ -536,7 +543,9 @@ describe('chatReducer — resumed history (ticket 04)', () => {
         ? entry.parts.map((part) => (part.kind === 'text' ? part.text : '')).join('')
         : entry.role === 'user'
           ? entry.text
-          : `[tool:${entry.name}]`
+          : entry.role === 'approval'
+            ? '[approval]'
+            : `[tool:${entry.name}]`
     )
     expect(texts).toEqual(['earlier question', 'earlier answer', 'hello', 'Hel there'])
     const last = state.entries[state.entries.length - 1]
@@ -563,9 +572,219 @@ describe('chatReducer — purity', () => {
     const b = run(initialChatState(), ...events)
     expect(a).toEqual(b)
   })
+})
 
-  it('never mutates the incoming state or its nested data', () => {
-    const frozen = deepFreeze(run(initialChatState(), SESSION_CREATED, { type: 'user_message', text: 'q' }))
+describe('chatReducer — composer + approval gate (ticket 05)', () => {
+  const COMPOSER_STATE: HostToParent = {
+    type: 'composer_state',
+    model: { providerId: 'anthropic', modelId: 'claude-opus-4-5', name: 'Claude Opus 4.5' },
+    thinkingLevel: 'medium',
+    availableLevels: ['off', 'medium', 'high'],
+    accessMode: 'standard'
+  }
+
+  it('composer_state installs model, thinking tier and access mode', () => {
+    const state = chatReducer(initialChatState(), COMPOSER_STATE)
+    expect(state.model?.modelId).toBe('claude-opus-4-5')
+    expect(state.thinkingLevel).toBe('medium')
+    expect(state.availableLevels).toEqual(['off', 'medium', 'high'])
+    expect(state.accessMode).toBe('standard')
+  })
+
+  it('models_available stores provider groupings and the current model', () => {
+    const state = chatReducer(initialChatState(), {
+      type: 'models_available',
+      providers: [{ providerId: 'anthropic', name: 'Anthropic', models: [COMPOSER_STATE.model!] }],
+      current: COMPOSER_STATE.model!
+    })
+    expect(state.providers[0]?.name).toBe('Anthropic')
+  })
+
+  it('model_changed carries the clamped thinking state with it', () => {
+    const state = run(initialChatState(), COMPOSER_STATE, {
+      type: 'model_changed',
+      model: { providerId: 'openai', modelId: 'gpt-5', name: 'GPT-5' },
+      thinkingLevel: 'low',
+      availableLevels: ['off', 'low']
+    })
+    expect(state.model).toEqual({ providerId: 'openai', modelId: 'gpt-5', name: 'GPT-5' })
+    expect(state.thinkingLevel).toBe('low')
+    expect(state.availableLevels).toEqual(['off', 'low'])
+  })
+
+  it('thinking_level_changed and access_mode_changed update their slices', () => {
+    const state = run(
+      initialChatState(),
+      COMPOSER_STATE,
+      { type: 'thinking_level_changed', level: 'high', availableLevels: ['off', 'high'] },
+      { type: 'access_mode_changed', mode: 'read-only' }
+    )
+    expect(state.thinkingLevel).toBe('high')
+    expect(state.accessMode).toBe('read-only')
+  })
+
+  it('slash_commands and queue_update store their payloads', () => {
+    const state = run(
+      initialChatState(),
+      {
+        type: 'slash_commands',
+        commands: [{ name: 'review', description: 'Review the diff', source: 'prompt' }]
+      },
+      { type: 'queue_update', steering: ['a'], followUp: ['b'] }
+    )
+    expect(state.slashCommands).toHaveLength(1)
+    expect(state.queue).toEqual({ steering: ['a'], followUp: ['b'] })
+  })
+
+  it('approval_required appends a pending approval entry keyed by toolCallId', () => {
+    const state = chatReducer(initialChatState(), {
+      type: 'approval_required',
+      toolCallId: 'tc-9',
+      toolName: 'bash',
+      args: { command: 'rm -rf /' }
+    })
+    expect(state.entries).toEqual([
+      { id: 'tc-9', role: 'approval', toolName: 'bash', args: { command: 'rm -rf /' }, state: 'pending', reason: null }
+    ])
+  })
+
+  it('approval_required replaces a stale same-id entry (defensive)', () => {
+    const state = run(
+      initialChatState(),
+      { type: 'approval_required', toolCallId: 'tc-9', toolName: 'bash', args: {} },
+      { type: 'approval_required', toolCallId: 'tc-9', toolName: 'bash', args: { command: 'ls' } }
+    )
+    expect(state.entries).toHaveLength(1)
+    expect(state.entries[0]).toMatchObject({ state: 'pending', args: { command: 'ls' } })
+  })
+
+  it('approval_resolved flips the pill to approved / denied', () => {
+    const approved = run(
+      initialChatState(),
+      { type: 'approval_required', toolCallId: 'tc-9', toolName: 'bash', args: {} },
+      { type: 'approval_resolved', toolCallId: 'tc-9', approved: true, reason: null }
+    )
+    expect(approved.entries[0]).toMatchObject({ state: 'approved' })
+    const denied = chatReducer(approved, {
+      type: 'approval_required',
+      toolCallId: 'tc-10',
+      toolName: 'edit',
+      args: {}
+    })
+    const afterDeny = chatReducer(denied, {
+      type: 'approval_resolved',
+      toolCallId: 'tc-10',
+      approved: false,
+      reason: 'Do not touch that file'
+    })
+    expect(afterDeny.entries[1]).toMatchObject({ state: 'denied', reason: 'Do not touch that file' })
+  })
+
+  it('approval_resolved for an unknown id is a no-op (same state)', () => {
+    const state = chatReducer(initialChatState(), {
+      type: 'approval_resolved',
+      toolCallId: 'nope',
+      approved: true,
+      reason: null
+    })
+    expect(state.entries).toEqual([])
+  })
+
+  it('tool_start converts the approval entry into a running tool card (same id)', () => {
+    const state = run(
+      initialChatState(),
+      { type: 'approval_required', toolCallId: 'tc-9', toolName: 'bash', args: { command: 'ls' } },
+      { type: 'approval_resolved', toolCallId: 'tc-9', approved: true, reason: null },
+      { type: 'tool_start', toolCallId: 'tc-9', name: 'bash', args: { command: 'ls' } }
+    )
+    expect(state.entries).toHaveLength(1)
+    expect(state.entries[0]).toMatchObject({ role: 'tool', state: 'running', output: '' })
+  })
+
+  it('approval_required converts an already-started tool card back into a pill (SDK emits tool_execution_start first)', () => {
+    const state = run(
+      initialChatState(),
+      { type: 'tool_start', toolCallId: 'tc-9', name: 'bash', args: { command: 'ls' } },
+      { type: 'approval_required', toolCallId: 'tc-9', toolName: 'bash', args: { command: 'ls' } }
+    )
+    expect(state.entries).toHaveLength(1)
+    expect(state.entries[0]).toMatchObject({ role: 'approval', state: 'pending' })
+  })
+
+  it('tool_end after an approve converts the pill into the finished card', () => {
+    const state = run(
+      initialChatState(),
+      { type: 'approval_required', toolCallId: 'tc-9', toolName: 'bash', args: {} },
+      { type: 'approval_resolved', toolCallId: 'tc-9', approved: true, reason: null },
+      { type: 'tool_end', toolCallId: 'tc-9', output: 'ran fine', isError: false }
+    )
+    expect(state.entries[0]).toMatchObject({ role: 'tool', state: 'done', output: 'ran fine' })
+  })
+
+  it('tool_end after a denial keeps the denied pill (no duplicate card)', () => {
+    const state = run(
+      initialChatState(),
+      { type: 'approval_required', toolCallId: 'tc-9', toolName: 'bash', args: {} },
+      { type: 'approval_resolved', toolCallId: 'tc-9', approved: false, reason: 'not today' },
+      { type: 'tool_end', toolCallId: 'tc-9', output: 'Denied by the user.', isError: true }
+    )
+    expect(state.entries[0]).toMatchObject({ role: 'approval', state: 'denied', reason: 'not today' })
+  })
+
+  it('tool_end landing on a still-pending approval converts then finalizes (defensive)', () => {
+    const state = run(
+      initialChatState(),
+      { type: 'approval_required', toolCallId: 'tc-9', toolName: 'bash', args: {} },
+      { type: 'tool_end', toolCallId: 'tc-9', output: 'denied upstream', isError: true }
+    )
+    expect(state.entries[0]).toMatchObject({ role: 'tool', state: 'error', output: 'denied upstream' })
+  })
+
+  it('agent_end settles a pending approval into denied (run ended over it)', () => {
+    const state = run(
+      initialChatState(),
+      { type: 'approval_required', toolCallId: 'tc-9', toolName: 'bash', args: {} },
+      { type: 'agent_end' }
+    )
+    expect(state.entries[0]).toMatchObject({ state: 'denied', reason: 'The turn ended before a decision.' })
+  })
+
+  it('agent_end settles an approved-but-never-started approval into denied', () => {
+    const state = run(
+      initialChatState(),
+      { type: 'approval_required', toolCallId: 'tc-9', toolName: 'bash', args: {} },
+      { type: 'approval_resolved', toolCallId: 'tc-9', approved: true, reason: null },
+      { type: 'agent_end' }
+    )
+    expect(state.entries[0]).toMatchObject({ state: 'denied', reason: 'Approved, but the turn ended before the tool ran.' })
+  })
+
+  it('session_created resets composer state, queue and live approvals', () => {
+    const dirty = run(
+      initialChatState(),
+      COMPOSER_STATE,
+      { type: 'slash_commands', commands: [{ name: 'x', description: '', source: 'builtin' }] },
+      { type: 'queue_update', steering: ['a'], followUp: [] },
+      { type: 'approval_required', toolCallId: 'tc-9', toolName: 'bash', args: {} }
+    )
+    const fresh = chatReducer(dirty, { ...SESSION_CREATED, sessionId: 's-2' })
+    expect(fresh.model).toBeNull()
+    expect(fresh.slashCommands).toEqual([])
+    expect(fresh.queue).toEqual({ steering: [], followUp: [] })
+    expect(fresh.entries).toEqual([])
+    expect(fresh.accessMode).toBe('standard')
+  })
+
+  it('never mutates the incoming state or its nested data (ticket 05 events included)', () => {
+    const frozen = deepFreeze(
+      run(
+        initialChatState(),
+        COMPOSER_STATE,
+        { type: 'user_message', text: 'q' },
+        { type: 'queue_update', steering: ['a'], followUp: [] },
+        { type: 'approval_required', toolCallId: 'tc-9', toolName: 'bash', args: { command: 'ls' } }
+      )
+    )
     expect(() =>
       run(
         frozen,
@@ -575,7 +794,9 @@ describe('chatReducer — purity', () => {
         { type: 'thinking_end', durationMs: 1 },
         { type: 'text_delta', delta: 'y' },
         TOOL_START,
-        { type: 'tool_update', toolCallId: 'tc-1', partial: 'z' }
+        { type: 'tool_update', toolCallId: 'tc-1', partial: 'z' },
+        { type: 'model_changed', model: COMPOSER_STATE.model!, thinkingLevel: 'low', availableLevels: ['low'] },
+        { type: 'approval_resolved', toolCallId: 'tc-9', approved: true, reason: null }
       )
     ).not.toThrow()
   })

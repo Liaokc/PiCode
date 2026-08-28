@@ -1,5 +1,5 @@
 /// <reference types="vite/client" />
-import type { HostToParent, ParentToHost } from '../shared/contract'
+import type { HostToParent, ImageAttachment, ParentToHost } from '../shared/contract'
 import type { FollowUpdate, SessionSummary, TranscriptItem } from '../../shared/sessions/types'
 import type { ReviewResult } from '../shared/review/types'
 import type { PreviewResult } from '../shared/preview/types'
@@ -20,6 +20,8 @@ interface PicodeChatBridge {
   /** Subscribe to the Seam-1 contract stream; returns an unsubscribe function. */
   onHostEvent(listener: (event: HostToParent) => void): () => void
   pickWorkingDirectory(): Promise<string | null>
+  /** Pick image files for the composer (read in main, returned as base64). */
+  pickImages(): Promise<ImageAttachment[]>
 }
 
 interface PicodeSessionsBridge {

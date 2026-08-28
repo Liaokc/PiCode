@@ -1,6 +1,7 @@
 import { useMemo, type JSX } from 'react'
 import { greetingForHour } from '../../../shared/greeting'
-import Composer from './Composer'
+import Composer, { type ComposerApi } from './Composer'
+import { initialChatState } from '../../../shared/chat-reducer'
 
 const QUICK_START_CHIPS = ['Weekly Report', 'Bug Fix', 'Slide Maker', 'Idle Tasks'] as const
 
@@ -19,22 +20,24 @@ function WatermarkPi(): JSX.Element {
 interface EmptyStateProps {
   /** True while a session is being created after a folder pick. */
   creating: boolean
-  /** First send from the empty state: App turns it into folder-pick + first prompt. */
-  onSend: (text: string) => void
+  /** Composer commands (the first send turns into folder-pick + first prompt). */
+  composerApi: ComposerApi
 }
 
 /**
  * Empty state: greeting, centered composer card and quick-start chip slots,
- * matching screenshot 02's composition. The first send picks a working
- * directory, boots the agent host session, then runs the typed prompt.
+ * matching screenshot 02's composition. The composer runs with the initial
+ * chat state (no menus data yet); the first send picks a working directory,
+ * boots the agent host session, then runs the typed prompt.
  */
-export default function EmptyState({ creating, onSend }: EmptyStateProps): JSX.Element {
+export default function EmptyState({ creating, composerApi }: EmptyStateProps): JSX.Element {
   // `VITE_PICODE_FAKE_HOUR` pins the greeting for deterministic screenshot QA.
   const pinnedHour = Number(import.meta.env.VITE_PICODE_FAKE_HOUR)
   const greeting = useMemo(
     () => greetingForHour(Number.isInteger(pinnedHour) ? pinnedHour : new Date().getHours()),
     [pinnedHour]
   )
+  const idleChat = initialChatState()
 
   return (
     <div className="empty-state">
@@ -45,8 +48,9 @@ export default function EmptyState({ creating, onSend }: EmptyStateProps): JSX.E
         busy={false}
         disabled={creating}
         placeholder={creating ? 'Starting session…' : 'Ask anything — @ to add context, / for commands'}
-        onSend={onSend}
-        onStop={() => {}}
+        chat={idleChat}
+        queue={idleChat.queue}
+        {...composerApi}
       />
 
       <div className="quick-chips" role="list" aria-label="Quick starts">

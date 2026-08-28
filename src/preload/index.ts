@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import type { HostToParent, ParentToHost } from '../shared/contract'
+import type { HostToParent, ImageAttachment, ParentToHost } from '../shared/contract'
 import type { FollowUpdate, SessionSummary, TranscriptItem } from '../shared/sessions/types'
 import type { UsageSnapshot } from '../shared/usage/aggregate'
 import type { ReviewResult } from '../shared/review/types'
@@ -35,7 +35,9 @@ contextBridge.exposeInMainWorld('picode', {
         ipcRenderer.removeListener('chat:from-host', wrapped)
       }
     },
-    pickWorkingDirectory: (): Promise<string | null> => ipcRenderer.invoke('chat:pick-directory')
+    pickWorkingDirectory: (): Promise<string | null> => ipcRenderer.invoke('chat:pick-directory'),
+    /** Pick image files for the composer (read in main, returned as base64). */
+    pickImages: (): Promise<ImageAttachment[]> => ipcRenderer.invoke('chat:pick-images')
   },
   sessions: {
     list: (): Promise<SessionSummary[]> => ipcRenderer.invoke('sessions:list'),

@@ -78,6 +78,23 @@ async function capture(win: BrowserWindow, name: string): Promise<string> {
   return file
 }
 
+/** Capture a composer-state shot and assert its DOM signature. */
+async function captureMenu(
+  win: BrowserWindow,
+  name: string,
+  probes: Record<string, string>
+): Promise<string> {
+  const file = await capture(win, name)
+  for (const [label, selector] of Object.entries(probes)) {
+    const count = (await win.webContents.executeJavaScript(
+      `document.querySelectorAll(${JSON.stringify(selector)}).length`
+    )) as number
+    if (count === 0) throw new Error(`visual ${name}: expected ${label} (${selector}) in the DOM`)
+    console.log(`VISUAL probe ${name}/${label}: ${count}`)
+  }
+  return file
+}
+
 export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): void {
   if (!visualEnabled()) return
 
@@ -165,6 +182,90 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       await sleep(500)
       await capture(win, '3-expanded')
 
+      // ---- ticket 05: composer menus, approval pill, queue panel ----
+      emit({
+        type: 'composer_state',
+        model: { providerId: 'bella', modelId: 'GLM-5.3', name: 'GLM-5.3' },
+        thinkingLevel: 'max',
+        availableLevels: ['off', 'low', 'medium', 'high', 'max'],
+        accessMode: 'standard'
+      })
+      emit({
+        type: 'models_available',
+        providers: [
+          {
+            providerId: 'bella',
+            name: 'Bella',
+            models: [
+              { providerId: 'bella', modelId: 'GLM-5.1', name: 'GLM-5.1' },
+              { providerId: 'bella', modelId: 'GLM-5.3', name: 'GLM-5.3' },
+              { providerId: 'bella', modelId: 'GLM-5.3-flash', name: 'GLM-5.3-flash' }
+            ]
+          },
+          {
+            providerId: 'openai',
+            name: 'OpenAI',
+            models: [{ providerId: 'openai', modelId: 'gpt-5.1', name: 'GPT-5.1' }]
+          }
+        ],
+        current: { providerId: 'bella', modelId: 'GLM-5.3', name: 'GLM-5.3' }
+      })
+      emit({
+        type: 'slash_commands',
+        commands: [
+          { name: 'model', description: 'Select model (provider → model menu)', source: 'builtin' },
+          { name: 'compact', description: 'Compact the session context', source: 'builtin' },
+          { name: 'review', description: 'Review the current diff against HEAD', source: 'prompt' },
+          { name: 'plan', description: 'Switch to plan mode and send a task', source: 'prompt' },
+          { name: 'code-review', description: 'Structured review skill', source: 'skill' }
+        ]
+      })
+      await sleep(300)
+
+      // Open the `/` menu like a user typing (React-controlled textarea).
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const ta = document.querySelector('.composer-input')
+          if (!(ta instanceof HTMLTextAreaElement)) return false
+          const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+          setter.call(ta, '/')
+          ta.dispatchEvent(new Event('input', { bubbles: true }))
+          ta.focus()
+          return true
+        })()`
+      )
+      await sleep(400)
+      await captureMenu(win, '4-command-menu', { menuRows: '.cmp-popover .cmp-menu-row' })
+
+      // Approval pill + queue panel while a run is in flight. Close the `/`
+      // menu first (clear the input) so the pill is fully visible.
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const ta = document.querySelector('.composer-input')
+          if (!(ta instanceof HTMLTextAreaElement)) return false
+          const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+          setter.call(ta, '')
+          ta.dispatchEvent(new Event('input', { bubbles: true }))
+          return true
+        })()`
+      )
+      emit({ type: 'agent_start' })
+      emit({ type: 'queue_update', steering: [], followUp: ['Summarize the changes when done'] })
+      emit({
+        type: 'approval_required',
+        toolCallId: 'tc-visual-pill',
+        toolName: 'bash',
+        args: { command: 'npm run deploy --stage=prod' }
+      })
+      await sleep(500)
+      await win.webContents.executeJavaScript(
+        `document.querySelector('.approval-pill-pending')?.scrollIntoView({ block: 'center' }); true`
+      )
+      await sleep(200)
+      await captureMenu(win, '5-approval-queue', {
+        pills: '.approval-pill-pending',
+        queueItems: '.queue-item'
+      })
       // ---- Preview tab (ticket 07): deep-link + markdown/source/crumbs ----
       // Re-anchor the visual session on this repository so the preview reader
       // has real files, then drive the same deep-link path a human clicks.

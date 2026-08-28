@@ -10,7 +10,14 @@
  * view from contract-carried durations or local ticking — never here.
  */
 
-import type { HostToParent } from './contract'
+import type {
+  AccessMode,
+  HostToParent,
+  ModelRef,
+  ProviderModels,
+  SlashCommandItem,
+  ThinkingLevel
+} from './contract'
 
 export interface ThinkingPart {
   kind: 'thinking'
@@ -61,7 +68,27 @@ export interface ToolEntry {
   output: string
 }
 
-export type ChatEntry = UserEntry | AssistantEntry | ToolEntry
+export type ApprovalState = 'pending' | 'approved' | 'denied'
+
+/** An in-conversation approval pill (ticket 05): the gate is asking before a
+ * tool call executes. Keyed by the tool call id — when the tool finally
+ * starts, the entry converts into a tool card in place. */
+export interface ApprovalEntry {
+  id: string
+  role: 'approval'
+  toolName: string
+  args: Record<string, unknown>
+  state: ApprovalState
+  /** Denial reason surfaced on the pill; null while pending/approved. */
+  reason: string | null
+}
+
+export type ChatEntry = UserEntry | AssistantEntry | ToolEntry | ApprovalEntry
+
+export interface ChatQueue {
+  steering: string[]
+  followUp: string[]
+}
 
 export interface ChatSessionInfo {
   sessionId: string
@@ -80,10 +107,35 @@ export interface ChatState {
   /** An agent run is in flight (drives the composer's stop control). */
   agentRunning: boolean
   error: ChatError | null
+  // ---- composer state (ticket 05), all pushed over the contract ----
+  /** Active session model (cascade menu echo). */
+  model: ModelRef | null
+  thinkingLevel: ThinkingLevel | null
+  availableLevels: ThinkingLevel[]
+  /** Approval-gate tier behind the Access Mode chip (NOT project trust). */
+  accessMode: AccessMode
+  /** Pi available models grouped by provider. */
+  providers: ProviderModels[]
+  /** `/` menu rows: prompts + skills + PiCode built-ins. */
+  slashCommands: SlashCommandItem[]
+  /** Live steering/follow-up queue (queue_update echoes). */
+  queue: ChatQueue
 }
 
 export function initialChatState(): ChatState {
-  return { session: null, entries: [], agentRunning: false, error: null }
+  return {
+    session: null,
+    entries: [],
+    agentRunning: false,
+    error: null,
+    model: null,
+    thinkingLevel: null,
+    availableLevels: [],
+    accessMode: 'standard',
+    providers: [],
+    slashCommands: [],
+    queue: { steering: [], followUp: [] }
+  }
 }
 
 function entryId(index: number): string {
@@ -129,7 +181,8 @@ function settle(state: ChatState, running: boolean): ChatState {
   const hasOpenWork = state.entries.some(
     (entry) =>
       (entry.role === 'assistant' && (entry.streaming || entry.parts.some((p) => p.kind === 'thinking' && p.streaming))) ||
-      (entry.role === 'tool' && entry.state === 'running')
+      (entry.role === 'tool' && entry.state === 'running') ||
+      (entry.role === 'approval' && entry.state !== 'denied')
   )
   const next: ChatState = { ...state, agentRunning: running }
   if (hasOpenWork) {
@@ -142,6 +195,16 @@ function settle(state: ChatState, running: boolean): ChatState {
           ...entry,
           state: 'error' as const,
           output: entry.output === '' ? 'The tool call ended without a result.' : entry.output
+        }
+      }
+      if (entry.role === 'approval' && entry.state !== 'denied') {
+        return {
+          ...entry,
+          state: 'denied' as const,
+          reason:
+            entry.state === 'approved'
+              ? 'Approved, but the turn ended before the tool ran.'
+              : 'The turn ended before a decision.'
         }
       }
       return entry
@@ -165,16 +228,44 @@ function updateToolEntry(state: ChatState, toolCallId: string, update: (entry: T
   return { ...state, entries }
 }
 
+function updateApprovalEntry(
+  state: ChatState,
+  toolCallId: string,
+  update: (entry: ApprovalEntry) => ApprovalEntry
+): ChatState {
+  const index = state.entries.findIndex((entry) => entry.role === 'approval' && entry.id === toolCallId)
+  if (index === -1) return state
+  const entry = state.entries[index]
+  if (entry.role !== 'approval') return state
+  const entries = [...state.entries]
+  entries[index] = update(entry)
+  return { ...state, entries }
+}
+
+/** A tool call the gate let through converts its approval pill in place. */
+function ensureToolEntry(state: ChatState, toolCallId: string, name: string, args: Record<string, unknown>): ChatState {
+  const index = state.entries.findIndex((entry) => entry.role === 'tool' && entry.id === toolCallId)
+  if (index !== -1) return state
+  const approvalIndex = state.entries.findIndex((entry) => entry.role === 'approval' && entry.id === toolCallId)
+  if (approvalIndex === -1) {
+    return {
+      ...state,
+      entries: [...state.entries, { id: toolCallId, role: 'tool', name, args, state: 'running', output: '' }]
+    }
+  }
+  const entries = [...state.entries]
+  entries[approvalIndex] = { id: toolCallId, role: 'tool', name, args, state: 'running', output: '' }
+  return { ...state, entries }
+}
+
 export function chatReducer(state: ChatState, event: HostToParent): ChatState {
   switch (event.type) {
     case 'session_created':
       // A new session replaces everything — single active session (α) with a
       // β-shaped contract: a fresh host instance owns a fresh transcript.
       return {
-        session: { sessionId: event.sessionId, cwd: event.cwd, model: event.model },
-        entries: [],
-        agentRunning: false,
-        error: null
+        ...initialChatState(),
+        session: { sessionId: event.sessionId, cwd: event.cwd, model: event.model }
       }
 
     case 'session_error':
@@ -266,13 +357,8 @@ export function chatReducer(state: ChatState, event: HostToParent): ChatState {
     }
 
     case 'tool_start':
-      return {
-        ...state,
-        entries: [
-          ...state.entries,
-          { id: event.toolCallId, role: 'tool', name: event.name, args: event.args, state: 'running', output: '' }
-        ]
-      }
+      // The approval pill (if any) converts into the running tool card.
+      return ensureToolEntry(state, event.toolCallId, event.name, event.args)
 
     case 'tool_update':
       return updateToolEntry(state, event.toolCallId, (entry) => ({
@@ -280,13 +366,27 @@ export function chatReducer(state: ChatState, event: HostToParent): ChatState {
         output: entry.output + event.partial
       }))
 
-    case 'tool_end':
+    case 'tool_end': {
       // The final result is the complete output — it replaces any partials.
+      // A pill that already told the denial story stays (no duplicate card);
+      // an approved pill converts into the finished card in place.
+      const pill = state.entries.find(
+        (entry): entry is ApprovalEntry => entry.role === 'approval' && entry.id === event.toolCallId
+      )
+      if (pill !== undefined) {
+        if (pill.state === 'denied') return state
+        return updateToolEntry(ensureToolEntry(state, event.toolCallId, pill.toolName, pill.args), event.toolCallId, (entry) => ({
+          ...entry,
+          state: event.isError ? 'error' : 'done',
+          output: event.output
+        }))
+      }
       return updateToolEntry(state, event.toolCallId, (entry) => ({
         ...entry,
         state: event.isError ? 'error' : 'done',
         output: event.output
       }))
+    }
 
     case 'agent_end':
       return settle(state, false)
@@ -300,6 +400,75 @@ export function chatReducer(state: ChatState, event: HostToParent): ChatState {
     case 'session_renamed':
     case 'fork_created':
     case 'session_command_error':
+      return state
+
+    // Request/response pairs (file_list ↔ list_files) correlate in the
+    // composer component, not in transcript state.
+    case 'file_list':
+      return state
+
+    // ---- ticket 05: composer + approval gate ----
+    case 'composer_state':
+      return {
+        ...state,
+        model: event.model,
+        thinkingLevel: event.thinkingLevel,
+        availableLevels: event.availableLevels,
+        accessMode: event.accessMode
+      }
+
+    case 'models_available':
+      return { ...state, providers: event.providers, model: state.model ?? event.current }
+
+    case 'model_changed':
+      return {
+        ...state,
+        model: event.model,
+        thinkingLevel: event.thinkingLevel,
+        availableLevels: event.availableLevels
+      }
+
+    case 'thinking_level_changed':
+      return { ...state, thinkingLevel: event.level, availableLevels: event.availableLevels }
+
+    case 'access_mode_changed':
+      return { ...state, accessMode: event.mode }
+
+    case 'slash_commands':
+      return { ...state, slashCommands: event.commands }
+
+    case 'queue_update':
+      return { ...state, queue: { steering: [...event.steering], followUp: [...event.followUp] } }
+
+    case 'approval_required': {
+      // Fresh pill. NOTE: the SDK emits `tool_execution_start` BEFORE the
+      // gate hook runs, so a running tool card with this id may already
+      // exist — convert it back into a pending pill in place.
+      const pill: ApprovalEntry = {
+        id: event.toolCallId,
+        role: 'approval',
+        toolName: event.toolName,
+        args: event.args,
+        state: 'pending',
+        reason: null
+      }
+      const index = state.entries.findIndex(
+        (entry) => (entry.role === 'tool' || entry.role === 'approval') && entry.id === event.toolCallId
+      )
+      if (index === -1) return { ...state, entries: [...state.entries, pill] }
+      const entries = [...state.entries]
+      entries[index] = pill
+      return { ...state, entries }
+    }
+
+    case 'approval_resolved':
+      return updateApprovalEntry(state, event.toolCallId, (entry) => ({
+        ...entry,
+        state: event.approved ? 'approved' : 'denied',
+        reason: event.approved ? null : (event.reason ?? 'Denied by the user.')
+      }))
+
+    case 'host_notice':
       return state
 
     case 'host_exit': {

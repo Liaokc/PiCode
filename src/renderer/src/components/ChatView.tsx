@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useRef, useState, type JSX } from 'react'
 import type { AssistantEntry, ChatEntry, ChatState } from '../../../shared/chat-reducer'
 import type { SessionTreePayload } from '../../../shared/sessions/types'
-import Composer from './Composer'
+import Composer, { type ComposerApi } from './Composer'
+import ApprovalPill from './ApprovalPill'
 import TreePanel from './TreePanel'
 import Markdown from './Markdown'
 import ThinkingRow from './ThinkingRow'
@@ -21,10 +22,12 @@ interface ChatViewProps {
   onNavigateTree: (entryId: string) => void
   onFork: (entryId: string) => void
   onCloseTree: () => void
-  onSend: (text: string) => void
-  onStop: () => void
   /** Deep-link a file-arg tool call into the Preview tab (ticket 07). */
   onOpenFile?: (path: string) => void
+  /** Composer commands + the chat slices the composer menus render. */
+  composerApi: ComposerApi
+  onApprove: (toolCallId: string, remember: boolean) => void
+  onDeny: (toolCallId: string, reason: string) => void
 }
 
 /**
@@ -44,14 +47,25 @@ export default function ChatView({
   onNavigateTree,
   onFork,
   onCloseTree,
-  onSend,
-  onStop,
-  onOpenFile
+  onOpenFile,
+  composerApi,
+  onApprove,
+  onDeny
 }: ChatViewProps): JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null)
   const lastLength = useRef(0)
   const [renaming, setRenaming] = useState(false)
   const [draft, setDraft] = useState('')
+
+  // Builtin `/name` requests focus the rename editor (window event from App).
+  useEffect(() => {
+    function focusRename(): void {
+      setDraft(tree?.name ?? '')
+      setRenaming(true)
+    }
+    window.addEventListener(RENAME_EVENT, focusRename)
+    return () => window.removeEventListener(RENAME_EVENT, focusRename)
+  }, [tree?.name])
 
   // Keep the newest content in view while streaming.
   useEffect(() => {
@@ -117,7 +131,7 @@ export default function ChatView({
         <div className="chat-thread">
           {chat.entries.map((entry, index) => (
             <Fragment key={entry.id}>
-              {renderEntry(entry, onOpenFile)}
+              {renderEntry(entry, { onOpenFile, onApprove, onDeny })}
               {chat.agentRunning && index === lastUserIndex && <WorkingLine />}
             </Fragment>
           ))}
@@ -131,17 +145,19 @@ export default function ChatView({
           placeholder={
             noSession
               ? 'Session ended — rebuild or choose another folder to continue'
-              : chat.agentRunning
-                ? 'The agent is working…'
-                : 'Ask anything — @ to add context, / for commands'
+              : 'Ask anything — @ to add context, / for commands'
           }
-          onSend={onSend}
-          onStop={onStop}
+          chat={chat}
+          queue={chat.queue}
+          {...composerApi}
         />
       </div>
     </div>
   )
 }
+
+/** Window event the App dispatches for the `/name` builtin. */
+export const RENAME_EVENT = 'picode:rename-session'
 
 function findLastUserIndex(entries: ChatEntry[]): number {
   for (let i = entries.length - 1; i >= 0; i--) {
@@ -150,14 +166,23 @@ function findLastUserIndex(entries: ChatEntry[]): number {
   return -1
 }
 
-function renderEntry(entry: ChatEntry, onOpenFile?: (path: string) => void): JSX.Element {
+function renderEntry(
+  entry: ChatEntry,
+  actions: {
+    onOpenFile?: (path: string) => void
+    onApprove: (id: string, remember: boolean) => void
+    onDeny: (id: string, reason: string) => void
+  }
+): JSX.Element {
   switch (entry.role) {
     case 'user':
       return <div className="msg msg-user">{entry.text}</div>
     case 'assistant':
       return <AssistantBlock entry={entry} />
     case 'tool':
-      return <ToolCard entry={entry} onOpenFile={onOpenFile} />
+      return <ToolCard entry={entry} onOpenFile={actions.onOpenFile} />
+    case 'approval':
+      return <ApprovalPill entry={entry} onApprove={actions.onApprove} onDeny={actions.onDeny} />
   }
 }
 

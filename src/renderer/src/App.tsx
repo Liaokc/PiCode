@@ -5,15 +5,18 @@ import type { PreviewSelection } from '../../shared/preview/view-model'
 import { initialShellUiState, shellUiReducer } from '../../shared/layout-model'
 import { initialPanelState, panelReducer } from '../../shared/panel-model'
 import { isSessionLive } from '../../shared/sessions/group'
+import type { AccessMode, ImageAttachment, ThinkingLevel } from '../../shared/contract'
 import type { SessionSummary, SessionTreePayload, TranscriptItem } from '../../shared/sessions/types'
 import TitleBar from './components/TitleBar'
 import Sidebar, { FOCUS_FILTER_EVENT } from './components/Sidebar'
 import EmptyState from './components/EmptyState'
 import SidePanel from './components/SidePanel'
-import ChatView from './components/ChatView'
+import ChatView, { RENAME_EVENT } from './components/ChatView'
+import { OPEN_MODEL_MENU_EVENT, OPEN_THINKING_MENU_EVENT } from './components/Composer'
 import FollowView from './components/FollowView'
 import ErrorBanner from './components/ErrorBanner'
 import SettingsWindow from './components/SettingsWindow'
+import type { ComposerApi } from './components/Composer'
 
 const PIN_STORAGE_KEY = 'picode.pinned-sessions'
 
@@ -59,6 +62,8 @@ export default function App(): JSX.Element {
   const [dismissedError, setDismissedError] = useState<ChatError | null>(null)
   /** First prompt typed before a folder exists; sent once the session is ready. */
   const pendingPromptRef = useRef<string | null>(null)
+  /** Images typed (pasted) before a folder exists; attached to the first prompt. */
+  const pendingImagesRef = useRef<ImageAttachment[] | null>(null)
 
   // ---- session index + sidebar state ----
   const [sessions, setSessions] = useState<SessionSummary[]>([])
@@ -103,8 +108,16 @@ export default function App(): JSX.Element {
           setTree(null)
           setTreeOpen(false)
           const pending = pendingPromptRef.current
+          const pendingImages = pendingImagesRef.current
           pendingPromptRef.current = null
-          if (pending !== null) window.picode.chat.sendToHost({ type: 'prompt', text: pending })
+          pendingImagesRef.current = null
+          if (pending !== null || pendingImages !== null) {
+            window.picode.chat.sendToHost({
+              type: 'prompt',
+              text: pending !== null && pending.trim() !== '' ? pending : 'Describe the attached images.',
+              images: pendingImages ?? undefined
+            })
+          }
           refreshSessions()
           break
         }
@@ -131,6 +144,7 @@ export default function App(): JSX.Element {
         case 'host_exit':
           setCreating(false)
           pendingPromptRef.current = null
+          pendingImagesRef.current = null
           break
         default:
           break
@@ -174,16 +188,110 @@ export default function App(): JSX.Element {
 
   const now = Date.now()
 
-  async function handleComposerSend(text: string): Promise<void> {
+  async function handleComposerSend(text: string, images: ImageAttachment[] = []): Promise<void> {
     if (chat.session) {
-      window.picode.chat.sendToHost({ type: 'prompt', text })
+      window.picode.chat.sendToHost({ type: 'prompt', text, images: images.length > 0 ? images : undefined })
       return
     }
     const cwd = await window.picode.chat.pickWorkingDirectory()
     if (!cwd) return
     setCreating(true)
+    // Both survive the folder pick: text AND images are delivered together
+    // as the first prompt once the session exists.
     pendingPromptRef.current = text
+    pendingImagesRef.current = images.length > 0 ? images : null
     window.picode.chat.sendToHost({ type: 'create_session', cwd })
+  }
+
+  function handleSteer(text: string, images: ImageAttachment[] = []): void {
+    window.picode.chat.sendToHost({ type: 'steer_prompt', text, images: images.length > 0 ? images : undefined })
+  }
+
+  function handleFollowUp(text: string, images: ImageAttachment[] = []): void {
+    window.picode.chat.sendToHost({ type: 'follow_up_prompt', text, images: images.length > 0 ? images : undefined })
+  }
+
+  function handleClearQueue(): void {
+    window.picode.chat.sendToHost({ type: 'clear_queue' })
+  }
+
+  function handleSetAccessMode(mode: AccessMode): void {
+    window.picode.chat.sendToHost({ type: 'set_access_mode', mode })
+  }
+
+  function handleSetModel(providerId: string, modelId: string): void {
+    window.picode.chat.sendToHost({ type: 'set_model', providerId, modelId })
+  }
+
+  function handleSetThinkingLevel(level: ThinkingLevel): void {
+    window.picode.chat.sendToHost({ type: 'set_thinking_level', level })
+  }
+
+  function handleListFiles(requestId: string, query: string): void {
+    window.picode.chat.sendToHost({ type: 'list_files', requestId, query })
+  }
+
+  async function handlePickImages(): Promise<ImageAttachment[]> {
+    return window.picode.chat.pickImages()
+  }
+
+  function handleApprove(toolCallId: string, remember: boolean): void {
+    window.picode.chat.sendToHost({ type: 'approve_tool', toolCallId, remember })
+  }
+
+  function handleDeny(toolCallId: string, reason: string): void {
+    window.picode.chat.sendToHost({ type: 'deny_tool', toolCallId, reason })
+  }
+
+  /** The `/` menu's built-in commands drive PiCode's own controls. */
+  function handleBuiltinCommand(name: string): void {
+    switch (name) {
+      case 'new':
+        void handleNewTask()
+        break
+      case 'tree':
+        if (chat.session) {
+          window.picode.chat.sendToHost({ type: 'request_tree' })
+          setTreeOpen(true)
+        }
+        break
+      case 'copy': {
+        const lastAssistant = [...chat.entries].reverse().find((entry) => entry.role === 'assistant')
+        const text = lastAssistant && lastAssistant.role === 'assistant'
+          ? lastAssistant.parts.filter((p) => p.kind === 'text').map((p) => p.text).join('\n\n')
+          : ''
+        if (text !== '') void navigator.clipboard.writeText(text)
+        break
+      }
+      case 'name':
+        if (chat.session) window.dispatchEvent(new Event(RENAME_EVENT))
+        break
+      case 'model':
+        window.dispatchEvent(new Event(OPEN_MODEL_MENU_EVENT))
+        break
+      case 'thinking':
+        window.dispatchEvent(new Event(OPEN_THINKING_MENU_EVENT))
+        break
+      case 'compact':
+        if (chat.session) window.picode.chat.sendToHost({ type: 'compact_session' })
+        break
+      default:
+        break
+    }
+  }
+
+  const composerApi: ComposerApi = {
+    onSend: (text, images) => void handleComposerSend(text, images),
+    onSteer: handleSteer,
+    onFollowUp: handleFollowUp,
+    onStop: handleStop,
+    onSetAccessMode: handleSetAccessMode,
+    onSetModel: handleSetModel,
+    onSetThinkingLevel: handleSetThinkingLevel,
+    onClearQueue: handleClearQueue,
+    onListFiles: handleListFiles,
+    onPickImages: () => handlePickImages(),
+    onBuiltinCommand: handleBuiltinCommand
   }
 
   function handleStop(): void {
@@ -371,12 +479,13 @@ export default function App(): JSX.Element {
             onNavigateTree={handleNavigateTree}
             onFork={handleFork}
             onCloseTree={() => setTreeOpen(false)}
-            onSend={handleComposerSend}
-            onStop={handleStop}
             onOpenFile={handleOpenFileFromTranscript}
+            composerApi={composerApi}
+            onApprove={handleApprove}
+            onDeny={handleDeny}
           />
         ) : (
-          <EmptyState creating={creating} onSend={handleComposerSend} />
+          <EmptyState creating={creating} composerApi={composerApi} />
         )}
       </main>
       <SidePanel

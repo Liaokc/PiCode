@@ -41,6 +41,16 @@ export class HostSupervisor {
         this.createSession(message.cwd, message.sessionFile)
         break
       case 'prompt':
+      case 'steer_prompt':
+      case 'follow_up_prompt':
+      case 'clear_queue':
+      case 'set_model':
+      case 'set_thinking_level':
+      case 'set_access_mode':
+      case 'approve_tool':
+      case 'deny_tool':
+      case 'compact_session':
+      case 'list_files':
       case 'abort_turn':
       case 'navigate_tree':
       case 'fork_session':
