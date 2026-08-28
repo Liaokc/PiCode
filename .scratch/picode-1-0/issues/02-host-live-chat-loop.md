@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 净场与脚手架。
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] 选目录→建 Session→真实模型流式回复全程走通
 - [x] 停止控制即时中止当前回合，应用保持可用
@@ -20,3 +20,4 @@
 - Verified real loops: `npm run smoke:host` (plain Node, real SDK, real model — stream, mid-stream abort, second turn, clean exit) and `npm run smoke:electron` (`PICODE_SMOKE=1`: adds renderer DOM assertion, host SIGKILL → unclean `host_exit` → rebuild on same cwd → `app.exit(0)`, no orphan processes after). `typecheck`/`lint`/`test` all green (37 tests).
 - Human pass remaining: visual对照 screenshot 01 (streaming transcript + composer stop square) via `npm run dev`; pick-folder dialog, stop click and banner actions are dialog/mouse interactions not covered by the smokes.
 - Merge from the root worktree: `cd ~/PiCode && git merge --no-ff t02-host-live-chat-loop`.
+- 2026-08-28 (merge session): **resolved** — merged into main as `24b7e1f`. 验收口径：worktree tracker 提交 711b923 记录 human pass 已过（screenshot 01 目检 + smoke 证据在上方 Comments）；合并后 main 复核 typecheck 绿、210 vitest 全过。worktree `wt-02-host-live-chat-loop` 与分支 `t02-host-live-chat-loop` 已清理。

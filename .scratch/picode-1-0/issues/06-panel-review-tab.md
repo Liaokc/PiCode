@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 Host 活体。
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] 面板开合/多 tab/拖宽手感自然，主区自适应不跳动
 - [x] Review 差异内容与终端 `git diff` 输出语义一致；unified/split 即时切换
@@ -20,3 +20,4 @@
 - Read-only by construction: no commit/push controls anywhere in the tab.
 - Human pass remaining: `VITE_PICODE_PANEL_OPEN=1 npm run dev` → drag the width, add/close both tabs, pick a task with real changes and check unified/split switching and thousand-line scroll smoothness against a real repo; empty-state two-card composition对照 screenshot 03.
 - Merge from the root worktree: `cd ~/PiCode && git merge --no-ff t06-panel-review`.
+- 2026-08-28 (merge session): **resolved** — merged into main as `36d2673`. 验收口径：worktree tracker 提交 450330e 记录 human pass 已过（panel 拖宽/双 tab/对照截图 08、03，验证证据在上方 Comments）；合并后 main 复核 typecheck 绿、210 vitest 全过。worktree `wt-06-panel-review` 与分支 `t06-panel-review` 已清理。

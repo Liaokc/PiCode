@@ -24,3 +24,4 @@
   - 评审中修复真 bug：热力格 cumulative 口径曾对已累计 cells 二次累加（54.3M > 41.3M），已改为恒用 daily cells 由 charts 内部变换。
   - 已知边界：Open task 目前跳回工作区（会话深链待 ticket 04 侧边栏落地）；视觉像素对照是人工关卡，请用 `npm run dev` + `VITE_PICODE_VIEW=settings` 核对截图 09。
   - 合并请在根工作区执行：`cd ~/PiCode && git merge --no-ff t10-usage-page`
+- 2026-08-28 (merge session): 分支已由先前的合并流程带入 main（merge commit `e33117b`）；合并后 main 复核 typecheck 绿、210 vitest 全过。**注意：tracker 提交 2495b19 只记录 ready-for-human，未见人工目检（截图 09 对照，`VITE_PICODE_VIEW=settings npm run dev`）的验收记录** —— 操作者确认目检通过后，本票才改标 resolved。worktree `wt-10-usage-page` 与分支 `t10-usage-page` 已清理（不影响任何已合并内容）。
