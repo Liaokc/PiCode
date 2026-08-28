@@ -19,7 +19,6 @@ import {
   parseSessionLines,
   summarizeSession
 } from '../../shared/sessions/parse'
-import type { RawSessionEntry } from '../../shared/sessions/parse'
 import type { FollowUpdate, SessionSummary, TranscriptItem } from '../../shared/sessions/types'
 
 export type { FollowUpdate }
@@ -127,7 +126,7 @@ export class SessionIndexService {
       // Keep the tail offset in sync with the full read.
       this.follow.consumedBytes = Buffer.byteLength(text)
     }
-    return { file: target, items: transcriptItemsOf(entries) }
+    return { file: target, items: extractTranscriptItems(entries) }
   }
 
   start(intervalMs?: number): void {
@@ -181,7 +180,7 @@ export class SessionIndexService {
     if (!chunk || chunk.endOffset === follow.consumedBytes) return
     follow.consumedBytes = chunk.endOffset
     const { entries } = parseSessionLines(chunk.text)
-    const items = transcriptItemsOf(entries)
+    const items = extractTranscriptItems(entries)
     if (items.length > 0) this.opts.onFollowUpdate?.({ file: follow.file, items })
   }
 
@@ -250,10 +249,6 @@ export class SessionIndexService {
       await fh.close()
     }
   }
-}
-
-function transcriptItemsOf(entries: RawSessionEntry[]): TranscriptItem[] {
-  return extractTranscriptItems(entries)
 }
 
 async function readFileText(file: string): Promise<string> {
