@@ -4,7 +4,7 @@
 
 **Blocked by:** 06 面板容器 + Review 标签。
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] md 与源码文件的预览呈现对照截图 08 通过（标题层级、行内代码、表格、高亮主题）
 - [x] 从文件改动卡与 Review 文件树一键直达预览，面包屑可逐级回退
@@ -20,3 +20,4 @@
 - Verification: typecheck + eslint clean, 277/277 vitest (33 new across policy/view-model/reader), `smoke:electron` full contract smoke PASS after wiring.
 - Human pass remaining: eyeball `.scratch/visual/4..7` against `.scratch/reference/screenshots` 截屏 18.54.27 / 18.57.01 (标题层级、行内代码、表格、高亮主题、面包屑形态), then optionally `npm run dev` — click Open on a write/edit card and a Review tree row, walk breadcrumbs back level by level, and open a multi-MB file to confirm the too-large notice.
 - 2026-08-28 (worktree, operator feedback round 1): addressed on `t07-file-preview` as **`083213c`**. (1) Source view now soft-wraps by default with a toolbar 换行/截断 toggle (`.preview-wrap-toggle`, pressed state visible; preference survives file loads; reducer-tested); evidence shots `5-preview-source.png` (wrapped) + `5b-preview-truncated.png` (truncated). (2) Panel width drag freed: clamp 280–1200px (was 320–760), 11px hit area, always-visible grip line on the panel edge, double-click reset unchanged; clamp pinned by test.
+- 2026-08-28 (merge session): **resolved** — merged into main as `600f739`。验收口径：操作者两轮目检（初验 + 反馈轮后复验换行切换与拖宽手感）均通过；rebase 仅 tracker 文件相撞（预同步所致，取 ours），代码零冲突纯增量；合并后 main typecheck + vitest 全绿（脚本验证）。worktree `wt-07-file-preview` 与分支 `t07-file-preview` 已清理。
