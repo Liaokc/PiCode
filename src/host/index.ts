@@ -26,6 +26,7 @@ import type {
 import type { HostToParent } from '../shared/contract'
 import { buildSessionTree, extractTranscriptItems, type RawSessionEntry } from '../shared/sessions/parse'
 import type { SessionTreePayload } from '../shared/sessions/types'
+import { toolResultText } from '../shared/tool-format'
 
 const cwd = process.argv[2]
 const resumeFile = process.argv[3]
@@ -58,7 +59,7 @@ let settled = true // true = no agent run in flight
 let pendingTurnError: string | null = null
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /**
@@ -94,6 +95,8 @@ function sendHistory(): void {
 
 function wireSessionEvents(agentSession: AgentSession): void {
   unwireSession?.()
+  /** Wall-clock start of the currently open thinking block (host-measured). */
+  let thinkingStartedAt: number | null = null
   const unsubscribe = agentSession.subscribe((event: AgentSessionEvent) => {
     switch (event.type) {
       case 'agent_start':
@@ -109,7 +112,37 @@ function wireSessionEvents(agentSession: AgentSession): void {
         const assistantEvent = event.assistantMessageEvent
         if (assistantEvent.type === 'text_delta') {
           send({ type: 'text_delta', delta: assistantEvent.delta })
+        } else if (assistantEvent.type === 'thinking_delta') {
+          send({ type: 'thinking_delta', delta: assistantEvent.delta })
+        } else if (assistantEvent.type === 'thinking_start') {
+          thinkingStartedAt = Date.now()
+        } else if (assistantEvent.type === 'thinking_end') {
+          const durationMs = thinkingStartedAt !== null ? Math.max(0, Date.now() - thinkingStartedAt) : 0
+          thinkingStartedAt = null
+          send({ type: 'thinking_end', durationMs })
         }
+        break
+      }
+      case 'tool_execution_start': {
+        send({
+          type: 'tool_start',
+          toolCallId: event.toolCallId,
+          name: event.toolName,
+          args: isRecord(event.args) ? event.args : {}
+        })
+        break
+      }
+      case 'tool_execution_update': {
+        send({ type: 'tool_update', toolCallId: event.toolCallId, partial: toolResultText(event.partialResult) })
+        break
+      }
+      case 'tool_execution_end': {
+        send({
+          type: 'tool_end',
+          toolCallId: event.toolCallId,
+          output: toolResultText(event.result),
+          isError: event.isError === true
+        })
         break
       }
       case 'message_end': {

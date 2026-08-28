@@ -3,18 +3,65 @@
  * renderable chat state. A pure function — no I/O, no SDK imports, no time or
  * randomness — so component and logic tests inject event sequences directly
  * (spec: testing seam #1).
+ *
+ * The transcript is a flat list of entries in arrival order: user messages,
+ * assistant entries (which own ordered thinking/text parts), and tool cards.
+ * Elapsed-time display (thinking duration, "Working · Ns") is derived in the
+ * view from contract-carried durations or local ticking — never here.
  */
 
 import type { HostToParent } from './contract'
 
-export interface ChatMessage {
-  /** Stable within the current transcript (index-based; transcripts reset on session change). */
-  id: string
-  role: 'user' | 'assistant'
+export interface ThinkingPart {
+  kind: 'thinking'
   text: string
-  /** Assistant messages still receiving text deltas. */
+  /** Still receiving thinking deltas. */
+  streaming: boolean
+  /** Wall-clock duration measured by the host; null when it never closed cleanly. */
+  durationMs: number | null
+}
+
+export interface TextPart {
+  kind: 'text'
+  text: string
+}
+
+export type AssistantPart = TextPart | ThinkingPart
+
+export interface UserEntry {
+  id: string
+  role: 'user'
+  text: string
+}
+
+export interface AssistantEntry {
+  id: string
+  role: 'assistant'
+  /** Ordered thinking/text parts exactly as the model produced them. */
+  parts: AssistantPart[]
+  /** Still receiving message-level content (deltas may still arrive). */
   streaming: boolean
 }
+
+export type ToolState =
+  /** Executing; updates may stream in. */
+  | 'running'
+  /** Finished successfully. */
+  | 'done'
+  /** Finished with a failure, or never finished (settled mid-run). */
+  | 'error'
+
+export interface ToolEntry {
+  /** The tool call id from the contract (stable key for updates). */
+  id: string
+  role: 'tool'
+  name: string
+  args: Record<string, unknown>
+  state: ToolState
+  output: string
+}
+
+export type ChatEntry = UserEntry | AssistantEntry | ToolEntry
 
 export interface ChatSessionInfo {
   sessionId: string
@@ -29,33 +76,76 @@ export type ChatError =
 
 export interface ChatState {
   session: ChatSessionInfo | null
-  messages: ChatMessage[]
+  entries: ChatEntry[]
   /** An agent run is in flight (drives the composer's stop control). */
   agentRunning: boolean
   error: ChatError | null
 }
 
 export function initialChatState(): ChatState {
-  return { session: null, messages: [], agentRunning: false, error: null }
+  return { session: null, entries: [], agentRunning: false, error: null }
 }
 
-function messageId(index: number): string {
+function entryId(index: number): string {
   return `m${index}`
 }
 
-function openStreamingMessage(state: ChatState, text: string): ChatState {
-  return {
-    ...state,
-    messages: [...state.messages, { id: messageId(state.messages.length), role: 'assistant', text, streaming: true }]
-  }
+function assistantEntry(index: number, parts: AssistantPart[]): AssistantEntry {
+  return { id: entryId(index), role: 'assistant', parts, streaming: true }
 }
 
-/** Mark every streaming message done and set the running flag to `running`. */
+function isAssistant(entry: ChatEntry | undefined): entry is AssistantEntry {
+  return entry !== undefined && entry.role === 'assistant'
+}
+
+function isStreamingAssistant(entry: ChatEntry | undefined): entry is AssistantEntry {
+  return isAssistant(entry) && entry.streaming
+}
+
+/** Close a thinking part that is still receiving deltas. */
+function closeThinking(part: AssistantPart): AssistantPart {
+  return part.kind === 'thinking' && part.streaming ? { ...part, streaming: false } : part
+}
+
+/**
+ * Append or extend inside the trailing streaming assistant entry, creating
+ * that entry defensively when the stream skips boundaries. `extend` returns
+ * the entry's new parts for the append/extend decision.
+ */
+function withStreamingAssistant(state: ChatState, make: () => AssistantPart, extend: (parts: AssistantPart[]) => AssistantPart[]): ChatEntry[] {
+  const last = state.entries[state.entries.length - 1]
+  if (isStreamingAssistant(last)) {
+    return [...state.entries.slice(0, -1), { ...last, parts: extend(last.parts) }]
+  }
+  return [...state.entries, assistantEntry(state.entries.length, [make()])]
+}
+
+/**
+ * Mark every in-flight piece of work settled: streaming assistant entries and
+ * their open thinking parts close; tool cards still running end in error —
+ * the run ended without their result reaching the contract.
+ */
 function settle(state: ChatState, running: boolean): ChatState {
-  const hasStreaming = state.messages.some((m) => m.streaming)
+  const hasOpenWork = state.entries.some(
+    (entry) =>
+      (entry.role === 'assistant' && (entry.streaming || entry.parts.some((p) => p.kind === 'thinking' && p.streaming))) ||
+      (entry.role === 'tool' && entry.state === 'running')
+  )
   const next: ChatState = { ...state, agentRunning: running }
-  if (hasStreaming) {
-    next.messages = next.messages.map((m) => (m.streaming ? { ...m, streaming: false } : m))
+  if (hasOpenWork) {
+    next.entries = next.entries.map((entry) => {
+      if (entry.role === 'assistant') {
+        return { ...entry, streaming: false, parts: entry.parts.map(closeThinking) }
+      }
+      if (entry.role === 'tool' && entry.state === 'running') {
+        return {
+          ...entry,
+          state: 'error' as const,
+          output: entry.output === '' ? 'The tool call ended without a result.' : entry.output
+        }
+      }
+      return entry
+    })
   }
   return next
 }
@@ -65,6 +155,16 @@ function hostExitMessage(event: Extract<HostToParent, { type: 'host_exit' }>): s
   return `Agent host exited unexpectedly${detail}.`
 }
 
+function updateToolEntry(state: ChatState, toolCallId: string, update: (entry: ToolEntry) => ToolEntry): ChatState {
+  const index = state.entries.findIndex((entry) => entry.role === 'tool' && entry.id === toolCallId)
+  if (index === -1) return state
+  const entry = state.entries[index]
+  if (entry.role !== 'tool') return state
+  const entries = [...state.entries]
+  entries[index] = update(entry)
+  return { ...state, entries }
+}
+
 export function chatReducer(state: ChatState, event: HostToParent): ChatState {
   switch (event.type) {
     case 'session_created':
@@ -72,7 +172,7 @@ export function chatReducer(state: ChatState, event: HostToParent): ChatState {
       // β-shaped contract: a fresh host instance owns a fresh transcript.
       return {
         session: { sessionId: event.sessionId, cwd: event.cwd, model: event.model },
-        messages: [],
+        entries: [],
         agentRunning: false,
         error: null
       }
@@ -83,15 +183,26 @@ export function chatReducer(state: ChatState, event: HostToParent): ChatState {
     case 'user_message':
       return {
         ...state,
-        messages: [...state.messages, { id: messageId(state.messages.length), role: 'user', text: event.text, streaming: false }]
+        entries: [...state.entries, { id: entryId(state.entries.length), role: 'user', text: event.text }]
       }
 
     case 'history_loaded':
-      // Resume / tree navigation replay: the host's leaf path IS the
-      // transcript, so it replaces whatever was rendered before.
+      // Resume / tree navigation replay (ticket 04, ported to the entries
+      // model): the host's leaf path IS the transcript, so it replaces
+      // whatever was rendered before. Contract item ids are kept so ids stay
+      // stable across re-replays (and never collide with live `mN` ids).
       return {
         ...state,
-        messages: event.items.map((item) => ({ id: item.id, role: item.role, text: item.text, streaming: false })),
+        entries: event.items.map((item) =>
+          item.role === 'assistant'
+            ? {
+                id: item.id,
+                role: 'assistant' as const,
+                parts: [{ kind: 'text' as const, text: item.text }],
+                streaming: false
+              }
+            : { id: item.id, role: 'user' as const, text: item.text }
+        ),
         error: null
       }
 
@@ -99,22 +210,83 @@ export function chatReducer(state: ChatState, event: HostToParent): ChatState {
       return state.agentRunning ? state : { ...state, agentRunning: true }
 
     case 'message_start':
-      return openStreamingMessage(state, '')
+      return { ...state, entries: [...state.entries, assistantEntry(state.entries.length, [])] }
 
-    case 'text_delta': {
-      const last = state.messages[state.messages.length - 1]
-      if (last && last.role === 'assistant' && last.streaming) {
-        return { ...state, messages: [...state.messages.slice(0, -1), { ...last, text: last.text + event.delta }] }
+    case 'text_delta':
+      return {
+        ...state,
+        entries: withStreamingAssistant(
+          state,
+          () => ({ kind: 'text', text: event.delta }),
+          (parts) => {
+            const last = parts[parts.length - 1]
+            // Content switched away from an open thinking block — close it.
+            const closed = parts.map(closeThinking)
+            if (last !== undefined && last.kind === 'text') {
+              return [...closed.slice(0, -1), { kind: 'text', text: last.text + event.delta }]
+            }
+            return [...closed, { kind: 'text', text: event.delta }]
+          }
+        )
       }
-      // Defensive: deltas without a boundary still render somewhere.
-      return openStreamingMessage(state, event.delta)
+
+    case 'thinking_delta':
+      return {
+        ...state,
+        entries: withStreamingAssistant(
+          state,
+          () => ({ kind: 'thinking', text: event.delta, streaming: true, durationMs: null }),
+          (parts) => {
+            const last = parts[parts.length - 1]
+            if (last !== undefined && last.kind === 'thinking' && last.streaming) {
+              return [...parts.slice(0, -1), { ...last, text: last.text + event.delta }]
+            }
+            return [...parts, { kind: 'thinking', text: event.delta, streaming: true, durationMs: null }]
+          }
+        )
+      }
+
+    case 'thinking_end': {
+      const last = state.entries[state.entries.length - 1]
+      if (!isAssistant(last)) return state
+      const index = last.parts.findLastIndex((p) => p.kind === 'thinking' && p.streaming)
+      if (index === -1) return state
+      const parts = [...last.parts]
+      parts[index] = { ...parts[index], streaming: false, durationMs: event.durationMs } as ThinkingPart
+      return { ...state, entries: [...state.entries.slice(0, -1), { ...last, parts }] }
     }
 
     case 'message_end': {
-      const last = state.messages[state.messages.length - 1]
-      if (!last || last.role !== 'assistant' || !last.streaming) return state
-      return { ...state, messages: [...state.messages.slice(0, -1), { ...last, streaming: false }] }
+      const last = state.entries[state.entries.length - 1]
+      if (!isStreamingAssistant(last)) return state
+      return {
+        ...state,
+        entries: [...state.entries.slice(0, -1), { ...last, streaming: false, parts: last.parts.map(closeThinking) }]
+      }
     }
+
+    case 'tool_start':
+      return {
+        ...state,
+        entries: [
+          ...state.entries,
+          { id: event.toolCallId, role: 'tool', name: event.name, args: event.args, state: 'running', output: '' }
+        ]
+      }
+
+    case 'tool_update':
+      return updateToolEntry(state, event.toolCallId, (entry) => ({
+        ...entry,
+        output: entry.output + event.partial
+      }))
+
+    case 'tool_end':
+      // The final result is the complete output — it replaces any partials.
+      return updateToolEntry(state, event.toolCallId, (entry) => ({
+        ...entry,
+        state: event.isError ? 'error' : 'done',
+        output: event.output
+      }))
 
     case 'agent_end':
       return settle(state, false)
