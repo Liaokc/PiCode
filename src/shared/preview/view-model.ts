@@ -19,6 +19,8 @@ export interface PreviewTabState {
   status: 'idle' | 'loading' | 'ready' | 'error'
   result: PreviewResult | null
   view: 'rendered' | 'source'
+  /** Source-view display mode: soft-wrapped lines (default) or truncated with horizontal scroll. */
+  wrapLines: boolean
   /** Source-view line window (large-file policy layer 3). */
   visibleLines: number
 }
@@ -28,10 +30,11 @@ export type PreviewAction =
   | { type: 'load-success'; result: Extract<PreviewResult, { ok: true }> }
   | { type: 'load-failure'; result: Extract<PreviewResult, { ok: false }> }
   | { type: 'set-view'; view: 'rendered' | 'source' }
+  | { type: 'toggle-wrap-lines' }
   | { type: 'show-more-lines' }
 
 export function initialPreviewTabState(): PreviewTabState {
-  return { sel: null, status: 'idle', result: null, view: 'rendered', visibleLines: PREVIEW_SOURCE_WINDOW_LINES }
+  return { sel: null, status: 'idle', result: null, view: 'rendered', wrapLines: true, visibleLines: PREVIEW_SOURCE_WINDOW_LINES }
 }
 
 export function previewTabReducer(state: PreviewTabState, action: PreviewAction): PreviewTabState {
@@ -56,6 +59,9 @@ export function previewTabReducer(state: PreviewTabState, action: PreviewAction)
       return { ...state, status: 'error', result: action.result }
     case 'set-view':
       return state.view === action.view ? state : { ...state, view: action.view }
+    case 'toggle-wrap-lines':
+      // A display preference — survives file loads and retargeting on purpose.
+      return { ...state, wrapLines: !state.wrapLines }
     case 'show-more-lines': {
       if (state.sel === null) return state
       const next = Math.min(state.visibleLines + PREVIEW_SOURCE_WINDOW_LINES, PREVIEW_SOURCE_MAX_LINES)

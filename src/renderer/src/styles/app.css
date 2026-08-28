@@ -2819,3 +2819,57 @@ button.preview-crumb:hover {
   background: var(--bg-active);
   color: var(--text-primary);
 }
+
+/* ---------- preview wrap/truncate toggle + wrap layout (ticket 07 feedback) ---------- */
+
+.preview-wrap-toggle {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.preview-wrap-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.preview-wrap-toggle-on {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+/* Wrapped mode (default): rows span the panel width, long lines break. */
+.code-view-wrap .code-line {
+  min-width: 0;
+}
+
+.code-view-wrap .code-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- freer side-panel width drag (ticket 07 feedback) ---------- */
+
+.panel-resizer {
+  left: -5px;
+  width: 11px;
+}
+
+/* Always-visible grip line so the drag affordance is discoverable.
+ * Hover feedback comes from the wider .panel-resizer overlay on top. */
+.side-panel::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  background: transparent;
+  z-index: 44;
+  cursor: col-resize;
+}
+
+.side-panel:hover::before {
+  background: var(--border-strong);
+}

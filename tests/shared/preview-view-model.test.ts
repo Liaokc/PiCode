@@ -22,13 +22,14 @@ const fileResult = {
 }
 
 describe('initialPreviewTabState', () => {
-  it('starts idle with no selection, rendered view and one window of lines', () => {
+  it('starts idle with no selection, rendered view, wrapped lines and one window of lines', () => {
     const state = initialPreviewTabState()
     expect(state).toEqual({
       sel: null,
       status: 'idle',
       result: null,
       view: 'rendered',
+      wrapLines: true,
       visibleLines: PREVIEW_SOURCE_WINDOW_LINES
     })
   })
@@ -126,6 +127,21 @@ describe('previewTabReducer — large-file line windowing', () => {
   it('show-more-lines is a no-op before a file is loaded', () => {
     const base = initialPreviewTabState()
     expect(previewTabReducer(base, { type: 'show-more-lines' })).toBe(base)
+  })
+})
+
+describe('previewTabReducer — wrap/truncate display mode', () => {
+  it('toggles line wrapping (wrap is the default)', () => {
+    expect(initialPreviewTabState().wrapLines).toBe(true)
+    const unwrapped = previewTabReducer(initialPreviewTabState(), { type: 'toggle-wrap-lines' })
+    expect(unwrapped.wrapLines).toBe(false)
+    expect(previewTabReducer(unwrapped, { type: 'toggle-wrap-lines' }).wrapLines).toBe(true)
+  })
+
+  it('keeps the wrap preference across file loads (display preference, not per-file state)', () => {
+    let state = previewTabReducer(initialPreviewTabState(), { type: 'toggle-wrap-lines' })
+    state = previewTabReducer(state, { type: 'load-start', sel: selA })
+    expect(state.wrapLines).toBe(false)
   })
 })
 

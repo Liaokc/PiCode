@@ -6,7 +6,7 @@ import { initialPreviewTabState, previewTabReducer } from '../../../shared/previ
 import type { PreviewFileEntry } from '../../../shared/preview/types'
 import CodeView from './CodeView'
 import Markdown from './Markdown'
-import { ChevronRightIcon, CodeIcon, EyeIcon, FileTextIcon, FolderIcon } from './icons'
+import { ChevronRightIcon, CodeIcon, EyeIcon, FileTextIcon, FolderIcon, WrapTextIcon } from './icons'
 
 /**
  * File Preview tab (ticket 07): markdown rendering + code highlighting with
@@ -66,6 +66,11 @@ export default function PreviewTab({ target, onNavigate }: PreviewTabProps): JSX
   const location = currentLocation(state.result, state.sel, target.path)
   const isFile = state.status === 'ready' && state.result !== null && state.result.ok && state.result.kind === 'file'
   const crumbs = location.cwd === '' ? [] : previewCrumbs(location.cwd, location.path, isFile)
+  // The wrap/truncate switch only means something when source is on screen.
+  const sourceShowing =
+    isFile && state.result !== null && state.result.ok && state.result.kind === 'file'
+      ? state.result.file.kind !== 'markdown' || state.view === 'source'
+      : false
 
   return (
     <div className="preview-view">
@@ -93,6 +98,18 @@ export default function PreviewTab({ target, onNavigate }: PreviewTabProps): JSX
             </span>
           ))}
         </div>
+        {sourceShowing && (
+          <button
+            type="button"
+            className={state.wrapLines ? 'tb-btn preview-wrap-toggle preview-wrap-toggle-on' : 'tb-btn preview-wrap-toggle'}
+            aria-pressed={state.wrapLines}
+            aria-label={state.wrapLines ? 'Switch to truncated lines' : 'Switch to wrapped lines'}
+            title={state.wrapLines ? 'Lines: wrapped — click to truncate' : 'Lines: truncated — click to wrap'}
+            onClick={() => dispatch({ type: 'toggle-wrap-lines' })}
+          >
+            <WrapTextIcon size={14} />
+          </button>
+        )}
         {state.status === 'ready' &&
           state.result !== null &&
           state.result.ok &&
@@ -132,7 +149,13 @@ export default function PreviewTab({ target, onNavigate }: PreviewTabProps): JSX
       {state.status === 'error' && <PreviewFailure result={state.result} />}
 
       {state.status === 'ready' && state.result !== null && state.result.ok && state.result.kind === 'file' && (
-        <PreviewFile file={state.result.file} view={state.view} visibleLines={state.visibleLines} onShowMore={() => dispatch({ type: 'show-more-lines' })} />
+        <PreviewFile
+          file={state.result.file}
+          view={state.view}
+          wrap={state.wrapLines}
+          visibleLines={state.visibleLines}
+          onShowMore={() => dispatch({ type: 'show-more-lines' })}
+        />
       )}
 
       {state.status === 'ready' && state.result !== null && state.result.ok && state.result.kind === 'directory' && (
@@ -179,11 +202,13 @@ function PreviewFailure({ result }: { result: PreviewResult | null }): JSX.Eleme
 function PreviewFile({
   file,
   view,
+  wrap,
   visibleLines,
   onShowMore
 }: {
   file: PreviewFileEntry
   view: 'rendered' | 'source'
+  wrap: boolean
   visibleLines: number
   onShowMore: () => void
 }): JSX.Element {
@@ -213,7 +238,7 @@ function PreviewFile({
           <Markdown text={file.text} />
         </div>
       ) : (
-        <CodeView text={file.text} name={file.name} visibleLines={visibleLines} totalLines={file.totalLines} />
+        <CodeView text={file.text} name={file.name} visibleLines={visibleLines} totalLines={file.totalLines} wrap={wrap} />
       )}
       {!rendered && file.totalLines > visibleLines && (
         <button type="button" className="preview-show-more" onClick={onShowMore}>

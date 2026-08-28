@@ -142,9 +142,11 @@ interface CodeViewProps {
   /** How many lines to render (large-file window from the tab state). */
   visibleLines: number
   totalLines: number
+  /** Soft-wrap long lines; false = truncate with horizontal scroll. */
+  wrap: boolean
 }
 
-export default function CodeView({ text, name, visibleLines, totalLines }: CodeViewProps): JSX.Element {
+export default function CodeView({ text, name, visibleLines, totalLines, wrap }: CodeViewProps): JSX.Element {
   const language = languageForName(name)
   // Same trailing-newline convention as the reader's totalLines: a final
   // newline does not open an extra row, and the empty file has no rows.
@@ -152,7 +154,7 @@ export default function CodeView({ text, name, visibleLines, totalLines }: CodeV
   const visible = Math.min(visibleLines, lines.length)
 
   return (
-    <div className="code-view" role="figure" aria-label={`Source of ${name}`}>
+    <div className={wrap ? 'code-view code-view-wrap' : 'code-view'} role="figure" aria-label={`Source of ${name}`}>
       {lines.slice(0, visible).map((line, index) => (
         <CodeLine key={index + 1} number={index + 1} text={line} language={language} />
       ))}

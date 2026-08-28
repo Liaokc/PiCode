@@ -359,6 +359,18 @@ export function EyeIcon({ size, className }: IconProps): JSX.Element {
   )
 }
 
+export function WrapTextIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M4 6h16" />
+      <path d="M4 12h10" />
+      <path d="M4 18h16" />
+      <path d="M14 12h3.5a3.5 3.5 0 0 1 0 7H14" />
+      <path d="m16 16-2 3 2 3" />
+    </svg>
+  )
+}
+
 export function GitBranchIcon({ size, className }: IconProps): JSX.Element {
   return (
     <svg {...svgProps(size, className)}>

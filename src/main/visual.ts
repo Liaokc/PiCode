@@ -209,6 +209,25 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       await sleep(700)
       await capture(win, '5-preview-source')
 
+      // Wrap/truncate display toggle (ticket 07 feedback): flip to truncated.
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const toggle = document.querySelector('.preview-wrap-toggle')
+          if (toggle instanceof HTMLElement) toggle.click()
+          return toggle !== null
+        })()`
+      )
+      await sleep(400)
+      await capture(win, '5b-preview-truncated')
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const toggle = document.querySelector('.preview-wrap-toggle')
+          if (toggle instanceof HTMLElement) toggle.click()
+          return true
+        })()`
+      )
+      await sleep(200)
+
       // Breadcrumb fallback: click the workspace-root crumb → listing.
       await win.webContents.executeJavaScript(
         `(() => {
