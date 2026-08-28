@@ -11,9 +11,12 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "lint": "eslint .",
     "test": "vitest run",
-    "usage:scan": "node scripts/usage-scan.ts"
+    "usage:scan": "node scripts/usage-scan.ts",
+    "smoke:host": "npm run build && node scripts/smoke/host-contract-smoke.mjs",
+    "smoke:electron": "npm run build && PICODE_SMOKE=1 electron ."
   },
   "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },

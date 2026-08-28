@@ -1,8 +1,10 @@
-import { contextBridge } from 'electron'
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import type { HostToParent, ParentToHost } from '../shared/contract'
 
 /**
- * Ticket 01 exposes only environment versions as a renderer-side smoke signal.
- * The chat/session IPC contract lands with ticket 02 via this same bridge.
+ * Seam-1 bridge: the renderer's only channel to the agent host system.
+ * Chat/session traffic flows exclusively through these three functions plus
+ * the versions snapshot from ticket 01.
  */
 contextBridge.exposeInMainWorld('picode', {
   versions: {
@@ -10,5 +12,18 @@ contextBridge.exposeInMainWorld('picode', {
     electron: process.versions.electron ?? '?',
     chrome: process.versions.chrome ?? '?',
     node: process.versions.node ?? '?'
+  },
+  chat: {
+    sendToHost: (message: ParentToHost): void => {
+      ipcRenderer.send('chat:to-host', message)
+    },
+    onHostEvent: (listener: (event: HostToParent) => void): (() => void) => {
+      const wrapped = (_event: IpcRendererEvent, message: HostToParent): void => listener(message)
+      ipcRenderer.on('chat:from-host', wrapped)
+      return () => {
+        ipcRenderer.removeListener('chat:from-host', wrapped)
+      }
+    },
+    pickWorkingDirectory: (): Promise<string | null> => ipcRenderer.invoke('chat:pick-directory')
   }
 })
