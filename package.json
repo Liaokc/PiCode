@@ -10,7 +10,8 @@
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "lint": "eslint .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "usage:scan": "node scripts/usage-scan.ts"
   },
   "dependencies": {
     "react": "^19.2.8",

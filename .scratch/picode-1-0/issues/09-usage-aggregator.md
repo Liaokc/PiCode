@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately — 与 01 并行泳道)。
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] fixture 样本全绿：正常流、追加式增长、compaction、半行截断
 - [ ] 抽取一个真实历史会话人工核对统计数字一致
