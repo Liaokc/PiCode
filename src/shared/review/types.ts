@@ -25,7 +25,10 @@ export interface DiffHunk {
   rows: DiffRow[]
 }
 
-/** One file's parsed patch, extracted from a `git diff` unified patch. */
+/**
+ * One file's parsed patch, extracted from a `git diff` unified patch.
+ * Renderer-facing entries extend this with stats and provenance.
+ */
 export interface FilePatch {
   /** Repo-relative display path (new path; the sole path for adds/deletes). */
   path: string
@@ -37,14 +40,9 @@ export interface FilePatch {
 }
 
 /** Per-file entry as delivered to the renderer (patch + stats + provenance). */
-export interface ReviewFileEntry {
-  path: string
-  oldPath: string | null
-  status: 'added' | 'modified' | 'deleted' | 'renamed'
-  binary: boolean
+export interface ReviewFileEntry extends FilePatch {
   additions: number
   deletions: number
-  hunks: DiffHunk[]
   /** In the workspace but not in HEAD (from `git status`, never in `git diff`). */
   untracked: boolean
 }
