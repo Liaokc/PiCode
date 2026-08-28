@@ -5,13 +5,18 @@ import fs from 'node:fs/promises'
 import type { HostToParent, ImageAttachment, ParentToHost } from '../shared/contract'
 import type { ReviewResult } from '../shared/review/types'
 import type { PreviewResult } from '../shared/preview/types'
+import type { AuthProbeReport } from '../shared/auth-status'
+import type { AppPreferences } from '../shared/preferences'
 import { createWindowOptions } from './window-options'
 import { HostSupervisor, defaultHostEntryPath } from './host-supervisor'
 import { collectReview } from './review/collect'
 import { readPreview } from './preview/read'
 import { SessionIndexService, type FollowUpdate } from './sessions/index-service'
+import { SettingsService, type SettingsSnapshot } from './settings/service'
+import { runAuthProbeHost } from './settings/probe-runner'
 import { startSmokeIfEnabled } from './smoke'
 import { startVisualIfEnabled } from './visual'
+import { startSettingsVisualIfEnabled } from './visual-settings'
 import { startTerminalVisualIfEnabled } from './visual-terminal'
 import { TerminalService, type TerminalDataMessage, type TerminalExitMessage } from './terminal/service'
 import { nodePtyFactory } from './terminal/node-pty-factory'
@@ -52,6 +57,30 @@ app.whenReady().then(() => {
   const usageService = createUsageService()
   ipcMain.handle('usage:snapshot', () => usageService.snapshot())
 
+  // Settings + read-only auth status (ticket 11). Preferences persist to
+  // PiCode's own file — never Pi's settings.json; the auth report comes from
+  // a short-lived probe host (ADR-0003: the SDK never loads here).
+  const hostEntry = defaultHostEntryPath()
+  const fakeSettings = process.env['PICODE_FAKE_SETTINGS'] === '1'
+  const settings = new SettingsService({
+    file: path.join(app.getPath('userData'), 'picode-settings.json'),
+    probe: () => runAuthProbeHost(hostEntry)
+  })
+  ipcMain.handle('settings:get', (): Promise<SettingsSnapshot> =>
+    fakeSettings
+      ? Promise.resolve({ preferences: fakePreferences(), lastUsedDirectory: process.cwd() })
+      : settings.getSnapshot()
+  )
+  ipcMain.handle('settings:set', (_event, patch: unknown): Promise<AppPreferences> => {
+    if (fakeSettings) return Promise.resolve(fakePreferences())
+    return settings.setPreferences(patch)
+  })
+  ipcMain.handle('settings:refresh-auth', (): Promise<AuthProbeReport> =>
+    fakeSettings
+      ? Promise.resolve(fakeAuthReport())
+      : settings.authReport(true)
+  )
+
   let smokeTap: ((event: HostToParent) => void) | null = null
   let mainWindow: BrowserWindow | null = null
   supervisor = new HostSupervisor({
@@ -68,6 +97,11 @@ app.whenReady().then(() => {
 
   // Renderer → host relay (Seam-1: the only chat channel the renderer has).
   ipcMain.on('chat:to-host', (_event, message: ParentToHost) => {
+    // Startup preference bookkeeping: remember the last working directory a
+    // session actually used (create or resume) for "reuse last folder".
+    if (message.type === 'create_session' || message.type === 'resume_session') {
+      void settings.recordLastUsedDirectory(message.cwd)
+    }
     supervisor?.handleParentCommand(message)
   })
 
@@ -176,6 +210,8 @@ app.whenReady().then(() => {
   ipcMain.on('sessions:unfollow', () => sessionIndex?.stopFollowing())
   sessionIndex.start()
 
+  startSettingsVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+
   mainWindow = createMainWindow()
 
   app.on('activate', () => {
@@ -194,3 +230,36 @@ app.on('before-quit', () => {
   sessionIndex?.stop()
   terminalService?.disposeAll()
 })
+
+// ---- visual-QA fixtures (PICODE_FAKE_SETTINGS=1): deterministic settings
+// data for the settings-window screenshot pass. Never used in normal runs. ----
+function fakePreferences(): AppPreferences {
+  return {
+    defaultModel: { providerId: 'bella', modelId: 'GLM-5.3' },
+    defaultThinkingLevel: 'high',
+    newTaskDirectory: 'ask'
+  }
+}
+
+function fakeAuthReport(): AuthProbeReport {
+  return {
+    scannedAt: Date.now(),
+    error: null,
+    models: [
+      { providerId: 'anthropic', modelId: 'claude-opus-4-5', name: 'Claude Opus 4.5' },
+      { providerId: 'anthropic', modelId: 'claude-sonnet-4-5', name: 'Claude Sonnet 4.5' },
+      { providerId: 'openai', modelId: 'gpt-5.1', name: 'GPT-5.1' },
+      { providerId: 'bella', modelId: 'GLM-5.3', name: 'GLM-5.3' },
+      { providerId: 'bella', modelId: 'GLM-5.3-flash', name: 'GLM-5.3-flash' },
+      { providerId: 'google', modelId: 'gemini-3-pro', name: 'Gemini 3 Pro' }
+    ],
+    providers: [
+      { providerId: 'anthropic', name: 'Anthropic', modelCount: 12, authType: 'oauth', source: 'OAuth', oauthExpiresAt: Date.now() + 86_400_000 },
+      { providerId: 'openai', name: 'OpenAI', modelCount: 8, authType: 'api_key', source: 'OPENAI_API_KEY', oauthExpiresAt: null },
+      { providerId: 'google', name: 'Google', modelCount: 6, authType: 'oauth', source: 'OAuth', oauthExpiresAt: Date.now() - 3_600_000 },
+      { providerId: 'bella', name: 'Bella', modelCount: 3, authType: 'api_key', source: 'bella.apiKey', oauthExpiresAt: null },
+      { providerId: 'github-copilot', name: 'GitHub Copilot', modelCount: 5, authType: null, source: null, oauthExpiresAt: null },
+      { providerId: 'zai', name: 'Z.ai', modelCount: 4, authType: null, source: null, oauthExpiresAt: null }
+    ]
+  }
+}

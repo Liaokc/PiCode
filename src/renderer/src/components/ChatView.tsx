@@ -129,6 +129,9 @@ export default function ChatView({
       </div>
       <div ref={scrollRef} className="chat-scroll">
         <div className="chat-thread">
+          {chat.entries.length === 0 && !chat.agentRunning && (
+            <div className="chat-empty-hint">No messages yet — describe what you need below.</div>
+          )}
           {chat.entries.map((entry, index) => (
             <Fragment key={entry.id}>
               {renderEntry(entry, { onOpenFile, onApprove, onDeny })}

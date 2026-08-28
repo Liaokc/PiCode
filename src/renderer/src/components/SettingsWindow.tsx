@@ -6,14 +6,27 @@ import {
   settingsUiReducer,
   type SettingsSection
 } from '../../../shared/settings-model'
+import type { AuthProbeReport } from '../../../shared/auth-status'
+import type { AppPreferences } from '../../../shared/preferences'
 import type { ShellUiAction } from '../../../shared/layout-model'
 import { useUsageSnapshot } from '../usage/use-usage-snapshot'
 import UsagePage from '../usage/UsagePage'
+import GeneralSection from './settings/GeneralSection'
+import AppearanceSection from './settings/AppearanceSection'
+import ModelsSection from './settings/ModelsSection'
 import { BarChartIcon, ChevronLeftIcon, CubeIcon, PaletteIcon, SlidersIcon } from './icons'
 
 interface SettingsWindowProps {
   /** Shell-level actions (back to workspace). */
   dispatchShell: Dispatch<ShellUiAction>
+  /** PiCode preferences + last used directory (App owns the snapshot). */
+  preferences: AppPreferences
+  lastUsedDirectory: string | null
+  /** Read-only auth probe report (null = not scanned yet). */
+  auth: AuthProbeReport | null
+  authScanning: boolean
+  onSetPreferences: (patch: Partial<AppPreferences>) => void
+  onRefreshAuth: () => void
 }
 
 function SectionIcon({ section }: { section: SettingsSection }): JSX.Element {
@@ -32,9 +45,19 @@ function SectionIcon({ section }: { section: SettingsSection }): JSX.Element {
 /**
  * Settings window shell (reference screenshot 09): a ZCode-style nav whose
  * groups are cropped to General / Appearance / Models / Data & Statistics.
- * Only the Usage section carries content in ticket 10; the rest placeholder.
+ * Ticket 11 fills General (startup preferences), Appearance (theme variable
+ * placeholder), and Models (defaults + read-only provider sign-in status);
+ * Usage keeps its ticket-10 page.
  */
-export default function SettingsWindow({ dispatchShell }: SettingsWindowProps): JSX.Element {
+export default function SettingsWindow({
+  dispatchShell,
+  preferences,
+  lastUsedDirectory,
+  auth,
+  authScanning,
+  onSetPreferences,
+  onRefreshAuth
+}: SettingsWindowProps): JSX.Element {
   const [ui, dispatch] = useReducer(settingsUiReducer, undefined, initialSettingsUiState)
   const { snapshot, error } = useUsageSnapshot()
 
@@ -65,7 +88,24 @@ export default function SettingsWindow({ dispatchShell }: SettingsWindowProps): 
       </nav>
 
       <main className="settings-content">
-        {ui.section === 'usage' ? (
+        {ui.section === 'general' && (
+          <GeneralSection
+            preferences={preferences}
+            lastUsedDirectory={lastUsedDirectory}
+            onSetPreferences={onSetPreferences}
+          />
+        )}
+        {ui.section === 'appearance' && <AppearanceSection />}
+        {ui.section === 'models' && (
+          <ModelsSection
+            preferences={preferences}
+            auth={auth}
+            authScanning={authScanning}
+            onSetPreferences={onSetPreferences}
+            onRefreshAuth={onRefreshAuth}
+          />
+        )}
+        {ui.section === 'usage' && (
           <UsagePage
             snapshot={snapshot}
             error={error}
@@ -75,19 +115,8 @@ export default function SettingsWindow({ dispatchShell }: SettingsWindowProps): 
             dispatch={dispatch}
             onOpenTask={() => dispatchShell({ type: 'back-to-workspace' })}
           />
-        ) : (
-          <PlaceholderSection label={SETTINGS_SECTION_LABELS[ui.section]} />
         )}
       </main>
-    </div>
-  )
-}
-
-function PlaceholderSection({ label }: { label: string }): JSX.Element {
-  return (
-    <div className="settings-placeholder">
-      <div className="settings-placeholder-title">{label}</div>
-      <div className="settings-placeholder-body">This section is coming soon.</div>
     </div>
   )
 }

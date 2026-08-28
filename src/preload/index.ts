@@ -4,6 +4,8 @@ import type { FollowUpdate, SessionSummary, TranscriptItem } from '../shared/ses
 import type { UsageSnapshot } from '../shared/usage/aggregate'
 import type { ReviewResult } from '../shared/review/types'
 import type { PreviewResult } from '../shared/preview/types'
+import type { AuthProbeReport } from '../shared/auth-status'
+import type { AppPreferences } from '../shared/preferences'
 import type { TerminalDataMessage, TerminalExitMessage } from '../shared/terminal/messages'
 
 /**
@@ -67,6 +69,16 @@ contextBridge.exposeInMainWorld('picode', {
   },
   usage: {
     snapshot: (): Promise<UsageSnapshot> => ipcRenderer.invoke('usage:snapshot')
+  },
+  settings: {
+    /** Preferences + last used directory in one query (ticket 11). */
+    get: (): Promise<{ preferences: AppPreferences; lastUsedDirectory: string | null }> =>
+      ipcRenderer.invoke('settings:get'),
+    /** Merge a preferences patch; resolves with the updated preferences. */
+    set: (patch: Partial<AppPreferences>): Promise<AppPreferences> =>
+      ipcRenderer.invoke('settings:set', patch),
+    /** Force a fresh read-only auth probe (host-family child, ADR-0003). */
+    refreshAuth: (): Promise<AuthProbeReport> => ipcRenderer.invoke('settings:refresh-auth')
   },
   review: {
     /** Collect a workspace-vs-HEAD diff snapshot for the given directory. */
