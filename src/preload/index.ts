@@ -1,10 +1,12 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { HostToParent, ParentToHost } from '../shared/contract'
+import type { ReviewResult } from '../shared/review/types'
 
 /**
  * Seam-1 bridge: the renderer's only channel to the agent host system.
  * Chat/session traffic flows exclusively through these three functions plus
- * the versions snapshot from ticket 01.
+ * the versions snapshot from ticket 01. The review bridge (ticket 06) is a
+ * separate additive namespace: request/response for workspace-vs-HEAD diffs.
  */
 contextBridge.exposeInMainWorld('picode', {
   versions: {
@@ -25,5 +27,9 @@ contextBridge.exposeInMainWorld('picode', {
       }
     },
     pickWorkingDirectory: (): Promise<string | null> => ipcRenderer.invoke('chat:pick-directory')
+  },
+  review: {
+    /** Collect a workspace-vs-HEAD diff snapshot for the given directory. */
+    load: (cwd: string): Promise<ReviewResult> => ipcRenderer.invoke('review:load', cwd)
   }
 })

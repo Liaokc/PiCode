@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 Host 活体。
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] 面板开合/多 tab/拖宽手感自然，主区自适应不跳动
 - [ ] Review 差异内容与终端 `git diff` 输出语义一致；unified/split 即时切换

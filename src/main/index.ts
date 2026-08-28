@@ -1,8 +1,10 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
 import path from 'node:path'
 import type { HostToParent, ParentToHost } from '../shared/contract'
+import type { ReviewResult } from '../shared/review/types'
 import { createWindowOptions } from './window-options'
 import { HostSupervisor, defaultHostEntryPath } from './host-supervisor'
+import { collectReview } from './review/collect'
 import { startSmokeIfEnabled } from './smoke'
 
 let supervisor: HostSupervisor | null = null
@@ -51,6 +53,14 @@ app.whenReady().then(() => {
       properties: ['openDirectory']
     })
     return result.canceled ? null : (result.filePaths[0] ?? null)
+  })
+
+  // Review tab (ticket 06): git workspace-vs-HEAD snapshots, read-only.
+  ipcMain.handle('review:load', (_event, cwd: unknown): Promise<ReviewResult> => {
+    if (typeof cwd !== 'string' || cwd.length === 0) {
+      return Promise.resolve({ ok: false, reason: 'failed', message: 'No working directory selected.' })
+    }
+    return collectReview(cwd)
   })
 
   mainWindow = createMainWindow()

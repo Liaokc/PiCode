@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 import type { HostToParent, ParentToHost } from '../shared/contract'
+import type { ReviewResult } from '../shared/review/types'
 
 interface ImportMetaEnv {
   /** QA hook: pin the empty-state greeting hour so screenshot runs are deterministic. */
@@ -15,6 +16,11 @@ interface PicodeChatBridge {
   pickWorkingDirectory(): Promise<string | null>
 }
 
+interface PicodeReviewBridge {
+  /** Collect a workspace-vs-HEAD diff snapshot for the given directory. */
+  load(cwd: string): Promise<ReviewResult>
+}
+
 declare global {
   interface Window {
     picode: {
@@ -25,6 +31,7 @@ declare global {
         node: string
       }
       chat: PicodeChatBridge
+      review: PicodeReviewBridge
     }
   }
 }

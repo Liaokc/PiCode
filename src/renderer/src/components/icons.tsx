@@ -36,6 +36,14 @@ export function SearchIcon({ size, className }: IconProps): JSX.Element {
   )
 }
 
+export function ChevronDownIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="m6 9.5 6 6 6-6" />
+    </svg>
+  )
+}
+
 export function ChevronLeftIcon({ size, className }: IconProps): JSX.Element {
   return (
     <svg {...svgProps(size, className)}>
@@ -204,6 +212,31 @@ export function StopIcon({ size, className }: IconProps): JSX.Element {
   return (
     <svg {...svgProps(size, className)}>
       <rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+export function CloseIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M6 6l12 12M18 6 6 18" />
+    </svg>
+  )
+}
+
+export function RefreshIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M20 12a8 8 0 1 1-2.34-5.66" />
+      <path d="M20 4v4.5h-4.5" />
+    </svg>
+  )
+}
+
+export function ArrowRightIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M4 12h16M14 6l6 6-6 6" />
     </svg>
   )
 }

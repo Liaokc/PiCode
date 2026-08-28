@@ -1,6 +1,7 @@
 import { useEffect, useReducer, useRef, useState, type JSX } from 'react'
 import { chatReducer, initialChatState, type ChatError } from '../../shared/chat-reducer'
 import { initialShellUiState, shellUiReducer } from '../../shared/layout-model'
+import { initialPanelState, panelReducer } from '../../shared/panel-model'
 import TitleBar from './components/TitleBar'
 import Sidebar from './components/Sidebar'
 import EmptyState from './components/EmptyState'
@@ -23,6 +24,8 @@ export default function App(): JSX.Element {
     ...initialShellUiState(),
     sidePanelOpen: import.meta.env.VITE_PICODE_PANEL_OPEN === '1'
   }))
+  /** Panel tab framework state (tabs, picker, dragged width) — ticket 06. */
+  const [panel, panelDispatch] = useReducer(panelReducer, undefined, initialPanelState)
   const [chat, chatDispatch] = useReducer(chatReducer, undefined, initialChatState)
   /** True between create_session and its terminal event. */
   const [creating, setCreating] = useState(false)
@@ -105,7 +108,13 @@ export default function App(): JSX.Element {
           <EmptyState creating={creating} onSend={handleComposerSend} />
         )}
       </main>
-      <SidePanel open={ui.sidePanelOpen} />
+      <SidePanel
+        open={ui.sidePanelOpen}
+        panel={panel}
+        dispatch={panelDispatch}
+        onCollapse={() => dispatch({ type: 'close-side-panel' })}
+        reviewCwd={chat.session?.cwd ?? null}
+      />
     </div>
   )
 }
