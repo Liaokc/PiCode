@@ -89,6 +89,7 @@ function TaskItem({
   return (
     <div
       className={cls}
+      data-file={session.file}
       onClick={onOpen}
       onDoubleClick={() => {
         setDraft(session.name ?? session.title)

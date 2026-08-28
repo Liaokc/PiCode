@@ -81,7 +81,14 @@ export class HostSupervisor {
       // renderer is alive to see is a crash it must be told about.
       const expected = this.quitting || this.expectedExit === child
       if (this.expectedExit === child) this.expectedExit = null
-      this.options.onHostEvent({ type: 'host_exit', clean: expected, code, signal })
+      // A replaced child's clean exit must NOT reach the renderer: a newer
+      // session may already be installed, and host_exit would detach it
+      // (rapid session switching is the norm since ticket 04). Crash exits
+      // and quit-time exits always flow.
+      const replaced = expected && !this.quitting
+      if (!replaced) {
+        this.options.onHostEvent({ type: 'host_exit', clean: expected, code, signal })
+      }
     })
   }
 

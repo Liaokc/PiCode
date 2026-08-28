@@ -55,10 +55,11 @@ const DAY_MS = 24 * HOUR_MS
 /** A session file touched within this window counts as running elsewhere (Live). */
 export const LIVE_WINDOW_MS = 120_000
 
-/** True when a session shows the Live Follow active state in the sidebar. */
+/** True when a session shows the Live Follow active state in the sidebar.
+ * Clock skew (mtime in the future relative to a stale render tick) counts as
+ * live — matching relativeTime's clamping. */
 export function isSessionLive(session: SessionSummary, nowMs: number): boolean {
-  const delta = nowMs - session.modifiedAt
-  return delta >= 0 && delta < LIVE_WINDOW_MS
+  return nowMs - session.modifiedAt < LIVE_WINDOW_MS
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']

@@ -158,15 +158,30 @@ export function startSmokeIfEnabled(
 
     // Live Follow: simulate the TUI appending to the (now inactive) session
     // file, open it from the sidebar, and watch the line appear read-only.
+    // The row is addressed by data-file so real sessions on this machine
+    // (also live within the 120s window) can never steal the click.
     if (!rebuilt.sessionFile) fail('rebuilt session did not report its file')
     const appended = await appendSimulatedTuiTurn(rebuilt.sessionFile)
     if (!appended) fail('could not find the leaf entry of the rebuilt session')
+    const rowSelector = `[data-file="${rebuilt.sessionFile}"]`
     await withWindow(getWindow, async (win) => {
       // The live dot proves the refreshed index (fresh mtime) reached the DOM.
-      const live = await waitForProbe(win, "document.querySelector('.sb-task .sb-live-dot') !== null", 10_000)
-      if (!live) fail('the appended session never showed the live state in the sidebar')
+      const live = await waitForProbe(win, `document.querySelector('${rowSelector} .sb-live-dot') !== null`, 10_000)
+      if (!live) {
+        const diag = (await win.webContents.executeJavaScript(
+          `JSON.stringify({
+            rowExists: document.querySelector('${rowSelector}') !== null,
+            rowText: document.querySelector('${rowSelector}')?.textContent ?? null,
+            rowDots: document.querySelectorAll('${rowSelector} .sb-live-dot').length,
+            dotRows: document.querySelectorAll('.sb-task .sb-live-dot').length,
+            activeRow: document.querySelector('.sb-task-active')?.getAttribute('data-file') ?? null,
+            rowClasses: document.querySelector('${rowSelector}')?.className ?? null
+          })`,
+        ).catch(() => 'unavailable')) as string
+        fail(`appended session never showed live state; DOM: ${diag}`)
+      }
       log('follow_live_state_ok')
-      const opened = await clickLiveRow(win)
+      const opened = await clickSessionRow(win, rowSelector)
       if (!opened) fail('clicking the live session row never opened the Live Follow view')
       log('follow_view_opened')
       const streamed = await waitForProbe(
@@ -251,19 +266,18 @@ async function appendSimulatedTuiTurn(file: string): Promise<boolean> {
   return true
 }
 
-/** Click the row showing the live dot (the refreshed, TUI-touched session). */
-const CLICK_LIVE_ROW_PROBE = `
-  (() => {
-    const row = [...document.querySelectorAll('.sb-task')].find((el) => el.querySelector('.sb-live-dot'))
-    if (!row) return false
-    row.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    return true
-  })()
-`
-
-async function clickLiveRow(win: BrowserWindow): Promise<boolean> {
-  return waitForProbe(win, CLICK_LIVE_ROW_PROBE, 2_000)
-}
+/** Click a specific session row (addressed by its data-file attribute). */
+const clickSessionRow = (win: BrowserWindow, rowSelector: string): Promise<boolean> =>
+  waitForProbe(
+    win,
+    `(() => {
+      const row = document.querySelector('${rowSelector}')
+      if (!row) return false
+      row.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      return true
+    })()`,
+    2_000
+  )
 
 /** Poll `win` until the DOM probe passes (max 5s). */
 function waitForDom(win: BrowserWindow): Promise<boolean> {

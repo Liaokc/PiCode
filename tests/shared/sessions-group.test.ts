@@ -85,7 +85,11 @@ describe('isSessionLive', () => {
   it('marks recently-touched sessions as live and stale ones as not', () => {
     expect(isSessionLive(session('a', '/w', NOW - 30_000), NOW)).toBe(true)
     expect(isSessionLive(session('b', '/w', NOW - 5 * 60_000), NOW)).toBe(false)
-    expect(isSessionLive(session('c', '/w', NOW + 60_000), NOW)).toBe(false)
+  })
+
+  it('tolerates clock skew — an mtime in the future counts as live', () => {
+    // A stale render tick vs a freshly appended file yields a negative delta.
+    expect(isSessionLive(session('c', '/w', NOW + 60_000), NOW)).toBe(true)
   })
 })
 
