@@ -9,20 +9,13 @@
  * the dynamic import from this CJS entry.
  */
 
+import type { AgentSession } from '@earendil-works/pi-coding-agent'
 import type { HostToParent } from '../shared/contract'
 
 const cwd = process.argv[2]
 if (!cwd) {
   process.exitCode = 1
   throw new Error('agent host requires a working directory as argv[2]')
-}
-
-interface AgentSessionLike {
-  prompt(text: string, options?: object): Promise<void>
-  abort(): Promise<void>
-  dispose(): void
-  subscribe(listener: (event: unknown) => void): () => void
-  sessionId: string
 }
 
 /** Every contract event except `host_exit`, which only the supervisor emits. */
@@ -41,49 +34,58 @@ function errorText(err: unknown): string {
   return String(err)
 }
 
-let session: AgentSessionLike | null = null
+let session: AgentSession | null = null
 let settled = true // true = no agent run in flight
+/** Error from the latest failed assistant message, surfaced only if the run
+ * actually ends in failure (auto-retry may still recover). */
+let pendingTurnError: string | null = null
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
-function wireSessionEvents(raw: AgentSessionLike): void {
-  raw.subscribe((event: unknown) => {
-    if (!isRecord(event) || typeof event.type !== 'string') return
+function wireSessionEvents(session: AgentSession): void {
+  session.subscribe((event) => {
     switch (event.type) {
       case 'agent_start':
         settled = false
+        pendingTurnError = null
         send({ type: 'agent_start' })
         break
       case 'message_start': {
-        const message = event.message as { role?: string } | undefined
-        if (message?.role === 'assistant') send({ type: 'message_start' })
+        if (event.message.role === 'assistant') send({ type: 'message_start' })
         break
       }
       case 'message_update': {
-        const assistantEvent = event.assistantMessageEvent as { type?: string; delta?: string } | undefined
-        if (assistantEvent?.type === 'text_delta' && typeof assistantEvent.delta === 'string') {
+        const assistantEvent = event.assistantMessageEvent
+        if (assistantEvent.type === 'text_delta') {
           send({ type: 'text_delta', delta: assistantEvent.delta })
         }
         break
       }
       case 'message_end': {
-        const message = event.message as
-          | { role?: string; stopReason?: string; errorMessage?: string; model?: string }
-          | undefined
-        if (message?.role !== 'assistant') break
+        if (event.message.role !== 'assistant') break
         send({ type: 'message_end' })
-        if (message.stopReason === 'error') {
-          send({ type: 'turn_error', message: message.errorMessage ?? 'The model request failed.' })
+        // Hold the error: auto-retry may still recover; only a run that ends
+        // in failure surfaces `turn_error` (see `agent_end` below).
+        if (event.message.stopReason === 'error') {
+          pendingTurnError = event.message.errorMessage ?? 'The model request failed.'
         }
         break
       }
       case 'agent_end': {
         // `willRetry` marks a retryable failure — the run is NOT over; suppress
-        // agent_end so the renderer keeps showing the working state.
-        if (event.willRetry === true) break
+        // agent_end so the renderer keeps showing the working state, and drop
+        // the held error (the retried message will report fresh results).
+        if (event.willRetry) {
+          pendingTurnError = null
+          break
+        }
         settled = true
+        if (pendingTurnError !== null) {
+          send({ type: 'turn_error', message: pendingTurnError })
+          pendingTurnError = null
+        }
         send({ type: 'agent_end' })
         break
       }
@@ -99,7 +101,7 @@ async function createSession(): Promise<void> {
     cwd,
     sessionManager: sdk.SessionManager.create(cwd)
   })
-  session = created as unknown as AgentSessionLike
+  session = created
   wireSessionEvents(created)
   send({
     type: 'session_created',
