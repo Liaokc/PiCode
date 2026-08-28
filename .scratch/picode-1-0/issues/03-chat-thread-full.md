@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 Host 活体。
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] 每类契约事件在 chat reducer 有表驱动测试（含错误路径），Seam-1 无回归口
 - [x] 含工具调用的一轮对话视觉密度与截图 01 对照通过（卡片、折叠、状态色）
@@ -21,3 +21,4 @@
 - Found & fixed during review: a renderer mount race — the harness could emit `session_created` before React attached the Seam-1 subscription (lost session). The renderer now stamps `data-chat-subscribed` when the subscription is live and the harness waits for it. Also extracted the shared `useElapsedSeconds` ticker (review finding).
 - Human pass remaining: eyeball `.scratch/visual/*.png` against `.scratch/reference/screenshots` 截屏 18.54.03 / 18.54.27, and optionally `npm run dev` with a real conversation; copy-click and expand/collapse are mouse interactions not covered by the smokes.
 - Merge from the root worktree: `cd ~/PiCode && git merge --no-ff t03-chat-thread-full`.
+- 2026-08-28 (merge session): **resolved** — merged into main as `1a8891f`。验收口径：操作者人工验收通过（对照截图 18.54.03/18.54.27 的排版清单 + 交互项）；rebase 到含 t04 的 main 时解了两批功能的接线冲突（host wireSessionEvents、App/ChatView 装配、icons 并集、smoke 双覆盖 union、history_loaded 移植到 entries 模型），解后 typecheck/lint/244 vitest 全绿，并重跑真机 contract smoke：Round A abort+工具轮与 Round B resume/rename/tree/fork 全链 SMOKE PASS。worktree 与分支已清理。
