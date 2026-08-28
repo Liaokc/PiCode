@@ -19,6 +19,7 @@ import type {
   AgentSession,
   AgentSessionEvent,
   AgentSessionRuntime,
+  CreateAgentSessionFromServicesOptions,
   SessionEntry,
   SessionManager,
   SessionStartEvent
@@ -30,10 +31,12 @@ import type {
   ModelRef,
   ThinkingLevel
 } from '../shared/contract'
+import type { SessionDefaults } from '../shared/preferences'
 import { buildSessionTree, extractTranscriptItems, type RawSessionEntry } from '../shared/sessions/parse'
 import type { SessionTreePayload } from '../shared/sessions/types'
 import { toolResultText } from '../shared/tool-format'
 import { ApprovalGate } from './approval-gate'
+import { runAuthProbe } from './auth-probe'
 import {
   PICODE_BUILTIN_COMMANDS,
   buildSlashCommands,
@@ -43,13 +46,16 @@ import {
 } from './composer-list'
 import { listRelativeFiles } from './files'
 import { createApprovalGateExtension, toImageContents } from './gate-extension'
+import { parseSessionArgs } from './session-args'
 
-const cwd = process.argv[2]
-const resumeFile = process.argv[3]
-if (!cwd) {
-  process.exitCode = 1
-  throw new Error('agent host requires a working directory as argv[2]')
-}
+/** Working directory / resume target / PiCode preference defaults (ticket 11),
+ * parsed once at boot from argv (see session-args). */
+let cwd: string
+let resumeFile: string | null = null
+let newSessionDefaults: SessionDefaults | null = null
+/** True while the boot create is still pending — seeds apply once, never to
+ * later in-host session replacements (fork). */
+let pendingSeed = false
 
 /** Every contract event except `host_exit`, which only the supervisor emits. */
 type HostEvent = Exclude<HostToParent, { type: 'host_exit' }>
@@ -340,10 +346,15 @@ async function createSession(): Promise<void> {
       cwd: opts.cwd,
       resourceLoaderOptions: { extensionFactories: [approvalExtension] }
     })
+    // Seeds apply to the INITIAL creation only — in-host replacements (fork)
+    // re-run this factory and must inherit the branched session's model.
+    const seed = pendingSeed ? newSessionSeedOptions(services) : {}
+    pendingSeed = false
     const result = await sdk.createAgentSessionFromServices({
       services,
       sessionManager: opts.sessionManager,
-      sessionStartEvent: opts.sessionStartEvent
+      sessionStartEvent: opts.sessionStartEvent,
+      ...seed
     })
     return { ...result, services, diagnostics: services.diagnostics }
   }
@@ -354,6 +365,25 @@ async function createSession(): Promise<void> {
   })
   wireSessionEvents(runtime.session)
   announceCurrentSession(Boolean(resumeFile))
+}
+
+/**
+ * PiCode preference defaults (ticket 11) for a NEW session, resolved against
+ * that session's own services. Unknown model ids fall back to Pi's own
+ * default; resumes never receive defaults (their model state is their own).
+ * The SDK clamps the thinking level to the model's capabilities.
+ */
+function newSessionSeedOptions(services: {
+  modelRuntime: { getModel(providerId: string, modelId: string): unknown }
+}): Pick<CreateAgentSessionFromServicesOptions, 'model' | 'thinkingLevel'> {
+  if (resumeFile || newSessionDefaults === null) return {}
+  const seed: Pick<CreateAgentSessionFromServicesOptions, 'model' | 'thinkingLevel'> = {}
+  if (newSessionDefaults.providerId !== undefined && newSessionDefaults.modelId !== undefined) {
+    const model = services.modelRuntime.getModel(newSessionDefaults.providerId, newSessionDefaults.modelId)
+    if (model) seed.model = model as CreateAgentSessionFromServicesOptions['model']
+  }
+  if (newSessionDefaults.thinkingLevel !== undefined) seed.thinkingLevel = newSessionDefaults.thinkingLevel
+  return seed
 }
 
 function handlePrompt(text: string, images?: ImageAttachment[]): void {
@@ -635,8 +665,31 @@ process.on('uncaughtException', (err) => {
   process.exit(1)
 })
 
-createSession().catch((err: unknown) => {
-  send({ type: 'session_error', message: errorText(err) })
-  // Give the IPC message a moment to flush before exiting.
-  setTimeout(() => process.exit(1), 100)
-})
+/** Normal boot path: parse argv, then bring up the session (probe mode skips
+ * this entirely — see the branch below). */
+function boot(): void {
+  const args = parseSessionArgs(process.argv)
+  cwd = args.cwd
+  resumeFile = args.resumeFile
+  newSessionDefaults = args.defaults
+  pendingSeed = true
+  void createSession().catch((err: unknown) => {
+    send({ type: 'session_error', message: errorText(err) })
+    // Give the IPC message a moment to flush before exiting.
+    setTimeout(() => process.exit(1), 100)
+  })
+}
+
+if (process.argv[2] === '--auth-probe') {
+  // Ticket 11 auth probe: a short-lived host-family process that reports the
+  // read-only provider credential status for the settings window, then exits.
+  // No session machinery is booted on this path. The report is NOT a contract
+  // event — the supervisor validates it with isAuthProbeReport on arrival.
+  void runAuthProbe().then((report) => {
+    process.send?.(report)
+    // Give the IPC message a moment to flush before exiting.
+    setTimeout(() => process.exit(0), 100).unref?.()
+  })
+} else {
+  boot()
+}

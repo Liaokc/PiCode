@@ -3,7 +3,8 @@ import type { HostToParent, ImageAttachment, ParentToHost } from '../shared/cont
 import type { FollowUpdate, SessionSummary, TranscriptItem } from '../../shared/sessions/types'
 import type { ReviewResult } from '../shared/review/types'
 import type { PreviewResult } from '../shared/preview/types'
-
+import type { AuthProbeReport } from '../shared/auth-status'
+import type { AppPreferences } from '../shared/preferences'
 import type { UsageSnapshot } from '../../shared/usage/aggregate'
 import type { TerminalDataMessage, TerminalExitMessage } from '../../shared/terminal/messages'
 
@@ -58,6 +59,15 @@ interface PicodeTerminalBridge {
   onExit(listener: (message: TerminalExitMessage) => void): () => void
 }
 
+interface PicodeSettingsBridge {
+  /** Preferences + last used directory in one query (ticket 11). */
+  get(): Promise<{ preferences: AppPreferences; lastUsedDirectory: string | null }>
+  /** Merge a preferences patch; resolves with the updated preferences. */
+  set(patch: Partial<AppPreferences>): Promise<AppPreferences>
+  /** Force a fresh read-only auth probe (host-family child, ADR-0003). */
+  refreshAuth(): Promise<AuthProbeReport>
+}
+
 declare global {
   interface Window {
     picode: {
@@ -69,6 +79,7 @@ declare global {
       }
       chat: PicodeChatBridge
       sessions: PicodeSessionsBridge
+      settings: PicodeSettingsBridge
       usage: {
         snapshot: () => Promise<UsageSnapshot>
       }

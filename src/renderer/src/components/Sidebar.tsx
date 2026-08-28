@@ -6,6 +6,7 @@ import {
   isSessionLive,
   relativeTime
 } from '../../../shared/sessions/group'
+import { useNowTick } from './use-now'
 import {
   ChevronDownIcon,
   ExpandArrowsIcon,
@@ -24,8 +25,6 @@ import {
 /** Rows shown per project group before "Show more". */
 const SHOW_FIRST = 5
 
-export const FOCUS_FILTER_EVENT = 'picode-focus-filter'
-
 interface SidebarProps {
   open: boolean
   sessions: SessionSummary[]
@@ -38,18 +37,10 @@ interface SidebarProps {
   onOpenSession: (session: SessionSummary) => void
   onRenameSession: (session: SessionSummary, name: string) => void
   onNewTask: () => void
+  /** Open the ⌘K task-search palette (ticket 11). */
+  onOpenSearch: () => void
   /** Open the settings window (ticket 10). */
   onOpenSettings: () => void
-}
-
-/** Re-render timer so relative timestamps stay honest. */
-function useNowTick(intervalMs: number): number {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), intervalMs)
-    return () => clearInterval(timer)
-  }, [intervalMs])
-  return now
 }
 
 function TaskItem({
@@ -145,6 +136,7 @@ export default function Sidebar({
   onOpenSession,
   onRenameSession,
   onNewTask,
+  onOpenSearch,
   onOpenSettings
 }: SidebarProps): JSX.Element | null {
   const now = useNowTick(30_000)
@@ -153,16 +145,6 @@ export default function Sidebar({
   const [view, setView] = useState<'projects' | 'groups'>('projects')
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
   const filterRef = useRef<HTMLInputElement>(null)
-
-  // ⌘K opens and focuses the task filter (user story 49).
-  useEffect(() => {
-    const focus = (): void => {
-      setFilterOpen(true)
-      requestAnimationFrame(() => filterRef.current?.focus())
-    }
-    window.addEventListener(FOCUS_FILTER_EVENT, focus)
-    return () => window.removeEventListener(FOCUS_FILTER_EVENT, focus)
-  }, [])
 
   const filtered = useMemo(() => filterSessions(sessions, query), [sessions, query])
   const grouped = useMemo(() => groupSessions(filtered, pinnedIds), [filtered, pinnedIds])
@@ -198,10 +180,7 @@ export default function Sidebar({
         <button
           type="button"
           className="sb-action-row"
-          onClick={() => {
-            setFilterOpen(true)
-            requestAnimationFrame(() => filterRef.current?.focus())
-          }}
+          onClick={onOpenSearch}
         >
           <SearchIcon />
           <span>Search</span>

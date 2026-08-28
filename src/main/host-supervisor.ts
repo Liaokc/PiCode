@@ -7,7 +7,9 @@
 
 import { fork, type ChildProcess } from 'node:child_process'
 import path from 'node:path'
+import type { SessionDefaults } from '../shared/preferences'
 import type { HostControlCommand, HostToParent, ParentToHost } from '../shared/contract'
+import { encodeSessionArgs } from '../host/session-args'
 
 const SHUTDOWN_GRACE_MS = 1500
 
@@ -35,7 +37,7 @@ export class HostSupervisor {
   handleParentCommand(message: ParentToHost): void {
     switch (message.type) {
       case 'create_session':
-        this.createSession(message.cwd)
+        this.createSession(message.cwd, undefined, message.defaults)
         break
       case 'resume_session':
         this.createSession(message.cwd, message.sessionFile)
@@ -64,10 +66,11 @@ export class HostSupervisor {
   /**
    * One host process per session (β shape): replacing a session means
    * replacing the process. `cwd` is passed as argv[2]; an optional existing
-   * session file goes as argv[3] (resume instead of create).
+   * session file goes as argv[3] (resume instead of create); optional
+   * new-session defaults ride a trailing sentinel argument (ticket 11).
    */
-  createSession(cwd: string, sessionFile?: string): void {
-    const args = sessionFile ? [cwd, sessionFile] : [cwd]
+  createSession(cwd: string, sessionFile?: string, defaults?: SessionDefaults): void {
+    const args = encodeSessionArgs(cwd, sessionFile, defaults)
     const previous = this.child
     if (previous) {
       this.expectedExit = previous

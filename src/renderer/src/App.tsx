@@ -5,10 +5,13 @@ import type { PreviewSelection } from '../../shared/preview/view-model'
 import { initialShellUiState, shellUiReducer } from '../../shared/layout-model'
 import { initialPanelState, panelReducer } from '../../shared/panel-model'
 import { isSessionLive } from '../../shared/sessions/group'
+import { sessionDefaultsFromPreferences, type AppPreferences } from '../../shared/preferences'
+import { toastReducer, type ToastLevel, type ToastList } from '../../shared/toast'
 import type { AccessMode, ImageAttachment, ThinkingLevel } from '../../shared/contract'
+import type { AuthProbeReport } from '../../shared/auth-status'
 import type { SessionSummary, SessionTreePayload, TranscriptItem } from '../../shared/sessions/types'
 import TitleBar from './components/TitleBar'
-import Sidebar, { FOCUS_FILTER_EVENT } from './components/Sidebar'
+import Sidebar from './components/Sidebar'
 import EmptyState from './components/EmptyState'
 import SidePanel from './components/SidePanel'
 import ChatView, { RENAME_EVENT } from './components/ChatView'
@@ -16,9 +19,25 @@ import { OPEN_MODEL_MENU_EVENT, OPEN_THINKING_MENU_EVENT } from './components/Co
 import FollowView from './components/FollowView'
 import ErrorBanner from './components/ErrorBanner'
 import SettingsWindow from './components/SettingsWindow'
+import TaskSearchPalette from './components/TaskSearchPalette'
+import ToastStack from './components/ToastStack'
 import type { ComposerApi } from './components/Composer'
 
 const PIN_STORAGE_KEY = 'picode.pinned-sessions'
+
+interface SettingsSnapshotState {
+  preferences: AppPreferences
+  lastUsedDirectory: string | null
+  auth: AuthProbeReport | null
+  authScanning: boolean
+}
+
+const INITIAL_SETTINGS_STATE: SettingsSnapshotState = {
+  preferences: { defaultModel: null, defaultThinkingLevel: null, newTaskDirectory: 'ask' },
+  lastUsedDirectory: null,
+  auth: null,
+  authScanning: false
+}
 
 function loadPinnedIds(): Set<string> {
   try {
@@ -73,10 +92,47 @@ export default function App(): JSX.Element {
   /** Live Follow: the session file being watched read-only, its transcript. */
   const [followedFile, setFollowedFile] = useState<string | null>(null)
   const [followItems, setFollowItems] = useState<TranscriptItem[]>([])
-  /** Transient feedback for session command failures (non-blocking). */
-  const [toast, setToast] = useState<string | null>(null)
+  /** Global toast stack (ticket 11): the single non-blocking notice surface. */
+  const [toasts, dispatchToast] = useReducer(toastReducer, [] as ToastList)
+  const toastIdRef = useRef(0)
+  /** ⌘K task-search palette (ticket 11). */
+  const [searchOpen, setSearchOpen] = useState(false)
+  /** Settings snapshot: preferences + last used directory + auth report. */
+  const [settings, setSettings] = useState<SettingsSnapshotState>(INITIAL_SETTINGS_STATE)
   const followedFileRef = useRef<string | null>(null)
   followedFileRef.current = followedFile
+
+  /** Push a toast with a monotonic id. */
+  const notify = useCallback((message: string, level: ToastLevel): void => {
+    toastIdRef.current += 1
+    dispatchToast({ type: 'push', message, level, id: toastIdRef.current })
+  }, [])
+  const dismissToastById = useCallback((id: number): void => {
+    dispatchToast({ type: 'dismiss', id })
+  }, [])
+
+  // Settings load once at boot; the snapshot drives both the settings window
+  // and the new-task flow (defaults + "reuse last folder").
+  useEffect(() => {
+    let cancelled = false
+    void window.picode.settings
+      .get()
+      .then((snapshot) => {
+        if (cancelled) return
+        setSettings({
+          preferences: snapshot.preferences,
+          lastUsedDirectory: snapshot.lastUsedDirectory,
+          auth: null,
+          authScanning: false
+        })
+      })
+      .catch(() => {
+        if (!cancelled) notify('Settings could not be loaded — using defaults.', 'error')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [notify])
 
   const refreshSessions = useCallback((): void => {
     void window.picode.sessions
@@ -137,8 +193,11 @@ export default function App(): JSX.Element {
           setTreeOpen(false)
           refreshSessions()
           break
+        case 'host_notice':
+          notify(event.message, event.level)
+          break
         case 'session_command_error':
-          setToast(event.message)
+          notify(event.message, 'error')
           break
         case 'session_error':
         case 'host_exit':
@@ -154,23 +213,32 @@ export default function App(): JSX.Element {
     // contract event emitted before this point was seen by the reducer.
     document.documentElement.dataset.chatSubscribed = 'true'
     return unsubscribe
-  }, [refreshSessions])
+  }, [refreshSessions, notify])
 
-  useEffect(() => {
-    if (toast === null) return
-    const timer = setTimeout(() => setToast(null), 4_000)
-    return () => clearTimeout(timer)
-  }, [toast])
+  /** Working directory for a new task: the startup preference reuses the last
+   * folder when set (falling back to the picker when there is none yet). */
+  const resolveNewTaskDirectory = useCallback(async (): Promise<string | null> => {
+    if (settings.preferences.newTaskDirectory === 'last-used' && settings.lastUsedDirectory) {
+      return settings.lastUsedDirectory
+    }
+    return window.picode.chat.pickWorkingDirectory()
+  }, [settings.preferences.newTaskDirectory, settings.lastUsedDirectory])
+
+  /** create_session carrying the settings-window defaults (ticket 11). */
+  const sendCreateSession = useCallback((cwd: string): void => {
+    const defaults = sessionDefaultsFromPreferences(settings.preferences) ?? undefined
+    window.picode.chat.sendToHost({ type: 'create_session', cwd, defaults })
+  }, [settings.preferences])
 
   const handleNewTask = useCallback(async (): Promise<void> => {
-    const cwd = await window.picode.chat.pickWorkingDirectory()
+    const cwd = await resolveNewTaskDirectory()
     if (!cwd) return
     setCreating(true)
     pendingPromptRef.current = null
-    window.picode.chat.sendToHost({ type: 'create_session', cwd })
-  }, [])
+    sendCreateSession(cwd)
+  }, [resolveNewTaskDirectory, sendCreateSession])
 
-  // ---- global keybindings: ⌘N new task, ⌘K filter tasks ----
+  // ---- global keybindings: ⌘N new task, ⌘K task search ----
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
       if (!event.metaKey || event.shiftKey || event.altKey || event.ctrlKey) return
@@ -179,7 +247,7 @@ export default function App(): JSX.Element {
         void handleNewTask()
       } else if (event.key === 'k' || event.key === 'K') {
         event.preventDefault()
-        window.dispatchEvent(new Event(FOCUS_FILTER_EVENT))
+        setSearchOpen((open) => !open)
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -193,14 +261,14 @@ export default function App(): JSX.Element {
       window.picode.chat.sendToHost({ type: 'prompt', text, images: images.length > 0 ? images : undefined })
       return
     }
-    const cwd = await window.picode.chat.pickWorkingDirectory()
+    const cwd = await resolveNewTaskDirectory()
     if (!cwd) return
     setCreating(true)
     // Both survive the folder pick: text AND images are delivered together
     // as the first prompt once the session exists.
     pendingPromptRef.current = text
     pendingImagesRef.current = images.length > 0 ? images : null
-    window.picode.chat.sendToHost({ type: 'create_session', cwd })
+    sendCreateSession(cwd)
   }
 
   function handleSteer(text: string, images: ImageAttachment[] = []): void {
@@ -302,15 +370,47 @@ export default function App(): JSX.Element {
     const cwd = chat.error?.kind === 'host' ? chat.error.cwd : null
     if (!cwd) return
     setCreating(true)
-    window.picode.chat.sendToHost({ type: 'create_session', cwd })
+    sendCreateSession(cwd)
   }
 
   async function handlePickAnotherFolder(): Promise<void> {
+    // Recovery path: the user explicitly wants a DIFFERENT folder, so always
+    // open the picker regardless of the startup preference.
     const cwd = await window.picode.chat.pickWorkingDirectory()
     if (!cwd) return
     setCreating(true)
-    window.picode.chat.sendToHost({ type: 'create_session', cwd })
+    sendCreateSession(cwd)
   }
+
+  // ---- settings window callbacks (ticket 11) ----
+
+  const handleSetPreferences = useCallback((patch: Partial<AppPreferences>): void => {
+    void window.picode.settings
+      .set(patch)
+      .then((preferences) => setSettings((prev) => ({ ...prev, preferences })))
+      .catch(() => undefined)
+  }, [])
+
+  const handleRefreshAuth = useCallback((): void => {
+    setSettings((prev) => ({ ...prev, authScanning: true }))
+    void window.picode.settings
+      .refreshAuth()
+      .then((auth) => setSettings((prev) => ({ ...prev, auth, authScanning: false })))
+      .catch(() =>
+        // Resolve with an error report (not null) so the auto-scan effect in
+        // the Models section never loops on a persistent failure.
+        setSettings((prev) => ({
+          ...prev,
+          authScanning: false,
+          auth: {
+            scannedAt: Date.now(),
+            providers: [],
+            models: [],
+            error: 'PiCode could not run the auth probe.'
+          }
+        }))
+      )
+  }, [])
 
   // ---- sidebar interactions ----
 
@@ -425,7 +525,15 @@ export default function App(): JSX.Element {
     return (
       <div className="app-shell">
         <TitleBar ui={ui} dispatch={dispatch} />
-        <SettingsWindow dispatchShell={dispatch} />
+        <SettingsWindow
+          dispatchShell={dispatch}
+          preferences={settings.preferences}
+          lastUsedDirectory={settings.lastUsedDirectory}
+          auth={settings.auth}
+          authScanning={settings.authScanning}
+          onSetPreferences={handleSetPreferences}
+          onRefreshAuth={handleRefreshAuth}
+        />
       </div>
     )
   }
@@ -446,6 +554,7 @@ export default function App(): JSX.Element {
         onOpenSession={handleOpenSession}
         onRenameSession={handleRenameSession}
         onNewTask={() => void handleNewTask()}
+        onOpenSearch={() => setSearchOpen(true)}
         onOpenSettings={() => dispatch({ type: 'open-settings' })}
       />
       <main className="main-zone">
@@ -457,7 +566,6 @@ export default function App(): JSX.Element {
             onDismiss={() => setDismissedError(chat.error)}
           />
         )}
-        {toast !== null && <div className="toast">{toast}</div>}
         {showFollow ? (
           <FollowView
             title={followedSummary?.title ?? followedFile ?? ''}
@@ -497,6 +605,14 @@ export default function App(): JSX.Element {
         previewTarget={previewTarget}
         onPreviewNavigate={handlePreviewNavigate}
       />
+      {searchOpen && (
+        <TaskSearchPalette
+          sessions={sessions}
+          onOpenSession={handleOpenSession}
+          onClose={() => setSearchOpen(false)}
+        />
+      )}
+      <ToastStack toasts={toasts} onDismiss={dismissToastById} />
     </div>
   )
 }

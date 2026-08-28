@@ -15,6 +15,7 @@
  *
  * Every member must stay JSON-serializable (it crosses process IPC).
  */
+import type { SessionDefaults } from './preferences.ts'
 import type { SessionTreePayload, TranscriptItem } from './sessions/types.ts'
 
 // ---- ticket 05: composer + approval gate shared vocabulary ----
@@ -58,8 +59,11 @@ export interface SlashCommandItem {
 
 /** Renderer → agent host system. */
 export type ParentToHost =
-  /** Spawn a host process and create a Session working in `cwd`. */
-  | { type: 'create_session'; cwd: string }
+  /** Spawn a host process and create a Session working in `cwd`.
+   * `defaults` (ticket 11) carries the settings-window's default model and
+   * thinking level for NEW sessions; the host applies them before the first
+   * announcement. Resumes never receive or apply defaults. */
+  | { type: 'create_session'; cwd: string; defaults?: SessionDefaults }
   /** Send the current turn's user message to the active session. */
   | { type: 'prompt'; text: string; images?: ImageAttachment[] }
   /** Abort the in-flight agent turn; the session stays usable. */
