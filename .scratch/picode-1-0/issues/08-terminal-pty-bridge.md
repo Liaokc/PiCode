@@ -4,7 +4,7 @@
 
 **Blocked by:** 06 面板容器 + Review 标签。
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] 日常命令使用顺畅：滚动不花屏、resize 重排正确、进程退出干净
 - [x] agent 执行 bash 时投屏区实时出现命令与输出；结束状态清晰
@@ -24,3 +24,4 @@
 - Verification: 287 vitest tests green (30 files), `typecheck` + `eslint` + `electron-vite build` clean, `smoke:pty` green.
 - Human pass remaining: `npm run dev` → run a real task with bash tool calls while typing in the Terminal tab; check scrollback/resize behavior against personal taste, and the restart affordance after `exit`.
 - Merge from the root worktree: `cd ~/PiCode && git merge --no-ff t08-terminal-bridge`.
+- 2026-08-28 (merge session): **resolved** — merged into main as `9a8b267`。验收口径：操作者目检通过（带 bash 工具调用的真实任务中在 Terminal 打字：单向投屏不回注、scrollback/resize、exit 后重启入口）。rebase 到含 07+05 的 main 解了 8 处 union：package.json 依赖并集（xterm/node-pty + highlight.js）、lock 重生、main/preload/env.d.ts 三层桥接双方保留、SidePanel 采 08 的「常驻挂载+picker 覆盖层」架构并织入 07 的 Preview 标签、reviewCwd→workspaceCwd 改名胜出、app.css 双样式段并集；解后 worktree typecheck/lint/395 vitest 全绿，合并后 main 复核 395 vitest + Electron smoke 全链 PASS。worktree 与分支已清理。
