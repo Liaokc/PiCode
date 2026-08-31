@@ -231,8 +231,14 @@ function TableCard({ node, children }: TableProps): JSX.Element {
             aria-label="Table preview"
             onClick={(e) => e.stopPropagation()}
           >
+            {/* ZCode preview shape (operator screenshot 2026-08-31): title +
+              muted subtitle, then the SAME rounded scroll container the
+              transcript uses — no divider bar between head and body. */}
             <div className="md-table-preview-head">
-              <span>Table preview</span>
+              <div className="md-table-preview-heading">
+                <span className="md-table-preview-title">Table preview</span>
+                <span className="md-table-preview-subtitle">View the table in a larger, scrollable view.</span>
+              </div>
               <button
                 type="button"
                 className="md-block-btn"
@@ -240,11 +246,13 @@ function TableCard({ node, children }: TableProps): JSX.Element {
                 autoFocus
                 onClick={() => setPreviewing(false)}
               >
-                <CloseIcon size={13} />
+                <CloseIcon size={14} />
               </button>
             </div>
             <div className="md-table-preview-body">
-              <table>{children}</table>
+              <div className="md-table-scroll md-table-scroll-expanded">
+                <table>{children}</table>
+              </div>
             </div>
           </div>
         </div>
