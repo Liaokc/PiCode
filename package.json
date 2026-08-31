@@ -22,6 +22,7 @@
     "package": "node scripts/package.mjs",
     "package:verify": "node scripts/package.mjs --verify",
     "visual:transcript": "npm run build && PICODE_VISUAL=1 electron .",
+    "visual:density": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_DENSITY=1 electron .",
     "visual:settings": "npm run build && PICODE_VISUAL_SETTINGS=1 PICODE_FAKE_SETTINGS=1 electron .",
     "visual:usage": "npm run build && PICODE_VISUAL_USAGE=1 PICODE_FAKE_USAGE=1 electron ."
   },

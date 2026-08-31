@@ -1,0 +1,115 @@
+{
+  "blocks": [
+    {
+      "tag": "p",
+      "top": 52.5,
+      "height": 73.5
+    },
+    {
+      "tag": "ul",
+      "top": 142,
+      "height": 107
+    },
+    {
+      "tag": "ol",
+      "top": 265,
+      "height": 52
+    },
+    {
+      "tag": "blockquote",
+      "top": 333,
+      "height": 44.5
+    },
+    {
+      "tag": "h3",
+      "top": 395.5,
+      "height": 20.3
+    },
+    {
+      "tag": "table",
+      "top": 423.8,
+      "height": 94.4
+    },
+    {
+      "tag": "p",
+      "top": 530.2,
+      "height": 24.5
+    },
+    {
+      "tag": "pre",
+      "top": 570.7,
+      "height": 124
+    }
+  ],
+  "blockGaps": [
+    {
+      "between": "p->ul",
+      "gap": 16
+    },
+    {
+      "between": "ul->ol",
+      "gap": 16
+    },
+    {
+      "between": "ol->blockquote",
+      "gap": 16
+    },
+    {
+      "between": "blockquote->h3",
+      "gap": 18
+    },
+    {
+      "between": "h3->table",
+      "gap": 8
+    },
+    {
+      "between": "table->p",
+      "gap": 12
+    },
+    {
+      "between": "p->pre",
+      "gap": 16
+    }
+  ],
+  "bulletItems": [
+    {
+      "top": 142,
+      "height": 24.5
+    },
+    {
+      "top": 169.5,
+      "height": 24.5
+    },
+    {
+      "top": 197,
+      "height": 24.5
+    },
+    {
+      "top": 224.5,
+      "height": 24.5
+    },
+    {
+      "top": 265,
+      "height": 24.5
+    },
+    {
+      "top": 292.5,
+      "height": 24.5
+    }
+  ],
+  "bulletPitch": [
+    27.5,
+    27.5,
+    27.5,
+    40.5,
+    27.5
+  ],
+  "tokens": {
+    "paragraphFontSize": "14px",
+    "paragraphLineHeight": "24.5px",
+    "paragraphWhiteSpace": "normal",
+    "paragraphMarginBottom": "16px",
+    "mdWhiteSpace": "normal",
+    "preWhiteSpace": "pre"
+  }
+}

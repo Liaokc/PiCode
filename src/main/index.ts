@@ -16,6 +16,7 @@ import { SettingsService, type SettingsSnapshot } from './settings/service'
 import { runAuthProbeHost } from './settings/probe-runner'
 import { startSmokeIfEnabled } from './smoke'
 import { startVisualIfEnabled } from './visual'
+import { startDensityVisualIfEnabled } from './visual-density'
 import { startSettingsVisualIfEnabled } from './visual-settings'
 import { startTerminalVisualIfEnabled } from './visual-terminal'
 import { startUsageVisualIfEnabled } from './visual-usage'
@@ -97,6 +98,7 @@ app.whenReady().then(() => {
   })
   smokeTap = startSmokeIfEnabled(supervisor, () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   startVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  startDensityVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   startTerminalVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
 
   // Renderer → host relay (Seam-1: the only chat channel the renderer has).

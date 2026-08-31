@@ -110,6 +110,9 @@ async function captureMenu(
 
 export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): void {
   if (!visualEnabled()) return
+  // Density runs (ticket 15) own the window alone: a fixed sample transcript
+  // plus geometry probe, no composer menus / preview flow alongside.
+  if (process.env['PICODE_VISUAL_DENSITY'] === '1') return
 
   void (async () => {
     try {

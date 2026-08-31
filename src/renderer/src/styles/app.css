@@ -2233,7 +2233,11 @@ button.heat:hover {
 
 .msg {
   font-size: 14px;
-  line-height: 1.65;
+  /* ZCode baseline: ~25px line pitch at 14px body text (measured off the
+     archived reference screenshots) → 14 × 1.75 = 24.5px. */
+  line-height: 1.75;
+  /* pre-wrap is for PLAIN-TEXT bubbles only (user messages). It must never
+     reach .md — see the white-space reset there for why. */
   white-space: pre-wrap;
   overflow-wrap: break-word;
 }
@@ -2529,6 +2533,15 @@ button.heat:hover {
   user-select: text;
 }
 
+.md {
+  /* DENSITY REGRESSION GUARD (ticket 15): .msg's pre-wrap must not leak in
+     here. remark-rehype emits real `\n` text nodes between block elements
+     (between <li>s, <p>s, …); under pre-wrap each one renders as an extra
+     blank line — list pitch measured 52px vs the ZCode 24–28px baseline.
+     Body copy is `normal`; fenced code re-opts into `pre` below. */
+  white-space: normal;
+}
+
 .md > :first-child {
   margin-top: 0;
 }
@@ -2539,6 +2552,17 @@ button.heat:hover {
 
 .md p {
   margin: 0 0 12px;
+}
+
+/* --- chat density tokens (ticket 15) ---
+   Calibrated against the ZCode live baseline: ~25px line pitch at 14px body
+   text, ~40px paragraph pitch, 24–28px single-line list pitch. Scoped to the
+   transcript (.msg-assistant) on purpose — the preview reader shares .md and
+   must NOT be re-laid-out in this ticket. */
+
+.msg-assistant .md p {
+  /* paragraph pitch ≈ 40px = 24.5px line + margin */
+  margin: 0 0 16px;
 }
 
 .md h1,
@@ -2572,6 +2596,11 @@ button.heat:hover {
   padding-left: 24px;
 }
 
+.msg-assistant .md ul,
+.msg-assistant .md ol {
+  margin: 0 0 16px;
+}
+
 .md li {
   margin: 3px 0;
 }
@@ -2581,6 +2610,10 @@ button.heat:hover {
   padding: 2px 0 2px 14px;
   border-left: 3px solid var(--border-strong);
   color: var(--text-secondary);
+}
+
+.msg-assistant .md blockquote {
+  margin: 0 0 16px;
 }
 
 .md hr {
@@ -2618,7 +2651,14 @@ button.heat:hover {
   border-radius: 10px;
   /* reference 06: code blocks read WHITE against the warm page bg, not inset */
   background: var(--bg-card);
+  /* Code is the one place .md keeps preformatted semantics (explicit, so the
+     .md reset above never silently changes code layout). */
+  white-space: pre;
   overflow-x: auto;
+}
+
+.msg-assistant .md pre {
+  margin: 0 0 16px;
 }
 
 .md pre code {
@@ -2635,10 +2675,20 @@ button.heat:hover {
   font-size: 13px;
 }
 
+.msg-assistant .md table {
+  margin: 0 0 16px;
+}
+
 .md th,
 .md td {
   border: 1px solid var(--border-strong);
   padding: 5px 11px;
+}
+
+.msg-assistant .md th,
+.msg-assistant .md td {
+  /* own line-height so cells stay compact regardless of the .msg value */
+  line-height: 1.6;
 }
 
 .md th {
