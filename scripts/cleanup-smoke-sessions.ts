@@ -29,8 +29,17 @@ import { pathToFileURL } from 'node:url'
 /** Directory-name patterns that identify smoke-tooling session stores. */
 const SMOKE_DIR_PATTERNS = [/picode-smoke-/, /picode-lifecycle-smoke/, /picode-probe/, /picode-diff-e2e-/]
 
+/**
+ * Encoded-cwd prefixes that mark a temp-location session store. Session dirs
+ * are named after their project cwd (`--tmp--` = /tmp, `--var-folders-…-T--` =
+ * a macOS temp dir); no real project ever lives under a temp location, so
+ * these are always harness leftovers.
+ */
+const TEMP_CWD_NAME_PREFIXES = ['--tmp', '--var-folders', '--private-tmp', '--private-var']
+
 /** True when a sessions-dir entry name was created by PiCode smoke tooling. */
 export function isSmokeDirName(name: string): boolean {
+  if (TEMP_CWD_NAME_PREFIXES.some((p) => name.startsWith(p))) return true
   return SMOKE_DIR_PATTERNS.some((p) => p.test(name))
 }
 
