@@ -6,7 +6,7 @@
 
 **Blocked by:** 14（折叠容器覆盖回放的结构化条目，需其载荷先行）。
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [ ] 每回合独立一行「Working · Ns ›」；落定默认收起；live 流式展开实时滚动、落定自动收起
 - [ ] 错误回合保持展开；展开态不跨切换记忆（resume 全收起）
@@ -20,3 +20,5 @@
 - 2026-08-31 (/to-tickets 重切): 自票 14 拆出（grilling R2-Q1/Q2 定稿行为；取证 `z-turn-collapse-expanded.png`）。
 - 2026-08-31 (implement session, t23-turn-collapse): **rebase onto main (6d022a5→f626da3, 票 16 已并) 完成，语义冲突自行整合**：(1) ChatView——fork 重新接回 turn 架构：`TurnAnswerPart` 新增 `entryId`，AnswerBlock 的 MessageActions 以回合**最后一个文本条目**为 fork 锚点（保整回合在分支路径上）+ onFork 透传，票 16 交付不回退；(2) visual.ts——保留 16 的 chrome 探针套件（1b 流式块/2b wrap/2c 表预览/2d fork toast），按折叠语义重排：落定折叠断言 → 开容器 → chrome 探针 → 密度检查；另修 review-deeplink 阶段的非确定性（现需工作区有变更：harness 自置自删 untracked 探针文件，不再依赖操作者 git 状态）；(3) 受影响证据帧全部重拍入库（20 帧，含 16 的 2b/2c/2d）。验证：vitest **524/524**（含 16 的 markdown-blocks + 新增 fork 锚点表驱动测试）、typecheck/lint 全绿、`npm run smoke` ALL GREEN（6 阶段）、visual harness 全探针通过。Status 保持 ready-for-human。
 - 2026-08-31 (implement session, t23-turn-collapse): 已实现并提交 **c13df16**，未自行 merge —— 请操作者运行 `bash scripts/merge-ticket.sh 23`。要点：`src/shared/turn-collapse.ts` 纯分组（回合边界=用户消息；work=思考/工具/审批，answer=文本在外）；折叠状态机入 chat-reducer（`expandedTurns`/`erroredTurns` + `toggle_turn_expanded` UI 动作，Seam-1 表驱动 22 测试：边界/收起/错误例外/记忆/手动开合）；live 展开→落定自动收起（Working→Worked，秒数冻结；回放回合无时长优雅降级同票 14 先例）；`turn_error` 保持展开、host_exit 照常收起（banner 讲失败故事）；history_loaded/session_created 清空记忆（resume 全收起）；技能标记行（WandIcon「Skill X」）+ 用户气泡剥离 `<skill>` 注入前言（ZCode 干净气泡取证）；审批药丸在容器内且 pending 强制展开（门永不藏起）。验证：vitest 508 全绿、typecheck/lint 全绿、`npm run smoke` ALL GREEN（6 阶段；resume 阶段新增折叠门：先断言容器全收起→展开→行级断言）；visual harness 更新（1-midrun 展开/2-settled 收起/3-expanded/3b 回放全收起/3c 展开含技能行，对照 `.scratch/compare/z-turn-collapse-expanded.png` 与 `/tmp/cur.png` 通过）。code-review 双轴：0 硬违规；4 条判断项（气泡剥离前言、Working/Worked 措辞依 ZCode 实拍、流式中手动收起生效、host_exit 收起）供验收复核。
+
+- 2026-08-31 (merge session, T00): merged as **efe074b** (`merge: t23-turn-collapse`, rebase + no-ff onto main)。验收口径：操作者明确「已验收」×2——首轮合并因语义级冲突中止（与票 16 的 fork 锚点对撞 + visual 探针套件被折叠语义改写覆盖），退回实现会话；实现会话以 `0b1bd1e merge-integrate` 完成整合（fork 以答案末段 entryId 重新锚定进 turn 架构、chrome 探针按「落定折叠断言 → 开容器 → chrome 探针 → 密度检查」重排、证据帧全套重拍），操作者二次验收后合并。合并后 main 上 typecheck + vitest 524/524 全绿；合并会话对终态做了审计（fork 接线/探针顺序与整合结果一致）。
