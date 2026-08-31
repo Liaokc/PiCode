@@ -5,7 +5,11 @@
  * PNG screenshots of the window:
  *
  *   1. mid-run  — working line ticking, streaming markdown with caret, tool card running
+ *   1b. streaming blocks — code card + table container live mid-stream, and a
+ *       dataset marker proves they are NOT remounted by later deltas (ticket 16)
  *   2. settled  — done tool card, per-message actions row with timestamp
+ *   2b/2c      — ticket 16 block chrome: wrap toggle, table expand, table
+ *       preview overlay, and the message-row fork toast
  *   3. expanded — thinking row and tool card unfolded
  *   3b/3c      — ticket 14: a resumed session replayed from structured history
  *                items — collapsed thinking rows + settled tool cards by default
@@ -227,11 +231,130 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
           '```typescript\nexport function parseRegistration(body: unknown): Registration {\n  const { email, password } = RegistrationSchema.parse(body)\n  return {\n    email: email.trim().toLowerCase(),\n    password: assertStrongPassword(password)\n  }\n}\n```\n\n'
       })
       await sleep(400)
+      // Ticket 16: the code card must exist mid-stream with both controls,
+      // and must survive later deltas WITHOUT remounting — mark the mounted
+      // element and re-check after more streaming (a remount drops the mark).
+      const streamCodeSig = (await win.webContents.executeJavaScript(
+        `(() => {
+          const cards = document.querySelectorAll('.md-code-card')
+          cards.forEach((el) => { if (el instanceof HTMLElement) el.dataset.streamProbe = 'mounted' })
+          return { cards: cards.length, buttons: document.querySelectorAll('.md-code-card .md-block-btn').length }
+        })()`
+      )) as { cards: number; buttons: number }
+      if (streamCodeSig.cards !== 1 || streamCodeSig.buttons !== 2) {
+        throw new Error(`visual streaming: code card signature ${JSON.stringify(streamCodeSig)}`)
+      }
+      // Table streams in after the code block — same remount tolerance there.
+      await streamText(['| Field | Rule |\n', '| --- | --- |\n| email | lowercased, ≤ 254 chars |\n', '| password | ≥ 12 chars, breach-listed |\n\n'], 120)
+      const streamTableSig = (await win.webContents.executeJavaScript(
+        `(() => {
+          const wraps = document.querySelectorAll('.md-table-wrap')
+          wraps.forEach((el) => { if (el instanceof HTMLElement) el.dataset.streamProbe = 'mounted' })
+          return { wraps: wraps.length, buttons: document.querySelectorAll('.md-table-tools .md-block-btn').length }
+        })()`
+      )) as { wraps: number; buttons: number }
+      if (streamTableSig.wraps !== 1 || streamTableSig.buttons !== 3) {
+        throw new Error(`visual streaming: table container signature ${JSON.stringify(streamTableSig)}`)
+      }
       await streamText(['All ', 'three ', 'register ', 'tests ', 'pass ', '— ', 'ready ', 'for ', 'review.'])
+      const remountSig = (await win.webContents.executeJavaScript(
+        `(() => {
+          const marked = document.querySelectorAll('[data-stream-probe="mounted"]')
+          let kept = 0
+          marked.forEach((el) => {
+            if (el instanceof HTMLElement && el.dataset.streamProbe === 'mounted') kept++
+          })
+          return { marked: marked.length, kept }
+        })()`
+      )) as { marked: number; kept: number }
+      if (remountSig.marked < 2 || remountSig.kept !== remountSig.marked) {
+        throw new Error(`visual streaming: block card remounted mid-stream ${JSON.stringify(remountSig)}`)
+      }
+      console.log(`VISUAL probe 1b-streaming-blocks: ${JSON.stringify({ ...streamCodeSig, ...streamTableSig, ...remountSig })}`)
+      await capture(win, '1b-streaming-blocks')
       emit({ type: 'message_end' })
       emit({ type: 'agent_end' })
       await sleep(800)
       await capture(win, '2-settled')
+
+      // ---- ticket 16: settled block chrome interactions ----
+      // Wrap toggle flips the code area to pre-wrap; expand lifts the table
+      // scroll cap; preview opens the overlay; fork fires the toast.
+      const chromeSig = (await win.webContents.executeJavaScript(
+        `(() => ({
+          codeCards: document.querySelectorAll('.md-code-card').length,
+          tableWraps: document.querySelectorAll('.md-table-wrap').length,
+          tools: document.querySelectorAll('.md-table-tools .md-block-btn').length,
+          innerTables: document.querySelectorAll('.md-table-scroll table').length
+        }))()`
+      )) as { codeCards: number; tableWraps: number; tools: number; innerTables: number }
+      if (chromeSig.codeCards < 1 || chromeSig.tableWraps < 1 || chromeSig.tools !== 3 || chromeSig.innerTables < 1) {
+        throw new Error(`visual 2b: block chrome signature ${JSON.stringify(chromeSig)}`)
+      }
+      await win.webContents.executeJavaScript(
+        `(() => {
+          document.querySelector('.md-code-card button[aria-label="Wrap lines"]')?.scrollIntoView({ block: 'center' })
+          const btn = document.querySelector('.md-code-card button[aria-label="Wrap lines"]')
+          if (btn instanceof HTMLElement) btn.click()
+          return btn !== null
+        })()`
+      )
+      await sleep(300)
+      const wrapSig = (await win.webContents.executeJavaScript(
+        `document.querySelectorAll('.md pre.md-code-pre-wrapped').length`
+      )) as number
+      if (wrapSig < 1) throw new Error('visual 2b: wrap toggle did not wrap the code area')
+      await capture(win, '2b-code-wrapped')
+
+      await win.webContents.executeJavaScript(
+        `(() => {
+          document.querySelector('.md-table-wrap')?.scrollIntoView({ block: 'center' })
+          const btn = document.querySelector('.md-table-tools button[aria-label="Expand table"]')
+          if (btn instanceof HTMLElement) btn.click()
+          return btn !== null
+        })()`
+      )
+      await sleep(300)
+      const expandSig = (await win.webContents.executeJavaScript(
+        `document.querySelectorAll('.md-table-scroll-expanded').length`
+      )) as number
+      if (expandSig < 1) throw new Error('visual 2b: expand toggle did not lift the scroll cap')
+
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const btn = document.querySelector('.md-table-tools button[aria-label="Preview table"]')
+          if (btn instanceof HTMLElement) btn.click()
+          return btn !== null
+        })()`
+      )
+      await sleep(400)
+      await captureMenu(win, '2c-table-preview', { dialog: '.md-table-preview' })
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const close = document.querySelector('button[aria-label="Close table preview"]')
+          if (close instanceof HTMLElement) close.click()
+          return close !== null
+        })()`
+      )
+      await sleep(200)
+
+      // Fork from the message action row: toast + (in a live host) an
+      // automatic session switch; the harness can only see the toast.
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const fork = document.querySelector('button[aria-label="Fork a new session from this message"]')
+          fork?.scrollIntoView({ block: 'center' })
+          if (fork instanceof HTMLElement) fork.click()
+          return fork !== null
+        })()`
+      )
+      await sleep(400)
+      await captureMenu(win, '2d-fork-toast', { toast: '.toast' })
+      const toastText = (await win.webContents.executeJavaScript(
+        `document.querySelector('.toast-message')?.textContent ?? ''`
+      )) as string
+      if (!toastText.includes('Forked')) throw new Error(`visual 2d: unexpected fork toast ${JSON.stringify(toastText)}`)
+      await sleep(300)
 
       // Expand the thinking row and the tool card for the density check.
       await win.webContents.executeJavaScript(

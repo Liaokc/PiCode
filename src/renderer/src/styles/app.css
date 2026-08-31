@@ -2681,8 +2681,11 @@ button.heat:hover {
 
 .md th,
 .md td {
-  border: 1px solid var(--border-strong);
-  padding: 5px 11px;
+  /* ZCode table style (operator screenshots 2026-08-31): horizontal
+     separators only — no vertical rules, untinted header */
+  border: none;
+  border-bottom: 1px solid var(--border);
+  padding: 9px 12px;
 }
 
 .msg-assistant .md th,
@@ -2692,8 +2695,190 @@ button.heat:hover {
 }
 
 .md th {
-  background: var(--bg-inset);
+  text-align: left;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+.md tr:last-child td {
+  border-bottom: none;
+}
+
+/* ---------- block chrome (ticket 16: code cards + table containers) ----------
+   ZCode baseline: fenced code renders as a bordered card with a language
+   label header and wrap/copy controls; tables sit in a scroll container
+   with always-visible copy/preview/expand controls above the card. */
+
+.md-code-card {
+  margin: 0 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-card);
+  /* clip the code area to the card's rounding */
+  overflow: hidden;
+}
+
+.md .md-code-card {
+  margin: 0 0 16px;
+}
+
+.md-code-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 8px 8px 14px;
+}
+
+.md-code-lang {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
   font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.md-code-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+/* shared small icon button for code + table chrome */
+.md-block-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  color: var(--text-secondary);
+}
+
+.md-block-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.md-block-btn:focus-visible {
+  outline: 1.5px solid var(--accent-orange);
+  outline-offset: 1px;
+}
+
+.md-block-btn:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.md-block-btn-on {
+  color: var(--accent-orange);
+}
+
+.md-copy-copied {
+  color: #3f9d45;
+}
+
+/* the pre now lives inside the card — the card owns border/rounding/margin,
+   the code area stays transparent (equal-or-higher specificity than the
+   .msg-assistant .md pre margin rule above, and later in the file). */
+.md .md-code-card pre {
+  margin: 0;
+  padding: 6px 14px 12px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.md pre.md-code-pre-wrapped {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: hidden;
+}
+
+.md-table-wrap {
+  margin: 0 0 12px;
+}
+
+.md .md-table-wrap {
+  margin: 0 0 16px;
+}
+
+/* controls sit ABOVE the card, right-aligned (ZCode z-table-hover.png) */
+.md-table-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  padding-bottom: 4px;
+}
+
+.md-table-scroll {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-card);
+  max-height: 360px;
+  overflow: auto;
+}
+
+.md .md-table-scroll-expanded {
+  max-height: none;
+}
+
+.md .md-table-scroll table {
+  margin: 0;
+  /* fill the card like the ZCode baseline (z-table-hover.png); wide tables
+     still overflow into a horizontal scroll instead of leaving dead space */
+  min-width: 100%;
+}
+
+.md-table-preview-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(35, 35, 32, 0.35);
+}
+
+.md-table-preview {
+  display: flex;
+  flex-direction: column;
+  width: min(760px, 86vw);
+  max-height: 78vh;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 18px 48px rgba(35, 35, 32, 0.18);
+}
+
+.md-table-preview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 16px 10px 10px 20px;
+}
+
+.md-table-preview-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.md-table-preview-title {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.md-table-preview-subtitle {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.md-table-preview-body {
+  overflow: auto;
+  padding: 0 20px 20px;
 }
 
 /* highlight.js tokens — light github-like palette calibrated to the app */

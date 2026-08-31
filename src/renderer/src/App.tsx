@@ -490,8 +490,12 @@ export default function App(): JSX.Element {
     window.picode.chat.sendToHost({ type: 'navigate_tree', entryId })
   }
 
+  /** Fork the session at an entry (branch-history panel or message action
+   * row, ticket 16). The host swaps to the branched session by re-announcing
+   * session_created — the toast confirms the switch the user just got. */
   function handleFork(entryId: string): void {
     window.picode.chat.sendToHost({ type: 'fork_session', entryId })
+    notify('Forked to a new session.', 'info')
   }
 
   // ---- File Preview deep-links (ticket 07) ----
