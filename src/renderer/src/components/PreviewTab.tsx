@@ -237,7 +237,9 @@ function PreviewFile({
       )}
       {rendered ? (
         <div className="preview-md">
-          <Markdown text={file.text} />
+          {/* chrome={false}: block cards are a transcript affordance (ticket 16);
+            the preview reader keeps its bare layout. */}
+          <Markdown text={file.text} chrome={false} />
         </div>
       ) : (
         <CodeView text={file.text} name={file.name} visibleLines={visibleLines} totalLines={file.totalLines} wrap={wrap} />

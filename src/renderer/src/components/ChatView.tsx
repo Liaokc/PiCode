@@ -136,7 +136,7 @@ export default function ChatView({
           )}
           {chat.entries.map((entry, index) => (
             <Fragment key={entry.id}>
-              {renderEntry(entry, { onOpenFile, onApprove, onDeny })}
+              {renderEntry(entry, { onOpenFile, onFork, onApprove, onDeny })}
               {chat.agentRunning && index === lastUserIndex && <WorkingLine />}
             </Fragment>
           ))}
@@ -175,6 +175,7 @@ function renderEntry(
   entry: ChatEntry,
   actions: {
     onOpenFile?: (path: string) => void
+    onFork: (entryId: string) => void
     onApprove: (id: string, remember: boolean) => void
     onDeny: (id: string, reason: string) => void
   }
@@ -183,7 +184,7 @@ function renderEntry(
     case 'user':
       return <div className="msg msg-user">{entry.text}</div>
     case 'assistant':
-      return <AssistantBlock entry={entry} />
+      return <AssistantBlock entry={entry} onFork={actions.onFork} />
     case 'tool':
       return <ToolCard entry={entry} onOpenFile={actions.onOpenFile} />
     case 'approval':
@@ -191,7 +192,7 @@ function renderEntry(
   }
 }
 
-function AssistantBlock({ entry }: { entry: AssistantEntry }): JSX.Element {
+function AssistantBlock({ entry, onFork }: { entry: AssistantEntry; onFork: (entryId: string) => void }): JSX.Element {
   const fullText = entry.parts
     .filter((p) => p.kind === 'text')
     .map((p) => p.text)
@@ -211,7 +212,7 @@ function AssistantBlock({ entry }: { entry: AssistantEntry }): JSX.Element {
           />
         )
       )}
-      {!entry.streaming && fullText.trim() !== '' && <MessageActions text={fullText} />}
+      {!entry.streaming && fullText.trim() !== '' && <MessageActions text={fullText} entryId={entry.id} onFork={onFork} />}
     </div>
   )
 }
