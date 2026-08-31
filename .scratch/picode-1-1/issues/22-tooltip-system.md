@@ -12,7 +12,7 @@
 
 **Blocked by:** None（终态走查宜在 16/18/19 的按钮定形后收尾，故实现顺序上宜靠后——但**组件本身先行**，作为 16/18/19 的前置件）。
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] 会话行无 tooltip（含 title 与 aria-label 复用清理）
 - [x] 统一 tooltip 组件落地（短描述 / 快捷键两态，样式对照 `z-tooltip-style.png`）
@@ -77,3 +77,5 @@
   - code-review 两轴通过（Standards：文案英文/测试缝/术语绑定 ✓，1 处缩进当场修复；Spec：三件全做 ✓，1 项部分——`z-tooltip-style.png` 证据图实为空白裁切，样式按操作者口述「小型浮层/深字浅底/键位帽」落地并留人工 visual QA 把关）。
   - **实现 sha：`51e09c4`**（分支 `t22-tooltip-system`，未自行 merge）。⚠️ 快捷键键帽态当前无实消费按钮（现 app 仅 ⌘N/⌘K 且已内联 kbd），键帽视觉待票 18 ⌘J 首个真实消费者人工验收。
   - 操作者合并：`bash scripts/merge-ticket.sh 22`
+
+- 2026-08-31 (merge session, T00): merged as **34ecc4e** (`merge: t22-tooltip-system`, rebase + no-ff onto main)。验收口径：操作者明确「已验收」；实现会话记录 typecheck/eslint/vitest（470）全绿 + visual 全帧重拍（新帧 8-tooltip-filter）+ code-review 双轴通过（键帽样式空白证据图已留人工 visual QA 把关——16/18/19 消费该组件时一并复核）；合并后 main 上 typecheck + vitest 486/486 全绿。冲突处置：`src/main/visual.ts` 文档头注释与票 14 的 3b/3c 行并集保留（纯注释，双方保留）。
