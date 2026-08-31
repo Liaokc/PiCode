@@ -165,8 +165,10 @@ function entryId(index: number): string {
   return `m${index}`
 }
 
-/** One structured history item → the same entry shape the live stream builds. */
-function replayEntry(item: TranscriptItem): ChatEntry {
+/** One structured history item → the same entry shape the live stream builds.
+ * Shared by resume replay (history_loaded) and the Live Follow view (ticket
+ * 24) so both render isomorphic to the live transcript. */
+export function replayEntry(item: TranscriptItem): ChatEntry {
   switch (item.role) {
     case 'user':
       return { id: item.id, role: 'user', text: item.text, skillName: item.skillName }

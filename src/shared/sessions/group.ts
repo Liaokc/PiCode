@@ -62,6 +62,21 @@ export function isSessionLive(session: SessionSummary, nowMs: number): boolean {
   return nowMs - session.modifiedAt < LIVE_WINDOW_MS
 }
 
+/** What the Live Follow view's Open action should do (ticket 24). Decided
+ * against a FRESH index scan at click time: a still-running session rejects
+ * the takeover (toast), a quiet one resumes through the existing Handoff
+ * chain, and a session that vanished from disk can only report that. */
+export type FollowTakeover = 'resume' | 'still-live' | 'missing'
+
+export function decideFollowTakeover(summary: SessionSummary | null, nowMs: number): FollowTakeover {
+  if (summary === null) return 'missing'
+  return isSessionLive(summary, nowMs) ? 'still-live' : 'resume'
+}
+
+/** Toast copy when the Open re-check finds the session running again —
+ * shared so the electron smoke can assert the exact wording. */
+export const FOLLOW_TAKEOVER_REJECTED_TOAST = 'Session is still running in another window.'
+
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 /** Compact relative time for sidebar rows: just now / 39m ago / 3h ago / 2d ago / Aug 27. */

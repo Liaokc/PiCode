@@ -1,12 +1,11 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import type { ChatState } from '../../../shared/chat-reducer'
-import { groupTurns, type TurnGroup } from '../../../shared/turn-collapse'
+import { groupTurns } from '../../../shared/turn-collapse'
 import type { SessionTreePayload } from '../../../shared/sessions/types'
 import Composer, { type ComposerApi } from './Composer'
 import TreePanel from './TreePanel'
-import Markdown from './Markdown'
 import TurnContainer from './TurnContainer'
-import MessageActions from './MessageActions'
+import AnswerBlock from './AnswerBlock'
 import Tooltip from './Tooltip'
 import { ChevronDownIcon, PencilIcon } from './icons'
 
@@ -175,23 +174,3 @@ export default function ChatView({
 
 /** Window event the App dispatches for the `/name` builtin. */
 export const RENAME_EVENT = 'picode:rename-session'
-
-/** The turn's answer: assistant text parts, streamed live, action row when
- * settled (ticket 23 — the text that stays visible around the fold). The
- * fork anchor (ticket 16) is the turn's LAST text-bearing entry: forking
- * there keeps every entry of the answer's turn on the branched path. */
-function AnswerBlock({ turn, onFork }: { turn: TurnGroup; onFork: (entryId: string) => void }): JSX.Element {
-  const fullText = turn.answer.map((p) => p.text).join('\n\n')
-  const forkAnchor = turn.answer[turn.answer.length - 1]?.entryId
-
-  return (
-    <div className="msg msg-assistant">
-      {turn.answer.map((part) => (
-        <Markdown key={part.key} text={part.text} streaming={part.streaming} />
-      ))}
-      {!turn.live && fullText.trim() !== '' && (
-        <MessageActions text={fullText} entryId={forkAnchor} onFork={onFork} />
-      )}
-    </div>
-  )
-}

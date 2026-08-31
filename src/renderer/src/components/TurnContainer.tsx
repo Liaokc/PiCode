@@ -13,8 +13,11 @@ interface TurnContainerProps {
   onToggle: () => void
   /** Deep-link a file-arg tool call into the Preview tab (ticket 07). */
   onOpenFile?: (path: string) => void
-  onApprove: (toolCallId: string, remember: boolean) => void
-  onDeny: (toolCallId: string, reason: string) => void
+  /** Approval-gate handlers — LIVE-PATH ONLY. Surfaces without a gate
+   * (Live Follow, ticket 24) omit them; approval entries never occur there
+   * (the structured payload carries none), so the pill simply doesn't render. */
+  onApprove?: (toolCallId: string, remember: boolean) => void
+  onDeny?: (toolCallId: string, reason: string) => void
 }
 
 /**
@@ -82,6 +85,9 @@ export default function TurnContainer({
               case 'tool':
                 return <ToolCard key={item.key} entry={item.entry} onOpenFile={onOpenFile} />
               case 'approval':
+                // Gate-less surfaces (follow) never carry approval entries;
+                // without handlers there is nothing to render.
+                if (onApprove === undefined || onDeny === undefined) return null
                 return <ApprovalPill key={item.key} entry={item.entry} onApprove={onApprove} onDeny={onDeny} />
             }
           })}

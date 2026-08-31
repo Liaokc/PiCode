@@ -4,7 +4,7 @@ import { resolvePreviewPath } from '../../shared/preview/policy'
 import type { PreviewSelection } from '../../shared/preview/view-model'
 import { initialShellUiState, shellUiReducer } from '../../shared/layout-model'
 import { initialPanelState, panelReducer } from '../../shared/panel-model'
-import { isSessionLive } from '../../shared/sessions/group'
+import { isSessionLive, decideFollowTakeover, FOLLOW_TAKEOVER_REJECTED_TOAST } from '../../shared/sessions/group'
 import { sessionDefaultsFromPreferences, type AppPreferences } from '../../shared/preferences'
 import { toastReducer, type ToastLevel, type ToastList } from '../../shared/toast'
 import type { AccessMode, ImageAttachment, ThinkingLevel } from '../../shared/contract'
@@ -17,6 +17,7 @@ import SidePanel from './components/SidePanel'
 import ChatView, { RENAME_EVENT } from './components/ChatView'
 import { OPEN_MODEL_MENU_EVENT, OPEN_THINKING_MENU_EVENT } from './components/Composer'
 import FollowView from './components/FollowView'
+import { useNowTick } from './components/use-now'
 import ErrorBanner from './components/ErrorBanner'
 import SettingsWindow from './components/SettingsWindow'
 import TaskSearchPalette from './components/TaskSearchPalette'
@@ -255,7 +256,10 @@ export default function App(): JSX.Element {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [handleNewTask])
 
-  const now = Date.now()
+  // Honest liveness: the Live Follow badge and its Open control (ticket 24)
+  // must flip when a watched session goes quiet even if no file changes —
+  // a periodic re-render keeps the derived live state from going stale.
+  const now = useNowTick(30_000)
 
   async function handleComposerSend(text: string, images: ImageAttachment[] = []): Promise<void> {
     if (chat.session) {
@@ -427,13 +431,7 @@ export default function App(): JSX.Element {
       return
     }
     // Resume: same session file the TUI would continue — full Handoff.
-    stopFollowing()
-    setCreating(true)
-    window.picode.chat.sendToHost({
-      type: 'resume_session',
-      sessionFile: summary.file,
-      cwd: summary.cwd
-    })
+    resumeSession(summary)
   }
 
   async function startFollowing(summary: SessionSummary): Promise<void> {
@@ -448,6 +446,41 @@ export default function App(): JSX.Element {
     window.picode.sessions.unfollow()
     setFollowedFile(null)
     setFollowItems([])
+  }
+
+  /** Resume a session file through the existing Handoff chain: the same
+   * command the sidebar's open path uses. The host re-announces via
+   * session_created, which auto-switches the main zone to that session. */
+  function resumeSession(summary: SessionSummary): void {
+    stopFollowing()
+    setCreating(true)
+    window.picode.chat.sendToHost({
+      type: 'resume_session',
+      sessionFile: summary.file,
+      cwd: summary.cwd
+    })
+  }
+
+  /** Ticket 24 Open action: promote the followed session into a full one.
+   * Liveness is RE-CHECKED at click time against a fresh index scan — the
+   * button may have rendered while the session was quiet, but the TUI could
+   * have woken up since. Still live → toast rejection; quiet → resume. */
+  async function handleFollowOpen(): Promise<void> {
+    const file = followedFileRef.current
+    if (file === null) return
+    let summary = (await window.picode.sessions.list()).find((s) => s.file === file) ?? null
+    if (summary === null) summary = sessions.find((s) => s.file === file) ?? null
+    switch (decideFollowTakeover(summary, Date.now())) {
+      case 'still-live':
+        notify(FOLLOW_TAKEOVER_REJECTED_TOAST, 'info')
+        return
+      case 'missing':
+        notify('This session no longer exists on disk.', 'error')
+        return
+      case 'resume':
+        if (summary !== null) resumeSession(summary)
+        return
+    }
   }
 
   function handleTogglePin(summary: SessionSummary): void {
@@ -584,6 +617,7 @@ export default function App(): JSX.Element {
             items={followItems}
             live={followLive}
             onStop={stopFollowing}
+            onOpen={() => void handleFollowOpen()}
           />
         ) : showTranscript ? (
           <ChatView

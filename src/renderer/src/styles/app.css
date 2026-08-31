@@ -3183,6 +3183,19 @@ button.heat:hover {
   color: #1f7a3d;
 }
 
+/* Ticket 24: the takeover CTA — only rendered while the watched session is
+   quiet, so a mild accent separates it from the neutral topbar controls. */
+.follow-open-btn {
+  border: 1px solid var(--accent-orange);
+  color: var(--accent-orange);
+  font-weight: 500;
+}
+
+.follow-open-btn:hover {
+  background: var(--accent-orange);
+  color: #ffffff;
+}
+
 .follow-empty {
   align-self: center;
   margin-top: 30vh;

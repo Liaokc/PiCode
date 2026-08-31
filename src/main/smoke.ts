@@ -8,21 +8,29 @@
  *   → rebuild session → clean shutdown → quit(0)
  *
  * Ticket 14 adds the structured-replay stage: a simulated TUI turn carrying
- * thinking + tool traffic is appended to the rebuilt session file, the session
- * is RESUMED through the supervisor, and the replayed transcript must render
- * isomorphic to live — collapsed thinking rows, settled tool cards (the failed
- * one in the error style), degraded thinking durations (no ticking seconds).
- * Ticket 23 adds the turn-fold gate: replayed turns arrive as collapsed
- * "Worked · Ns ›" containers; the stage opens them before auditing the rows.
+ * thinking + tool traffic is appended to a session file and must replay —
+ * through the Live Follow view first, then through a full resume — as
+ * collapsed turn containers with settled thinking rows and tool cards,
+ * isomorphic to live. Ticket 23 adds the turn-fold gate: replayed AND
+ * followed turns arrive as collapsed "Worked · Ns ›" containers; the stages
+ * open them before auditing the inner rows.
+ * Ticket 24 extends the Live Follow stage into the takeover chain: the follow
+ * view renders the structured turn (markdown / thinking / tool cards), shows
+ * no Open while the session is live, shows Open once it goes quiet, REJECTS
+ * a click with a toast when the TUI woke up again (fresh-mtime re-check),
+ * and otherwise resumes the session in full — auto-switching to the chat
+ * view with no duplicate content.
  *
  * Any missed step times out and exits non-zero. Progress logs as
  * `SMOKE <step>` lines on stdout. Not part of `npm test`.
  */
 
 import os from 'node:os'
+import { utimesSync } from 'node:fs'
 import { app, type BrowserWindow } from 'electron'
 import type { HostSupervisor } from './host-supervisor'
 import type { HostToParent } from '../shared/contract'
+import { FOLLOW_TAKEOVER_REJECTED_TOAST } from '../shared/sessions/group'
 
 const STEP_TIMEOUT_MS = 90_000
 const ABORT_AFTER_DELTAS = 3
@@ -169,9 +177,10 @@ export function startSmokeIfEnabled(
     // The row is addressed by data-file so real sessions on this machine
     // (also live within the 120s window) can never steal the click.
     if (!rebuilt.sessionFile) fail('rebuilt session did not report its file')
-    const appended = await appendSimulatedTuiTurn(rebuilt.sessionFile)
+    const followedFile: string = rebuilt.sessionFile
+    const appended = await appendSimulatedTuiTurn(followedFile)
     if (!appended) fail('could not find the leaf entry of the rebuilt session')
-    const rowSelector = `[data-file="${rebuilt.sessionFile}"]`
+    const rowSelector = `[data-file="${followedFile}"]`
     await withWindow(getWindow, async (win) => {
       // The live dot proves the refreshed index (fresh mtime) reached the DOM.
       const live = await waitForProbe(win, `document.querySelector('${rowSelector} .sb-live-dot') !== null`, 10_000)
@@ -189,7 +198,7 @@ export function startSmokeIfEnabled(
         fail(`appended session never showed live state; DOM: ${diag}`)
       }
       log('follow_live_state_ok')
-      const opened = await clickSessionRow(win, rowSelector)
+      const opened = await clickSelector(win, rowSelector)
       if (!opened) fail('clicking the live session row never opened the Live Follow view')
       log('follow_view_opened')
       const streamed = await waitForProbe(
@@ -213,16 +222,99 @@ export function startSmokeIfEnabled(
       log('follow_streamed_ok')
     })
 
-    // Ticket 14: structured replay. A simulated TUI turn with thinking + tool
-    // traffic goes into the rebuilt session file; a RESUME must replay it as
-    // collapsed thinking rows + settled tool cards, exactly like the live path.
-    const structured = await appendSimulatedStructuredTurn(rebuilt.sessionFile)
+    // Ticket 24 ①: structured rendering inside the follow view. The appended
+    // turn carries thinking + tool traffic; the follow badge must stay and
+    // the SAME turn architecture as the chat view must appear (ticket 23:
+    // folded containers first) — while the session is STILL live (fresh
+    // mtime), so no Open button yet.
+    const structured = await appendSimulatedStructuredTurn(followedFile)
     if (!structured) fail('could not append the simulated structured turn')
-    const resumedPromise = waitFor((e) => e.type === 'session_created' && e.resumed === true, 'resume session_created')
-    const replayPromise = waitFor((e) => e.type === 'history_loaded', 'replay history_loaded')
-    supervisor.handleParentCommand({ type: 'resume_session', sessionFile: rebuilt.sessionFile, cwd })
+    await withWindow(getWindow, async (win) => {
+      // Ticket 23 gate, follow edition: the structured turn renders as a
+      // FOLDED container — no inner rows until it is opened.
+      const folded = await waitForProbe(
+        win,
+        `document.querySelector('.follow-badge') !== null &&
+         document.body.textContent.includes('${STRUCTURED_MARKER}') &&
+         document.querySelectorAll('.turn-container').length >= 1 &&
+         document.querySelectorAll('.turn-container-open').length === 0 &&
+         document.querySelectorAll('.thinking-row').length === 0`,
+        10_000
+      )
+      if (!folded) fail('follow view never rendered the structured turn as a folded container')
+      await openAllTurnContainers(win)
+      const rendered = await waitForProbe(
+        win,
+        `document.querySelectorAll('.thinking-row').length >= 2 &&
+         document.querySelectorAll('.tool-card').length >= 2`,
+        10_000
+      )
+      if (!rendered) fail('follow view never rendered the structured TUI turn')
+      // Inner rows closed by default; exactly one error card; followed
+      // thinking has no duration label (the file does not record durations).
+      const shaped = await waitForProbe(
+        win,
+        `document.querySelectorAll('.thinking-row-open').length === 0 &&
+         document.querySelectorAll('.tool-card-open').length === 0 &&
+         document.querySelectorAll('.tool-card-error').length === 1 &&
+         document.querySelectorAll('.thinking-row .thinking-row-duration').length === 0`,
+        5_000
+      )
+      if (!shaped) fail('follow view transcript is not collapsed/error-marked/degraded')
+      // Negative sampling: poll for the button's APPEARANCE for 3s; seeing
+      // none while the session is live is the assertion.
+      const openAppeared = await waitForProbe(win, `document.querySelector('.follow-open-btn') !== null`, 3_000)
+      if (openAppeared) fail('Open button showed while the followed session was still live')
+      log('follow_structured_ok')
+    })
+
+    // Ticket 24 ② (reject path): backdate the followed file's mtime so the
+    // session reads as quiet (>120s), then poke a DIFFERENT session file so
+    // the index emits an event and the App re-renders — Open must appear.
+    // The TUI then wakes up again; the click's fresh-scan re-check must
+    // reject the takeover with a toast and keep the follow view open.
+    if (!created.sessionFile) fail('first session did not report its file')
+    const pokeFile: string = created.sessionFile
+    backdateMtime(followedFile)
+    await appendSimulatedTuiTurn(pokeFile)
+    await withWindow(getWindow, async (win) => {
+      const openShown = await waitForProbe(win, `document.querySelector('.follow-open-btn') !== null`, 15_000)
+      if (!openShown) fail('Open never appeared after the followed session went quiet')
+      log('follow_open_shown')
+      // Wake the other end between render and click — a few-ms window before
+      // the next index poll would hide the button again.
+      await appendSimulatedTuiTurn(followedFile)
+      const clicked = await clickSelector(win, '.follow-open-btn')
+      if (!clicked) fail('Open button vanished before the takeover click could land')
+      const rejected = await waitForProbe(
+        win,
+        `document.body.textContent.includes('${FOLLOW_TAKEOVER_REJECTED_TOAST}')`,
+        3_000
+      )
+      if (!rejected) fail('takeover click on a live session was not rejected with a toast')
+      const stillFollowing = await waitForProbe(win, `document.querySelector('.follow-badge') !== null`, 2_000)
+      if (!stillFollowing) fail('follow view closed even though the takeover was rejected')
+      log('follow_open_rejected_ok')
+    })
+
+    // Ticket 24 ② (accept path): quiet again → Open → resume. This resume IS
+    // the ticket-14 structured replay, driven end-to-end through the renderer:
+    // session_created(resumed) + structured history_loaded, the follow view
+    // hands over to the chat view, and the replayed transcript renders
+    // isomorphic to live — collapsed thinking rows, settled tool cards (the
+    // failed one in the error style), degraded thinking durations.
+    backdateMtime(followedFile)
+    await appendSimulatedTuiTurn(pokeFile)
+    const resumedPromise = waitFor((e) => e.type === 'session_created' && e.resumed === true, 'takeover session_created')
+    const replayPromise = waitFor((e) => e.type === 'history_loaded', 'takeover history_loaded')
+    await withWindow(getWindow, async (win) => {
+      const openShown = await waitForProbe(win, `document.querySelector('.follow-open-btn') !== null`, 15_000)
+      if (!openShown) fail('Open never re-appeared for the takeover resume')
+      const clicked = await clickSelector(win, '.follow-open-btn')
+      if (!clicked) fail('takeover Open click failed')
+    })
     await resumedPromise
-    log('resume_ok')
+    log('takeover_resumed_ok')
     const replayed = (await replayPromise) as Extract<HostToParent, { type: 'history_loaded' }>
     const replayItems = replayed.items
     if (!Array.isArray(replayItems) || replayItems.length < 5) {
@@ -249,12 +341,7 @@ export function startSmokeIfEnabled(
         10_000
       )
       if (!folded) fail('replayed turns did not render collapsed (ticket 23 memory rule)')
-      await win.webContents.executeJavaScript(
-        `(() => {
-          document.querySelectorAll('.turn-container-header').forEach((el) => (el instanceof HTMLElement ? el.click() : undefined))
-          return true
-        })()`
-      )
+      await openAllTurnContainers(win)
       const rendered = await waitForProbe(
         win,
         `document.querySelectorAll('.thinking-row').length >= 2 &&
@@ -288,6 +375,10 @@ export function startSmokeIfEnabled(
         ).catch(() => 'unavailable')) as string
         fail(`replayed transcript is not collapsed/error-marked/degraded; DOM: ${diag}`)
       }
+      // Ticket 24: the follow view must be gone — the takeover auto-switched
+      // to the chat view (checked last, after the collapse-gate audit).
+      const switched = await waitForProbe(win, `document.querySelector('.follow-badge') === null`, 10_000)
+      if (!switched) fail('follow view never handed over to the resumed session view')
       log('replay_dom_ok')
     })
 
@@ -325,15 +416,19 @@ const TUI_MARKER = 'PICODE_TUI_SIMULATED_TURN'
 /** Marker for the simulated structured turn (ticket 14 replay stage). */
 const STRUCTURED_MARKER = 'PICODE_REPLAY_STRUCTURED_TURN'
 
-/** Append one user message entry to a session file, chained to its leaf. */
+/** Append one user message entry to a session file, chained to its leaf.
+ * The entry id is unique per call — this helper may append several times to
+ * the same file (follow stream, wake-for-reject, poke turns), and a session
+ * jsonl with duplicate entry ids is rejected by the resume host. */
 async function appendSimulatedTuiTurn(file: string): Promise<boolean> {
   const { appendFile, readFile } = await import('node:fs/promises')
+  const { randomUUID } = await import('node:crypto')
   const text = await readFile(file, 'utf8')
   const leafId = lastEntryId(text)
   if (leafId === null) return false
   const entry = {
     type: 'message',
-    id: 'tuisim01',
+    id: `tuisim-${randomUUID().slice(0, 8)}`,
     parentId: leafId,
     timestamp: new Date().toISOString(),
     message: { role: 'user', content: [{ type: 'text', text: `${TUI_MARKER}: still counting over here` }] }
@@ -438,12 +533,43 @@ async function appendSimulatedStructuredTurn(file: string): Promise<boolean> {
   return true
 }
 
-/** Click a specific session row (addressed by its data-file attribute). */
-const clickSessionRow = (win: BrowserWindow, rowSelector: string): Promise<boolean> =>
+/**
+ * Backdate a session file's mtime past the 120s liveness window WITHOUT
+ * touching its content — the only way the smoke can present a quiet session
+ * (and thus the Open button) without really waiting two minutes.
+ */
+function backdateMtime(file: string): void {
+  const past = new Date(Date.now() - 5 * 60_000)
+  utimesSync(file, past, past)
+}
+
+/** Open every folded turn container in the current view (ticket 23 gate:
+ * inner rows render only inside an open container; shared by the follow
+ * and the replay audit stages). */
+const openAllTurnContainers = (win: BrowserWindow): Promise<unknown> =>
+  win.webContents.executeJavaScript(
+    `(async () => {
+      // Containers may mount across several follow/replay updates — click the
+      // still-closed ones each round until EVERY container is open.
+      for (let round = 0; round < 20; round++) {
+        const containers = document.querySelectorAll('.turn-container').length
+        const open = document.querySelectorAll('.turn-container-open').length
+        if (containers > 0 && open === containers) return 'all-open'
+        document
+          .querySelectorAll('.turn-container:not(.turn-container-open) > .turn-container-header')
+          .forEach((el) => (el instanceof HTMLElement ? el.click() : undefined))
+        await new Promise((r) => setTimeout(r, 200))
+      }
+      return 'timeout'
+    })()`
+  )
+
+/** Click a specific element (session rows by data-file, the follow Open btn). */
+const clickSelector = (win: BrowserWindow, selector: string): Promise<boolean> =>
   waitForProbe(
     win,
     `(() => {
-      const row = document.querySelector('${rowSelector}')
+      const row = document.querySelector('${selector}')
       if (!row) return false
       row.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       return true
