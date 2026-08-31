@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { chatReducer, initialChatState, type ChatState } from '../../src/shared/chat-reducer'
+import { chatReducer, initialChatState, type ChatState, type UserEntry } from '../../src/shared/chat-reducer'
 import type { HostToParent } from '../../src/shared/contract'
+import type { TranscriptItem } from '../../src/shared/sessions/types'
+import { UNFINISHED_TOOL_OUTPUT } from '../../src/shared/tool-format'
 
 const SESSION_CREATED: HostToParent = {
   type: 'session_created',
@@ -90,13 +92,13 @@ describe('chatReducer — session lifecycle', () => {
 describe('chatReducer — streaming turn', () => {
   it('user_message appends a user entry', () => {
     const state = run(initialChatState(), SESSION_CREATED, { type: 'user_message', text: 'hi there' })
-    expect(state.entries).toEqual([{ id: 'm0', role: 'user', text: 'hi there' }])
+    expect(state.entries).toEqual([{ id: 'm0', role: 'user', text: 'hi there', skillName: null }])
   })
 
   it('streams text deltas into one assistant entry and settles on agent_end', () => {
     const state = run(initialChatState(), SESSION_CREATED, ...streamedTurn(' there'))
     expect(state.entries).toEqual([
-      { id: 'm0', role: 'user', text: 'hello' },
+      { id: 'm0', role: 'user', text: 'hello', skillName: null },
       { id: 'm1', role: 'assistant', parts: [{ kind: 'text', text: 'Hel there' }], streaming: false }
     ])
     expect(state.agentRunning).toBe(false)
@@ -514,15 +516,21 @@ describe('chatReducer — resumed history (ticket 04)', () => {
   const HISTORY_LOADED: HostToParent = {
     type: 'history_loaded',
     items: [
-      { id: 'e1', role: 'user', text: 'earlier question', timestamp: 't1' },
-      { id: 'e2', role: 'assistant', text: 'earlier answer', timestamp: 't2' }
+      { id: 'e1', role: 'user', text: 'earlier question', timestamp: 't1', skillName: null },
+      {
+        id: 'e2',
+        role: 'assistant',
+        timestamp: 't2',
+        text: 'earlier answer',
+        parts: [{ kind: 'text', text: 'earlier answer' }]
+      }
     ]
   }
 
   it('history_loaded installs the replayed transcript with stable entry ids', () => {
     const state = run(initialChatState(), SESSION_CREATED, HISTORY_LOADED)
     expect(state.entries).toEqual([
-      { id: 'e1', role: 'user', text: 'earlier question' },
+      { id: 'e1', role: 'user', text: 'earlier question', skillName: null },
       { id: 'e2', role: 'assistant', parts: [{ kind: 'text', text: 'earlier answer' }], streaming: false }
     ])
     expect(state.error).toBeNull()
@@ -531,9 +539,9 @@ describe('chatReducer — resumed history (ticket 04)', () => {
   it('history is replaceable — tree navigation re-emits the new leaf path', () => {
     const navigated = run(initialChatState(), SESSION_CREATED, HISTORY_LOADED, {
       type: 'history_loaded',
-      items: [{ id: 'e1', role: 'user', text: 'earlier question', timestamp: 't1' }]
+      items: [{ id: 'e1', role: 'user', text: 'earlier question', timestamp: 't1', skillName: null }]
     })
-    expect(navigated.entries).toEqual([{ id: 'e1', role: 'user', text: 'earlier question' }])
+    expect(navigated.entries).toEqual([{ id: 'e1', role: 'user', text: 'earlier question', skillName: null }])
   })
 
   it('a fresh turn after resume appends to the replayed transcript', () => {
@@ -550,6 +558,115 @@ describe('chatReducer — resumed history (ticket 04)', () => {
     expect(texts).toEqual(['earlier question', 'earlier answer', 'hello', 'Hel there'])
     const last = state.entries[state.entries.length - 1]
     expect(last?.role === 'assistant' && last.streaming).toBe(false)
+  })
+})
+
+describe('chatReducer — structured replay (ticket 14)', () => {
+  /** Table-driven: every history item kind maps onto the SAME entry shape
+   * the live stream produces, so replay renders isomorphic to live. */
+  interface ReplayCase {
+    name: string
+    item: TranscriptItem
+    expected: ChatState['entries'][number]
+  }
+
+  const cases: ReplayCase[] = [
+    {
+      name: 'user item carrying a sniffed skill marker',
+      item: {
+        role: 'user',
+        id: 'e1',
+        text: '<skill name="implement" location="/x/SKILL.md">\nbody\n</skill>\n\ndo it',
+        timestamp: 't1',
+        skillName: 'implement'
+      },
+      expected: {
+        id: 'e1',
+        role: 'user',
+        text: '<skill name="implement" location="/x/SKILL.md">\nbody\n</skill>\n\ndo it',
+        skillName: 'implement'
+      }
+    },
+    {
+      name: 'user item without skill text',
+      item: { role: 'user', id: 'e2', text: 'plain message', timestamp: 't2', skillName: null },
+      expected: { id: 'e2', role: 'user', text: 'plain message', skillName: null }
+    },
+    {
+      name: 'assistant item with thinking (degraded duration) + text parts',
+      item: {
+        role: 'assistant',
+        id: 'e3',
+        timestamp: 't3',
+        text: 'the answer',
+        parts: [
+          { kind: 'thinking', text: 'reasoning…', durationMs: null },
+          { kind: 'text', text: 'the answer' }
+        ]
+      },
+      expected: {
+        id: 'e3',
+        role: 'assistant',
+        parts: [
+          { kind: 'thinking', text: 'reasoning…', streaming: false, durationMs: null },
+          { kind: 'text', text: 'the answer' }
+        ],
+        streaming: false
+      }
+    },
+    {
+      name: 'tool item that finished successfully',
+      item: { role: 'tool', id: 'c1', timestamp: 't4', name: 'bash', args: { command: 'ls' }, output: 'a.txt', isError: false },
+      expected: { id: 'c1', role: 'tool', name: 'bash', args: { command: 'ls' }, state: 'done', output: 'a.txt' }
+    },
+    {
+      name: 'tool item that finished in error',
+      item: { role: 'tool', id: 'c2', timestamp: 't5', name: 'bash', args: { command: 'exit 1' }, output: 'boom', isError: true },
+      expected: { id: 'c2', role: 'tool', name: 'bash', args: { command: 'exit 1' }, state: 'error', output: 'boom' }
+    },
+    {
+      name: 'tool item degraded for an unresolved call (aborted turn)',
+      item: { role: 'tool', id: 'c3', timestamp: 't6', name: 'read', args: { path: '/a' }, output: UNFINISHED_TOOL_OUTPUT, isError: true },
+      expected: { id: 'c3', role: 'tool', name: 'read', args: { path: '/a' }, state: 'error', output: UNFINISHED_TOOL_OUTPUT }
+    }
+  ]
+
+  for (const c of cases) {
+    it(`replays a ${c.name}`, () => {
+      const state = run(initialChatState(), SESSION_CREATED, { type: 'history_loaded', items: [c.item] })
+      expect(state.entries).toEqual([c.expected])
+    })
+  }
+
+  it('re-replaying identical history is idempotent — repeated resume / tree round-trips never duplicate entries', () => {
+    const items: TranscriptItem[] = cases.map((c) => c.item)
+    const once = run(initialChatState(), SESSION_CREATED, { type: 'history_loaded', items })
+    const twice = run(once, { type: 'history_loaded', items })
+    expect(twice.entries).toEqual(once.entries)
+    expect(twice.entries.map((e) => e.id)).toEqual(['e1', 'e2', 'e3', 'c1', 'c2', 'c3'])
+  })
+
+  it('replayed thinking parts are never streaming — settle state survives re-replay', () => {
+    const state = run(initialChatState(), SESSION_CREATED, {
+      type: 'history_loaded',
+      items: [
+        { role: 'user', id: 'e1', text: 'go', timestamp: 't1', skillName: null },
+        { role: 'assistant', id: 'e2', timestamp: 't2', text: 'done', parts: [{ kind: 'thinking', text: 'hmm', durationMs: null }] }
+      ]
+    })
+    const assistant = state.entries[1]
+    expect(assistant?.role === 'assistant' && assistant.streaming).toBe(false)
+    expect(state.agentRunning).toBe(false)
+  })
+
+  it('live user_message events sniff the skill marker from injected skill text (same payload as replay)', () => {
+    const injected = '<skill name="tdd" location="/x/SKILL.md">\nbody\n</skill>\n\nmake it red first'
+    const state = run(initialChatState(), { type: 'user_message', text: injected })
+    const entry = state.entries[0] as UserEntry
+    expect(entry.skillName).toBe('tdd')
+    expect(state.entries[0]).toEqual({ id: 'm0', role: 'user', text: injected, skillName: 'tdd' })
+    const plain = run(initialChatState(), { type: 'user_message', text: 'no skill here' })
+    expect((plain.entries[0] as UserEntry).skillName).toBeNull()
   })
 })
 

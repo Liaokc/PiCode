@@ -7,6 +7,12 @@
  *   → second prompt → streamed text → host SIGKILL → host_exit(!clean)
  *   → rebuild session → clean shutdown → quit(0)
  *
+ * Ticket 14 adds the structured-replay stage: a simulated TUI turn carrying
+ * thinking + tool traffic is appended to the rebuilt session file, the session
+ * is RESUMED through the supervisor, and the replayed transcript must render
+ * isomorphic to live — collapsed thinking rows, settled tool cards (the failed
+ * one in the error style), degraded thinking durations (no ticking seconds).
+ *
  * Any missed step times out and exits non-zero. Progress logs as
  * `SMOKE <step>` lines on stdout. Not part of `npm test`.
  */
@@ -205,6 +211,65 @@ export function startSmokeIfEnabled(
       log('follow_streamed_ok')
     })
 
+    // Ticket 14: structured replay. A simulated TUI turn with thinking + tool
+    // traffic goes into the rebuilt session file; a RESUME must replay it as
+    // collapsed thinking rows + settled tool cards, exactly like the live path.
+    const structured = await appendSimulatedStructuredTurn(rebuilt.sessionFile)
+    if (!structured) fail('could not append the simulated structured turn')
+    const resumedPromise = waitFor((e) => e.type === 'session_created' && e.resumed === true, 'resume session_created')
+    const replayPromise = waitFor((e) => e.type === 'history_loaded', 'replay history_loaded')
+    supervisor.handleParentCommand({ type: 'resume_session', sessionFile: rebuilt.sessionFile, cwd })
+    await resumedPromise
+    log('resume_ok')
+    const replayed = (await replayPromise) as Extract<HostToParent, { type: 'history_loaded' }>
+    const replayItems = replayed.items
+    if (!Array.isArray(replayItems) || replayItems.length < 5) {
+      fail(`replayed history too small: ${replayItems?.length}`)
+    }
+    if (!replayItems.some((i) => i.role === 'user' && i.text.includes(STRUCTURED_MARKER))) {
+      fail('replayed history must carry the simulated structured-turn user message')
+    }
+    if (!replayItems.some((i) => i.role === 'assistant' && i.parts.some((p) => p.kind === 'thinking'))) {
+      fail('replayed history must carry thinking parts (ticket 14)')
+    }
+    if (!replayItems.some((i) => i.role === 'tool' && i.isError === true)) {
+      fail('replayed history must carry the failed tool call (ticket 14)')
+    }
+    log('replay_payload_ok', `${replayItems.length} structured items`)
+    await withWindow(getWindow, async (win) => {
+      const rendered = await waitForProbe(
+        win,
+        `document.querySelectorAll('.thinking-row').length >= 2 &&
+         document.querySelectorAll('.tool-card').length >= 2`,
+        10_000
+      )
+      if (!rendered) fail('replayed thinking rows / tool cards never reached the DOM')
+      // Collapsed by default; exactly one error card; replayed thinking has
+      // no duration label (the session file does not record durations).
+      const shaped = await waitForProbe(
+        win,
+        `document.querySelectorAll('.thinking-row-open').length === 0 &&
+         document.querySelectorAll('.tool-card-open').length === 0 &&
+         document.querySelectorAll('.tool-card-error').length === 1 &&
+         document.querySelectorAll('.thinking-row .thinking-row-duration').length === 0`,
+        5_000
+      )
+      if (!shaped) {
+        const diag = (await win.webContents.executeJavaScript(
+          `JSON.stringify({
+            thinkingRows: document.querySelectorAll('.thinking-row').length,
+            thinkingOpen: document.querySelectorAll('.thinking-row-open').length,
+            thinkingDurations: document.querySelectorAll('.thinking-row .thinking-row-duration').length,
+            toolCards: document.querySelectorAll('.tool-card').length,
+            toolOpen: document.querySelectorAll('.tool-card-open').length,
+            toolError: document.querySelectorAll('.tool-card-error').length
+          })`
+        ).catch(() => 'unavailable')) as string
+        fail(`replayed transcript is not collapsed/error-marked/degraded; DOM: ${diag}`)
+      }
+      log('replay_dom_ok')
+    })
+
     supervisor.shutdownAll()
     log('done')
     app.exit(0)
@@ -236,23 +301,14 @@ const DOM_EXCHANGE_PROBE = `(() => {
 /** Marker text appended as a simulated TUI turn (distinctive, English). */
 const TUI_MARKER = 'PICODE_TUI_SIMULATED_TURN'
 
+/** Marker for the simulated structured turn (ticket 14 replay stage). */
+const STRUCTURED_MARKER = 'PICODE_REPLAY_STRUCTURED_TURN'
+
 /** Append one user message entry to a session file, chained to its leaf. */
 async function appendSimulatedTuiTurn(file: string): Promise<boolean> {
   const { appendFile, readFile } = await import('node:fs/promises')
   const text = await readFile(file, 'utf8')
-  const lines = text.split('\n').filter((l) => l.trim() !== '')
-  let leafId: string | null = null
-  for (let i = lines.length - 1; i >= 0; i--) {
-    try {
-      const entry = JSON.parse(lines[i] as string) as { type?: string; id?: string }
-      if (entry.type !== 'session' && typeof entry.id === 'string') {
-        leafId = entry.id
-        break
-      }
-    } catch {
-      // half-written tail — keep looking upward
-    }
-  }
+  const leafId = lastEntryId(text)
   if (leafId === null) return false
   const entry = {
     type: 'message',
@@ -263,6 +319,101 @@ async function appendSimulatedTuiTurn(file: string): Promise<boolean> {
   }
   const separator = text.endsWith('\n') || text === '' ? '' : '\n'
   await appendFile(file, separator + `${JSON.stringify(entry)}\n`)
+  return true
+}
+
+/** Id of the LAST parseable non-header entry line (the current leaf). */
+function lastEntryId(text: string): string | null {
+  const lines = text.split('\n').filter((l) => l.trim() !== '')
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      const entry = JSON.parse(lines[i] as string) as { type?: string; id?: string }
+      if (entry.type !== 'session' && typeof entry.id === 'string') return entry.id
+    } catch {
+      // half-written tail — keep looking upward
+    }
+  }
+  return null
+}
+
+/**
+ * Append one simulated TUI turn carrying the FULL structured shape (ticket
+ * 14): user message, assistant message with thinking + toolCall + text, its
+ * successful toolResult, then a second thinking + toolCall assistant message
+ * whose toolResult failed. Resuming the session must replay all of it.
+ */
+async function appendSimulatedStructuredTurn(file: string): Promise<boolean> {
+  const { appendFile, readFile } = await import('node:fs/promises')
+  const text = await readFile(file, 'utf8')
+  const leafId = lastEntryId(text)
+  if (leafId === null) return false
+  const t = new Date().toISOString()
+  const entries = [
+    {
+      type: 'message',
+      id: 'simt14u1',
+      parentId: leafId,
+      timestamp: t,
+      message: { role: 'user', content: [{ type: 'text', text: `${STRUCTURED_MARKER}: replay me with full structure` }] }
+    },
+    {
+      type: 'message',
+      id: 'simt14a1',
+      parentId: 'simt14u1',
+      timestamp: t,
+      message: {
+        role: 'assistant',
+        content: [
+          { type: 'thinking', thinking: 'Simulated replay thinking: check the tool path first.', thinkingSignature: 'sim' },
+          { type: 'toolCall', id: 'call_simt14_ok', name: 'bash', arguments: { command: 'echo picode_replay_tool' } },
+          { type: 'text', text: 'Checking the replay tool path.' }
+        ]
+      }
+    },
+    {
+      type: 'message',
+      id: 'simt14r1',
+      parentId: 'simt14a1',
+      timestamp: t,
+      message: {
+        role: 'toolResult',
+        toolCallId: 'call_simt14_ok',
+        toolName: 'bash',
+        content: [{ type: 'text', text: 'picode_replay_tool' }],
+        isError: false,
+        timestamp: Date.now()
+      }
+    },
+    {
+      type: 'message',
+      id: 'simt14a2',
+      parentId: 'simt14r1',
+      timestamp: t,
+      message: {
+        role: 'assistant',
+        content: [
+          { type: 'thinking', thinking: 'Simulated replay thinking: now the failing call.', thinkingSignature: 'sim' },
+          { type: 'toolCall', id: 'call_simt14_err', name: 'bash', arguments: { command: 'exit 1' } }
+        ]
+      }
+    },
+    {
+      type: 'message',
+      id: 'simt14r2',
+      parentId: 'simt14a2',
+      timestamp: t,
+      message: {
+        role: 'toolResult',
+        toolCallId: 'call_simt14_err',
+        toolName: 'bash',
+        content: [{ type: 'text', text: 'boom: simulated replay failure' }],
+        isError: true,
+        timestamp: Date.now()
+      }
+    }
+  ]
+  const separator = text.endsWith('\n') || text === '' ? '' : '\n'
+  await appendFile(file, separator + entries.map((e) => JSON.stringify(e)).join('\n') + '\n')
   return true
 }
 

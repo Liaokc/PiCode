@@ -18,6 +18,9 @@ import type {
   SlashCommandItem,
   ThinkingLevel
 } from './contract'
+import { sniffSkillName } from './sessions/parse.ts'
+import type { TranscriptItem } from './sessions/types.ts'
+import { UNFINISHED_TOOL_OUTPUT } from './tool-format'
 
 export interface ThinkingPart {
   kind: 'thinking'
@@ -39,6 +42,9 @@ export interface UserEntry {
   id: string
   role: 'user'
   text: string
+  /** Skill name sniffed from injected `<skill name="…">` text; null when the
+   * message was not skill-driven (ticket 14 payload; ticket 23 renders it). */
+  skillName: string | null
 }
 
 export interface AssistantEntry {
@@ -142,6 +148,34 @@ function entryId(index: number): string {
   return `m${index}`
 }
 
+/** One structured history item → the same entry shape the live stream builds. */
+function replayEntry(item: TranscriptItem): ChatEntry {
+  switch (item.role) {
+    case 'user':
+      return { id: item.id, role: 'user', text: item.text, skillName: item.skillName }
+    case 'assistant':
+      return {
+        id: item.id,
+        role: 'assistant',
+        parts: item.parts.map((part) =>
+          part.kind === 'thinking'
+            ? { kind: 'thinking' as const, text: part.text, streaming: false, durationMs: part.durationMs }
+            : part
+        ),
+        streaming: false
+      }
+    case 'tool':
+      return {
+        id: item.id,
+        role: 'tool',
+        name: item.name,
+        args: item.args,
+        state: item.isError ? 'error' : 'done',
+        output: item.output
+      }
+  }
+}
+
 function assistantEntry(index: number, parts: AssistantPart[]): AssistantEntry {
   return { id: entryId(index), role: 'assistant', parts, streaming: true }
 }
@@ -194,7 +228,7 @@ function settle(state: ChatState, running: boolean): ChatState {
         return {
           ...entry,
           state: 'error' as const,
-          output: entry.output === '' ? 'The tool call ended without a result.' : entry.output
+          output: entry.output === '' ? UNFINISHED_TOOL_OUTPUT : entry.output
         }
       }
       if (entry.role === 'approval' && entry.state !== 'denied') {
@@ -274,26 +308,23 @@ export function chatReducer(state: ChatState, event: HostToParent): ChatState {
     case 'user_message':
       return {
         ...state,
-        entries: [...state.entries, { id: entryId(state.entries.length), role: 'user', text: event.text }]
+        entries: [
+          ...state.entries,
+          { id: entryId(state.entries.length), role: 'user', text: event.text, skillName: sniffSkillName(event.text) }
+        ]
       }
 
     case 'history_loaded':
-      // Resume / tree navigation replay (ticket 04, ported to the entries
-      // model): the host's leaf path IS the transcript, so it replaces
-      // whatever was rendered before. Contract item ids are kept so ids stay
-      // stable across re-replays (and never collide with live `mN` ids).
+      // Resume / tree navigation replay (ticket 04, structured by ticket 14):
+      // the host's leaf path IS the transcript, so it replaces whatever was
+      // rendered before. Items are structured (thinking parts, settled tool
+      // cards, skill markers) and map onto the SAME entry shapes the live
+      // stream produces — replay renders isomorphic to live. Contract item
+      // ids are kept so ids stay stable across re-replays (and never collide
+      // with live `mN` ids).
       return {
         ...state,
-        entries: event.items.map((item) =>
-          item.role === 'assistant'
-            ? {
-                id: item.id,
-                role: 'assistant' as const,
-                parts: [{ kind: 'text' as const, text: item.text }],
-                streaming: false
-              }
-            : { id: item.id, role: 'user' as const, text: item.text }
-        ),
+        entries: event.items.map(replayEntry),
         error: null
       }
 

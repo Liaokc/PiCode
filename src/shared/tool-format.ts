@@ -9,6 +9,11 @@ const MAX_RESULT_CHARS = 64_000
 
 const TRUNCATION_NOTE = '… (output truncated)'
 
+/** Settled output text for a tool call whose result never reached the
+ * transcript (turn aborted/ended first) — shared by the live settle path and
+ * the structured replay so both render the same terminal card. */
+export const UNFINISHED_TOOL_OUTPUT = 'The tool call ended without a result.'
+
 function textContent(value: unknown): string {
   if (typeof value === 'object' && value !== null && 'type' in value) {
     const tagged = value as { type?: unknown; text?: unknown }

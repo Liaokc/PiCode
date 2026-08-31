@@ -24,14 +24,59 @@ export interface SessionSummary {
   messageCount: number
 }
 
-/** One renderable turn of the read-only Live Follow transcript. */
-export interface TranscriptItem {
-  /** Session entry id (stable across refreshes). */
-  id: string
-  role: 'user' | 'assistant'
+/** A thinking or text part of a replayed assistant message (ticket 14).
+ * Thinking durations are host-measured in the live path; the session file
+ * does not record them, so replayed thinking degrades to `durationMs: null`. */
+export interface TranscriptThinkingPart {
+  kind: 'thinking'
   text: string
-  timestamp: string
+  durationMs: number | null
 }
+
+export interface TranscriptTextPart {
+  kind: 'text'
+  text: string
+}
+
+export type TranscriptAssistantPart = TranscriptThinkingPart | TranscriptTextPart
+
+/**
+ * One renderable item of a replayed transcript (resume / tree navigation /
+ * Live Follow). Structured since ticket 14: assistant items carry ordered
+ * thinking/text parts, tool calls appear as their own items with the FINAL
+ * result attached, and a user item exposes the skill marker sniffed from
+ * injected `<skill name="…">` text. Replay is isomorphic with the live
+ * transcript — reopening a session no longer drops thinking/tool traffic.
+ */
+export type TranscriptItem =
+  | {
+      role: 'user'
+      id: string
+      text: string
+      timestamp: string
+      /** Skill name from the `<skill name="…">` injection prologue; null when plain. */
+      skillName: string | null
+    }
+  | {
+      role: 'assistant'
+      id: string
+      timestamp: string
+      /** Convenience projection of the text parts (paragraph-joined) for
+       * text-only consumers; derived from `parts` at the single build site. */
+      text: string
+      parts: TranscriptAssistantPart[]
+    }
+  | {
+      role: 'tool'
+      /** The tool call id (stable across re-replays; matches the live path). */
+      id: string
+      timestamp: string
+      name: string
+      args: Record<string, unknown>
+      /** Final serialized result (same projection the live path uses). */
+      output: string
+      isError: boolean
+    }
 
 /** Serializable node of a session's entry tree (tree navigation panel). */
 export interface SessionTreeNodeDTO {
