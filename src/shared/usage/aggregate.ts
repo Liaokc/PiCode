@@ -67,6 +67,15 @@ export function isEarlierSpelling(current: ModelSpelling, next: ModelSpelling): 
   return next.firstTs < current.firstTs || (next.firstTs === current.firstTs && next.raw < current.raw)
 }
 
+/** Merge a source display map into a target (single shared shape for per-file
+ * folds, incremental store chunks, and the cross-file snapshot merge). */
+export function mergeModelDisplay(target: Map<string, ModelSpelling>, source: Map<string, ModelSpelling>): void {
+  for (const [key, spelling] of source) {
+    const current = target.get(key)
+    if (!current || isEarlierSpelling(current, spelling)) target.set(key, spelling)
+  }
+}
+
 export interface FoldOptions {
   /** IANA time zone for day attribution; defaults to the system zone. */
   timeZone?: string
@@ -245,10 +254,7 @@ export function buildUsageSnapshot(files: Iterable<SessionFileUsage>, opts?: Sna
   const sessionIds = new Set<string | null>()
 
   for (const file of files) {
-    for (const [key, spelling] of file.modelDisplay) {
-      const current = display.get(key)
-      if (!current || isEarlierSpelling(current, spelling)) display.set(key, spelling)
-    }
+    mergeModelDisplay(display, file.modelDisplay)
     for (const [date, byModel] of file.days) {
       if (byModel.size === 0) continue
       let dayCells = byDay.get(date)

@@ -15,7 +15,7 @@
  */
 import { open, readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { buildUsageSnapshot, foldSessionFile, isEarlierSpelling } from '../../shared/usage/aggregate.ts'
+import { buildUsageSnapshot, foldSessionFile, mergeModelDisplay } from '../../shared/usage/aggregate.ts'
 import type { SessionFileUsage, SnapshotOptions } from '../../shared/usage/aggregate.ts'
 
 export interface UsageStoreOptions extends SnapshotOptions {
@@ -158,11 +158,7 @@ export class UsageStore {
       }
     }
 
-    for (const [key, spelling] of delta.modelDisplay) {
-      const current = target.modelDisplay.get(key)
-      if (!current || isEarlierSpelling(current, spelling)) target.modelDisplay.set(key, spelling)
-    }
-
+    mergeModelDisplay(target.modelDisplay, delta.modelDisplay)
     for (const [date, span] of delta.activity) {
       const acc = target.activity.get(date)
       if (!acc) {
