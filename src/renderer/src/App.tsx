@@ -520,6 +520,12 @@ export default function App(): JSX.Element {
     [chat.session?.cwd, openPreview]
   )
 
+  /** Fold/unfold one turn's work container (ticket 23) — a UI action folded
+   * into the same Seam-1 reducer as the contract events. */
+  const handleToggleTurn = useCallback((turnId: string): void => {
+    chatDispatch({ type: 'toggle_turn_expanded', turnId })
+  }, [])
+
   const handlePreviewNavigate = useCallback(openPreview, [openPreview])
 
   const showError = chat.error !== null && chat.error !== dismissedError
@@ -594,6 +600,7 @@ export default function App(): JSX.Element {
             onFork={handleFork}
             onCloseTree={() => setTreeOpen(false)}
             onOpenFile={handleOpenFileFromTranscript}
+            onToggleTurn={handleToggleTurn}
             composerApi={composerApi}
             onApprove={handleApprove}
             onDeny={handleDeny}

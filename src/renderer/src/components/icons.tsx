@@ -353,6 +353,17 @@ export function SparklesIcon({ size, className }: IconProps): JSX.Element {
   )
 }
 
+/** Skill marker (ticket 23): wand with a spark, à la ZCode's skill row. */
+export function WandIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="m4.5 19.5 9-9" />
+      <path d="m13 7 4-4 4 4-4 4Z" />
+      <path d="M19.5 15.5v.01M15.5 19.5v.01M21 19.5v.01" strokeWidth={2.2} />
+    </svg>
+  )
+}
+
 export function LoaderIcon({ size, className }: IconProps): JSX.Element {
   return (
     <svg {...svgProps(size, className)}>

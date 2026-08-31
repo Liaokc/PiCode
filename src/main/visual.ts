@@ -4,24 +4,30 @@
  * event sequence directly into the renderer (no SDK, no network), then captures
  * PNG screenshots of the window:
  *
- *   1. mid-run  — working line ticking, streaming markdown with caret, tool card running
+ *   1. mid-run  — the live turn container open and ticking, streaming markdown
+ *                 with caret, tool card running
  *   1b. streaming blocks — code card + table container live mid-stream, and a
  *       dataset marker proves they are NOT remounted by later deltas (ticket 16)
- *   2. settled  — done tool card, per-message actions row with timestamp
- *   2b/2c      — ticket 16 block chrome: wrap toggle, table expand, table
- *       preview overlay, and the message-row fork toast
- *   3. expanded — thinking row and tool card unfolded
+ *   2. settled  — the turn folded into "Worked · Ns ›" (ticket 23), done tool
+ *                 card hidden inside, per-message actions row (with fork)
+ *                 outside the fold
+ *   2b/2c/2d   — ticket 16 block chrome, replayed over the FOLDED transcript:
+ *                 the container is opened first (ticket 23 choreography), then
+ *                 wrap toggle, table expand, table preview overlay, and the
+ *                 message-row fork toast
  *   3b/3c      — ticket 14: a resumed session replayed from structured history
- *                items — collapsed thinking rows + settled tool cards by default
- *                (3b), and expanded for audit (3c); the failed card is in the
- *                error style, replayed thinking carries no ticking duration.
+ *                items — collapsed turn containers by default (3b, ticket 23:
+ *                replay always starts folded), opened for audit (3c) revealing
+ *                collapsed thinking rows + settled tool cards; the failed card
+ *                is in the error style, replayed thinking carries no ticking
+ *                duration, the skill-driven turn shows its marker row.
  *   8. tooltip  — unified tooltip bubble on the sidebar filter button (ticket 22)
  *
  * PNGs land in $PICODE_VISUAL_OUT (default: <cwd>/.scratch/visual/). Not part
  * of `npm test`; a human compares them against the reference screenshots.
  */
 
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { app, BrowserWindow } from 'electron'
@@ -83,7 +89,9 @@ async function capture(win: BrowserWindow, name: string): Promise<string> {
       tools: document.querySelectorAll('.tool-card').length,
       thinkingOpen: document.querySelectorAll('.thinking-row-open').length,
       toolOpen: document.querySelectorAll('.tool-card-open').length,
-      working: document.querySelectorAll('.working-line').length,
+      turns: document.querySelectorAll('.turn-container').length,
+      turnsOpen: document.querySelectorAll('.turn-container-open').length,
+      skills: document.querySelectorAll('.skill-marker-row').length,
       banner: document.querySelectorAll('.error-banner').length,
       previewMd: document.querySelectorAll('.preview-md').length,
       previewCrumbs: document.querySelectorAll('.preview-crumb').length,
@@ -276,6 +284,33 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       emit({ type: 'agent_end' })
       await sleep(800)
       await capture(win, '2-settled')
+      // Ticket 23 gate: settling folds the turn — the capture above must show
+      // the collapsed "Worked · Ns ›" row with everything tucked inside, and
+      // both streamed text parts visible as one answer block outside.
+      const settledSig = (await win.webContents.executeJavaScript(
+        `(() => ({
+          turns: document.querySelectorAll('.turn-container').length,
+          turnsOpen: document.querySelectorAll('.turn-container-open').length,
+          answers: document.querySelectorAll('.msg-assistant').length,
+          answerBlocks: document.querySelectorAll('.msg-assistant .md').length
+        }))()`
+      )) as { turns: number; turnsOpen: number; answers: number; answerBlocks: number }
+      if (settledSig.turns < 1 || settledSig.turnsOpen !== 0 || settledSig.answers !== 1 || settledSig.answerBlocks < 2) {
+        throw new Error(`visual 2-settled: turn did not fold on settle ${JSON.stringify(settledSig)}`)
+      }
+      console.log(`VISUAL probe 2-settled: ${JSON.stringify(settledSig)}`)
+
+      // Ticket 23 choreography: settle folds the turn — open the container
+      // FIRST, then run the ticket 16 block-chrome probes, then the density
+      // check. (The answer block with its code card / table / fork row sits
+      // outside the fold, but the expanded container matches the audit flow.)
+      await win.webContents.executeJavaScript(
+        `(() => {
+          document.querySelectorAll('.turn-container-header').forEach((el) => (el instanceof HTMLElement ? el.click() : undefined))
+          return true
+        })()`
+      )
+      await sleep(300)
 
       // ---- ticket 16: settled block chrome interactions ----
       // Wrap toggle flips the code area to pre-wrap; expand lifts the table
@@ -356,7 +391,8 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       if (!toastText.includes('Forked')) throw new Error(`visual 2d: unexpected fork toast ${JSON.stringify(toastText)}`)
       await sleep(300)
 
-      // Expand the thinking row and the tool card for the density check.
+      // Density check: with the container already open, unfold the inner
+      // thinking row and tool card (ticket 23 + 14 audit view).
       await win.webContents.executeJavaScript(
         `(() => {
           const rows = document.querySelectorAll('.thinking-row-header, .tool-card-header')
@@ -463,35 +499,62 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
         ]
       })
       await sleep(700)
-      // Replay gates: collapsed by default, one error card, degraded durations.
+      // Replay gates (tickets 14 + 23): every turn arrives FOLDED — inner
+      // rows not in the DOM yet — with the skill marker waiting inside.
       const replaySig = (await win.webContents.executeJavaScript(
         `(() => ({
+          turns: document.querySelectorAll('.turn-container').length,
+          turnsOpen: document.querySelectorAll('.turn-container-open').length,
+          thinkingRows: document.querySelectorAll('.thinking-row').length,
+          tools: document.querySelectorAll('.tool-card').length
+        }))()`
+      )) as { turns: number; turnsOpen: number; thinkingRows: number; tools: number }
+      if (replaySig.turns < 2 || replaySig.turnsOpen !== 0) {
+        throw new Error(`visual 3b-replayed: replay must open fully collapsed ${JSON.stringify(replaySig)}`)
+      }
+      if (replaySig.thinkingRows !== 0 || replaySig.tools !== 0) {
+        throw new Error(`visual 3b-replayed: inner rows leaked while folded ${JSON.stringify(replaySig)}`)
+      }
+      console.log(`VISUAL probe 3b-replayed: ${JSON.stringify(replaySig)}`)
+      await capture(win, '3b-replayed')
+
+      // Expanded variant: open every container, then unfold the inner rows —
+      // the audit check: collapsed thinking rows (no durations), settled tool
+      // cards, the failed one in the error style, one skill marker row.
+      await win.webContents.executeJavaScript(
+        `(() => {
+          document.querySelectorAll('.turn-container-header').forEach((el) => (el instanceof HTMLElement ? el.click() : undefined))
+          return true
+        })()`
+      )
+      await sleep(300)
+      const openedSig = (await win.webContents.executeJavaScript(
+        `(() => ({
+          skills: document.querySelectorAll('.skill-marker-row').length,
           thinkingRows: document.querySelectorAll('.thinking-row').length,
           thinkingOpen: document.querySelectorAll('.thinking-row-open').length,
           thinkingDurations: document.querySelectorAll('.thinking-row .thinking-row-duration').length,
           tools: document.querySelectorAll('.tool-card').length,
           toolErrors: document.querySelectorAll('.tool-card-error').length
         }))()`
-      )) as { thinkingRows: number; thinkingOpen: number; thinkingDurations: number; tools: number; toolErrors: number }
-      if (replaySig.thinkingRows < 3 || replaySig.tools < 2 || replaySig.toolErrors !== 1) {
-        throw new Error(`visual 3b-replayed: unexpected replay signature ${JSON.stringify(replaySig)}`)
+      )) as { skills: number; thinkingRows: number; thinkingOpen: number; thinkingDurations: number; tools: number; toolErrors: number }
+      if (openedSig.skills !== 1) {
+        throw new Error(`visual 3c-replayed: expected exactly one skill marker row ${JSON.stringify(openedSig)}`)
       }
-      if (replaySig.thinkingOpen !== 0 || replaySig.thinkingDurations !== 0) {
-        throw new Error(`visual 3b-replayed: replay must render collapsed and duration-less ${JSON.stringify(replaySig)}`)
+      if (openedSig.thinkingRows < 3 || openedSig.tools < 2 || openedSig.toolErrors !== 1) {
+        throw new Error(`visual 3c-replayed: unexpected replay signature ${JSON.stringify(openedSig)}`)
       }
-      console.log(`VISUAL probe 3b-replayed: ${JSON.stringify(replaySig)}`)
-      await capture(win, '3b-replayed')
-
-      // Expanded variant: every replayed row unfolded for the audit check.
+      if (openedSig.thinkingOpen !== 0 || openedSig.thinkingDurations !== 0) {
+        throw new Error(`visual 3c-replayed: replay must render collapsed and duration-less ${JSON.stringify(openedSig)}`)
+      }
+      console.log(`VISUAL probe 3c-replayed: ${JSON.stringify(openedSig)}`)
       await win.webContents.executeJavaScript(
         `(() => {
-          const rows = document.querySelectorAll('.thinking-row-header, .tool-card-header')
-          rows.forEach((el) => (el instanceof HTMLElement ? el.click() : undefined))
-          document.querySelector('.thinking-row')?.scrollIntoView({ block: 'start' })
-          return rows.length
+          document.querySelector('.turn-container')?.scrollIntoView({ block: 'start' })
+          return true
         })()`
       )
-      await sleep(500)
+      await sleep(300)
       await capture(win, '3c-replayed-expanded')
 
       // ---- ticket 05: composer menus, approval pill, queue panel ----
@@ -617,6 +680,15 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       })
       emit({ type: 'tool_end', toolCallId: 'tc-visual-md', output: 'Wrote CONTEXT.md', isError: false })
       await sleep(300)
+      // Ticket 23: the settled tool card hides inside its folded turn — open
+      // the container before driving the deep-link a human would click.
+      await win.webContents.executeJavaScript(
+        `(() => {
+          document.querySelectorAll('.turn-container-header').forEach((el) => (el instanceof HTMLElement ? el.click() : undefined))
+          return true
+        })()`
+      )
+      await sleep(300)
       await win.webContents.executeJavaScript(
         `(() => {
           const link = document.querySelector('.tool-card-preview-link')
@@ -678,6 +750,12 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       await capture(win, '6-preview-directory')
 
       // Review file tree deep-link: picker → Review tab → hover Open chip.
+      // The review tree only renders when the workspace HAS changes; the
+      // harness must not depend on the operator's git state, so drop an
+      // untracked scratch probe (collect synthesizes it as an addition) and
+      // remove it after the stage.
+      const reviewProbe = path.join(process.cwd(), '.scratch', 'visual', '.review-probe.txt')
+      writeFileSync(reviewProbe, 'visual harness review probe — safe to delete\n')
       await win.webContents.executeJavaScript(
         `(() => {
           const add = document.querySelector('.panel-add-tab')
@@ -717,6 +795,7 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       )
       await sleep(700)
       await capture(win, '7-review-deeplink')
+      rmSync(reviewProbe, { force: true })
 
       // ---- ticket 22: unified tooltip on the sidebar filter button ----
       // The tooltip host listens to delegated mouseover; dispatch a bubbling
