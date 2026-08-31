@@ -196,8 +196,10 @@ app.whenReady().then(() => {
   // Session index + Live Follow (ticket 04): read-only scan of the shared Pi
   // session store; the only write is the rename write-back for non-active
   // sessions (the active session renames through its host process).
+  // PICODE_SESSION_DIR (ticket 13 smoke isolation) points the whole app at a
+  // throwaway store so smoke runs never touch the real session files.
   sessionIndex = new SessionIndexService({
-    sessionsDir: path.join(homedir(), '.pi', 'agent', 'sessions'),
+    sessionsDir: process.env['PICODE_SESSION_DIR'] || path.join(homedir(), '.pi', 'agent', 'sessions'),
     onIndexChanged: () => broadcastChannel('sessions:index-changed', null),
     onFollowUpdate: (update: FollowUpdate) => broadcastChannel('sessions:follow-update', update)
   })

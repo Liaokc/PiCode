@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile, appendFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -90,6 +90,25 @@ describe('UsageStore (incremental scan)', () => {
 
     expect(after.totalTokens).toBe(300)
     expect(after).toEqual(oneShot([{ content: fileA_v2 }, { content: '' }]))
+  })
+
+  it('folds case-variant model ids into one group across incremental appends (ticket 13)', async () => {
+    const p = await writeSession(
+      'case.jsonl',
+      [headerLine('s-case'), assistant('a1', '2026-08-25T09:00:00.000Z', 1000, 0.02, 'GLM-5.3-flash'), ''].join('\n')
+    )
+    const store = new UsageStore({ sessionsDir: dir, ...SNAP_OPTS })
+    const first = await store.scan()
+    expect(first.modelTotals).toHaveLength(1)
+    expect(first.modelTotals[0]?.model).toBe('GLM-5.3-flash')
+
+    await appendFile(p, assistant('a2', '2026-08-26T09:00:00.000Z', 500, 0.01, 'glm-5.3-flash') + '\n')
+    const second = await store.scan()
+
+    expect(second.modelTotals).toHaveLength(1)
+    expect(second.modelTotals[0]?.model).toBe('GLM-5.3-flash') // first-seen spelling kept
+    expect(second.modelTotals[0]?.tokens).toBe(1500)
+    expect(second.modelTotals[0]?.cost.amountUsd).toBeCloseTo(0.03, 10)
   })
 
   it('completes a half-written trailing line once the writer finishes it', async () => {

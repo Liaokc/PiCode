@@ -337,7 +337,17 @@ function slashCommands(): Extract<HostToParent, { type: 'slash_commands' }> {
 
 async function createSession(): Promise<void> {
   const sdk = await import('@earendil-works/pi-coding-agent')
-  const manager = resumeFile ? sdk.SessionManager.open(resumeFile) : sdk.SessionManager.create(cwd)
+  // Smoke isolation (ticket 13): when PICODE_SESSION_DIR is set, NEW sessions
+  // are stored under that directory instead of the real ~/.pi/agent/sessions.
+  // In-host forks follow the current manager's session dir, so every session
+  // file a smoke run produces stays inside the throwaway store. Resumes open
+  // an explicit file (dir derives from the file's own location). Auth,
+  // models and settings still come from the real agent dir — only session
+  // WRITES are isolated.
+  const isolatedSessionDir = process.env['PICODE_SESSION_DIR']
+  const manager = resumeFile
+    ? sdk.SessionManager.open(resumeFile)
+    : sdk.SessionManager.create(cwd, isolatedSessionDir || undefined)
   // The factory recreates cwd-bound services on every session replacement —
   // the same shape the pi TUI hands to createAgentSessionRuntime. The
   // approval gate rides the resource loader's inline-extension pipeline.

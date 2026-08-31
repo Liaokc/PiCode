@@ -67,7 +67,7 @@ describe('foldSessionFile', () => {
     expect(folded.eventCount).toBe(2)
     const day = folded.days.get('2026-08-27')
     expect(day).toBeDefined()
-    const cell = day!.get('GLM-5.3-flash')!
+    const cell = day!.get('glm-5.3-flash')!
     expect(cell.tokens).toBe(330)
     expect(cell.costMicros).toBe(3000) // 0.001 + 0.002 USD
     expect(cell.events).toBe(2)
@@ -84,7 +84,7 @@ describe('foldSessionFile', () => {
 
     const folded = foldSessionFile(text)
     expect(folded.eventCount).toBe(2)
-    const cell = folded.days.get('2026-08-20')!.get('GLM-5.2')!
+    const cell = folded.days.get('2026-08-20')!.get('glm-5.2')!
     expect(cell.tokens).toBe(120800 + 5500)
     expect(cell.costMicros).toBe(15000)
   })
@@ -112,7 +112,7 @@ describe('foldSessionFile', () => {
       assistant('a1', '2026-08-21T10:00:00.000Z', usageOf(1, 1, 2, 0.0001)),
       ''
     ].join('\n')
-    expect(foldSessionFile(withTracker).days.get('2026-08-21')!.has('GLM-5.3-flash')).toBe(true)
+    expect(foldSessionFile(withTracker).days.get('2026-08-21')!.has('glm-5.3-flash')).toBe(true)
 
     const orphan = [
       headerLine,
