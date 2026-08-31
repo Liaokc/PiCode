@@ -6,7 +6,7 @@
 
 **Blocked by:** 12 终局 QA（工装文件 `scripts/smoke/*` 正被 T12 会话编辑，合并后再动，避免活体冲突）。T12 已 resolved，本工单开工。
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] 跑完整冒烟套件前后，`~/.pi/agent/sessions` 下会话文件数量零增长（自动化检查内置于 `scripts/smoke/run-all.sh`：起跑前后各统计一次 `*.jsonl`，数量变化即套件 FAIL；本轮实测 ALL GREEN 且 132 → 132）
 - [x] 聚合器单元测试：同一模型两种大小写的 usage 事件折叠为一个分组，tokens/cost 相加（`tests/usage/casefold.test.ts` 全缝覆盖：fold 内折叠、跨文件合并、时间戳定展示拼写、trend 单线、与不同模型互不误折；`tests/usage/store.test.ts` 覆盖增量追加路径）
@@ -22,3 +22,4 @@
 - Verified: typecheck/lint clean, 456 vitest tests green (49 files; new: casefold suite + store incremental case-append + cleanup matcher). Full `npm run smoke` ALL GREEN (72s, 6 stages) with the new hygiene guard printing `session files unchanged (132)`; interop logs confirm host writes land inside `picode-smoke-sessions-*`. `npm run usage:scan` shows the single folded GLM-5.3-flash entry. Standalone smoke entry points (`smoke:host` / `smoke:interop` / `smoke:electron` / `package:verify`) self-isolate via the same env when the suite doesn't provide one.
 - Follow-up for the operator (one command, whenever ratified): `node scripts/cleanup-smoke-sessions.ts` (review the list) → re-run with `--yes`.
 - Merge from the root worktree: `cd ~/PiCode && git merge --no-ff t13-model-hygiene` (or `scripts/merge-ticket.sh 13`).
+- 2026-08-28 (merge session): **resolved** — merged into main as `d84668b`（rebase 仅 tracker 预同步相撞，代码零冲突）。验收口径：操作者目检通过；**存量污染策略拍板 = 清洗**：合并会话已于当日从 ~/.pi/agent/sessions 删除 35 个 `*picode-smoke-*` 目录（57→22，模式零残留；实现会话的 dry-run 清洗脚本保留备用，未再需要）；另发现 4 个疑似同源残留（picode-lifecycle-smoke / picode-probe / picode-diff-e2e ×2）不在指令模式内，未动，待操作者示下。合并后 main 复核 49 文件 / 456 vitest 全绿。worktree 与分支已清理。
