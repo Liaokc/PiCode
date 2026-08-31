@@ -4,6 +4,7 @@ import { buildFileTree, flattenTree } from '../../../shared/review/tree'
 import { initialReviewTabState, reviewTabReducer } from '../../../shared/review/view-model'
 import DiffView from './DiffView'
 import PreviewLinkChip from './PreviewLinkChip'
+import Tooltip from './Tooltip'
 import { ArrowRightIcon, FileTextIcon, FolderIcon, RefreshIcon } from './icons'
 
 /**
@@ -201,9 +202,11 @@ function ReviewToolbar({
             Split
           </button>
         </div>
-        <button type="button" className="tb-btn review-refresh" aria-label="Refresh diff" onClick={onRefresh} disabled={refreshing}>
-          <RefreshIcon />
-        </button>
+        <Tooltip label="Refresh diff">
+          <button type="button" className="tb-btn review-refresh" aria-label="Refresh diff" onClick={onRefresh} disabled={refreshing}>
+            <RefreshIcon />
+          </button>
+        </Tooltip>
       </div>
     </div>
   )

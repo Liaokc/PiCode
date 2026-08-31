@@ -9,6 +9,7 @@ import ThinkingRow from './ThinkingRow'
 import ToolCard from './ToolCard'
 import WorkingLine from './WorkingLine'
 import MessageActions from './MessageActions'
+import Tooltip from './Tooltip'
 import { ChevronDownIcon, PencilIcon } from './icons'
 
 interface ChatViewProps {
@@ -112,15 +113,16 @@ export default function ChatView({
             {title}
           </span>
         )}
-        <button
-          type="button"
-          className="chat-topbar-btn"
-          aria-label="Rename task"
-          title="Rename (double-click title also works)"
-          onClick={startRename}
-        >
-          <PencilIcon size={13} />
-        </button>
+        <Tooltip label="Rename">
+          <button
+            type="button"
+            className="chat-topbar-btn"
+            aria-label="Rename task"
+            onClick={startRename}
+          >
+            <PencilIcon size={13} />
+          </button>
+        </Tooltip>
         <button type="button" className={treeOpen ? 'chat-topbar-btn chat-topbar-btn-open' : 'chat-topbar-btn'} onClick={onToggleTree}>
           History
           <ChevronDownIcon size={13} />

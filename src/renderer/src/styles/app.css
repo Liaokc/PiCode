@@ -2952,6 +2952,43 @@ button.heat:hover {
   color: #ffffff;
 }
 
+/* ---------- unified tooltip (ticket 22): small light bubble, dark text,
+   shortcut keycaps — placement classes come from shared/tooltip geometry ---------- */
+
+.tooltip-bubble {
+  position: fixed;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 280px;
+  padding: 3px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--bg-card);
+  box-shadow: 0 4px 16px rgba(30, 30, 25, 0.13);
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--text-primary);
+  pointer-events: none;
+}
+
+.tooltip-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 17px;
+  height: 18px;
+  padding: 0 4px;
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--bg-inset);
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
 /* ---------- error banner ---------- */
 
 .error-banner {

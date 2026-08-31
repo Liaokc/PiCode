@@ -1,5 +1,6 @@
 import type { JSX, KeyboardEvent, MouseEvent } from 'react'
 import { FileTextIcon } from './icons'
+import Tooltip from './Tooltip'
 
 interface PreviewLinkChipProps {
   /** Workspace-relative or absolute path to open in the Preview tab. */
@@ -25,19 +26,20 @@ export default function PreviewLinkChip({ path, onOpen, label, iconOnly = false,
   }
 
   return (
-    <span
-      role="button"
-      tabIndex={0}
-      className={className}
-      aria-label={label}
-      title={label}
-      onClick={activate}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') activate(event)
-      }}
-    >
-      <FileTextIcon size={12} />
-      {!iconOnly && <span>Open</span>}
-    </span>
+    <Tooltip label={iconOnly ? label : undefined}>
+      <span
+        role="button"
+        tabIndex={0}
+        className={className}
+        aria-label={label}
+        onClick={activate}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') activate(event)
+        }}
+      >
+        <FileTextIcon size={12} />
+        {!iconOnly && <span>Open</span>}
+      </span>
+    </Tooltip>
   )
 }

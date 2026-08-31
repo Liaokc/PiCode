@@ -7,6 +7,7 @@ import { AccessMenu, ModelMenu, ThinkingMenu, thinkingLabel } from './composer/m
 import { FileMenu, SlashMenu } from './composer/list-menus'
 import { ArrowUpIcon, CloseIcon, GaugeIcon, PlusIcon, ShieldCheckIcon, StopIcon } from './icons'
 import QueuePanel from './QueuePanel'
+import Tooltip from './Tooltip'
 
 /** Composer-relevant slices of the chat state (all contract-pushed). */
 export interface ComposerChat {
@@ -364,16 +365,17 @@ export default function Composer({
       {busy && <QueuePanel queue={queue} onClear={onClearQueue} />}
 
       <footer className="composer-footer">
-        <button
-          type="button"
-          className="cmp-icon-btn"
-          aria-label="Attach images"
-          title="Attach images"
-          disabled={disabled}
-          onClick={() => void pickImages()}
-        >
-          <PlusIcon />
-        </button>
+        <Tooltip label="Attach images">
+          <button
+            type="button"
+            className="cmp-icon-btn"
+            aria-label="Attach images"
+            disabled={disabled}
+            onClick={() => void pickImages()}
+          >
+            <PlusIcon />
+          </button>
+        </Tooltip>
         <button
           type="button"
           className={chat.accessMode === 'full-access' ? 'cmp-chip cmp-access' : 'cmp-chip cmp-access cmp-access-soft'}
@@ -407,39 +409,45 @@ export default function Composer({
         {busy ? (
           <>
             <div className="cmp-queued-toggle" role="radiogroup" aria-label="While the agent runs">
-              <button
-                type="button"
-                className={queuedMode === 'steer' ? 'cmp-queued-opt cmp-queued-opt-on' : 'cmp-queued-opt'}
-                aria-pressed={queuedMode === 'steer'}
-                title="Inject into the current turn"
-                onClick={() => setQueuedMode('steer')}
-              >
-                Steer
-              </button>
-              <button
-                type="button"
-                className={queuedMode === 'follow-up' ? 'cmp-queued-opt cmp-queued-opt-on' : 'cmp-queued-opt'}
-                aria-pressed={queuedMode === 'follow-up'}
-                title="Queue after the current turn"
-                onClick={() => setQueuedMode('follow-up')}
-              >
-                Follow-up
-              </button>
+              <Tooltip label="Inject into the current turn">
+                <button
+                  type="button"
+                  className={queuedMode === 'steer' ? 'cmp-queued-opt cmp-queued-opt-on' : 'cmp-queued-opt'}
+                  aria-pressed={queuedMode === 'steer'}
+                  onClick={() => setQueuedMode('steer')}
+                >
+                  Steer
+                </button>
+              </Tooltip>
+              <Tooltip label="Queue after the current turn">
+                <button
+                  type="button"
+                  className={queuedMode === 'follow-up' ? 'cmp-queued-opt cmp-queued-opt-on' : 'cmp-queued-opt'}
+                  aria-pressed={queuedMode === 'follow-up'}
+                  onClick={() => setQueuedMode('follow-up')}
+                >
+                  Follow-up
+                </button>
+              </Tooltip>
             </div>
-            <button type="button" className="cmp-stop" aria-label="Stop generating" onClick={onStop}>
-              <StopIcon />
-            </button>
+            <Tooltip label="Stop">
+              <button type="button" className="cmp-stop" aria-label="Stop generating" onClick={onStop}>
+                <StopIcon />
+              </button>
+            </Tooltip>
           </>
         ) : (
-          <button
-            type="button"
-            className="cmp-send"
-            aria-label="Send message"
-            disabled={disabled || (value.trim() === '' && images.length === 0)}
-            onClick={dispatch}
-          >
-            <ArrowUpIcon />
-          </button>
+          <Tooltip label="Send">
+            <button
+              type="button"
+              className="cmp-send"
+              aria-label="Send message"
+              disabled={disabled || (value.trim() === '' && images.length === 0)}
+              onClick={dispatch}
+            >
+              <ArrowUpIcon />
+            </button>
+          </Tooltip>
         )}
       </footer>
     </section>

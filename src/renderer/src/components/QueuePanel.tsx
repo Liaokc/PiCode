@@ -14,13 +14,13 @@ export default function QueuePanel({ queue, onClear }: { queue: ChatQueue; onCle
     <div className="queue-panel" aria-label="Queued messages">
       <div className="queue-panel-items">
         {queue.steering.map((text, i) => (
-          <div key={`s${i}`} className="queue-item queue-item-steer" title="Steers the current turn">
+          <div key={`s${i}`} className="queue-item queue-item-steer">
             <span className="queue-item-tag">Steer</span>
             <span className="queue-item-text">{text}</span>
           </div>
         ))}
         {queue.followUp.map((text, i) => (
-          <div key={`f${i}`} className="queue-item queue-item-followup" title="Runs after the current turn">
+          <div key={`f${i}`} className="queue-item queue-item-followup">
             <span className="queue-item-tag">Follow-up</span>
             <span className="queue-item-text">{text}</span>
           </div>
