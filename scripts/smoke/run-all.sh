@@ -9,8 +9,12 @@
 #   2. host contract             real SDK streaming, gate, queue, resume/fork
 #   3. pty                       real PTY under Electron's node ABI
 #   4. usage aggregation         real shared store + incremental machinery
-#   5. TUI↔SDK interop           both directions against the real session store
+#   5. TUI↔SDK interop           both directions against an isolated store
 #   6. electron app smoke        main→host→renderer DOM + Live Follow + crash isolation
+#
+# Session hygiene (ticket 13): every stage runs with PICODE_SESSION_DIR
+# pointed at a throwaway store, and the suite verifies the real session
+# library (~/.pi/agent/sessions) has ZERO session-file growth across the run.
 #
 # Usage: npm run smoke
 set -uo pipefail
@@ -18,6 +22,26 @@ cd "$(dirname "$0")/../.."
 
 # Plain-node TS smokes trigger a harmless MODULE_TYPELESS_PACKAGE_JSON warning.
 export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--no-warnings"
+
+# ---- ticket 13: isolation + zero-growth guard ------------------------------
+REAL_SESSIONS_DIR="$HOME/.pi/agent/sessions"
+session_file_count() {
+  if [ -d "$REAL_SESSIONS_DIR" ]; then
+    find "$REAL_SESSIONS_DIR" -type f -name '*.jsonl' | wc -l | tr -d ' '
+  else
+    echo 0
+  fi
+}
+SESSIONS_BEFORE=$(session_file_count)
+SMOKE_SESSIONS_STORE="$(mktemp -d picode-smoke-sessions-XXXXXXXX)"
+export PICODE_SESSION_DIR="$SMOKE_SESSIONS_STORE"
+cleanup() {
+  rm -rf "$SMOKE_SESSIONS_STORE"
+}
+trap cleanup EXIT
+
+echo "SMOKE session hygiene: real store=$REAL_SESSIONS_DIR ($SESSIONS_BEFORE session files)"
+echo "SMOKE session hygiene: isolated store=$SMOKE_SESSIONS_STORE"
 
 STEPS=(
   "build:npm run build"
@@ -45,6 +69,16 @@ for entry in "${STEPS[@]}"; do
 done
 
 total=$(( $(date +%s) - overall_start ))
+
+# ---- ticket 13: zero-growth verification -----------------------------------
+SESSIONS_AFTER=$(session_file_count)
+if [ "$SESSIONS_AFTER" -ne "$SESSIONS_BEFORE" ]; then
+  echo "SMOKE session hygiene FAIL: session files in $REAL_SESSIONS_DIR grew from $SESSIONS_BEFORE to $SESSIONS_AFTER"
+  failed=1
+else
+  echo "SMOKE session hygiene ok: session files in $REAL_SESSIONS_DIR unchanged ($SESSIONS_AFTER)"
+fi
+
 if [ "$failed" -ne 0 ]; then
   echo ""
   echo "SMOKE SUITE RESULT: FAIL (${total}s total)"

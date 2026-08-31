@@ -30,12 +30,41 @@ export interface ActivitySpan {
 export interface SessionFileUsage {
   header: SessionFileInfo | null
   eventCount: number
-  /** Local day (YYYY-MM-DD) → model → cell. */
+  /** Local day (YYYY-MM-DD) → normalized model id → cell. */
   days: Map<string, Map<string, DayModelCell>>
+  /** Normalized model id → display spelling (first chronologically seen raw id). */
+  modelDisplay: Map<string, ModelSpelling>
   /** Local day → chat activity span (message entries of any role). */
   activity: Map<string, ActivitySpan>
   skippedLines: number
   pendingTail: boolean
+}
+
+/** How one (normalized) model was first seen: its raw spelling and when. */
+export interface ModelSpelling {
+  /** Model id exactly as the session file recorded it. */
+  raw: string
+  /** Epoch ms of the earliest event carrying this normalized id. */
+  firstTs: number
+}
+
+/**
+ * Case-folded model identity (ticket 13): the grouping key for aggregation.
+ * The same model reaches session files under different casings (local config
+ * spelling vs gateway echo, e.g. GLM-5.3-flash vs glm-5.3-flash); folding on
+ * the lowercase id keeps them in one group while the display keeps the first
+ * raw spelling (see ModelSpelling).
+ */
+export function normalizeModelId(model: string): string {
+  return model.toLowerCase()
+}
+
+/** True when `next` should replace `current` as the display spelling: the
+ * chronologically first occurrence wins; identical timestamps fall back to
+ * the lexicographically smaller raw id so the choice never depends on fold
+ * order. */
+export function isEarlierSpelling(current: ModelSpelling, next: ModelSpelling): boolean {
+  return next.firstTs < current.firstTs || (next.firstTs === current.firstTs && next.raw < current.raw)
 }
 
 export interface FoldOptions {
@@ -90,11 +119,12 @@ function addEvent(days: Map<string, Map<string, DayModelCell>>, event: UsageEven
     byModel = new Map()
     days.set(day, byModel)
   }
-  const cell = byModel.get(event.model) ?? { tokens: 0, costMicros: 0, events: 0 }
+  const modelKey = normalizeModelId(event.model)
+  const cell = byModel.get(modelKey) ?? { tokens: 0, costMicros: 0, events: 0 }
   cell.tokens += event.tokens.total
   cell.costMicros += event.costMicros
   cell.events += 1
-  byModel.set(event.model, cell)
+  byModel.set(modelKey, cell)
 }
 
 // --- snapshot assembly -------------------------------------------------------
@@ -207,12 +237,18 @@ export function buildUsageSnapshot(files: Iterable<SessionFileUsage>, opts?: Sna
   const filesPerDay = new Map<string, Set<string | null>>()
   const activityByDay = new Map<string, ActivitySpan>()
   const sessionRows: SessionDayUsage[] = []
+  /** Normalized model id → display spelling, folded across all files. */
+  const display = new Map<string, ModelSpelling>()
   let totalTokens = 0
   let totalCostMicros = 0
   let usageEventCount = 0
   const sessionIds = new Set<string | null>()
 
   for (const file of files) {
+    for (const [key, spelling] of file.modelDisplay) {
+      const current = display.get(key)
+      if (!current || isEarlierSpelling(current, spelling)) display.set(key, spelling)
+    }
     for (const [date, byModel] of file.days) {
       if (byModel.size === 0) continue
       let dayCells = byDay.get(date)
@@ -265,6 +301,15 @@ export function buildUsageSnapshot(files: Iterable<SessionFileUsage>, opts?: Sna
     }
   }
 
+  const displayName = (key: string): string => display.get(key)?.raw ?? key
+
+  // Drill-down rows were accumulated under normalized keys; surface the
+  // display spelling so every view (donut, trend, drill-down) joins on the
+  // same strings.
+  for (const row of sessionRows) {
+    row.byModel = Object.fromEntries(Object.entries(row.byModel).map(([key, tokens]) => [displayName(key), tokens]))
+  }
+
   for (const dayCells of byDay.values()) {
     for (const cell of dayCells.values()) {
       totalTokens += cell.tokens
@@ -288,7 +333,7 @@ export function buildUsageSnapshot(files: Iterable<SessionFileUsage>, opts?: Sna
         for (const [model, cell] of cells) {
           tokens += cell.tokens
           costMicros += cell.costMicros
-          byModel[model] = cell.tokens
+          byModel[displayName(model)] = cell.tokens
         }
       }
       const span = activityByDay.get(date)
@@ -362,7 +407,7 @@ export function buildUsageSnapshot(files: Iterable<SessionFileUsage>, opts?: Sna
   }
   const modelTotals: ModelUsageSlice[] = [...byModelTotal.entries()]
     .map(([model, acc]) => ({
-      model,
+      model: displayName(model),
       tokens: acc.tokens,
       cost: estimated(acc.costMicros),
       share: totalTokens > 0 ? acc.tokens / totalTokens : 0
@@ -455,15 +500,28 @@ export function trendView(snapshot: UsageSnapshot, rangeDays: 7 | 30): TrendView
 export function foldSessionFile(text: string, opts?: FoldOptions): SessionFileUsage {
   const parsed = parseSessionFile(text)
   const days = new Map<string, Map<string, DayModelCell>>()
+  const modelDisplay = new Map<string, ModelSpelling>()
   const activity = new Map<string, ActivitySpan>()
 
   for (const ts of parsed.activityTimestamps) addToActivity(activity, ts, opts?.timeZone)
-  for (const event of parsed.events) addEvent(days, event, opts?.timeZone)
+  for (const event of parsed.events) {
+    addEvent(days, event, opts?.timeZone)
+    // Display spelling tracks the same population as the cells: events whose
+    // timestamp anchors them to a day (unparsable timestamps are skipped —
+    // those events contribute no cells either).
+    const firstTs = Date.parse(event.timestamp)
+    if (!Number.isFinite(firstTs)) continue
+    const modelKey = normalizeModelId(event.model)
+    const candidate: ModelSpelling = { raw: event.model, firstTs }
+    const current = modelDisplay.get(modelKey)
+    if (!current || isEarlierSpelling(current, candidate)) modelDisplay.set(modelKey, candidate)
+  }
 
   return {
     header: parsed.header,
     eventCount: parsed.events.length,
     days,
+    modelDisplay,
     activity,
     skippedLines: parsed.skippedLines,
     pendingTail: parsed.pendingTail

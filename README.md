@@ -51,6 +51,27 @@ Stages (fail fast, per-stage timings):
 
 Stages 2, 5, and 6 make real model calls (a few minutes total).
 
+### Session hygiene (ticket 13)
+
+Smoke runs never write the real session library. The suite exports
+`PICODE_SESSION_DIR` (a throwaway store the host and the app's session index
+honor) and verifies **zero session-file growth** in `~/.pi/agent/sessions`
+across the whole run — the suite fails if a stage leaks a session file.
+Standalone smoke entry points (`npm run smoke:host` / `smoke:interop` /
+`smoke:electron`) self-isolate the same way. `PICODE_SESSION_DIR` is also
+honored by `npm run package:verify`. Auth, models and settings always come
+from the real `~/.pi/agent` — only session writes are redirected.
+
+Model usage aggregation folds model ids case-insensitively (a gateway echoing
+`glm-5.3-flash` for the configured `GLM-5.3-flash` counts as ONE model; the
+display keeps the first-seen spelling). The one-time cleanup for historical
+smoke-polluted stores (dry run by default):
+
+```bash
+node scripts/cleanup-smoke-sessions.ts        # list what would be deleted
+node scripts/cleanup-smoke-sessions.ts --yes  # delete
+```
+
 ## Visual QA
 
 Screenshot harnesses capture the real UI for pixel comparison against the ZCode baselines in `.scratch/reference/screenshots/` (record: `.scratch/picode-1-0/visual-redline-final.md`):

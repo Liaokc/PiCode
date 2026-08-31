@@ -1,6 +1,6 @@
 /**
  * TUI↔SDK session-interop smoke (ticket 12 acceptance, ADR-0005). Proves
- * Handoff both ways against the REAL shared session store:
+ * Handoff both ways:
  *
  *   Direction 1 — TUI → PiCode (STRICTLY READ-ONLY): the newest TUI-written
  *   session in ~/.pi/agent/sessions must (a) summarize into a sidebar row via
@@ -9,12 +9,13 @@
  *   TUI uses — with a non-empty entry tree.
  *
  *   Direction 2 — PiCode → TUI: the built host (real SDK, Seam-1) creates a
- *   session in the shared store and runs one real model turn. The file must
- *   then (a) appear in the session index, (b) re-open through the SDK with
- *   the exchange visible, (c) fold into usage with ≥1 event, and (d) RESUME
- *   through a second host process with full history (Handoff). The session
- *   file this smoke created is removed afterwards so the user's Task list
- *   stays clean.
+ *   session in an ISOLATED session store (PICODE_SESSION_DIR, ticket 13 —
+ *   the real library is never written) and runs one real model turn. The
+ *   file must then (a) appear in the session index over that store, (b)
+ *   re-open through the SDK with the exchange visible, (c) fold into usage
+ *   with ≥1 event, and (d) RESUME through a second host process with full
+ *   history (Handoff). The session file this smoke created is removed
+ *   afterwards.
  *
  * Usage: npm run build && node scripts/smoke/interop-smoke.ts
  * Needs working model auth in ~/.pi/agent (same as the pi TUI). Exits
@@ -28,6 +29,7 @@ import { mkdtemp, readFile, rm, readdir, rmdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { fork, type ChildProcess } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { rmSync } from 'node:fs'
 import * as pi from '@earendil-works/pi-coding-agent'
 import { SessionIndexService } from '../../src/main/sessions/index-service.ts'
 import { summarizeSession } from '../../src/shared/sessions/parse.ts'
@@ -49,8 +51,26 @@ function fail(message: string): never {
 
 const sessionsDir = join(homedir(), '.pi', 'agent', 'sessions')
 
+// Session isolation (ticket 13): the real store stays strictly READ-ONLY in
+// direction 1; hosts forked for direction 2 must write somewhere else. Use
+// the suite-wide store when run through run-all.sh (which owns its cleanup),
+// otherwise create and clean up a throwaway store of our own.
+const isolatedDir = process.env.PICODE_SESSION_DIR
+let isolatedSessionsDir = isolatedDir ?? ''
+if (!isolatedSessionsDir) {
+  isolatedSessionsDir = await mkdtemp(join(tmpdir(), 'picode-smoke-sessions-'))
+  process.env.PICODE_SESSION_DIR = isolatedSessionsDir
+  process.on('exit', () => rmSync(isolatedSessionsDir, { recursive: true, force: true }))
+  log('isolated session store', isolatedSessionsDir)
+}
+
+function indexOver(dir: string): SessionIndexService {
+  return new SessionIndexService({ sessionsDir: dir, onIndexChanged: () => {} })
+}
+
+/** The REAL shared store — TUI-written sessions (direction 1, read-only). */
 function noopIndex(): SessionIndexService {
-  return new SessionIndexService({ sessionsDir, onIndexChanged: () => {} })
+  return indexOver(sessionsDir)
 }
 
 // ---------- direction 1: TUI → PiCode (read-only) ----------
@@ -132,13 +152,15 @@ async function picodeToTui(): Promise<void> {
     if (!created.sessionFile) fail('session_created did not report its session file')
     const file: string = created.sessionFile
     log('host session created', file)
+    if (!file.startsWith(isolatedSessionsDir)) fail(`host wrote outside the isolated session store: ${file}`)
 
     live.send({ type: 'prompt', text: `Reply with exactly: ${MARKER}` })
     await waitForHost(live, 'agent_end', (e) => e.type === 'agent_end')
     log('real turn completed')
 
-    // (a) The session index (what the sidebar shows) must list it.
-    const listed = (await noopIndex().list()).find((s) => s.file === file)
+    // (a) The session index (what the sidebar shows) must list it — over the
+    // ISOLATED store the host was told to write into.
+    const listed = (await indexOver(isolatedSessionsDir).list()).find((s) => s.file === file)
     if (!listed) fail('the session PiCode just wrote is invisible to the session index')
     if (listed.messageCount < 2) fail(`index counts ${listed.messageCount} messages, want ≥2 (user + assistant)`)
     log('index lists PiCode session', `title="${listed.title.slice(0, 40)}"`)
@@ -150,7 +172,7 @@ async function picodeToTui(): Promise<void> {
     log('SDK re-opens PiCode session', `${manager.getEntries().length} entries carry the marker`)
 
     // (c) Renderer transcript path sees both sides; usage folds ≥1 event.
-    const snapshot = await noopIndex().followSnapshot(file)
+    const snapshot = await indexOver(isolatedSessionsDir).followSnapshot(file)
     const items = snapshot?.items ?? []
     if (!items.some((i) => i.role === 'user' && i.text.includes(MARKER))) {
       fail('renderer transcript misses the user side of the exchange')

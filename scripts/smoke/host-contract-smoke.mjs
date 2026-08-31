@@ -24,18 +24,31 @@
  *   → fork_session → session_created(new file) → history_loaded → exit 0
  *
  * Usage: npm run build && node scripts/smoke/host-contract-smoke.mjs
- * Expects working model auth in ~/.pi/agent (same as the pi TUI).
+ * Expects working model auth in ~/.pi/agent (same as the pi TUI). Session
+ * files land in an isolated throwaway store (PICODE_SESSION_DIR, ticket 13)
+ * — the real session library is never written.
  */
 
 import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { rmSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { fork } from 'node:child_process'
 
 const HOST_ENTRY = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'out', 'main', 'host.js')
 const STEP_TIMEOUT_MS = 90_000
 const SMOKE_LABEL = 'PICODE_SMOKE_RENAMED'
+
+// Session isolation (ticket 13): hosts must never write the real
+// ~/.pi/agent/sessions. Use the suite-wide store when run through
+// scripts/smoke/run-all.sh (which owns its cleanup), otherwise create and
+// clean up a throwaway store of our own — standalone runs stay safe too.
+if (!process.env.PICODE_SESSION_DIR) {
+  process.env.PICODE_SESSION_DIR = await mkdtemp(path.join(tmpdir(), 'picode-smoke-sessions-'))
+  process.on('exit', () => rmSync(process.env.PICODE_SESSION_DIR, { recursive: true, force: true }))
+  console.log(`SMOKE isolated session store: ${process.env.PICODE_SESSION_DIR}`)
+}
 
 const cwd = await mkdtemp(path.join(tmpdir(), 'picode-smoke-'))
 // A real file so the @-mention candidate listing has something to return.

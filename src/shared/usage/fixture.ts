@@ -8,14 +8,7 @@
  * dense recent cluster, an active current streak ending today, 4+ models for
  * the trend legend and donut, and drill-down rows with per-session detail.
  */
-import {
-  buildUsageSnapshot,
-  dayKeyFromMs,
-  type ActivitySpan,
-  type DayModelCell,
-  type SessionFileUsage,
-  type UsageSnapshot
-} from './aggregate.ts'
+import { buildUsageSnapshot, dayKeyFromMs, isEarlierSpelling, normalizeModelId, type ActivitySpan, type DayModelCell, type ModelSpelling, type SessionFileUsage, type UsageSnapshot } from './aggregate.ts'
 
 export const FAKE_USAGE_MODELS = ['GLM-5.2', 'GLM-5.3', 'kimi-k3', 'deepseek-v4-pro'] as const
 
@@ -51,6 +44,7 @@ function foldFiles(opts: Required<Options>): SessionFileUsage[] {
 
   for (const span of spans) {
     const days = new Map<string, Map<string, DayModelCell>>()
+    const modelDisplay = new Map<string, ModelSpelling>()
     const activity = new Map<string, ActivitySpan>()
     for (let back = span.startOffset; back >= 0; back--) {
       const dayMs = todayMs - back * 86_400_000
@@ -74,6 +68,12 @@ function foldFiles(opts: Required<Options>): SessionFileUsage[] {
         cell.costMicros += Math.round((tokens / 1_000_000) * 2_500_000)
         cell.events += 1 + Math.floor(unit(daySeed + 20 + m) * 6)
         byModel.set(model, cell)
+        // Fixture models are already distinct under case folding; the display
+        // spelling is the raw id itself.
+        const key = normalizeModelId(model)
+        const spelling: ModelSpelling = { raw: model, firstTs: dayMs }
+        const current = modelDisplay.get(key)
+        if (!current || isEarlierSpelling(current, spelling)) modelDisplay.set(key, spelling)
       }
       days.set(date, byModel)
 
@@ -82,7 +82,7 @@ function foldFiles(opts: Required<Options>): SessionFileUsage[] {
       const lastTs = dayMs + (inCluster ? 5 : 2) * 3600_000
       activity.set(date, { firstTs, lastTs, messages: 4 + Math.floor(unit(daySeed + 30) * 26) })
     }
-    files.push({ header: { id: span.id, cwd: '/tmp/fixture-project', startedAt: opts.now }, eventCount: 0, days, activity, skippedLines: 0, pendingTail: false })
+    files.push({ header: { id: span.id, cwd: '/tmp/fixture-project', startedAt: opts.now }, eventCount: 0, days, modelDisplay, activity, skippedLines: 0, pendingTail: false })
   }
   return files
 }

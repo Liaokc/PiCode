@@ -14,7 +14,8 @@
  */
 
 import { execSync } from 'node:child_process'
-import { existsSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { packager } from '@electron/packager'
@@ -65,13 +66,18 @@ if (!verify) {
 // working model auth in ~/.pi/agent, same as the pi TUI.
 console.log('→ verifying artifact: launching packaged app with PICODE_SMOKE=1')
 const binary = path.join(appDir, 'PiCode.app', 'Contents', 'MacOS', 'PiCode')
+// Session isolation (ticket 13): the smoke writes sessions into a throwaway
+// store, never into the real ~/.pi/agent/sessions.
+const smokeSessionsStore = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-sessions-'))
 try {
   sh(`"${binary}"`, {
-    env: { ...process.env, PICODE_SMOKE: '1' },
+    env: { ...process.env, PICODE_SMOKE: '1', PICODE_SESSION_DIR: smokeSessionsStore },
     timeout: 5 * 60_000
   })
   console.log('PACKAGED ARTIFACT VERIFIED: launched and completed the real-session smoke (exit 0)')
 } catch (err) {
   console.error('PACKAGED ARTIFACT VERIFY FAILED:', err.message)
   process.exit(1)
+} finally {
+  rmSync(smokeSessionsStore, { recursive: true, force: true })
 }
