@@ -27,7 +27,7 @@
  * of `npm test`; a human compares them against the reference screenshots.
  */
 
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { app, BrowserWindow } from 'electron'
@@ -750,6 +750,12 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       await capture(win, '6-preview-directory')
 
       // Review file tree deep-link: picker → Review tab → hover Open chip.
+      // The review tree only renders when the workspace HAS changes; the
+      // harness must not depend on the operator's git state, so drop an
+      // untracked scratch probe (collect synthesizes it as an addition) and
+      // remove it after the stage.
+      const reviewProbe = path.join(process.cwd(), '.scratch', 'visual', '.review-probe.txt')
+      writeFileSync(reviewProbe, 'visual harness review probe — safe to delete\n')
       await win.webContents.executeJavaScript(
         `(() => {
           const add = document.querySelector('.panel-add-tab')
@@ -789,6 +795,7 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       )
       await sleep(700)
       await capture(win, '7-review-deeplink')
+      rmSync(reviewProbe, { force: true })
 
       // ---- ticket 22: unified tooltip on the sidebar filter button ----
       // The tooltip host listens to delegated mouseover; dispatch a bubbling
