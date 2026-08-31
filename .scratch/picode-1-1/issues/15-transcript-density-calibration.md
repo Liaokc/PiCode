@@ -10,7 +10,7 @@
 
 **Blocked by:** None.
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [ ] 实现前先落最小复现：固定 markdown 样本（列表/段落/代码块/引用）在 dev 转录区截图归档 `.scratch/visual/`，标出异常间距数据
 - [ ] 修复后同一样本与 ZCode 实机同内容并排对照：列表项与段落间距目测一致，字号与行高一并核对
@@ -31,3 +31,5 @@
   - **范围偏差记录**：intake 所记"表格 padding 偏大"与归档 ZCode 基准矛盾（ZCode 表行 pitch 33–41px vs PiCode 33px），**不予采纳**，表格容器化归 ticket 16。
   - typecheck / lint / vitest（458）全绿；code-review（Standards+Spec 双轴）通过，发现均已处置。
   - **待操作者人工关卡**：将 `d-density-sample.md` 粘入 ZCode 实机同内容渲染，与 `d1-density-after.png` 并排目测（字号/行高/列表/段落节奏）；通过后 `bash scripts/merge-ticket.sh 15`。
+
+- 2026-09-01 (merge session, T00): merged as **7de86df** (`merge: t15-density-calibration`, rebase + no-ff onto main)。验收口径：操作者明确「已验收」（含票内人工关卡：d-density-sample 与 ZCode 同内容并排目测）；实现会话记录 bullet pitch 52.1→27.5px、块间隙 16px、行距 24.5px、段落 pitch 40.5px（ZCode 基准内），visual:transcript 全套重拍 + DOM 签名全过、typecheck/lint/vitest（458）全绿、code-review 双轴通过；合并后 main 上 typecheck + vitest 486/486 全绿。冲突处置：13 张 visual PNG 二进制冲突取本票侧重拍版（最新含密度修正的视觉基线）。
