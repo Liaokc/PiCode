@@ -17,7 +17,7 @@
 
 **Blocked by:** 22（按钮 tooltip 用统一组件的描述态；prefactor——“先让改动变容易”）。
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [ ] 代码格卡片：语言标签行 + 自动换行 toggle + 常驻复制钮，hover 短文案；复制成功反馈 1.5s 后恢复
 - [ ] 表格容器卡 + 三钮（复制/预览表格/展开表格滚动区域）+ hover 短文案；「预览」「展开」的实际形态以 ZCode 实机为对照
@@ -43,3 +43,5 @@
   - **表格样式对齐实拍**（转录区 + 预览阅读器共用 `.md` 规则）：只留横向分隔线、无竖线；表头无底色、常规字重、灰色左对齐；末行去底线避免与卡片边缘双线；单元格 padding 加到 9px 12px。
   - **预览浮层对齐实拍**：去标题分隔条；标题下加灰色说明行「View the table in a larger, scrollable view.」（对应 ZCode「在更大的可滚动视图中查看表格。」英文版）；浮层内的表格直接复用转录区同款 `md-table-scroll` 圆角滚动容器；浮层收窄为 min(760px, 86vw)、圆角 14px、遮罩加深至 0.35。
   - 验证：typecheck / eslint / vitest 501/501 全绿；visual 全帧重拍通过（`2c-table-preview` 新帧已按实拍形态）。
+
+- 2026-08-31 (merge session, T00): merged as **f184b6d** (`merge: t16-transcript-affordances`, rebase + no-ff onto main)。验收口径：操作者明确「已验收」（含返工轮：表格/预览浮层按操作者 ZCode 实拍 1023d87 对齐；「预览表格」overlay 形态已过人工 visual QA）。实现会话记录 vitest 501/501 + smoke ALL GREEN（6 stages）+ code-review 双轴通过；合并后 main 上 typecheck + vitest 501/501 全绿。冲突处置：仅 tracker 状态对撞（中间提交 claimed/部分评论 vs main 终态，取终态），零代码冲突。
