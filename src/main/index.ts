@@ -18,6 +18,8 @@ import { startSmokeIfEnabled } from './smoke'
 import { startVisualIfEnabled } from './visual'
 import { startSettingsVisualIfEnabled } from './visual-settings'
 import { startTerminalVisualIfEnabled } from './visual-terminal'
+import { startUsageVisualIfEnabled } from './visual-usage'
+import { fakeUsageSnapshot } from '../shared/usage/fixture'
 import { TerminalService, type TerminalDataMessage, type TerminalExitMessage } from './terminal/service'
 import { nodePtyFactory } from './terminal/node-pty-factory'
 import { createUsageService } from './usage/service'
@@ -53,9 +55,11 @@ function broadcastChannel(channel: string, payload: unknown): void {
 
 app.whenReady().then(() => {
   // Usage charts consume only this aggregated snapshot — the renderer never
-  // scans session files (ADR-0002 / Seam-2 contract).
+  // scans session files (ADR-0002 / Seam-2 contract). PICODE_FAKE_USAGE=1
+  // serves the deterministic visual-QA fixture instead of the real scan.
   const usageService = createUsageService()
-  ipcMain.handle('usage:snapshot', () => usageService.snapshot())
+  const fakeUsage = process.env['PICODE_FAKE_USAGE'] === '1'
+  ipcMain.handle('usage:snapshot', () => (fakeUsage ? Promise.resolve(fakeUsageSnapshot()) : usageService.snapshot()))
 
   // Settings + read-only auth status (ticket 11). Preferences persist to
   // PiCode's own file — never Pi's settings.json; the auth report comes from
@@ -211,6 +215,7 @@ app.whenReady().then(() => {
   sessionIndex.start()
 
   startSettingsVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  startUsageVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
 
   mainWindow = createMainWindow()
 

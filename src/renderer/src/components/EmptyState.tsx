@@ -1,9 +1,16 @@
 import { useMemo, type JSX } from 'react'
 import { greetingForHour } from '../../../shared/greeting'
 import Composer, { type ComposerApi } from './Composer'
+import { BugIcon, CalendarIcon, ClockIcon, MonitorIcon } from './icons'
 import { initialChatState } from '../../../shared/chat-reducer'
 
-const QUICK_START_CHIPS = ['Weekly Report', 'Bug Fix', 'Slide Maker', 'Idle Tasks'] as const
+/** Quick-start chips with the reference's per-chip leading icon (screenshot 02). */
+const QUICK_START_CHIPS: ReadonlyArray<{ label: string; icon: (props: { size: number }) => JSX.Element }> = [
+  { label: 'Weekly Report', icon: CalendarIcon },
+  { label: 'Bug Fix', icon: BugIcon },
+  { label: 'Slide Maker', icon: MonitorIcon },
+  { label: 'Idle Tasks', icon: ClockIcon }
+]
 
 /** Big faint brand mark floating above the empty-state greeting (screenshot 02). */
 function WatermarkPi(): JSX.Element {
@@ -54,9 +61,10 @@ export default function EmptyState({ creating, composerApi }: EmptyStateProps): 
       />
 
       <div className="quick-chips" role="list" aria-label="Quick starts">
-        {QUICK_START_CHIPS.map((label) => (
+        {QUICK_START_CHIPS.map(({ label, icon: Icon }) => (
           <button key={label} type="button" className="quick-chip" role="listitem">
-            {label}
+            <Icon size={14} />
+            <span>{label}</span>
           </button>
         ))}
       </div>

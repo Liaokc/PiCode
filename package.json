@@ -15,9 +15,15 @@
     "usage:scan": "node scripts/usage-scan.ts",
     "smoke:host": "npm run build && node scripts/smoke/host-contract-smoke.mjs",
     "smoke:pty": "ELECTRON_RUN_AS_NODE=1 electron scripts/smoke/pty-smoke.mjs",
+    "smoke:usage": "node scripts/smoke/usage-smoke.ts",
+    "smoke:interop": "npm run build && node scripts/smoke/interop-smoke.ts",
     "smoke:electron": "npm run build && PICODE_SMOKE=1 electron .",
+    "smoke": "bash scripts/smoke/run-all.sh",
+    "package": "node scripts/package.mjs",
+    "package:verify": "node scripts/package.mjs --verify",
     "visual:transcript": "npm run build && PICODE_VISUAL=1 electron .",
-    "visual:settings": "npm run build && PICODE_VISUAL_SETTINGS=1 PICODE_FAKE_SETTINGS=1 electron ."
+    "visual:settings": "npm run build && PICODE_VISUAL_SETTINGS=1 PICODE_FAKE_SETTINGS=1 electron .",
+    "visual:usage": "npm run build && PICODE_VISUAL_USAGE=1 PICODE_FAKE_USAGE=1 electron ."
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.84.3",
@@ -32,6 +38,7 @@
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
+    "@electron/packager": "^20.3.0",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.3",

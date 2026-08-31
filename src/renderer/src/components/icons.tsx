@@ -199,6 +199,42 @@ export function FileTextIcon({ size, className }: IconProps): JSX.Element {
   )
 }
 
+export function CalendarIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <rect x="3.5" y="5" width="17" height="15.5" rx="2.5" />
+      <path d="M3.5 9.5h17M8 2.5V6M16 2.5V6" />
+    </svg>
+  )
+}
+
+export function BugIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <rect x="8" y="7.5" width="8" height="11" rx="4" />
+      <path d="M9.5 7.5a2.5 2.5 0 0 1 5 0M8 11H3.5M8 14.5H4.5M8 18l-3 2.5M16 11h4.5M16 14.5h3.5M16 18l3 2.5M9.5 18.5 8 21M14.5 18.5 16 21" />
+    </svg>
+  )
+}
+
+export function MonitorIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <rect x="3" y="4.5" width="18" height="12.5" rx="2" />
+      <path d="M9.5 20.5h5M12 17v3.5" />
+    </svg>
+  )
+}
+
+export function ClockIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <circle cx="12" cy="12" r="8.75" />
+      <path d="M12 7.5V12l3 2.5" />
+    </svg>
+  )
+}
+
 export function TerminalSquareIcon({ size, className }: IconProps): JSX.Element {
   return (
     <svg {...svgProps(size, className)}>
