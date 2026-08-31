@@ -12,6 +12,8 @@
  * is RESUMED through the supervisor, and the replayed transcript must render
  * isomorphic to live — collapsed thinking rows, settled tool cards (the failed
  * one in the error style), degraded thinking durations (no ticking seconds).
+ * Ticket 23 adds the turn-fold gate: replayed turns arrive as collapsed
+ * "Worked · Ns ›" containers; the stage opens them before auditing the rows.
  *
  * Any missed step times out and exits non-zero. Progress logs as
  * `SMOKE <step>` lines on stdout. Not part of `npm test`.
@@ -237,6 +239,22 @@ export function startSmokeIfEnabled(
     }
     log('replay_payload_ok', `${replayItems.length} structured items`)
     await withWindow(getWindow, async (win) => {
+      // Ticket 23: replayed turns render as FOLDED "Worked · Ns ›" containers
+      // — nothing inner reaches the DOM until a container is opened.
+      const folded = await waitForProbe(
+        win,
+        `document.querySelectorAll('.turn-container').length >= 1 &&
+         document.querySelectorAll('.turn-container-open').length === 0 &&
+         document.querySelectorAll('.thinking-row').length === 0`,
+        10_000
+      )
+      if (!folded) fail('replayed turns did not render collapsed (ticket 23 memory rule)')
+      await win.webContents.executeJavaScript(
+        `(() => {
+          document.querySelectorAll('.turn-container-header').forEach((el) => (el instanceof HTMLElement ? el.click() : undefined))
+          return true
+        })()`
+      )
       const rendered = await waitForProbe(
         win,
         `document.querySelectorAll('.thinking-row').length >= 2 &&
@@ -244,8 +262,9 @@ export function startSmokeIfEnabled(
         10_000
       )
       if (!rendered) fail('replayed thinking rows / tool cards never reached the DOM')
-      // Collapsed by default; exactly one error card; replayed thinking has
-      // no duration label (the session file does not record durations).
+      // Inner rows closed by default; exactly one error card; replayed
+      // thinking has no duration label (the file does not record durations);
+      // a skill-driven marker row would have rendered inside too.
       const shaped = await waitForProbe(
         win,
         `document.querySelectorAll('.thinking-row-open').length === 0 &&
@@ -257,6 +276,8 @@ export function startSmokeIfEnabled(
       if (!shaped) {
         const diag = (await win.webContents.executeJavaScript(
           `JSON.stringify({
+            turns: document.querySelectorAll('.turn-container').length,
+            turnsOpen: document.querySelectorAll('.turn-container-open').length,
             thinkingRows: document.querySelectorAll('.thinking-row').length,
             thinkingOpen: document.querySelectorAll('.thinking-row-open').length,
             thinkingDurations: document.querySelectorAll('.thinking-row .thinking-row-duration').length,

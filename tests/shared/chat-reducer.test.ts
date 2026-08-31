@@ -50,6 +50,8 @@ describe('chatReducer — session lifecycle', () => {
       entries: [],
       agentRunning: false,
       error: null,
+      expandedTurns: new Set(),
+      erroredTurns: new Set(),
       model: null,
       thinkingLevel: null,
       availableLevels: [],

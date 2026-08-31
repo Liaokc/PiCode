@@ -20,6 +20,7 @@ import type {
 } from './contract'
 import { sniffSkillName } from './sessions/parse.ts'
 import type { TranscriptItem } from './sessions/types.ts'
+import { HEAD_TURN_ID } from './turn-collapse'
 import { UNFINISHED_TOOL_OUTPUT } from './tool-format'
 
 export interface ThinkingPart {
@@ -107,12 +108,26 @@ export type ChatError =
   | { kind: 'agent'; message: string }
   | { kind: 'host'; message: string; /** Last known working directory, when a rebuild can reuse it. */ cwd: string | null }
 
+/** Everything that folds chat state: contract events AND the one UI action
+ * the turn-collapse machine needs (ticket 23). Keeping the manual toggle in
+ * the same reducer keeps the collapse/exception/memory rules table-testable
+ * at Seam-1 alongside the event-driven ones. */
+export type ChatAction = HostToParent | { type: 'toggle_turn_expanded'; turnId: string }
+
 export interface ChatState {
   session: ChatSessionInfo | null
   entries: ChatEntry[]
   /** An agent run is in flight (drives the composer's stop control). */
   agentRunning: boolean
   error: ChatError | null
+  // ---- ticket 23: turn-collapse state machine (see turn-collapse.ts) ----
+  /** Turn ids rendered expanded: live turns open at agent start, manual
+   * opens, and errored turns. Absence = collapsed (the default for settled
+   * turns). Cleared on any replay — expansion is never remembered across
+   * session switches. */
+  expandedTurns: ReadonlySet<string>
+  /** Turns that ended in `turn_error`: settle never auto-collapses them. */
+  erroredTurns: ReadonlySet<string>
   // ---- composer state (ticket 05), all pushed over the contract ----
   /** Active session model (cascade menu echo). */
   model: ModelRef | null
@@ -134,6 +149,8 @@ export function initialChatState(): ChatState {
     entries: [],
     agentRunning: false,
     error: null,
+    expandedTurns: new Set(),
+    erroredTurns: new Set(),
     model: null,
     thinkingLevel: null,
     availableLevels: [],
@@ -252,6 +269,46 @@ function hostExitMessage(event: Extract<HostToParent, { type: 'host_exit' }>): s
   return `Agent host exited unexpectedly${detail}.`
 }
 
+// ---- ticket 23: turn-collapse state machine ----
+
+/** The turn currently receiving content: the last user entry's turn, or the
+ * defensive head segment when no user message exists yet. */
+function currentTurnId(entries: ChatEntry[]): string {
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i]
+    if (entry.role === 'user') return entry.id
+  }
+  return HEAD_TURN_ID
+}
+
+function withExpandedTurn(state: ChatState, turnId: string): ChatState {
+  if (state.expandedTurns.has(turnId)) return state
+  const expanded = new Set(state.expandedTurns)
+  expanded.add(turnId)
+  return { ...state, expandedTurns: expanded }
+}
+
+/** Settle rule: the finished turn folds away — unless it errored (turn_error
+ * keeps its work visible). */
+function collapseCurrentTurn(state: ChatState): ChatState {
+  const turnId = currentTurnId(state.entries)
+  if (!state.expandedTurns.has(turnId) || state.erroredTurns.has(turnId)) return state
+  const expanded = new Set(state.expandedTurns)
+  expanded.delete(turnId)
+  return { ...state, expandedTurns: expanded }
+}
+
+/** Exception rule: the failing turn stays expanded for its whole lifetime. */
+function markCurrentTurnErrored(state: ChatState): ChatState {
+  const turnId = currentTurnId(state.entries)
+  if (state.erroredTurns.has(turnId) && state.expandedTurns.has(turnId)) return state
+  const errored = new Set(state.erroredTurns)
+  errored.add(turnId)
+  const expanded = new Set(state.expandedTurns)
+  expanded.add(turnId)
+  return { ...state, erroredTurns: errored, expandedTurns: expanded }
+}
+
 function updateToolEntry(state: ChatState, toolCallId: string, update: (entry: ToolEntry) => ToolEntry): ChatState {
   const index = state.entries.findIndex((entry) => entry.role === 'tool' && entry.id === toolCallId)
   if (index === -1) return state
@@ -292,7 +349,13 @@ function ensureToolEntry(state: ChatState, toolCallId: string, name: string, arg
   return { ...state, entries }
 }
 
-export function chatReducer(state: ChatState, event: HostToParent): ChatState {
+export function chatReducer(state: ChatState, action: ChatAction): ChatState {
+  if (action.type === 'toggle_turn_expanded') {
+    const expanded = new Set(state.expandedTurns)
+    if (!expanded.delete(action.turnId)) expanded.add(action.turnId)
+    return { ...state, expandedTurns: expanded }
+  }
+  const event: HostToParent = action
   switch (event.type) {
     case 'session_created':
       // A new session replaces everything — single active session (α) with a
@@ -305,14 +368,21 @@ export function chatReducer(state: ChatState, event: HostToParent): ChatState {
     case 'session_error':
       return { ...state, session: null, error: { kind: 'session', message: event.message } }
 
-    case 'user_message':
-      return {
-        ...state,
-        entries: [
-          ...state.entries,
-          { id: entryId(state.entries.length), role: 'user', text: event.text, skillName: sniffSkillName(event.text) }
-        ]
-      }
+    case 'user_message': {
+      // Ticket 23: opening a turn folds the previous one (unless it errored);
+      // the new turn starts expanded so its run streams in view.
+      const folded = collapseCurrentTurn(state)
+      const entries: ChatEntry[] = [
+        ...folded.entries,
+        {
+          id: entryId(folded.entries.length),
+          role: 'user',
+          text: event.text,
+          skillName: sniffSkillName(event.text)
+        }
+      ]
+      return withExpandedTurn({ ...folded, entries }, currentTurnId(entries))
+    }
 
     case 'history_loaded':
       // Resume / tree navigation replay (ticket 04, structured by ticket 14):
@@ -321,15 +391,20 @@ export function chatReducer(state: ChatState, event: HostToParent): ChatState {
       // cards, skill markers) and map onto the SAME entry shapes the live
       // stream produces — replay renders isomorphic to live. Contract item
       // ids are kept so ids stay stable across re-replays (and never collide
-      // with live `mN` ids).
+      // with live `mN` ids). Ticket 23 memory rule: replay resets the collapse
+      // machine — re-entering a session always starts fully collapsed.
       return {
         ...state,
         entries: event.items.map(replayEntry),
+        expandedTurns: new Set(),
+        erroredTurns: new Set(),
         error: null
       }
 
     case 'agent_start':
-      return state.agentRunning ? state : { ...state, agentRunning: true }
+      // Ticket 23: the run's turn opens (steering turns open via their
+      // user_message echo; agent_start may not fire again within one run).
+      return state.agentRunning ? state : withExpandedTurn({ ...state, agentRunning: true }, currentTurnId(state.entries))
 
     case 'message_start':
       return { ...state, entries: [...state.entries, assistantEntry(state.entries.length, [])] }
@@ -420,10 +495,12 @@ export function chatReducer(state: ChatState, event: HostToParent): ChatState {
     }
 
     case 'agent_end':
-      return settle(state, false)
+      return collapseCurrentTurn(settle(state, false))
 
     case 'turn_error':
-      return { ...settle(state, false), error: { kind: 'agent', message: event.message } }
+      // Exception: the failing turn stays expanded; every other open piece of
+      // work settles.
+      return { ...markCurrentTurnErrored(settle(state, false)), error: { kind: 'agent', message: event.message } }
 
     // UI-level events (tree payload, rename acks, fork handoff) carry chat-
     // relevant info the App layer consumes; the transcript state is untouched.
@@ -504,7 +581,9 @@ export function chatReducer(state: ChatState, event: HostToParent): ChatState {
 
     case 'host_exit': {
       const cwd = state.session?.cwd ?? null
-      const detached = settle({ ...state, session: null }, false)
+      // A dead host settles like any run end: the turn folds away and the
+      // (unclean-exit) banner carries the failure story.
+      const detached = collapseCurrentTurn(settle({ ...state, session: null }, false))
       return event.clean ? detached : { ...detached, error: { kind: 'host', message: hostExitMessage(event), cwd } }
     }
   }

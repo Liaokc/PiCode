@@ -2283,23 +2283,76 @@ button.heat:hover {
   }
 }
 
-/* ---------- working line (screenshot 01: 工作中 · N 秒) ---------- */
+/* ---------- turn container (ticket 23: per-turn Working · Ns fold) ---------- */
 
-.working-line {
+.turn-container {
+  margin: 2px 0;
+}
+
+.turn-container-header {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 2px 0;
+  height: 26px;
   font-size: 13px;
   color: var(--text-secondary);
+  border-radius: 7px;
+  padding: 0 6px;
+  margin-left: -6px;
 }
 
-.working-line-icon {
+.turn-container-header:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.turn-container-icon {
   color: var(--text-faint);
 }
 
-.working-line-duration {
+.turn-container-sep {
+  color: var(--text-faint);
+}
+
+.turn-container-duration {
   font-variant-numeric: tabular-nums;
+}
+
+.turn-container-chevron {
+  margin-left: 1px;
+  color: var(--text-faint);
+  transition: transform 0.15s ease;
+}
+
+.turn-container-body {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.skill-marker-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 0 6px;
+  margin-left: -6px;
+}
+
+.skill-marker-icon {
+  color: var(--text-faint);
+}
+
+.skill-marker-name {
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .spin {

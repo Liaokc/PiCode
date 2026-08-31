@@ -1,13 +1,11 @@
-import { Fragment, useEffect, useRef, useState, type JSX } from 'react'
-import type { AssistantEntry, ChatEntry, ChatState } from '../../../shared/chat-reducer'
+import { Fragment, useEffect, useMemo, useRef, useState, type JSX } from 'react'
+import type { ChatState } from '../../../shared/chat-reducer'
+import { groupTurns, type TurnGroup } from '../../../shared/turn-collapse'
 import type { SessionTreePayload } from '../../../shared/sessions/types'
 import Composer, { type ComposerApi } from './Composer'
-import ApprovalPill from './ApprovalPill'
 import TreePanel from './TreePanel'
 import Markdown from './Markdown'
-import ThinkingRow from './ThinkingRow'
-import ToolCard from './ToolCard'
-import WorkingLine from './WorkingLine'
+import TurnContainer from './TurnContainer'
 import MessageActions from './MessageActions'
 import Tooltip from './Tooltip'
 import { ChevronDownIcon, PencilIcon } from './icons'
@@ -25,6 +23,8 @@ interface ChatViewProps {
   onCloseTree: () => void
   /** Deep-link a file-arg tool call into the Preview tab (ticket 07). */
   onOpenFile?: (path: string) => void
+  /** Fold/unfold one turn's work container (ticket 23). */
+  onToggleTurn: (turnId: string) => void
   /** Composer commands + the chat slices the composer menus render. */
   composerApi: ComposerApi
   onApprove: (toolCallId: string, remember: boolean) => void
@@ -49,6 +49,7 @@ export default function ChatView({
   onFork,
   onCloseTree,
   onOpenFile,
+  onToggleTurn,
   composerApi,
   onApprove,
   onDeny
@@ -57,6 +58,8 @@ export default function ChatView({
   const lastLength = useRef(0)
   const [renaming, setRenaming] = useState(false)
   const [draft, setDraft] = useState('')
+  /** Ticket 23: the flat transcript grouped into per-turn fold containers. */
+  const turns = useMemo(() => groupTurns(chat.entries, chat.agentRunning), [chat.entries, chat.agentRunning])
 
   // Builtin `/name` requests focus the rename editor (window event from App).
   useEffect(() => {
@@ -68,7 +71,8 @@ export default function ChatView({
     return () => window.removeEventListener(RENAME_EVENT, focusRename)
   }, [tree?.name])
 
-  // Keep the newest content in view while streaming.
+  // Keep the newest content in view while streaming (and when a fold toggle
+  // changes the transcript height while the reader sits at the bottom).
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
@@ -76,7 +80,7 @@ export default function ChatView({
     lastLength.current = chat.entries.length
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 160
     if (grew || nearBottom) el.scrollTop = el.scrollHeight
-  }, [chat.entries])
+  }, [chat.entries, chat.expandedTurns])
 
   function startRename(): void {
     setDraft(tree?.name ?? '')
@@ -91,7 +95,6 @@ export default function ChatView({
 
   const title = tree?.name ?? chat.session?.cwd.split('/').pop() ?? 'Session'
   const noSession = chat.session === null
-  const lastUserIndex = findLastUserIndex(chat.entries)
 
   return (
     <div className="chat-view">
@@ -134,13 +137,22 @@ export default function ChatView({
           {chat.entries.length === 0 && !chat.agentRunning && (
             <div className="chat-empty-hint">No messages yet — describe what you need below.</div>
           )}
-          {chat.entries.map((entry, index) => (
-            <Fragment key={entry.id}>
-              {renderEntry(entry, { onOpenFile, onFork, onApprove, onDeny })}
-              {chat.agentRunning && index === lastUserIndex && <WorkingLine />}
+          {turns.map((turn) => (
+            <Fragment key={turn.id}>
+              {turn.user !== null && <div className="msg msg-user">{turn.userText}</div>}
+              {(turn.hasWork || turn.live) && (
+                <TurnContainer
+                  turn={turn}
+                  open={chat.expandedTurns.has(turn.id) || turn.pendingApproval}
+                  onToggle={() => onToggleTurn(turn.id)}
+                  onOpenFile={onOpenFile}
+                  onApprove={onApprove}
+                  onDeny={onDeny}
+                />
+              )}
+              {turn.answer.length > 0 && <AnswerBlock turn={turn} onFork={onFork} />}
             </Fragment>
           ))}
-          {chat.agentRunning && lastUserIndex === -1 && <WorkingLine />}
         </div>
       </div>
       <div className="chat-dock">
@@ -164,55 +176,22 @@ export default function ChatView({
 /** Window event the App dispatches for the `/name` builtin. */
 export const RENAME_EVENT = 'picode:rename-session'
 
-function findLastUserIndex(entries: ChatEntry[]): number {
-  for (let i = entries.length - 1; i >= 0; i--) {
-    if (entries[i].role === 'user') return i
-  }
-  return -1
-}
-
-function renderEntry(
-  entry: ChatEntry,
-  actions: {
-    onOpenFile?: (path: string) => void
-    onFork: (entryId: string) => void
-    onApprove: (id: string, remember: boolean) => void
-    onDeny: (id: string, reason: string) => void
-  }
-): JSX.Element {
-  switch (entry.role) {
-    case 'user':
-      return <div className="msg msg-user">{entry.text}</div>
-    case 'assistant':
-      return <AssistantBlock entry={entry} onFork={actions.onFork} />
-    case 'tool':
-      return <ToolCard entry={entry} onOpenFile={actions.onOpenFile} />
-    case 'approval':
-      return <ApprovalPill entry={entry} onApprove={actions.onApprove} onDeny={actions.onDeny} />
-  }
-}
-
-function AssistantBlock({ entry, onFork }: { entry: AssistantEntry; onFork: (entryId: string) => void }): JSX.Element {
-  const fullText = entry.parts
-    .filter((p) => p.kind === 'text')
-    .map((p) => p.text)
-    .join('\n\n')
-  const lastPart = entry.parts[entry.parts.length - 1]
+/** The turn's answer: assistant text parts, streamed live, action row when
+ * settled (ticket 23 — the text that stays visible around the fold). The
+ * fork anchor (ticket 16) is the turn's LAST text-bearing entry: forking
+ * there keeps every entry of the answer's turn on the branched path. */
+function AnswerBlock({ turn, onFork }: { turn: TurnGroup; onFork: (entryId: string) => void }): JSX.Element {
+  const fullText = turn.answer.map((p) => p.text).join('\n\n')
+  const forkAnchor = turn.answer[turn.answer.length - 1]?.entryId
 
   return (
     <div className="msg msg-assistant">
-      {entry.parts.map((part, index) =>
-        part.kind === 'thinking' ? (
-          <ThinkingRow key={index} part={part} />
-        ) : (
-          <Markdown
-            key={index}
-            text={part.text}
-            streaming={entry.streaming && part === lastPart && lastPart.kind === 'text'}
-          />
-        )
+      {turn.answer.map((part) => (
+        <Markdown key={part.key} text={part.text} streaming={part.streaming} />
+      ))}
+      {!turn.live && fullText.trim() !== '' && (
+        <MessageActions text={fullText} entryId={forkAnchor} onFork={onFork} />
       )}
-      {!entry.streaming && fullText.trim() !== '' && <MessageActions text={fullText} entryId={entry.id} onFork={onFork} />}
     </div>
   )
 }
