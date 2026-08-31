@@ -6,7 +6,7 @@
 
 **Blocked by:** 14（折叠容器覆盖回放的结构化条目，需其载荷先行）。
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 - [ ] 每回合独立一行「Working · Ns ›」；落定默认收起；live 流式展开实时滚动、落定自动收起
 - [ ] 错误回合保持展开；展开态不跨切换记忆（resume 全收起）
@@ -18,3 +18,4 @@
 ## Comments
 
 - 2026-08-31 (/to-tickets 重切): 自票 14 拆出（grilling R2-Q1/Q2 定稿行为；取证 `z-turn-collapse-expanded.png`）。
+- 2026-08-31 (implement session, t23-turn-collapse): 已实现并提交 **c13df16**，未自行 merge —— 请操作者运行 `bash scripts/merge-ticket.sh 23`。要点：`src/shared/turn-collapse.ts` 纯分组（回合边界=用户消息；work=思考/工具/审批，answer=文本在外）；折叠状态机入 chat-reducer（`expandedTurns`/`erroredTurns` + `toggle_turn_expanded` UI 动作，Seam-1 表驱动 22 测试：边界/收起/错误例外/记忆/手动开合）；live 展开→落定自动收起（Working→Worked，秒数冻结；回放回合无时长优雅降级同票 14 先例）；`turn_error` 保持展开、host_exit 照常收起（banner 讲失败故事）；history_loaded/session_created 清空记忆（resume 全收起）；技能标记行（WandIcon「Skill X」）+ 用户气泡剥离 `<skill>` 注入前言（ZCode 干净气泡取证）；审批药丸在容器内且 pending 强制展开（门永不藏起）。验证：vitest 508 全绿、typecheck/lint 全绿、`npm run smoke` ALL GREEN（6 阶段；resume 阶段新增折叠门：先断言容器全收起→展开→行级断言）；visual harness 更新（1-midrun 展开/2-settled 收起/3-expanded/3b 回放全收起/3c 展开含技能行，对照 `.scratch/compare/z-turn-collapse-expanded.png` 与 `/tmp/cur.png` 通过）。code-review 双轴：0 硬违规；4 条判断项（气泡剥离前言、Working/Worked 措辞依 ZCode 实拍、流式中手动收起生效、host_exit 收起）供验收复核。
