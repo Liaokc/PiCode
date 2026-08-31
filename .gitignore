@@ -8,3 +8,4 @@ release/
 # ZCode session bookkeeping
 .zcode/
 .worktrees/
+release/
