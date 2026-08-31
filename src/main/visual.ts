@@ -7,6 +7,10 @@
  *   1. mid-run  — working line ticking, streaming markdown with caret, tool card running
  *   2. settled  — done tool card, per-message actions row with timestamp
  *   3. expanded — thinking row and tool card unfolded
+ *   3b/3c      — ticket 14: a resumed session replayed from structured history
+ *                items — collapsed thinking rows + settled tool cards by default
+ *                (3b), and expanded for audit (3c); the failed card is in the
+ *                error style, replayed thinking carries no ticking duration.
  *
  * PNGs land in $PICODE_VISUAL_OUT (default: <cwd>/.scratch/visual/). Not part
  * of `npm test`; a human compares them against the reference screenshots.
@@ -72,6 +76,8 @@ async function capture(win: BrowserWindow, name: string): Promise<string> {
       users: document.querySelectorAll('.msg-user').length,
       assistants: document.querySelectorAll('.msg-assistant').length,
       tools: document.querySelectorAll('.tool-card').length,
+      thinkingOpen: document.querySelectorAll('.thinking-row-open').length,
+      toolOpen: document.querySelectorAll('.tool-card-open').length,
       working: document.querySelectorAll('.working-line').length,
       banner: document.querySelectorAll('.error-banner').length,
       previewMd: document.querySelectorAll('.preview-md').length,
@@ -234,6 +240,132 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       )
       await sleep(500)
       await capture(win, '3-expanded')
+
+      // ---- ticket 14: structured replay — a RESUMED agent-dense session.
+      // A session_created(resumed) + history_loaded with structured items
+      // must render isomorphic to the live transcript above: collapsed
+      // thinking rows (no ticking duration — the file does not record it),
+      // settled tool cards, the failed one in the error style.
+      emit({
+        type: 'session_created',
+        sessionId: 'visual-replay',
+        cwd: terminalVisualEnabled() ? tmpdir() : '/Users/dev/projects/api-server',
+        model: 'claude-opus-4-5',
+        resumed: true
+      })
+      emit({
+        type: 'history_loaded',
+        items: [
+          {
+            role: 'user',
+            id: 'rv-e1',
+            text: 'Investigate the flaky auth test and fix it.',
+            timestamp: '2026-08-31T09:12:04.100Z',
+            skillName: null
+          },
+          {
+            role: 'assistant',
+            id: 'rv-a1',
+            timestamp: '2026-08-31T09:12:11.480Z',
+            text: '',
+            parts: [
+              {
+                kind: 'thinking',
+                text:
+                  'The flake smells like a shared fixture: auth.test.ts reuses the token cache across cases, so run order decides the outcome. Reproduce with --sequence.shuffle first, then isolate the fixture.',
+                durationMs: null
+              }
+            ]
+          },
+          {
+            role: 'tool',
+            id: 'call_rv_1',
+            timestamp: '2026-08-31T09:12:13.020Z',
+            name: 'bash',
+            args: { command: 'npx vitest run tests/auth.test.ts --sequence.shuffle' },
+            output:
+              'FAIL  tests/auth.test.ts > refreshes an expired token (run 2/3)\nAssertionError: expected 401 to equal 200\n\nTest Files  1 failed (1)\n     Tests  2 passed | 1 failed (3)',
+            isError: false
+          },
+          {
+            role: 'assistant',
+            id: 'rv-a2',
+            timestamp: '2026-08-31T09:13:02.770Z',
+            text: 'Reproduced on the shuffled run — the token cache leaks between cases. `beforeEach` now resets it, and the suite passes three shuffled runs in a row.',
+            parts: [
+              {
+                kind: 'thinking',
+                text: 'The shuffled run failed exactly the cache-dependent case. Fix: reset the shared TokenCache in beforeEach, re-run three times to confirm.',
+                durationMs: null
+              },
+              {
+                kind: 'text',
+                text: 'Reproduced on the shuffled run — the token cache leaks between cases. `beforeEach` now resets it, and the suite passes three shuffled runs in a row.'
+              }
+            ]
+          },
+          {
+            role: 'user',
+            id: 'rv-e3',
+            text: '<skill name="fix-flake" location="~/.pi/agent/skills/fix-flake/SKILL.md">\nDetect and stabilize flaky tests.\n</skill>\n\nNow deploy it to staging.',
+            timestamp: '2026-08-31T09:14:40.010Z',
+            skillName: 'fix-flake'
+          },
+          {
+            role: 'assistant',
+            id: 'rv-a3',
+            timestamp: '2026-08-31T09:14:47.390Z',
+            text: '',
+            parts: [
+              {
+                kind: 'thinking',
+                text: 'Deploy runs the release script; staging needs STAGING_TOKEN from the environment — check before pushing.',
+                durationMs: null
+              }
+            ]
+          },
+          {
+            role: 'tool',
+            id: 'call_rv_2',
+            timestamp: '2026-08-31T09:14:49.150Z',
+            name: 'bash',
+            args: { command: 'npm run deploy --stage=staging' },
+            output: 'Error: STAGING_TOKEN is not set — deployment aborted before any artifact was pushed.',
+            isError: true
+          }
+        ]
+      })
+      await sleep(700)
+      // Replay gates: collapsed by default, one error card, degraded durations.
+      const replaySig = (await win.webContents.executeJavaScript(
+        `(() => ({
+          thinkingRows: document.querySelectorAll('.thinking-row').length,
+          thinkingOpen: document.querySelectorAll('.thinking-row-open').length,
+          thinkingDurations: document.querySelectorAll('.thinking-row .thinking-row-duration').length,
+          tools: document.querySelectorAll('.tool-card').length,
+          toolErrors: document.querySelectorAll('.tool-card-error').length
+        }))()`
+      )) as { thinkingRows: number; thinkingOpen: number; thinkingDurations: number; tools: number; toolErrors: number }
+      if (replaySig.thinkingRows < 3 || replaySig.tools < 2 || replaySig.toolErrors !== 1) {
+        throw new Error(`visual 3b-replayed: unexpected replay signature ${JSON.stringify(replaySig)}`)
+      }
+      if (replaySig.thinkingOpen !== 0 || replaySig.thinkingDurations !== 0) {
+        throw new Error(`visual 3b-replayed: replay must render collapsed and duration-less ${JSON.stringify(replaySig)}`)
+      }
+      console.log(`VISUAL probe 3b-replayed: ${JSON.stringify(replaySig)}`)
+      await capture(win, '3b-replayed')
+
+      // Expanded variant: every replayed row unfolded for the audit check.
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const rows = document.querySelectorAll('.thinking-row-header, .tool-card-header')
+          rows.forEach((el) => (el instanceof HTMLElement ? el.click() : undefined))
+          document.querySelector('.thinking-row')?.scrollIntoView({ block: 'start' })
+          return rows.length
+        })()`
+      )
+      await sleep(500)
+      await capture(win, '3c-replayed-expanded')
 
       // ---- ticket 05: composer menus, approval pill, queue panel ----
       emit({
