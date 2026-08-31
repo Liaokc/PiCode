@@ -6,7 +6,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 - [ ] history 载荷结构化：思考（含 host 实测时长，缺失时优雅降级）、工具（参数 + 终态输出 + 错误态）、技能标记；契约纯增量（既有消息不改名不删除）
 - [ ] 回放渲染：折叠态思考行 + 终态工具卡（错误红色样式），与 live 转录同构
@@ -20,3 +20,4 @@
 
 - 2026-08-31 (requirements intake): 原票含四缺口（Follow 转正 / 回放结构 / Follow 渲染 / 回合折叠），取证证据：`.scratch/compare/pi-follow-raw-markdown.png`、`.scratch/compare/z-settled-message-actions.png`。
 - 2026-08-31 (/to-tickets 重切): 本票 = 结构化回放；**回合折叠 → 票 23**；**Follow 升级 + 转正 → 票 24**。
+- 2026-08-31 (implement session, t14-replay-structure): 已实现并提交 **d388dac**，未自行 merge —— 请操作者运行 `bash scripts/merge-ticket.sh 14`。要点：`TranscriptItem` 升级为结构化 union（user+skillName / assistant+parts / tool+终态输出与错误态），契约纯增量（消息名与既有字段全保留）；reducer 把回放条目映射到与 live 完全相同的 entry 形状；`sniffSkillName` 同时覆盖回放与 live `user_message`；思考时长缺失时 ThinkingRow 优雅降级（无秒数段）。验证：vitest 474 全绿（含表驱动 6 类条目回放 + 幂等重放）、typecheck/lint 全绿、`npm run smoke` ALL GREEN（interop 方向 1 对真实 TUI 会话解析出 136 条结构化条目含 89 条工具项；electron 冒烟 resume 后 DOM 断言折叠思考行 / 终态工具卡 / 恰 1 张红色错误卡 / 无秒数标记）。code-review（Standards+Spec 双轴）：0 硬违规、0 spec 缺口、2 条 minor 判断项（派生 text 字段、settle/回放共享终态文案已抽取常量）。
