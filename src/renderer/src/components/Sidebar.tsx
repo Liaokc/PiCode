@@ -7,6 +7,7 @@ import {
   relativeTime
 } from '../../../shared/sessions/group'
 import { useNowTick } from './use-now'
+import Tooltip from './Tooltip'
 import {
   ChevronDownIcon,
   ExpandArrowsIcon,
@@ -86,7 +87,6 @@ function TaskItem({
         setDraft(session.name ?? session.title)
         setRenaming(true)
       }}
-      title={`${session.title} — ${session.cwd}`}
     >
       {isSessionLive(session, now) && state !== 'active' && (
         <span className="sb-live-dot" aria-label="Running in another window" />
@@ -109,18 +109,19 @@ function TaskItem({
       ) : (
         <span className="sb-task-title">{session.title}</span>
       )}
-      <button
-        type="button"
-        className={pinned ? 'sb-pin-btn sb-pin-on' : 'sb-pin-btn'}
-        aria-label={pinned ? 'Unpin task' : 'Pin task'}
-        title={pinned ? 'Unpin' : 'Pin'}
-        onClick={(e) => {
-          e.stopPropagation()
-          onTogglePin()
-        }}
-      >
-        <PinIcon size={13} />
-      </button>
+      <Tooltip label={pinned ? 'Unpin' : 'Pin'}>
+        <button
+          type="button"
+          className={pinned ? 'sb-pin-btn sb-pin-on' : 'sb-pin-btn'}
+          aria-label={pinned ? 'Unpin task' : 'Pin task'}
+          onClick={(e) => {
+            e.stopPropagation()
+            onTogglePin()
+          }}
+        >
+          <PinIcon size={13} />
+        </button>
+      </Tooltip>
       <span className="sb-task-time">{relativeTime(session.modifiedAt, now)}</span>
     </div>
   )
@@ -203,9 +204,11 @@ export default function Sidebar({
               }}
             />
             {query !== '' && (
-              <button type="button" className="sb-icon-btn" aria-label="Clear filter" onClick={() => setQuery('')}>
-                ×
-              </button>
+              <Tooltip label="Clear filter">
+                <button type="button" className="sb-icon-btn" aria-label="Clear filter" onClick={() => setQuery('')}>
+                  ×
+                </button>
+              </Tooltip>
             )}
           </div>
         )}
@@ -236,17 +239,19 @@ export default function Sidebar({
           </button>
         </div>
         <div className="sb-tool-icons">
-          <button
-            type="button"
-            className={filterOpen ? 'sb-icon-btn sb-pill-active' : 'sb-icon-btn'}
-            aria-label="Filter tasks"
-            onClick={() => {
-              setFilterOpen((v) => !v)
-              requestAnimationFrame(() => filterRef.current?.focus())
-            }}
-          >
-            <FilterIcon />
-          </button>
+          <Tooltip label="Filter tasks">
+            <button
+              type="button"
+              className={filterOpen ? 'sb-icon-btn sb-pill-active' : 'sb-icon-btn'}
+              aria-label="Filter tasks"
+              onClick={() => {
+                setFilterOpen((v) => !v)
+                requestAnimationFrame(() => filterRef.current?.focus())
+              }}
+            >
+              <FilterIcon />
+            </button>
+          </Tooltip>
           <button type="button" className="sb-icon-btn" aria-label="Deleted tasks">
             <TrashIcon />
           </button>
@@ -333,12 +338,12 @@ export default function Sidebar({
         <span className="sb-avatar" aria-hidden="true">
           P
         </span>
-        <span className="sb-account-name" title={activeSession ? `${activeSession.title} — ${activeSession.cwd}` : undefined}>
-          {activeSession ? activeSession.title : 'No active session'}
-        </span>
-        <button type="button" className="sb-icon-btn" aria-label="Settings" onClick={onOpenSettings}>
-          <GearIcon />
-        </button>
+        <span className="sb-account-name">{activeSession ? activeSession.title : 'No active session'}</span>
+        <Tooltip label="Settings">
+          <button type="button" className="sb-icon-btn" aria-label="Settings" onClick={onOpenSettings}>
+            <GearIcon />
+          </button>
+        </Tooltip>
       </footer>
     </aside>
   )

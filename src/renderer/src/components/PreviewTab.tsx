@@ -6,6 +6,7 @@ import { initialPreviewTabState, previewTabReducer } from '../../../shared/previ
 import type { PreviewFileEntry } from '../../../shared/preview/types'
 import CodeView from './CodeView'
 import Markdown from './Markdown'
+import Tooltip from './Tooltip'
 import { ChevronRightIcon, CodeIcon, EyeIcon, FileTextIcon, FolderIcon, WrapTextIcon } from './icons'
 
 /**
@@ -99,16 +100,17 @@ export default function PreviewTab({ target, onNavigate }: PreviewTabProps): JSX
           ))}
         </div>
         {sourceShowing && (
-          <button
-            type="button"
-            className={state.wrapLines ? 'tb-btn preview-wrap-toggle preview-wrap-toggle-on' : 'tb-btn preview-wrap-toggle'}
-            aria-pressed={state.wrapLines}
-            aria-label={state.wrapLines ? 'Switch to truncated lines' : 'Switch to wrapped lines'}
-            title={state.wrapLines ? 'Lines: wrapped — click to truncate' : 'Lines: truncated — click to wrap'}
-            onClick={() => dispatch({ type: 'toggle-wrap-lines' })}
-          >
-            <WrapTextIcon size={14} />
-          </button>
+          <Tooltip label="Wrap lines">
+            <button
+              type="button"
+              className={state.wrapLines ? 'tb-btn preview-wrap-toggle preview-wrap-toggle-on' : 'tb-btn preview-wrap-toggle'}
+              aria-pressed={state.wrapLines}
+              aria-label={state.wrapLines ? 'Switch to truncated lines' : 'Switch to wrapped lines'}
+              onClick={() => dispatch({ type: 'toggle-wrap-lines' })}
+            >
+              <WrapTextIcon size={14} />
+            </button>
+          </Tooltip>
         )}
         {state.status === 'ready' &&
           state.result !== null &&

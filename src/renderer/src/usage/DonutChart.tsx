@@ -49,7 +49,6 @@ export default function DonutChart({ slices, onPick }: DonutChartProps): JSX.Ele
             type="button"
             className="donut-legend-row"
             onClick={() => onPick(slice.model)}
-            title={`Show sessions using ${slice.model}`}
           >
             <span className="legend-dot" style={{ background: arcs.find((a) => a.model === slice.model)?.color }} />
             <span className="donut-legend-name">

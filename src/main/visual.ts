@@ -11,6 +11,7 @@
  *                items — collapsed thinking rows + settled tool cards by default
  *                (3b), and expanded for audit (3c); the failed card is in the
  *                error style, replayed thinking carries no ticking duration.
+ *   8. tooltip  — unified tooltip bubble on the sidebar filter button (ticket 22)
  *
  * PNGs land in $PICODE_VISUAL_OUT (default: <cwd>/.scratch/visual/). Not part
  * of `npm test`; a human compares them against the reference screenshots.
@@ -590,6 +591,30 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       )
       await sleep(700)
       await capture(win, '7-review-deeplink')
+
+      // ---- ticket 22: unified tooltip on the sidebar filter button ----
+      // The tooltip host listens to delegated mouseover; dispatch a bubbling
+      // one on the trigger, wait out the 400ms dwell, then capture the bubble.
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const filter = document.querySelector('button[aria-label="Filter tasks"]')
+          if (!(filter instanceof HTMLElement)) return false
+          filter.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+          return true
+        })()`
+      )
+      await sleep(700)
+      await captureMenu(win, '8-tooltip-filter', { bubble: '.tooltip-bubble' })
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const filter = document.querySelector('button[aria-label="Filter tasks"]')
+          if (filter instanceof HTMLElement) {
+            filter.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }))
+          }
+          return true
+        })()`
+      )
+      await sleep(200)
 
       console.log('VISUAL done')
       app.exit(0)

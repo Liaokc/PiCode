@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, type JSX } from 'react'
 import type { SessionTreeNodeDTO, SessionTreePayload } from '../../../shared/sessions/types'
+import Tooltip from './Tooltip'
 import { GitBranchIcon } from './icons'
 
 interface TreePanelProps {
@@ -94,23 +95,23 @@ export default function TreePanel({ tree, onNavigate, onFork, onClose }: TreePan
             }
             style={{ paddingLeft: 10 + depth * 16 }}
             onClick={() => onNavigate(node.id)}
-            title="Continue from this entry"
           >
             <span className="tree-row-label">
               {node.label ?? (node.kind === 'session-info' && node.name ? node.name : null) ?? node.preview}
             </span>
-            <button
-              type="button"
-              className="tree-fork-btn"
-              aria-label="Fork a new session from this entry"
-              title="Fork from here"
-              onClick={(e) => {
-                e.stopPropagation()
-                onFork(node.id)
-              }}
-            >
-              <GitBranchIcon size={12} />
-            </button>
+            <Tooltip label="Fork from here">
+              <button
+                type="button"
+                className="tree-fork-btn"
+                aria-label="Fork a new session from this entry"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onFork(node.id)
+                }}
+              >
+                <GitBranchIcon size={12} />
+              </button>
+            </Tooltip>
             {node.id === tree?.leafId && <span className="tree-leaf-tag">current</span>}
           </div>
         ))}

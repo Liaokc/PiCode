@@ -21,6 +21,7 @@ import ErrorBanner from './components/ErrorBanner'
 import SettingsWindow from './components/SettingsWindow'
 import TaskSearchPalette from './components/TaskSearchPalette'
 import ToastStack from './components/ToastStack'
+import { TooltipHost } from './components/Tooltip'
 import type { ComposerApi } from './components/Composer'
 
 const PIN_STORAGE_KEY = 'picode.pinned-sessions'
@@ -534,6 +535,7 @@ export default function App(): JSX.Element {
           onSetPreferences={handleSetPreferences}
           onRefreshAuth={handleRefreshAuth}
         />
+        <TooltipHost />
       </div>
     )
   }
@@ -613,6 +615,7 @@ export default function App(): JSX.Element {
         />
       )}
       <ToastStack toasts={toasts} onDismiss={dismissToastById} />
+      <TooltipHost />
     </div>
   )
 }

@@ -5,6 +5,7 @@ import type { PreviewSelection } from '../../../shared/preview/view-model'
 import ReviewTab from './ReviewTab'
 import PreviewTab from './PreviewTab'
 import TerminalTab from './TerminalTab'
+import Tooltip from './Tooltip'
 import { ChevronDownIcon, CloseIcon, CodeIcon, FileTextIcon, PlusIcon, TerminalSquareIcon } from './icons'
 
 const TAB_ICONS: Record<SidePanelTab, JSX.Element> = {
@@ -93,9 +94,11 @@ export default function SidePanel({
       />
 
       <div className="panel-header">
-        <button type="button" className="tb-btn" aria-label="Collapse side panel" onClick={onCollapse}>
-          <ChevronDownIcon />
-        </button>
+        <Tooltip label="Collapse side panel">
+          <button type="button" className="tb-btn" aria-label="Collapse side panel" onClick={onCollapse}>
+            <ChevronDownIcon />
+          </button>
+        </Tooltip>
         <div className="panel-tabs" role="tablist" aria-label="Side panel tabs">
           {panel.openTabs.map((tab) => {
             const active = tab === panel.activeTab && !showPicker
@@ -111,25 +114,29 @@ export default function SidePanel({
                   {TAB_ICONS[tab]}
                   <span>{TAB_LABELS[tab]}</span>
                 </button>
-                <button
-                  type="button"
-                  className="panel-tab-close"
-                  aria-label={`Close ${TAB_LABELS[tab]} tab`}
-                  onClick={() => dispatch({ type: 'close-tab', tab })}
-                >
-                  <CloseIcon size={11} />
-                </button>
+                <Tooltip label={`Close ${TAB_LABELS[tab]} tab`}>
+                  <button
+                    type="button"
+                    className="panel-tab-close"
+                    aria-label={`Close ${TAB_LABELS[tab]} tab`}
+                    onClick={() => dispatch({ type: 'close-tab', tab })}
+                  >
+                    <CloseIcon size={11} />
+                  </button>
+                </Tooltip>
               </div>
             )
           })}
-          <button
-            type="button"
-            className="tb-btn panel-add-tab"
-            aria-label="Add a tab"
-            onClick={() => dispatch({ type: 'show-picker' })}
-          >
-            <PlusIcon size={14} />
-          </button>
+          <Tooltip label="Add a tab">
+            <button
+              type="button"
+              className="tb-btn panel-add-tab"
+              aria-label="Add a tab"
+              onClick={() => dispatch({ type: 'show-picker' })}
+            >
+              <PlusIcon size={14} />
+            </button>
+          </Tooltip>
         </div>
       </div>
 

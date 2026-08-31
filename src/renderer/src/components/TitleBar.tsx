@@ -1,6 +1,7 @@
 import type { Dispatch, JSX } from 'react'
 import type { ShellUiAction, ShellUiState } from '../../../shared/layout-model'
 import { ChevronLeftIcon, ChevronRightIcon, HelpCircleIcon, PanelLeftIcon, PanelRightIcon } from './icons'
+import Tooltip from './Tooltip'
 import { APP_NAME } from '../../../shared/brand'
 
 interface TitleBarProps {
@@ -20,14 +21,16 @@ export default function TitleBar({ ui, dispatch }: TitleBarProps): JSX.Element {
     <header className="titlebar">
       {!settings && (
         <div className="titlebar-cluster titlebar-cluster-left">
-          <button
-            type="button"
-            className="tb-btn"
-            aria-label={ui.sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
-            onClick={() => dispatch({ type: 'toggle-sidebar' })}
-          >
-            <PanelLeftIcon />
-          </button>
+          <Tooltip label={ui.sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}>
+            <button
+              type="button"
+              className="tb-btn"
+              aria-label={ui.sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+              onClick={() => dispatch({ type: 'toggle-sidebar' })}
+            >
+              <PanelLeftIcon />
+            </button>
+          </Tooltip>
           <button type="button" className="tb-btn tb-btn-disabled" aria-label="Back" disabled>
             <ChevronLeftIcon />
           </button>
@@ -40,18 +43,22 @@ export default function TitleBar({ ui, dispatch }: TitleBarProps): JSX.Element {
       <div className="titlebar-title">{settings ? 'Settings' : APP_NAME}</div>
 
       <div className="titlebar-cluster titlebar-cluster-right">
-        <button type="button" className="tb-btn" aria-label="Help">
-          <HelpCircleIcon />
-        </button>
-        {!settings && (
-          <button
-            type="button"
-            className="tb-btn"
-            aria-label={ui.sidePanelOpen ? 'Close side panel' : 'Open side panel'}
-            onClick={() => dispatch({ type: 'toggle-side-panel' })}
-          >
-            <PanelRightIcon />
+        <Tooltip label="Help">
+          <button type="button" className="tb-btn" aria-label="Help">
+            <HelpCircleIcon />
           </button>
+        </Tooltip>
+        {!settings && (
+          <Tooltip label={ui.sidePanelOpen ? 'Close side panel' : 'Open side panel'}>
+            <button
+              type="button"
+              className="tb-btn"
+              aria-label={ui.sidePanelOpen ? 'Close side panel' : 'Open side panel'}
+              onClick={() => dispatch({ type: 'toggle-side-panel' })}
+            >
+              <PanelRightIcon />
+            </button>
+          </Tooltip>
         )}
       </div>
     </header>
