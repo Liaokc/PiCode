@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] reset 提交落盘：移除旧实现残留，仓库处于"全新起点 + 文档资产"状态
 - [x] `npm run dev` 启动无报错窗口，typecheck/lint/test 脚本可用且绿
@@ -21,3 +21,5 @@
 - Shell per screenshots 02/03: frameless window with traffic lights over the sidebar + centered title; nav rail + task-list skeleton; empty state (watermark π, time-aware English greeting, static composer card, quick-start chips); collapsible side panel whose picker offers Review/Terminal only (browser out of scope). ASK/init chips hidden per spec. Both compositions captured & compared during dev (`VITE_PICODE_FAKE_HOUR`, `VITE_PICODE_PANEL_OPEN` QA hooks added for deterministic screenshot runs).
 - Two-axis code review run post-implementation; findings fixed in d94085b (brand-string dedup, dead icon removal, debug-log trim, d.ts lint carve-out). Reviewer notes carried to human visual gate: sidebar intentionally omits Automation/Plugin-marketplace rows (features not in PiCode scope); watermark is an original π mark rather than ZCode's glyph. Final-capture screenshot came back black (display asleep); composition had been verified pre-refactor and fixes touched no render path.
 
+
+- 2026-08-28 (merge session): **resolved（追溯关账）** — merged into main as `1e2043f`（首批合并，早于 tracker 关账惯例成型，Status 漏更）。其后续验收证据已由 12 终验票全量覆盖（九屏比对归档、六阶段 smoke ALL GREEN）。
