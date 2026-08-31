@@ -41,17 +41,17 @@ export default function FollowView({ title, items, live, onStop }: FollowViewPro
       <div ref={scrollRef} className="chat-scroll">
         <div className="chat-thread">
           {items.length === 0 && <div className="follow-empty">Waiting for activity in this session…</div>}
-          {items.map((item) =>
-            item.role === 'user' ? (
-              <div key={item.id} className="msg msg-user">
-                {item.text}
-              </div>
-            ) : (
-              <div key={item.id} className="msg msg-assistant">
+          {items.map((item) => {
+            // Ticket 14 payload: tool items and thinking parts ride along for
+            // the Follow renderer upgrade (ticket 24); until then this view
+            // stays text-only exactly as before.
+            if (item.role === 'tool') return null
+            return (
+              <div key={item.id} className={item.role === 'user' ? 'msg msg-user' : 'msg msg-assistant'}>
                 {item.text}
               </div>
             )
-          )}
+          })}
         </div>
       </div>
     </div>

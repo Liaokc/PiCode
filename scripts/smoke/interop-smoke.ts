@@ -33,6 +33,7 @@ import { rmSync } from 'node:fs'
 import * as pi from '@earendil-works/pi-coding-agent'
 import { SessionIndexService } from '../../src/main/sessions/index-service.ts'
 import { summarizeSession } from '../../src/shared/sessions/parse.ts'
+import type { SessionSummary, TranscriptItem } from '../../src/shared/sessions/types.ts'
 import { foldSessionFile } from '../../src/shared/usage/aggregate.ts'
 import type { HostToParent } from '../../src/shared/contract.ts'
 
@@ -78,22 +79,53 @@ function noopIndex(): SessionIndexService {
 async function tuiToPicode(): Promise<void> {
   const all = await noopIndex().list()
   if (all.length === 0) fail('the shared session store is empty — run the pi TUI once, then re-run this smoke')
-  const newest = all.find((s) => s.messageCount > 0)
-  if (!newest) fail(`no session with messages among ${all.length} (newest first)`)
-  log('index lists TUI store', `${all.length} session(s); newest: ${newest.title.slice(0, 48)}`)
+  // Ticket 14: the structured-replay assertions need a real agent session —
+  // scan newest-first for one whose file carries toolResult entries.
+  let newest: SessionSummary | null = null
+  let newestText = ''
+  for (const candidate of all) {
+    if (candidate.messageCount === 0) continue
+    const text = await readFile(candidate.file, 'utf8').catch(() => '')
+    if (text.includes('"toolResult"')) {
+      newest = candidate
+      newestText = text
+      break
+    }
+  }
+  if (!newest) fail(`no session with tool traffic among ${all.length} (newest first) — run an agent task in the TUI once`)
+  log('index lists TUI store', `${all.length} session(s); newest with tools: ${newest.title.slice(0, 48)}`)
 
-  const text = await readFile(newest.file, 'utf8')
-  const summary = summarizeSession(text, newest.file, newest.modifiedAt)
+  const summary = summarizeSession(newestText, newest.file, newest.modifiedAt)
   if (!summary) fail('summarizeSession returned null for a file the index lists')
   if (summary.messageCount !== newest.messageCount) {
     fail(`summarizeSession counts ${summary.messageCount} messages, index counted ${newest.messageCount}`)
   }
   if (!summary.title) fail('TUI session summary has no display title')
 
-  // The renderer's transcript path must yield the conversation.
+  // The renderer's transcript path must yield the STRUCTURED conversation
+  // (ticket 14): thinking parts, settled tool items, sniffed skill markers.
   const snapshot = await noopIndex().followSnapshot(newest.file)
   if (!snapshot || snapshot.items.length === 0) fail('transcript extraction returned no items for the TUI session')
-  log('transcript parses', `${snapshot.items.length} item(s), first role=${snapshot.items[0].role}`)
+  const items = snapshot.items
+  const assistants = items.filter((i) => i.role === 'assistant')
+  const toolItems = items.filter((i) => i.role === 'tool')
+  const userItems = items.filter((i) => i.role === 'user')
+  if (!assistants.every((i) => Array.isArray(i.parts))) fail('assistant items must carry structured parts (ticket 14)')
+  if (!userItems.every((i) => 'skillName' in i)) fail('user items must carry the skill marker field (ticket 14)')
+  if (toolItems.length === 0) {
+    fail('structured replay produced no tool items for a session whose file contains toolResult entries')
+  }
+  const firstTool = toolItems[0]
+  if (!firstTool.name || typeof firstTool.output !== 'string') {
+    fail('tool items must carry a name and a final output (ticket 14)')
+  }
+  if (newestText.includes('"thinking"') && !assistants.some((i) => i.parts.some((p) => p.kind === 'thinking'))) {
+    fail('assistant items must carry thinking parts for a session whose file contains thinking blocks (ticket 14)')
+  }
+  log(
+    'structured transcript parses',
+    `${items.length} item(s): ${userItems.length} user, ${assistants.length} assistant, ${toolItems.length} tool`
+  )
 
   // The SDK's own manager (the TUI's loader) must open the same file.
   const manager = pi.SessionManager.open(newest.file)
@@ -199,7 +231,19 @@ async function picodeToTui(): Promise<void> {
       if (!Array.isArray(history.items) || history.items.length < 2) {
         fail(`resumed history has ${history.items?.length} items, want ≥2`)
       }
-      log('resume ok', `${history.items.length} history item(s) replayed`)
+      // Ticket 14: the replay payload is structured — user items carry the
+      // skill marker field, assistant items carry ordered parts.
+      const replayUser = history.items.find(
+        (i): i is Extract<TranscriptItem, { role: 'user' }> => i.role === 'user' && i.text.includes(MARKER)
+      )
+      if (!replayUser || replayUser.skillName !== null) {
+        fail('replayed user items must carry the structured skillName field (ticket 14)')
+      }
+      const replayAssistants = history.items.filter((i) => i.role === 'assistant')
+      if (replayAssistants.length === 0 || !replayAssistants.every((i) => Array.isArray(i.parts) && i.parts.length > 0)) {
+        fail('replayed assistant items must carry non-empty structured parts (ticket 14)')
+      }
+      log('resume ok', `${history.items.length} structured history item(s) replayed`)
       resumed.send({ type: 'shutdown' })
       const exitCode: number = await new Promise((resolve) => resumed.on('exit', (code) => resolve(code ?? -1)))
       if (exitCode !== 0) fail(`resume host exit code ${exitCode}, want 0`)

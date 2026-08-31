@@ -9,14 +9,15 @@
  * entry the SDK's `SessionManager.appendSessionInfo` would persist, chained to
  * the current leaf (the last entry in file order — Pi's own restore rule).
  */
-import type { SessionSummary, SessionTreeNodeDTO, TranscriptItem } from './types.ts'
+import type { SessionSummary, SessionTreeNodeDTO, TranscriptAssistantPart, TranscriptItem } from './types.ts'
+import { toolResultText, UNFINISHED_TOOL_OUTPUT } from '../tool-format.ts'
 
 export interface RawSessionEntry {
   type: string
   id: string
   parentId: string | null
   timestamp: string
-  message?: { role?: unknown; content?: unknown }
+  message?: { [key: string]: unknown; role?: unknown; content?: unknown; toolCallId?: unknown; isError?: unknown }
   name?: unknown
   label?: unknown
   targetId?: unknown
@@ -140,18 +141,116 @@ export function summarizeSession(fileText: string, file: string, modifiedAt: num
 }
 
 /**
- * Transcript items for resume replay and the Live Follow view: user and
- * assistant text in file order, dropping thinking/tool traffic.
+ * Skill name sniffed from a user message's injected `<skill name="…">`
+ * prologue — the exact shape the Pi SDK prepends when a turn is driven by a
+ * skill (Pi has no structured skill events, so this text sniff is the marker).
+ * Anchored at the message start: a mid-message mention is not an invocation.
+ */
+const SKILL_INJECTION = /^<skill name="([^"]+)" location="[^"]*">/
+
+export function sniffSkillName(text: string): string | null {
+  return SKILL_INJECTION.exec(text)?.[1] ?? null
+}
+
+interface ToolCallPart {
+  id: string
+  name: string
+  args: Record<string, unknown>
+}
+
+/** toolCall parts of an assistant message content value, defensively typed. */
+function toolCalls(content: unknown): ToolCallPart[] {
+  if (!Array.isArray(content)) return []
+  const calls: ToolCallPart[] = []
+  for (const part of content) {
+    if (typeof part !== 'object' || part === null) continue
+    const record = part as Record<string, unknown>
+    if (record['type'] !== 'toolCall') continue
+    const id = typeof record['id'] === 'string' ? record['id'] : ''
+    const name = typeof record['name'] === 'string' ? record['name'] : ''
+    if (id === '' || name === '') continue
+    const args = record['arguments']
+    calls.push({
+      id,
+      name,
+      args: typeof args === 'object' && args !== null && !Array.isArray(args) ? (args as Record<string, unknown>) : {}
+    })
+  }
+  return calls
+}
+
+/** Thinking/text parts of an assistant message content value (ticket 14). */
+function assistantParts(content: unknown): TranscriptAssistantPart[] {
+  if (!Array.isArray(content)) return []
+  const parts: TranscriptAssistantPart[] = []
+  for (const part of content) {
+    if (typeof part !== 'object' || part === null) continue
+    const record = part as Record<string, unknown>
+    if (record['type'] === 'thinking') {
+      const text = record['thinking']
+      if (typeof text === 'string' && text.trim() !== '') parts.push({ kind: 'thinking', text, durationMs: null })
+    } else if (record['type'] === 'text') {
+      const text = record['text']
+      if (typeof text === 'string' && text.trim() !== '') parts.push({ kind: 'text', text })
+    }
+  }
+  return parts
+}
+
+/**
+ * Structured transcript items for resume replay and the Live Follow payload
+ * (ticket 14): user/assistant text plus thinking parts, tool calls with their
+ * FINAL results, and sniffed skill markers — replay stays isomorphic with the
+ * live transcript. toolResult messages are folded into their toolCall's item
+ * (last result wins); a call without any result degrades to the same settled
+ * error card the live path produces. TUI bash-mode and other message roles
+ * stay out of the replay, as do non-message entries.
  */
 export function extractTranscriptItems(entries: RawSessionEntry[]): TranscriptItem[] {
+  // Pass 1: final result per tool call id (a retried call would append a
+  // second result — the last one wins).
+  const results = new Map<string, { output: string; isError: boolean }>()
+  for (const entry of entries) {
+    if (entry.type !== 'message') continue
+    const message = entry.message
+    if (message?.role !== 'toolResult') continue
+    const toolCallId = typeof message.toolCallId === 'string' ? message.toolCallId : ''
+    if (toolCallId === '') continue
+    results.set(toolCallId, { output: toolResultText(message.content), isError: message.isError === true })
+  }
+
   const items: TranscriptItem[] = []
   for (const entry of entries) {
     if (entry.type !== 'message') continue
-    const role = entry.message?.role
-    if (role !== 'user' && role !== 'assistant') continue
-    const text = messageText(entry.message?.content)
-    if (text.trim() === '') continue
-    items.push({ id: entry.id, role, text, timestamp: entry.timestamp })
+    const message = entry.message
+    if (message?.role === 'user') {
+      const text = messageText(message.content)
+      if (text.trim() === '') continue
+      items.push({ role: 'user', id: entry.id, text, timestamp: entry.timestamp, skillName: sniffSkillName(text) })
+    } else if (message?.role === 'assistant') {
+      // Assistant item first (live order: the message closes, then its tool
+      // cards run), then one settled tool item per toolCall part.
+      const parts = assistantParts(message.content)
+      if (parts.length > 0) {
+        const text = parts
+          .filter((part) => part.kind === 'text')
+          .map((part) => part.text)
+          .join('\n\n')
+        items.push({ role: 'assistant', id: entry.id, timestamp: entry.timestamp, text, parts })
+      }
+      for (const call of toolCalls(message.content)) {
+        const result = results.get(call.id)
+        items.push({
+          role: 'tool',
+          id: call.id,
+          timestamp: entry.timestamp,
+          name: call.name,
+          args: call.args,
+          output: result !== undefined ? result.output : UNFINISHED_TOOL_OUTPUT,
+          isError: result !== undefined ? result.isError : true
+        })
+      }
+    }
   }
   return items
 }

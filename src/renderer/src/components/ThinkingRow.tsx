@@ -15,6 +15,10 @@ export default function ThinkingRow({ part }: { part: ThinkingPart }): JSX.Eleme
 
   const seconds =
     part.streaming || part.durationMs === null ? Math.max(tickSeconds, 1) : Math.max(1, Math.round(part.durationMs / 1000))
+  // Duration degrades gracefully (ticket 14): a block that never closed
+  // cleanly — and every replayed block, whose duration the session file does
+  // not record — renders without the ticking seconds, frozen as a plain row.
+  const timed = part.streaming || part.durationMs !== null
   const empty = part.text.trim() === ''
 
   return (
@@ -29,8 +33,12 @@ export default function ThinkingRow({ part }: { part: ThinkingPart }): JSX.Eleme
       >
         <SparklesIcon size={13} className="thinking-row-icon" />
         <span className="thinking-row-label">{part.streaming ? 'Thinking' : 'Thought'}</span>
-        <span className="thinking-row-sep">·</span>
-        <span className="thinking-row-duration">{seconds}s</span>
+        {timed && (
+          <>
+            <span className="thinking-row-sep">·</span>
+            <span className="thinking-row-duration">{seconds}s</span>
+          </>
+        )}
         {!empty && <ChevronDownIcon size={13} className="row-chevron" />}
       </button>
       {open && !empty && <div className="thinking-row-body">{part.text}</div>}

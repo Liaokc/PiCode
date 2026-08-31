@@ -4,9 +4,11 @@ import {
   extractTranscriptItems,
   makeSessionInfoLine,
   parseSessionLines,
+  sniffSkillName,
   summarizeSession
 } from '../../src/shared/sessions/parse.ts'
 import type { RawSessionEntry } from '../../src/shared/sessions/parse.ts'
+import { UNFINISHED_TOOL_OUTPUT } from '../../src/shared/tool-format'
 
 /**
  * Fixtures mirror the real Pi session jsonl shapes (v3, append-only tree
@@ -115,28 +117,176 @@ describe('summarizeSession', () => {
   })
 })
 
-describe('extractTranscriptItems', () => {
-  it('keeps user and assistant text in order, dropping thinking and tool traffic', () => {
+describe('extractTranscriptItems — structured replay (ticket 14)', () => {
+  it('keeps user/assistant text in order and resolves tool calls with their final results', () => {
     const entries: RawSessionEntry[] = [
       { type: 'message', id: 'e1', parentId: null, timestamp: 't1', message: { role: 'user', content: text('plan the work') } },
-      { type: 'message', id: 'e2', parentId: 'e1', timestamp: 't2', message: { role: 'assistant', content: [{ type: 'thinking', thinking: 'hmm' }, { type: 'toolCall', id: 'c1', name: 'bash', arguments: {} }] } },
-      { type: 'message', id: 'e3', parentId: 'e2', timestamp: 't3', message: { role: 'toolResult', content: text('ok') } },
+      {
+        type: 'message',
+        id: 'e2',
+        parentId: 'e1',
+        timestamp: 't2',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'thinking', thinking: 'hmm' }, { type: 'toolCall', id: 'c1', name: 'bash', arguments: { command: 'ls' } }]
+        }
+      },
+      {
+        type: 'message',
+        id: 'e3',
+        parentId: 'e2',
+        timestamp: 't3',
+        message: { role: 'toolResult', toolCallId: 'c1', toolName: 'bash', content: text('ok'), isError: false }
+      },
       { type: 'message', id: 'e4', parentId: 'e3', timestamp: 't4', message: { role: 'assistant', content: text('here is the plan') } }
     ]
     expect(extractTranscriptItems(entries)).toEqual([
-      { id: 'e1', role: 'user', text: 'plan the work', timestamp: 't1' },
-      { id: 'e4', role: 'assistant', text: 'here is the plan', timestamp: 't4' }
+      { role: 'user', id: 'e1', text: 'plan the work', timestamp: 't1', skillName: null },
+      {
+        role: 'assistant',
+        id: 'e2',
+        timestamp: 't2',
+        text: '',
+        parts: [{ kind: 'thinking', text: 'hmm', durationMs: null }]
+      },
+      { role: 'tool', id: 'c1', timestamp: 't2', name: 'bash', args: { command: 'ls' }, output: 'ok', isError: false },
+      {
+        role: 'assistant',
+        id: 'e4',
+        timestamp: 't4',
+        text: 'here is the plan',
+        parts: [{ kind: 'text', text: 'here is the plan' }]
+      }
     ])
   })
 
-  it('handles string content and joins multiple text parts', () => {
+  it('exposes the skill marker sniffed from injected <skill> text on user items', () => {
+    const injected = '<skill name="implement" location="/Users/x/.pi/agent/skills/implement/SKILL.md">\nReferences are relative.\n</skill>\n\nship it'
     const entries: RawSessionEntry[] = [
-      { type: 'message', id: 'e1', parentId: null, timestamp: 't1', message: { role: 'user', content: 'plain string' } },
-      { type: 'message', id: 'e2', parentId: 'e1', timestamp: 't2', message: { role: 'assistant', content: [...(text('a') as unknown[]), ...(text('b') as unknown[])] } }
+      { type: 'message', id: 'e1', parentId: null, timestamp: 't1', message: { role: 'user', content: text(injected) } },
+      { type: 'message', id: 'e2', parentId: 'e1', timestamp: 't2', message: { role: 'user', content: text('plain follow-up') } }
     ]
     const items = extractTranscriptItems(entries)
-    expect(items[0]?.text).toBe('plain string')
-    expect(items[1]?.text).toBe('ab')
+    expect(items[0]).toMatchObject({ role: 'user', skillName: 'implement' })
+    expect(items[1]).toMatchObject({ role: 'user', skillName: null })
+  })
+
+  it('propagates isError and degrades a tool call whose result never reached the file (aborted turn)', () => {
+    const entries: RawSessionEntry[] = [
+      {
+        type: 'message',
+        id: 'e1',
+        parentId: null,
+        timestamp: 't1',
+        message: { role: 'assistant', content: [{ type: 'toolCall', id: 'c-ok', name: 'bash', arguments: { command: 'echo hi' } }] }
+      },
+      { type: 'message', id: 'e2', parentId: 'e1', timestamp: 't2', message: { role: 'toolResult', toolCallId: 'c-ok', content: text('hi'), isError: true } },
+      {
+        type: 'message',
+        id: 'e3',
+        parentId: 'e2',
+        timestamp: 't3',
+        message: { role: 'assistant', content: [{ type: 'toolCall', id: 'c-lost', name: 'read', arguments: { path: '/a' } }] }
+      }
+    ]
+    const items = extractTranscriptItems(entries)
+    expect(items[0]).toMatchObject({ role: 'tool', id: 'c-ok', isError: true, output: 'hi' })
+    expect(items[1]).toEqual({ role: 'tool', id: 'c-lost', timestamp: 't3', name: 'read', args: { path: '/a' }, output: UNFINISHED_TOOL_OUTPUT, isError: true })
+  })
+
+  it('drops toolResult echoes, TUI bash-mode traffic, and non-message entries from the replay', () => {
+    const entries: RawSessionEntry[] = [
+      { type: 'session_info', id: 'i1', parentId: null, timestamp: 't0', name: 'Renamed' },
+      { type: 'message', id: 'e0', parentId: 'i1', timestamp: 't0', message: { role: 'bashExecution', command: 'cd /tmp', output: 'ok' } },
+      { type: 'message', id: 'e1', parentId: 'e0', timestamp: 't1', message: { role: 'user', content: text('go') } },
+      { type: 'message', id: 'orphan', parentId: 'e1', timestamp: 't2', message: { role: 'toolResult', toolCallId: 'ghost', content: text('stray') } },
+      { type: 'message', id: 'e2', parentId: 'orphan', timestamp: 't3', message: { role: 'assistant', content: [] } }
+    ]
+    expect(extractTranscriptItems(entries)).toEqual([
+      { role: 'user', id: 'e1', text: 'go', timestamp: 't1', skillName: null }
+    ])
+  })
+
+  it('handles string content, joins text parts as paragraphs, and keeps content order', () => {
+    const entries: RawSessionEntry[] = [
+      { type: 'message', id: 'e1', parentId: null, timestamp: 't1', message: { role: 'user', content: 'plain string' } },
+      {
+        type: 'message',
+        id: 'e2',
+        parentId: 'e1',
+        timestamp: 't2',
+        message: {
+          role: 'assistant',
+          content: [...(text('a') as unknown[]), ...(text('b') as unknown[]), { type: 'thinking', thinking: 'late thought' }]
+        }
+      }
+    ]
+    const items = extractTranscriptItems(entries)
+    const first = items[0]
+    expect(first?.role).toBe('user')
+    if (first?.role !== 'user') return
+    expect(first.text).toBe('plain string')
+    const assistant = items[1]
+    expect(assistant?.role).toBe('assistant')
+    if (assistant?.role !== 'assistant') return
+    expect(assistant.text).toBe('a\n\nb')
+    expect(assistant.parts).toEqual([
+      { kind: 'text', text: 'a' },
+      { kind: 'text', text: 'b' },
+      { kind: 'thinking', text: 'late thought', durationMs: null }
+    ])
+  })
+
+  it('serializes tool result images through the same text projection as the live path', () => {
+    const entries: RawSessionEntry[] = [
+      {
+        type: 'message',
+        id: 'e1',
+        parentId: null,
+        timestamp: 't1',
+        message: { role: 'assistant', content: [{ type: 'toolCall', id: 'c1', name: 'read', arguments: { path: '/img.png' } }] }
+      },
+      {
+        type: 'message',
+        id: 'e2',
+        parentId: 'e1',
+        timestamp: 't2',
+        message: {
+          role: 'toolResult',
+          toolCallId: 'c1',
+          content: [{ type: 'image', data: 'xxx', mimeType: 'image/png' }, { type: 'text', text: 'rendered' }]
+        }
+      }
+    ]
+    const items = extractTranscriptItems(entries)
+    expect(items[0]).toMatchObject({ role: 'tool', id: 'c1', output: '[image]\nrendered', isError: false })
+  })
+
+  it('never emits items for empty user text or whitespace-only thinking', () => {
+    const entries: RawSessionEntry[] = [
+      { type: 'message', id: 'e1', parentId: null, timestamp: 't1', message: { role: 'user', content: [{ type: 'text', text: '   ' }] } },
+      {
+        type: 'message',
+        id: 'e2',
+        parentId: 'e1',
+        timestamp: 't2',
+        message: { role: 'assistant', content: [{ type: 'thinking', thinking: '', thinkingSignature: 'redacted' }] }
+      }
+    ]
+    expect(extractTranscriptItems(entries)).toEqual([])
+  })
+})
+
+describe('sniffSkillName', () => {
+  it('matches the exact injection shape the Pi SDK prepends to a turn message', () => {
+    const injected = '<skill name="tdd" location="/x/SKILL.md">\nbody\n</skill>\n\nreal prompt'
+    expect(sniffSkillName(injected)).toBe('tdd')
+  })
+
+  it('returns null for skill mentions that are not the injection prologue', () => {
+    expect(sniffSkillName('please use the tdd skill')).toBeNull()
+    expect(sniffSkillName('\n<skill name="tdd" location="/x">\nmid-message')).toBeNull()
+    expect(sniffSkillName('')).toBeNull()
   })
 })
 

@@ -454,6 +454,18 @@ function onEvent(event) {
         fail(`resume should replay the round-A exchange, got ${event.items?.length} items`)
       }
       if (event.items[0]?.role !== 'user') fail('first history item should be the first user message')
+      // Ticket 14: the replay payload is structured — user items carry the
+      // sniffed skill marker field, and the round-A bash call comes back as
+      // a settled tool item with its final output.
+      if (!('skillName' in (event.items[0] ?? {}))) {
+        fail('history items must be structured (user items carry skillName, ticket 14)')
+      }
+      const bashReplayed = event.items.some(
+        (i) => i.role === 'tool' && i.name === 'bash' && typeof i.output === 'string' && i.output.includes('picode_tool_round')
+      )
+      if (!bashReplayed) {
+        fail('resume replay must carry the round-A bash call with its final output (ticket 14)')
+      }
       firstEntryId = event.items[0].id
       // Navigate to the second item (an assistant entry): Pi moves the leaf
       // exactly onto non-user-message targets (user-message targets instead
