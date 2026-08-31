@@ -4,7 +4,7 @@
 
 **Blocked by:** 07 文件预览标签、08 终端 PTY + 桥接、11 设置面板 + 全局打磨。
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] 九张截图逐屏比对记录归档，偏差修复或经所有者明确豁免
 - [x] 冒烟套件单命令跑绿并纳入仓库脚本
@@ -34,3 +34,5 @@
 **4. 文档** — 新增 `README.md`（架构、开发、smoke、视觉 QA、打包）；`AGENTS.md` 增加 Verification & release 命令节。
 
 验收自查：`npm run typecheck` / `npm run lint` / `npm test`（442 通过）全绿；冒烟套件与打包验证见上。**待所有者**：确认 10 项豁免 + merge。
+
+- 2026-08-28 (merge session): **resolved** — merged into main as `7f1b078`（rebase 仅 tracker 预同步相撞，代码零冲突）。验收口径：操作者已验收 = 10 项已归档偏差随验收一并确认；合并后 main 复核 47 文件 / 442 vitest 全绿，`npm run smoke` 六阶段套件 **ALL GREEN**（71s：host contract / pty / usage / interop / electron app）。worktree 与分支已清理。**PiCode 1.0 全部 12 张工单闭环，进入 release 状态**（后续新立 13-model-hygiene 随之解锁）。
