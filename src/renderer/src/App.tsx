@@ -12,6 +12,10 @@ import { resolvePreviewPath } from '../../shared/preview/policy'
 import type { PreviewSelection } from '../../shared/preview/view-model'
 import { initialShellUiState, shellUiReducer } from '../../shared/layout-model'
 import { initialPanelState, panelReducer } from '../../shared/panel-model'
+import { initialDockState, dockReducer } from '../../shared/dock-model'
+import { initialBridgeFeedState, projectBridgeFeed } from '../../shared/bridge/feed'
+import { terminalFontStack } from '../../shared/terminal/font'
+import { detectNerdFont } from './terminal/probe-font'
 import { isSessionLive, decideFollowTakeover, FOLLOW_TAKEOVER_REJECTED_TOAST } from '../../shared/sessions/group'
 import { sessionDefaultsFromPreferences, DEFAULT_PREFERENCES, type AppPreferences } from '../../shared/preferences'
 import { recentProjects, resolveNewTaskProject } from '../../shared/new-task'
@@ -23,6 +27,7 @@ import TitleBar from './components/TitleBar'
 import Sidebar from './components/Sidebar'
 import EmptyState from './components/EmptyState'
 import SidePanel from './components/SidePanel'
+import BottomDock from './components/BottomDock'
 import ChatView, { RENAME_EVENT } from './components/ChatView'
 import { OPEN_MODEL_MENU_EVENT, OPEN_THINKING_MENU_EVENT } from './components/Composer'
 import FollowView from './components/FollowView'
@@ -62,11 +67,12 @@ function loadPinnedIds(): Set<string> {
 }
 
 /**
- * Window shell — three zones matching reference screenshots 02/03:
- * [nav sidebar | main zone | collapsible side panel], launched with the
- * panel collapsed and the sidebar visible. The settings window shell
+ * Window shell — matching reference screenshots 02/03 plus the ticket-18
+ * bottom docks: [nav sidebar | (main zone | collapsible side panel) above
+ * an optionally docked Agent Bridge (⌘B) and terminal (⌘J)], launched with
+ * both docks collapsed and the sidebar visible. The settings window shell
  * (screenshot 09) replaces the workspace zones while open.
- * `VITE_PICODE_PANEL_OPEN=1` expands the panel at startup and
+ * `VITE_PICODE_PANEL_OPEN=1` expands the side panel at startup and
  * `VITE_PICODE_VIEW=settings` opens the settings shell (screenshot-QA hooks).
  *
  * Chat state lives in the session registry (ticket 20, ADR-0006): the
@@ -87,6 +93,18 @@ export default function App(): JSX.Element {
   }))
   /** Panel tab framework state (tabs, picker, dragged width) — ticket 06. */
   const [panel, panelDispatch] = useReducer(panelReducer, undefined, initialPanelState)
+  /** Bottom dock (ticket 18, sibling-panel revision): ONE frame hosting the
+   * terminal (⌘J) and Agent Bridge (⌘B) panels; launches collapsed (18f). */
+  const [dock, dockDispatch] = useReducer(dockReducer, undefined, initialDockState)
+  /** Deep-link highlight: a bash tool card's Bridge chip opens the panel
+   * AND flashes the matching feed entry; cleared after the flash. */
+  const [bridgeHighlight, setBridgeHighlight] = useState<string | null>(null)
+  /** Agent Bridge feed: the SAME Seam-1 stream folded into a read-only
+   * command list. Folded at the App level so hiding the dock or visiting
+   * the settings shell never loses projection history. */
+  const [bridgeFeed, bridgeFeedDispatch] = useReducer(projectBridgeFeed, undefined, () => initialBridgeFeedState)
+  /** Nerd Font probe (starship glyphs): resolved once per window lifetime. */
+  const fontStack = useMemo(() => terminalFontStack(detectNerdFont()), [])
   /** File Preview deep-link target (ticket 07) — token increments force reloads. */
   const [previewTarget, setPreviewTarget] = useState<PreviewSelection | null>(null)
   /** Multi-active sessions (ticket 20): per-session view state + focus. */
@@ -177,6 +195,9 @@ export default function App(): JSX.Element {
     const unsubscribe = window.picode.chat.onHostEvent((event) => {
       // Every event (focused or not) folds into its session's view state.
       registryDispatch(event)
+      // The Bridge feed folds the SAME stream read-only (ticket 18) — all
+      // sessions' bash commands stream to the observation panel.
+      bridgeFeedDispatch(event)
       // App-level side effects key off the event's SESSION SCOPE (ticket 20:
       // wrapped `session_event` from the supervisor, or the legacy unwrapped
       // shape the visual harnesses inject).
@@ -257,10 +278,14 @@ export default function App(): JSX.Element {
    * (active session → last used → recent first); the send creates the
    * session. */
   const handleNewTask = useCallback((): void => {
+    // ⌘N × dock (ticket 17×18 decision, dock-model.dockForNewTask): the
+    // new-task state replaces the MAIN ZONE only — the dock shell stays
+    // exactly as the user arranged it.
+    dockDispatch({ type: 'dock-for-new-task' })
     setNewTaskOpen(true)
   }, [])
 
-  // ---- global keybindings: ⌘N new task, ⌘K task search ----
+  // ---- global keybindings: ⌘N new task, ⌘K task search, ⌘J terminal dock, ⌘B bridge dock ----
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
       if (!event.metaKey || event.shiftKey || event.altKey || event.ctrlKey) return
@@ -270,6 +295,14 @@ export default function App(): JSX.Element {
       } else if (event.key === 'k' || event.key === 'K') {
         event.preventDefault()
         setSearchOpen((open) => !open)
+      } else if (event.key === 'j' || event.key === 'J') {
+        // Toggling a dock panel must never leak into the composer/editor —
+        // preventDefault keeps the keystroke ours (ticket 18b).
+        event.preventDefault()
+        dockDispatch({ type: 'toggle-terminal-panel' })
+      } else if (event.key === 'b' || event.key === 'B') {
+        event.preventDefault()
+        dockDispatch({ type: 'toggle-bridge-panel' })
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -642,6 +675,14 @@ export default function App(): JSX.Element {
     registryDispatch({ type: 'toggle_turn_expanded', turnId })
   }, [])
 
+  /** Tool card → Bridge deep link: open the panel in place and flash the
+   * matching feed entry (the panel clears it after the flash). */
+  const handleShowInBridge = useCallback((toolCallId: string): void => {
+    dockDispatch({ type: 'open-bridge-panel' })
+    setBridgeHighlight(toolCallId)
+  }, [])
+  const clearBridgeHighlight = useCallback(() => setBridgeHighlight(null), [])
+
   const handlePreviewNavigate = useCallback(openPreview, [openPreview])
 
   // Ticket 17: recent workspaces for the project chip's dropdown, and the
@@ -676,7 +717,7 @@ export default function App(): JSX.Element {
   if (ui.view === 'settings') {
     return (
       <div className="app-shell">
-        <TitleBar ui={ui} dispatch={dispatch} />
+        <TitleBar ui={ui} dispatch={dispatch} dispatchDock={dockDispatch} />
         <SettingsWindow
           dispatchShell={dispatch}
           preferences={settings.preferences}
@@ -693,10 +734,14 @@ export default function App(): JSX.Element {
 
   const followedSummary = sessions.find((s) => s.file === followedFile) ?? null
   const followLive = followedSummary !== null && isSessionLive(followedSummary, now)
+  /** Dock tab-strip session label (18c): the FOCUSED session's announced
+   * name from the registry (ticket 20 spine), falling back to the workspace
+   * folder name; null hides the chip when no session is focused. */
+  const sessionLabel = focused?.name ?? chat.session?.cwd.split('/').pop() ?? null
 
   return (
     <div className="app-shell">
-      <TitleBar ui={ui} dispatch={dispatch} />
+      <TitleBar ui={ui} dispatch={dispatch} dispatchDock={dockDispatch} />
       <Sidebar
         open={ui.sidebarOpen}
         sessions={sessions}
@@ -712,65 +757,83 @@ export default function App(): JSX.Element {
         onOpenSearch={() => setSearchOpen(true)}
         onOpenSettings={() => dispatch({ type: 'open-settings' })}
       />
-      <main className="main-zone">
-        {showError && chat.error && (
-          <ErrorBanner
-            error={chat.error}
-            onRebuild={handleRebuild}
-            onPickAnotherFolder={handlePickAnotherFolder}
-            onDismiss={() => registryDispatch({ type: 'dismiss_error' })}
+      <div className="workspace-column">
+        <div className="workspace-row">
+          <main className="main-zone">
+            {showError && chat.error && (
+              <ErrorBanner
+                error={chat.error}
+                onRebuild={handleRebuild}
+                onPickAnotherFolder={handlePickAnotherFolder}
+                onDismiss={() => registryDispatch({ type: 'dismiss_error' })}
+              />
+            )}
+            {showFollow ? (
+              <FollowView
+                title={followedSummary?.title ?? followedFile ?? ''}
+                items={followItems}
+                live={followLive}
+                onStop={stopFollowing}
+                onOpen={() => void handleFollowOpen()}
+              />
+            ) : newTaskOpen || !showTranscript ? (
+              // New-task mode (⌘N, ticket 17) and the boot empty state render the
+              // same chip empty state; ⌘N shows it even while a session is open.
+              <EmptyState
+                creating={creating}
+                defaultProject={newTaskDefaultProject}
+                recentProjects={recentWorkspaceList}
+                onStart={startTask}
+                onOpenFolder={() => window.picode.chat.pickWorkingDirectory()}
+                composerApi={composerApi}
+              />
+            ) : (
+              <ChatView
+                chat={chat}
+                creating={creating}
+                tree={tree}
+                treeOpen={treeOpen}
+                onToggleTree={() => {
+                  if (!treeOpen && chat.session) sendFocused({ type: 'request_tree' })
+                  setTreeOpen((v) => !v)
+                }}
+                onRename={handleRenameActive}
+                onNavigateTree={handleNavigateTree}
+                onFork={handleFork}
+                onCloseTree={() => setTreeOpen(false)}
+                onOpenFile={handleOpenFileFromTranscript}
+                onShowInBridge={handleShowInBridge}
+                onToggleTurn={handleToggleTurn}
+                composerApi={composerApi}
+                onApprove={handleApprove}
+                onDeny={handleDeny}
+              />
+            )}
+          </main>
+          <SidePanel
+            open={ui.sidePanelOpen}
+            panel={panel}
+            dispatch={panelDispatch}
+            onCollapse={() => dispatch({ type: 'close-side-panel' })}
+            workspaceCwd={chat.session?.cwd ?? null}
+            previewTarget={previewTarget}
+            onPreviewNavigate={handlePreviewNavigate}
           />
-        )}
-        {showFollow ? (
-          <FollowView
-            title={followedSummary?.title ?? followedFile ?? ''}
-            items={followItems}
-            live={followLive}
-            onStop={stopFollowing}
-            onOpen={() => void handleFollowOpen()}
-          />
-        ) : newTaskOpen || !showTranscript ? (
-          // New-task mode (⌘N, ticket 17) and the boot empty state render the
-          // same chip empty state; ⌘N shows it even while a session is open.
-          <EmptyState
-            creating={creating}
-            defaultProject={newTaskDefaultProject}
-            recentProjects={recentWorkspaceList}
-            onStart={startTask}
-            onOpenFolder={() => window.picode.chat.pickWorkingDirectory()}
-            composerApi={composerApi}
-          />
-        ) : (
-          <ChatView
-            chat={chat}
-            creating={creating}
-            tree={tree}
-            treeOpen={treeOpen}
-            onToggleTree={() => {
-              if (!treeOpen && chat.session) sendFocused({ type: 'request_tree' })
-              setTreeOpen((v) => !v)
-            }}
-            onRename={handleRenameActive}
-            onNavigateTree={handleNavigateTree}
-            onFork={handleFork}
-            onCloseTree={() => setTreeOpen(false)}
-            onOpenFile={handleOpenFileFromTranscript}
-            onToggleTurn={handleToggleTurn}
-            composerApi={composerApi}
-            onApprove={handleApprove}
-            onDeny={handleDeny}
-          />
-        )}
-      </main>
-      <SidePanel
-        open={ui.sidePanelOpen}
-        panel={panel}
-        dispatch={panelDispatch}
-        onCollapse={() => dispatch({ type: 'close-side-panel' })}
-        workspaceCwd={chat.session?.cwd ?? null}
-        previewTarget={previewTarget}
-        onPreviewNavigate={handlePreviewNavigate}
-      />
+        </div>
+        {/* Bottom dock: ONE frame, sibling panels — terminal (⌘J) and the
+            Agent Bridge feed (⌘B / tool-card deep link) swap in place. */}
+        <BottomDock
+          dock={dock}
+          workspaceCwd={chat.session?.cwd ?? null}
+          sessionLabel={sessionLabel}
+          shellName={window.picode.versions.shell}
+          fontStack={fontStack}
+          bridgeFeed={bridgeFeed}
+          bridgeHighlight={bridgeHighlight}
+          onBridgeHighlightDone={clearBridgeHighlight}
+          dispatch={dockDispatch}
+        />
+      </div>
       {searchOpen && (
         <TaskSearchPalette
           sessions={sessions}

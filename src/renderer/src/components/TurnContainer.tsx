@@ -13,6 +13,8 @@ interface TurnContainerProps {
   onToggle: () => void
   /** Deep-link a file-arg tool call into the Preview tab (ticket 07). */
   onOpenFile?: (path: string) => void
+  /** Deep-link a bash tool call into the Bridge panel (ticket 18 feedback). */
+  onShowInBridge?: (toolCallId: string) => void
   /** Approval-gate handlers — LIVE-PATH ONLY. Surfaces without a gate
    * (Live Follow, ticket 24) omit them; approval entries never occur there
    * (the structured payload carries none), so the pill simply doesn't render. */
@@ -36,6 +38,7 @@ export default function TurnContainer({
   open,
   onToggle,
   onOpenFile,
+  onShowInBridge,
   onApprove,
   onDeny
 }: TurnContainerProps): JSX.Element {
@@ -83,7 +86,7 @@ export default function TurnContainer({
               case 'thinking':
                 return <ThinkingRow key={item.key} part={item.part} />
               case 'tool':
-                return <ToolCard key={item.key} entry={item.entry} onOpenFile={onOpenFile} />
+                return <ToolCard key={item.key} entry={item.entry} onOpenFile={onOpenFile} onShowInBridge={onShowInBridge} />
               case 'approval':
                 // Gate-less surfaces (follow) never carry approval entries;
                 // without handlers there is nothing to render.

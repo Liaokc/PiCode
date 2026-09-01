@@ -1,13 +1,15 @@
 /**
- * Terminal theming (ticket 08): an xterm palette keyed to the app design
- * tokens in app.css. Values are duplicated as literals because xterm needs
- * concrete colors at construction time; keep both sides in sync when the
- * tokens change (dark theme later overrides here + the CSS block together).
+ * Terminal theming (ticket 08, fonts since 18-feedback): an xterm palette
+ * keyed to the app design tokens in app.css. Values are duplicated as
+ * literals because xterm needs concrete colors at construction time; keep
+ * both sides in sync when the tokens change (dark theme later overrides
+ * here + the CSS block together).
+ *
+ * Font stack: resolved once by the app shell (Nerd Font probe for starship
+ * glyphs, shared/terminal/font.ts) and passed in here.
  */
 import type { ITheme, ITerminalOptions } from '@xterm/xterm'
-
-export const TERMINAL_FONT_STACK =
-  "'SF Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, 'Cascadia Mono', 'Courier New', monospace"
+import { DEFAULT_TERMINAL_FONT_STACK } from '../../../shared/terminal/font'
 
 /** Light-theme xterm palette (surfaces/text match --bg-card / --text-primary). */
 export const terminalTheme: ITheme = {
@@ -34,10 +36,10 @@ export const terminalTheme: ITheme = {
   brightWhite: '#f4f4f1'
 }
 
-/** Options shared by the user terminal and the bridge projection pane. */
-export function createTerminalOptions(): ITerminalOptions {
+/** Options shared by the user terminal; the font stack is probe-resolved. */
+export function createTerminalOptions(fontFamily: string = DEFAULT_TERMINAL_FONT_STACK): ITerminalOptions {
   return {
-    fontFamily: TERMINAL_FONT_STACK,
+    fontFamily,
     fontSize: 12,
     lineHeight: 1.3,
     letterSpacing: 0,

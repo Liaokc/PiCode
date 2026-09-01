@@ -63,9 +63,10 @@ describe('shellUiReducer', () => {
 })
 
 describe('side panel tab slots', () => {
-  it('offers exactly the Review and Terminal tabs in the empty picker', () => {
-    // Spec: the side panel hosts Terminal + Review only; browser tabs are out of scope.
-    expect(PANEL_EMPTY_TABS).toEqual(['review', 'terminal'])
+  it('offers only the Review card since the terminal moved to the bottom dock (ticket 18)', () => {
+    // Spec (18e): the picker shrinks to a single Review card; File Preview
+    // stays deep-link-only and the terminal docks at the bottom.
+    expect(PANEL_EMPTY_TABS).toEqual(['review'])
     expect(PANEL_EMPTY_TABS).not.toContain('browser')
   })
 })

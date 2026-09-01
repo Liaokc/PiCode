@@ -179,11 +179,10 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       await sleep(200)
 
       // ---- reference 03: empty state + side-panel placeholder (tab picker)
-      // Skipped in terminal-harness runs: both harnesses share one window, and
-      // the picker click here races the terminal flow's own picker handling.
+      // Skipped in terminal-harness runs: one window serves both harnesses,
+      // and the terminal flow wants the panel state untouched (its dock is
+      // independent of the side panel).
       if (!terminalVisualEnabled()) {
-        // Track whether WE opened the panel: the terminal harness boots with
-        // the panel open (VITE flag) and needs it left open for its own flow.
         const openedByHarness = await win.webContents.executeJavaScript(
           `(() => {
             const toggle = document.querySelector('button[aria-label="Open side panel"]')
@@ -220,10 +219,9 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       emit({
         type: 'session_created',
         sessionId: 'visual-session',
-        // In terminal-harness runs the Terminal tab anchors on the ACTIVE
+        // In terminal-harness runs the terminal dock anchors on the ACTIVE
         // session's cwd — a nonexistent fake path would spawn a shell that
-        // dies instantly. Reuse the terminal harness's real tmpdir (and the
-        // same key, so the workspace never remounts mid-capture).
+        // dies instantly. Reuse the terminal harness's real tmpdir.
         cwd: terminalVisualEnabled() ? tmpdir() : '/Users/dev/projects/api-server',
         model: 'claude-opus-4-5'
       })

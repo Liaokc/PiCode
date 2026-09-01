@@ -22,6 +22,8 @@ interface ChatViewProps {
   onCloseTree: () => void
   /** Deep-link a file-arg tool call into the Preview tab (ticket 07). */
   onOpenFile?: (path: string) => void
+  /** Deep-link a bash tool call into the Bridge panel (ticket 18 feedback). */
+  onShowInBridge?: (toolCallId: string) => void
   /** Fold/unfold one turn's work container (ticket 23). */
   onToggleTurn: (turnId: string) => void
   /** Composer commands + the chat slices the composer menus render. */
@@ -48,6 +50,7 @@ export default function ChatView({
   onFork,
   onCloseTree,
   onOpenFile,
+  onShowInBridge,
   onToggleTurn,
   composerApi,
   onApprove,
@@ -145,6 +148,7 @@ export default function ChatView({
                   open={chat.expandedTurns.has(turn.id) || turn.pendingApproval}
                   onToggle={() => onToggleTurn(turn.id)}
                   onOpenFile={onOpenFile}
+                  onShowInBridge={onShowInBridge}
                   onApprove={onApprove}
                   onDeny={onDeny}
                 />

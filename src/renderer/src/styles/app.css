@@ -491,13 +491,33 @@ kbd {
   transform: rotate(180deg);
 }
 
+/* ---------- workspace column: chat row + bottom terminal dock (ticket 18) ---------- */
+
+/* The column owns the titlebar offset; the dock spans its full width below
+ * the chat row, so ⌘J compresses the chat instead of stealing panel width. */
+.workspace-column {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding-top: var(--titlebar-h);
+}
+
+.workspace-row {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: row;
+}
+
 /* ---------- main zone / empty state ---------- */
 
 .main-zone {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   background: var(--bg-main);
-  padding-top: var(--titlebar-h);
   position: relative;
 }
 
@@ -1899,7 +1919,6 @@ button.heat:hover {
   position: relative;
   background: var(--bg-main);
   border-left: 1px solid var(--border);
-  padding-top: var(--titlebar-h);
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -4351,7 +4370,113 @@ button.preview-crumb:hover {
   display: none;
 }
 
-/* ---------- side panel · terminal tab (ticket 08) ---------- */
+/* ---------- bottom terminal dock (ticket 18) ---------- */
+
+.terminal-dock {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-main);
+  border-top: 1px solid var(--border);
+}
+
+.terminal-dock-resizer {
+  position: absolute;
+  top: -3px;
+  left: 0;
+  right: 0;
+  height: 7px;
+  cursor: row-resize;
+  z-index: 45;
+}
+
+.terminal-dock-resizer:hover,
+.terminal-dock-resizer:active {
+  background: color-mix(in srgb, var(--accent-orange) 28%, transparent);
+}
+
+.terminal-dock-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 8px 0 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-inset);
+  flex-shrink: 0;
+}
+
+.terminal-dock-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.terminal-dock-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 23px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.terminal-dock-session-chip {
+  min-width: 0;
+  max-width: 260px;
+  padding-right: 4px;
+}
+
+.terminal-dock-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-dock-chip-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  color: var(--text-faint);
+}
+
+.terminal-dock-chip-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.terminal-dock-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.terminal-dock-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.terminal-dock-body .terminal-tab {
+  flex: 1;
+  min-width: 0;
+}
+
+.terminal-dock-body .review-empty {
+  flex: 1;
+}
+
+/* ---------- terminal panes (ticket 08; docked at the bottom since 18) ---------- */
 
 .terminal-tab {
   display: flex;
@@ -4361,54 +4486,30 @@ button.preview-crumb:hover {
   background: var(--bg-card);
 }
 
-.terminal-bridge {
-  display: flex;
-  flex-direction: column;
-  height: 42%;
-  min-height: 132px;
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--border);
-}
+/* ---------- bridge dock (ticket 18 feedback): command feed ---------- */
 
-.terminal-bridge-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 30px;
-  padding: 0 12px;
-  flex-shrink: 0;
-  background: var(--bg-inset);
-  border-bottom: 1px solid var(--border);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-}
-
-.terminal-bridge-status {
-  margin-left: auto;
+.bridge-status {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  font-size: 11.5px;
   font-weight: 500;
-  letter-spacing: 0;
-  text-transform: none;
+  color: var(--text-secondary);
 }
 
-.terminal-bridge-dot {
+.bridge-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: var(--text-faint);
 }
 
-.terminal-bridge-dot-running {
+.bridge-dot-running {
   background: var(--accent-orange);
-  animation: terminal-pulse 1.2s ease-in-out infinite;
+  animation: bridge-pulse 1.2s ease-in-out infinite;
 }
 
-@keyframes terminal-pulse {
+@keyframes bridge-pulse {
   0%,
   100% {
     opacity: 1;
@@ -4418,24 +4519,148 @@ button.preview-crumb:hover {
   }
 }
 
-.terminal-bridge-body {
-  position: relative;
+.bridge-feed {
   flex: 1;
   min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--bg-main);
 }
 
-.terminal-bridge-placeholder {
-  position: absolute;
-  inset: 0;
+.bridge-empty {
+  flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 18px;
-  color: var(--text-faint);
+  gap: 6px;
+  text-align: center;
+  padding: 24px 48px;
+}
+
+.bridge-empty-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.bridge-empty-hint {
+  margin: 0;
   font-size: 12.5px;
   line-height: 1.55;
-  text-align: center;
-  pointer-events: none;
+  color: var(--text-faint);
+}
+
+.bridge-entry {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.bridge-entry-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+}
+
+.bridge-entry-mark {
+  flex-shrink: 0;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.bridge-entry-mark-running {
+  color: var(--accent-orange);
+  animation: bridge-pulse 1.2s ease-in-out infinite;
+}
+
+.bridge-entry-mark-done {
+  color: #2e7d43;
+}
+
+.bridge-entry-mark-failed {
+  color: #c44343;
+}
+
+.bridge-entry-mark-interrupted {
+  color: var(--text-faint);
+}
+
+.bridge-entry-cmd {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--text-primary);
+}
+
+.bridge-entry-live {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 10.5px;
+  letter-spacing: 0.03em;
+  color: var(--accent-orange);
+}
+
+.bridge-entry-output {
+  margin: 0;
+  padding: 6px 12px 8px 29px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  background: color-mix(in srgb, var(--bg-inset) 45%, transparent);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
+.bridge-output-omitted {
+  color: var(--text-faint);
+}
+
+/* deep-link flash (tool card → bridge, ticket 18 feedback) */
+
+.bridge-entry-flash {
+  animation: bridge-flash 1.6s ease-out;
+}
+
+@keyframes bridge-flash {
+  0%,
+  45% {
+    background: color-mix(in srgb, var(--accent-orange) 14%, var(--bg-card));
+    border-color: color-mix(in srgb, var(--accent-orange) 55%, var(--border));
+  }
+  100% {
+    background: var(--bg-card);
+    border-color: var(--border);
+  }
+}
+
+/* sibling panels inside the one dock frame (ticket 18 feedback) */
+
+.dock-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.bridge-entry-done .bridge-entry-output {
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.bridge-entry-failed .bridge-entry-output {
+  color: #b04a4a;
 }
 
 .terminal-user {

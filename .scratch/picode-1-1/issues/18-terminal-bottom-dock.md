@@ -48,3 +48,11 @@
   - **快捷键判断：保留 ⌘B**。chip 只能单向跳入 Bridge；⌘J/⌘B 成对保证纯键盘双向切换，且 tooltip 体系（有快捷键只显键帽）与 ⌘J 对称。
   - 验证：typecheck / lint / 555 unit 全绿；`npm run smoke` ALL GREEN；证据刷新 `.scratch/compare/t18-terminal-{1..3}.png` + `t18-bridge-{1,2}.png`（terminal-2 为原位切回证明，bridge-1 为同位置切入）。
   - 合并：请操作者执行 `bash scripts/merge-ticket.sh 18`（包含 ab00463 / 478ed50 / 64053a4 / f79e186）。
+- 2026-09-01 (merge-session directive, t18): 按 17+20 合入后的架构级冲突指示 rebase main（7329a57）并整合，rebase 后 6 提交 + 整合提交 `e64ace3`，仍为 ready-for-human：
+  - **registry 为脊柱**：dock 壳（workspace-column/row + BottomDock）套入 20 的状态派生——标签条会话名 = `focused?.name`；主区 ErrorBanner/ChatView/FollowView/EmptyState 全部保持 main 的 registry-driven props（`registryDispatch dismiss_error`、`sendFocused` session_command、票 17 chip 空态），`setDismissedError` 弃用态未回流。
+  - **feed × registry 缝隙修复（rebase 揭示）**：票 20 后 supervisor 把事件包进 `session_event`，feed 原折叠器收不到 tool 事件（视觉 harness 用 legacy 注入所以截图未暴露）。适配：解包 + 条目携 sessionId + 沉降按会话粒度（wrapped）/全局（legacy）；`session_created` 不再清空 feed——票 20 后台会话继续跑，清空会丢运行中命令；feed 定位为全局活动流 + 200 条容量上限。20 单测。
+  - **⌘N × dock 决策（17×18）**：new-task 只替换主区，dock 壳层不动（开保持开、关保持关、不切面板——避免"看不见的破坏"）。落为 `dock-model.dockForNewTask` 纯函数 + `dock-for-new-task` action + 7 个表驱动测试；将来若要 ⌘N 收起 dock，改这里且测试强迫显式决策。
+  - **SidePanel × Sidebar 并集**：Review 单卡 picker（18e）× 票 20 侧栏（inAppIds/runningIds 状态点）共存，无 TerminalTab 残留。
+  - **全套 visual 帧重拍**：transcript / terminal（dock·面板·深链探针全绿）/ settings / usage / density 五套 exit 0，43 帧；0-empty-state 冲突即此因，已按整合后构图重摄。
+  - **验证**：typecheck / lint / 609 unit 全绿；`npm run smoke` ALL GREEN（并集套件，含票 20 多活动会话场景 + 本票 dock 在 registry 架构下运行）；code-review 双轴无硬违规（Standards：registry 一致性/文案/测试原则 ✓，判定项=拖拽 handler 复用模式；Spec：五项指令逐条落实，无缺失无蔓延）。
+  - 合并：请操作者执行 `bash scripts/merge-ticket.sh 18`（rebase 后线性提交 620ebb9…328f76f + 整合 e64ace3）。

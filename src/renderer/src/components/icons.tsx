@@ -78,6 +78,27 @@ export function PanelRightIcon({ size, className }: IconProps): JSX.Element {
   )
 }
 
+/** Bottom-panel glyph (ticket 18): the terminal dock toggle in the titlebar.
+ * Filled lower band reads as "panel docked at the bottom" (ZCode parity). */
+export function PanelBottomIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <rect x="3" y="4" width="18" height="16" rx="2.5" />
+      <rect x="5.2" y="14" width="13.6" height="3.8" rx="1" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+/** Activity pulse glyph (ticket 18 feedback): the Bridge Dock toggle —
+ * a heartbeat line reads as "agent command activity feed". */
+export function PulseIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M3 12h4.2l2.3-6.2 4.4 12.4 2.3-6.2H21" />
+    </svg>
+  )
+}
+
 export function HelpCircleIcon({ size, className }: IconProps): JSX.Element {
   return (
     <svg {...svgProps(size, className)}>
