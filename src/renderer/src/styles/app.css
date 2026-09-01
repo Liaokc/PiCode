@@ -4313,7 +4313,6 @@ button.preview-crumb:hover {
   border-radius: 12px;
   background: var(--bg-card);
   padding: 10px 12px;
-  max-width: 620px;
   box-shadow: 0 4px 16px rgba(30, 30, 25, 0.07);
 }
 
