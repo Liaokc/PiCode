@@ -57,15 +57,26 @@ cd ~/PiCode && bash scripts/merge-ticket.sh <NN>
 # 若还有其他活跃 worktree，进各自目录执行 git rebase main
 ```
 
-## 波次与最大并发（依据 14–26 的阻塞边）
+## 波次与最大并发（按文件碰撞面分组，同波次热点文件互不相交）
 
-| 波次 | 可同时进行 | 解锁条件 | 并发数 |
-|---|---|---|---|
-| W1 | **14 ∥ 22 ∥ 15** | 无（立即可开） | 3（上限） |
-| W2 | **23 ∥ 24 ∥ 16** | 14 / 22 已合入 | 3 |
-| W3 | **17 ∥ 18 ∥ 20** | （20 建议在 14 后） | 3 |
-| W4 | **19 ∥ 25 ∥ 21** | 17+22 / 20 | 3 |
-| W5 | **26** | 19 已合入 | 1 |
+热点文件：App.tsx 接线 / contract.ts / chat-reducer.ts / Sidebar.tsx。
+同波次不共热点 → 合并预期只剩 app.css 追加级 union（不同区段，几秒解决）。
+
+| 波次 | 可同时进行 | 碰撞面 | 解锁条件 | 并发数 |
+|---|---|---|---|---|
+| W1 | **14 ∥ 22 ∥ 15** | 聊天+host ∥ 侧栏+组件 ∥ 纯css | 无（立即可开） | 3 |
+| W2 | **17 ∥ 23 ∥ 19** | App壳 ∥ 聊天折叠 ∥ 侧栏悬停 | 23←14；19←22 | 3 |
+| W3 | **24 ∥ 18 ∥ 26** | Follow ∥ 壳+终端 ∥ 侧栏文件树 | ←14 / ←22 / ←19 | 3 |
+| W4 | **20 ∥ 16 ∥ 21** | host+App+侧栏点 ∥ 转录块 ∥ host+标题 | ←14 / ←22 | 3 |
+| W5 | **25** | host+侧栏角标 | ←20 | 1 |
+
+注意：24 与 16 都会轻碰 App.tsx 接线区（follow 接线 vs fork 接线，不同区段）——
+预期 union 级；若你连这个都不想碰，把 16 挪到 W4 与 20 同波即可。
+
+**防冲突纪律**（三件事，比波次表更重要）：
+1. 每票合入 main 后，其余活跃 worktree **立即** `git rebase main`——小步频繁同步，冲突永远长不大；
+2. contract / app.css / 侧栏列表 **只增不改**（追加自己的区段，不动别人行）；
+3. 同一波次的票如果发现不得不改同一个热点文件的同一函数——停下来，说明分解有问题，回报操作者。
 
 **铁律**：任一时刻全仓最多一个 worktree 跑 Electron dev / e2e / smoke；其余 worktree 只跑 vitest + typecheck。
 
@@ -154,7 +165,7 @@ Status 改 ready-for-human + Comments 记 sha。
 
 ---
 
-## T16 — 转录块级供面（W2，阻塞：22 已合入）
+## T16 — 转录块级供面（W4，阻塞：22 已合入）
 
 ```bash
 cd ~/PiCode
@@ -209,7 +220,7 @@ Status 改 ready-for-human + Comments 记 sha。
 
 ---
 
-## T24 — Follow 升级 + Open 转正（W2，阻塞：14 已合入）
+## T24 — Follow 升级 + Open 转正（W3，阻塞：14 已合入）
 
 ```bash
 cd ~/PiCode
@@ -235,7 +246,7 @@ Status 改 ready-for-human + Comments 记 sha。
 
 ---
 
-## T17 — 开台芯片（W3，无阻塞；可与 18/20 并行）
+## T17 — 开台芯片（W2，无阻塞）
 
 ```bash
 cd ~/PiCode
@@ -292,7 +303,7 @@ Status 改 ready-for-human + Comments 记 sha。
 
 ---
 
-## T20 — 多活动会话·核心（W3，建议 14 已合入；**先写 ADR-0006**）
+## T20 — 多活动会话·核心（W4，建议 14 已合入；**先写 ADR-0006**）
 
 ```bash
 cd ~/PiCode
@@ -322,7 +333,7 @@ Status 改 ready-for-human + Comments 记 sha。
 
 ---
 
-## T19 — 分组悬停：隐藏 / 新建任务（W4，阻塞：17、22 已合入）
+## T19 — 分组悬停：隐藏 / 新建任务（W2，阻塞：17、22 已合入）
 
 ```bash
 cd ~/PiCode
@@ -403,7 +414,7 @@ Status 改 ready-for-human + Comments 记 sha。
 
 ---
 
-## T26 — 侧栏文件浏览器（W5，阻塞：19 已合入）
+## T26 — 侧栏文件浏览器（W3，阻塞：19 已合入）
 
 ```bash
 cd ~/PiCode
