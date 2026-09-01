@@ -426,7 +426,16 @@ kbd {
   width: 7px;
   flex-shrink: 0;
   display: inline-flex;
-  justify-content: center;
+  justify-content: flex-start;
+}
+
+/* Inside project groups the status dot hangs in the indent gutter: half a
+   folder icon (16px) behind the group header's folder icon (right edge at
+   x=26; dot pulled back to x=18) instead of sitting fully after it. The
+   title edge is untouched — the dot alone steps left. */
+.sb-group .sb-task .sb-dot-slot .sb-run-dot,
+.sb-group .sb-task .sb-dot-slot .sb-live-dot {
+  margin-left: -12px;
 }
 
 /* Running in THIS app (ticket 20): animated accent dot. */
