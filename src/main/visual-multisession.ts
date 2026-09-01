@@ -206,6 +206,36 @@ export function startMultiSessionVisualIfEnabled(getWindow: () => BrowserWindow 
       // A (unfocused, running) = animated; B (other end, fresh mtime) = green;
       // C (focused, idle in-app) = empty slot. All title left edges align.
       await capture(win, 'm1-multi-dots')
+      // Pixel-gate measurements: dot vs group folder icon vs title edges.
+      const geometry = (await win.webContents.executeJavaScript(
+        `JSON.stringify((() => {
+          const groupHeader = document.querySelector('.sb-group-header')
+          const icon = groupHeader ? groupHeader.querySelector('svg') : null
+          const dot = document.querySelector('.sb-run-dot')
+          const row = dot ? dot.closest('.sb-task') : null
+          const title = row ? row.querySelector('.sb-task-title') : null
+          const idleRow = Array.prototype.find.call(
+            document.querySelectorAll('.sb-task'),
+            (r) => r.querySelector('.sb-dot-slot') !== null && r.querySelector('.sb-run-dot') === null && r.querySelector('.sb-live-dot') === null
+          )
+          const idleTitle = idleRow ? idleRow.querySelector('.sb-task-title') : null
+          const iconRect = icon ? icon.getBoundingClientRect() : null
+          const dotRect = dot ? dot.getBoundingClientRect() : null
+          const titleRect = title ? title.getBoundingClientRect() : null
+          const idleTitleRect = idleTitle ? idleTitle.getBoundingClientRect() : null
+          return {
+            iconLeft: iconRect ? iconRect.left : null,
+            iconRight: iconRect ? iconRect.right : null,
+            dotLeft: dotRect ? dotRect.left : null,
+            dotRight: dotRect ? dotRect.right : null,
+            dotRowTitleLeft: titleRect ? titleRect.left : null,
+            idleRowTitleLeft: idleTitleRect ? idleTitleRect.left : null,
+            dotLagBehindIcon: iconRect && dotRect ? iconRect.right - dotRect.left : null,
+            dotToTitleGap: titleRect && dotRect ? titleRect.left - dotRect.right : null
+          }
+        })())`
+      ).catch((err: unknown) => `PROBE-ERROR: ${String(err)}`)) as string
+      console.log(`VISUAL geometry m1 ${geometry}`)
 
       // ---- m2: refocus the background session ----------------------------
       const clicked = await clickRow(win, runningFile)
