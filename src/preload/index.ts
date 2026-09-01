@@ -119,5 +119,22 @@ contextBridge.exposeInMainWorld('picode', {
         ipcRenderer.removeListener('terminal:exit', wrapped)
       }
     }
+  },
+  notifications: {
+    /** Ask main to raise the OS notification for one background session's
+     * approval gate (ticket 25). The renderer only asks for sessions whose
+     * pill is not on screen; the pill itself never auto-resolves. */
+    requestApproval: (notice: { sessionId: string; toolName: string; title: string | null }): void => {
+      ipcRenderer.send('notifications:approval-request', notice)
+    },
+    /** A notification was clicked: main foregrounds the window and asks the
+     * renderer to focus that session (deep link, ticket 25). */
+    onFocusRequest: (listener: (sessionId: string) => void): (() => void) => {
+      const wrapped = (_event: IpcRendererEvent, sessionId: string): void => listener(sessionId)
+      ipcRenderer.on('notifications:focus-session', wrapped)
+      return () => {
+        ipcRenderer.removeListener('notifications:focus-session', wrapped)
+      }
+    }
   }
 })

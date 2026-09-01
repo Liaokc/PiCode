@@ -78,13 +78,29 @@ export function runningSessionIds(state: SessionRegistryState): ReadonlySet<stri
   return ids
 }
 
-export type SidebarDotState = 'run-here' | 'tui-live' | 'idle'
+/** Sessions parked at the approval gate (ticket 25): at least one PENDING
+ * pill in the folded chat state means the host suspended its run to wait for
+ * a human decision. The pill sits in the session — focused or not — and the
+ * sidebar lights its orange badge until a decision resolves it. Nothing here
+ * ever approves on the user's behalf. */
+export function awaitingApprovalSessionIds(state: SessionRegistryState): ReadonlySet<string> {
+  const ids = new Set<string>()
+  for (const s of state.sessions) {
+    if (s.chat.entries.some((e) => e.role === 'approval' && e.state === 'pending')) ids.add(s.id)
+  }
+  return ids
+}
 
-/** Fixed-slot sidebar dot (ticket 20): animated = running in THIS app, green
- * = written by another end (120s rule), empty slot = idle. An in-app session
- * never shows the TUI dot — its mtime freshness is our own doing; concurrent
- * two-end writes stay un-arbitrated (spec, out of scope). */
-export function sidebarDotState(runningHere: boolean, inAppIdle: boolean, liveElsewhere: boolean): SidebarDotState {
+export type SidebarDotState = 'run-here' | 'awaiting-approval' | 'tui-live' | 'idle'
+
+/** Fixed-slot sidebar dot (ticket 20 + 25): orange = parked at the approval
+ * gate (wins over everything — the run is suspended, not visibly working),
+ * animated = running in THIS app, green = written by another end (120s
+ * rule), empty slot = idle. An in-app session never shows the TUI dot — its
+ * mtime freshness is our own doing; concurrent two-end writes stay
+ * un-arbitrated (spec, out of scope). */
+export function sidebarDotState(awaitingApproval: boolean, runningHere: boolean, inAppIdle: boolean, liveElsewhere: boolean): SidebarDotState {
+  if (awaitingApproval) return 'awaiting-approval'
   if (runningHere) return 'run-here'
   if (inAppIdle) return 'idle'
   if (liveElsewhere) return 'tui-live'

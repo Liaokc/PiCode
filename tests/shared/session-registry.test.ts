@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  awaitingApprovalSessionIds,
   focusedSession,
   initialRegistryState,
   registryReducer,
@@ -99,17 +100,97 @@ describe('registryReducer — session registration + focus routing', () => {
   })
 })
 
-describe('sidebarDotState — fixed-slot dot derivation (ticket 20)', () => {
+describe('sidebarDotState — fixed-slot dot derivation (ticket 20 + 25)', () => {
   it.each([
-    // runningHere | inAppIdle | liveElsewhere | expected
-    [true, false, false, 'run-here'],
-    [true, false, true, 'run-here'],
-    [false, true, true, 'idle'], // an in-app session never shows the TUI green dot
-    [false, true, false, 'idle'],
-    [false, false, true, 'tui-live'],
-    [false, false, false, 'idle']
-  ])('running=%p inAppIdle=%p liveElsewhere=%p → %p', (runningHere, inAppIdle, liveElsewhere, expected) => {
-    expect(sidebarDotState(runningHere as boolean, inAppIdle as boolean, liveElsewhere as boolean)).toBe(expected)
+    // awaitingApproval | runningHere | inAppIdle | liveElsewhere | expected
+    [false, true, false, false, 'run-here'],
+    [false, true, false, true, 'run-here'],
+    [false, false, true, true, 'idle'], // an in-app session never shows the TUI green dot
+    [false, false, true, false, 'idle'],
+    [false, false, false, true, 'tui-live'],
+    [false, false, false, false, 'idle'],
+    // Ticket 25: the gate parked a pill — the orange badge wins over every
+    // other state (the run is suspended at the gate, not visibly working).
+    [true, true, false, false, 'awaiting-approval'],
+    [true, true, false, true, 'awaiting-approval'],
+    [true, false, true, false, 'awaiting-approval'],
+    [true, false, false, true, 'awaiting-approval'],
+    [true, false, false, false, 'awaiting-approval']
+  ])('awaiting=%p running=%p inAppIdle=%p liveElsewhere=%p → %p', (awaiting, runningHere, inAppIdle, liveElsewhere, expected) => {
+    expect(sidebarDotState(awaiting as boolean, runningHere as boolean, inAppIdle as boolean, liveElsewhere as boolean)).toBe(expected)
+  })
+})
+
+describe('awaitingApprovalSessionIds — ticket 25 background approval badge', () => {
+  function approved(id: string): HostToParent {
+    return scoped(id, { type: 'approval_resolved', toolCallId: 'tc-1', approved: true, reason: null })
+  }
+
+  function denied(id: string): HostToParent {
+    return scoped(id, { type: 'approval_resolved', toolCallId: 'tc-1', approved: false, reason: 'no' })
+  }
+
+  it('lists sessions whose folded chat state holds a pending pill', () => {
+    const state = run(
+      initialRegistryState(),
+      CREATED_A,
+      scoped('s-a', { type: 'approval_required', toolCallId: 'tc-1', toolName: 'bash', args: {} })
+    )
+    expect([...awaitingApprovalSessionIds(state)]).toEqual(['s-a'])
+  })
+
+  it('keeps the pill pending while the session is in the background (never auto-resolved)', () => {
+    // The gate fires in s-a while the view has moved on to s-b: the pill
+    // parks in s-a's registry state and the badge stays lit until a human
+    // decides — nothing in the fold path resolves it on the session's behalf.
+    const state = run(
+      initialRegistryState(),
+      CREATED_A,
+      scoped('s-a', { type: 'user_message', text: 'go' }),
+      scoped('s-a', { type: 'agent_start' }),
+      CREATED_B,
+      scoped('s-a', { type: 'approval_required', toolCallId: 'tc-1', toolName: 'bash', args: {} })
+    )
+    expect(state.focusedId).toBe('s-b')
+    expect([...awaitingApprovalSessionIds(state)]).toEqual(['s-a'])
+    const a = state.sessions.find((s) => s.id === 's-a')
+    expect(a?.chat.entries.some((e) => e.role === 'approval' && e.state === 'pending')).toBe(true)
+    // The run is suspended at the gate, not finished.
+    expect(a?.chat.agentRunning).toBe(true)
+  })
+
+  it('clears once the pill resolves — approve or deny (both are human decisions)', () => {
+    const base = run(
+      initialRegistryState(),
+      CREATED_A,
+      scoped('s-a', { type: 'approval_required', toolCallId: 'tc-1', toolName: 'bash', args: {} })
+    )
+    expect([...awaitingApprovalSessionIds(run(base, approved('s-a')))]).toEqual([])
+    expect([...awaitingApprovalSessionIds(run(base, denied('s-a')))]).toEqual([])
+  })
+
+  it('clears on settle — an agent_end denies undecided pills (suspension ended)', () => {
+    const state = run(
+      initialRegistryState(),
+      CREATED_A,
+      scoped('s-a', { type: 'approval_required', toolCallId: 'tc-1', toolName: 'bash', args: {} }),
+      scoped('s-a', { type: 'agent_end' })
+    )
+    expect([...awaitingApprovalSessionIds(state)]).toEqual([])
+  })
+
+  it('is per session — another session\'s gate never lights this row', () => {
+    const state = run(
+      initialRegistryState(),
+      CREATED_A,
+      CREATED_B,
+      scoped('s-b', { type: 'approval_required', toolCallId: 'tc-1', toolName: 'bash', args: {} })
+    )
+    expect([...awaitingApprovalSessionIds(state)]).toEqual(['s-b'])
+  })
+
+  it('is empty for a fresh registry (idle world costs nothing)', () => {
+    expect(awaitingApprovalSessionIds(initialRegistryState()).size).toBe(0)
   })
 })
 

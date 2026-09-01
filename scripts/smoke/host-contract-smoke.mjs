@@ -95,6 +95,7 @@ const seen = {
   tool_end: 0,
   thinking_delta: 0,
   approval_required: 0,
+  denyAck: false,
   queue_update: 0
 }
 let toolRoundSucceeded = false
@@ -241,8 +242,21 @@ function onEvent(event) {
       if (event.toolName !== 'bash') fail(`gate should ask about bash, asked about ${event.toolName}`)
       if (!event.toolCallId) fail('approval_required missing toolCallId')
       console.log('SMOKE approval_required ok — approving with remember')
-      step = 'A tools 2'
+      step = 'A approve ack 2'
       child.send({ type: 'approve_tool', toolCallId: event.toolCallId, remember: true })
+      return
+    }
+    case 'A approve ack 2': {
+      // Ticket 25: the host acks the human decision (approval_resolved)
+      // before the tool runs — the transcript story must not rely on the
+      // pill converting in place.
+      if (event.type === 'approval_resolved') {
+        if (event.approved !== true) fail('approval_resolved should carry approved=true after approve_tool')
+        console.log('SMOKE approval_resolved ok (approved)')
+        step = 'A tools 2'
+        return
+      }
+      if (event.type === 'tool_start') fail('tool ran before the approval_resolved ack')
       return
     }
     case 'A tools 2': {
@@ -356,8 +370,16 @@ function onEvent(event) {
     }
     case 'A deny 5': {
       if (event.type === 'approval_required') fail('a new pill after the denial (terminate hint ignored)')
+      if (event.type === 'approval_resolved') {
+        if (event.approved !== false) fail('approval_resolved should carry approved=false after deny_tool')
+        if (event.reason !== 'PICODE_DENY_REASON: not today') fail(`deny reason did not round-trip: ${event.reason}`)
+        seen.denyAck = true
+        console.log('SMOKE approval_resolved ok (denied, reason round-tripped)')
+        return
+      }
       if (event.type === 'agent_end') {
         seen.agent_end++
+        if (!seen.denyAck) fail('deny round ended without an approval_resolved ack')
         console.log('SMOKE deny-with-reason ok — turn stopped')
         console.log('SMOKE queue round: steer + follow-up + clear')
         step = 'A agent_start 6'

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type JSX } from 'react'
 import {
+  awaitingApprovalSessionIds,
   focusedSession,
   initialRegistryState,
   liveSessionIds,
@@ -113,6 +114,13 @@ export default function App(): JSX.Element {
   const focused = focusedSession(registry)
   const chat = focused?.chat ?? initialChatState()
   const tree = focused?.tree ?? null
+  /** The id of the session whose view is on screen (commands target it). */
+  const focusedId = registry.focusedId
+  /** Latest focus/registry without re-creating the callbacks below. */
+  const focusedIdRef = useRef<string | null>(null)
+  focusedIdRef.current = focusedId
+  const registryRef = useRef(registry)
+  registryRef.current = registry
   /** True between create/resume and its terminal event. */
   const [creating, setCreating] = useState(false)
   /** New-task empty state (ticket 17): ⌘N swaps the main zone to the chip
@@ -253,6 +261,21 @@ export default function App(): JSX.Element {
           // host re-announces via session_created); just refresh the index.
           refreshSessions()
           break
+        case 'approval_required': {
+          // Ticket 25: a gate hit in a BACKGROUND session must reach the
+          // user even while another view is on screen — the pill parks in
+          // that session's registry state, the sidebar lights its orange
+          // badge, and the OS notification offers the jump (a click never
+          // approves anything). The focused session's pill is already on
+          // screen, so it never notifies.
+          const req = event.type === 'session_event' ? event.event : event
+          if (req.type === 'approval_required' && scopeId !== null && scopeId !== focusedIdRef.current) {
+            const session = registryRef.current.sessions.find((s) => s.id === scopeId)
+            const title = session?.name ?? session?.cwd?.split('/').pop() ?? null
+            window.picode.notifications.requestApproval({ sessionId: scopeId, toolName: req.toolName, title })
+          }
+          break
+        }
         case 'host_notice': {
           const notice = event.type === 'session_event' ? event.event : event
           if (notice.type === 'host_notice') notify(notice.message, notice.level)
@@ -277,6 +300,20 @@ export default function App(): JSX.Element {
     document.documentElement.dataset.chatSubscribed = 'true'
     return unsubscribe
   }, [refreshSessions, notify])
+
+  // System-notification deep link (ticket 25): clicking a background
+  // session's approval notification foregrounds the window and mounts THAT
+  // session's view — a pure focus change (ticket 20 registry semantics),
+  // same routing as a sidebar click on a live in-app session. The pill
+  // waits inside the session; the click never approves anything.
+  useEffect(() => {
+    return window.picode.notifications.onFocusRequest((sessionId) => {
+      registryDispatch({ type: 'focus_session', sessionId })
+      setNewTaskOpen(false)
+      setTreeOpen(false)
+      stopFollowing()
+    })
+  }, [])
 
   /** create_session carrying the settings-window defaults (ticket 11). */
   const sendCreateSession = useCallback((cwd: string): void => {
@@ -340,11 +377,6 @@ export default function App(): JSX.Element {
   // a periodic re-render keeps the derived live state from going stale.
   const now = useNowTick(30_000)
 
-  /** The id of the session whose view is on screen (commands target it). */
-  const focusedId = registry.focusedId
-  /** Latest focus without re-creating the callbacks below. */
-  const focusedIdRef = useRef<string | null>(null)
-  focusedIdRef.current = focusedId
   /** Target one session-scoped command at the focused session's host
    * (ticket 20 registry semantics). No focus → nothing to target. */
   const sendFocused = useCallback(
@@ -538,9 +570,11 @@ export default function App(): JSX.Element {
   // ---- sidebar interactions ----
 
   /** Registry projection for the sidebar: which sessions have a live host in
-   * this app (click = focus, never respawn) and which are running (dot). */
+   * this app (click = focus, never respawn), which are running (animated
+   * dot), and which are parked at the approval gate (orange badge, ticket 25). */
   const inAppIds = liveSessionIds(registry)
   const runningIds = runningSessionIds(registry)
+  const awaitingIds = awaitingApprovalSessionIds(registry)
 
   /** Hidden project groups (ticket 19) — a read-only Set projection of the
    * persisted preference; the pure filter consumes it in the Sidebar. */
@@ -791,6 +825,7 @@ export default function App(): JSX.Element {
         pinnedIds={pinnedIds}
         inAppIds={inAppIds}
         runningIds={runningIds}
+        awaitingIds={awaitingIds}
         onTogglePin={handleTogglePin}
         onOpenSession={handleOpenSession}
         onRenameSession={handleRenameSession}

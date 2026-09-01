@@ -451,6 +451,16 @@ kbd {
   flex-shrink: 0;
 }
 
+/* Parked at the approval gate (ticket 25): static orange badge — the run is
+   suspended waiting for a human decision; the pill lives in the session. */
+.sb-await-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-orange);
+  flex-shrink: 0;
+}
+
 @keyframes live-pulse {
   0%,
   100% {
