@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useReducer, useRef, useState, type JSX } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type JSX } from 'react'
 import { chatReducer, initialChatState, type ChatError } from '../../shared/chat-reducer'
 import { resolvePreviewPath } from '../../shared/preview/policy'
 import type { PreviewSelection } from '../../shared/preview/view-model'
 import { initialShellUiState, shellUiReducer } from '../../shared/layout-model'
 import { initialPanelState, panelReducer } from '../../shared/panel-model'
 import { isSessionLive, decideFollowTakeover, FOLLOW_TAKEOVER_REJECTED_TOAST } from '../../shared/sessions/group'
-import { sessionDefaultsFromPreferences, type AppPreferences } from '../../shared/preferences'
+import { sessionDefaultsFromPreferences, DEFAULT_PREFERENCES, type AppPreferences } from '../../shared/preferences'
+import { recentProjects, resolveNewTaskProject } from '../../shared/new-task'
 import { toastReducer, type ToastLevel, type ToastList } from '../../shared/toast'
 import type { AccessMode, ImageAttachment, ThinkingLevel } from '../../shared/contract'
 import type { AuthProbeReport } from '../../shared/auth-status'
@@ -35,7 +36,7 @@ interface SettingsSnapshotState {
 }
 
 const INITIAL_SETTINGS_STATE: SettingsSnapshotState = {
-  preferences: { defaultModel: null, defaultThinkingLevel: null, newTaskDirectory: 'ask' },
+  preferences: DEFAULT_PREFERENCES,
   lastUsedDirectory: null,
   auth: null,
   authScanning: false
@@ -79,6 +80,9 @@ export default function App(): JSX.Element {
   const [chat, chatDispatch] = useReducer(chatReducer, undefined, initialChatState)
   /** True between create/resume and its terminal event. */
   const [creating, setCreating] = useState(false)
+  /** New-task empty state (ticket 17): ⌘N swaps the main zone to the chip
+   * empty state even while a session is open; no system folder dialog. */
+  const [newTaskOpen, setNewTaskOpen] = useState(false)
   /** Agent errors are dismissible; host/session errors keep their actions. */
   const [dismissedError, setDismissedError] = useState<ChatError | null>(null)
   /** First prompt typed before a folder exists; sent once the session is ready. */
@@ -161,6 +165,7 @@ export default function App(): JSX.Element {
       switch (event.type) {
         case 'session_created': {
           setCreating(false)
+          setNewTaskOpen(false)
           setFollowedFile(null)
           window.picode.sessions.unfollow()
           setTree(null)
@@ -217,28 +222,19 @@ export default function App(): JSX.Element {
     return unsubscribe
   }, [refreshSessions, notify])
 
-  /** Working directory for a new task: the startup preference reuses the last
-   * folder when set (falling back to the picker when there is none yet). */
-  const resolveNewTaskDirectory = useCallback(async (): Promise<string | null> => {
-    if (settings.preferences.newTaskDirectory === 'last-used' && settings.lastUsedDirectory) {
-      return settings.lastUsedDirectory
-    }
-    return window.picode.chat.pickWorkingDirectory()
-  }, [settings.preferences.newTaskDirectory, settings.lastUsedDirectory])
-
   /** create_session carrying the settings-window defaults (ticket 11). */
   const sendCreateSession = useCallback((cwd: string): void => {
     const defaults = sessionDefaultsFromPreferences(settings.preferences) ?? undefined
     window.picode.chat.sendToHost({ type: 'create_session', cwd, defaults })
   }, [settings.preferences])
 
-  const handleNewTask = useCallback(async (): Promise<void> => {
-    const cwd = await resolveNewTaskDirectory()
-    if (!cwd) return
-    setCreating(true)
-    pendingPromptRef.current = null
-    sendCreateSession(cwd)
-  }, [resolveNewTaskDirectory, sendCreateSession])
+  /** Ticket 17: ⌘N / New Task opens the new-task empty state — no system
+   * folder picker. The project chip preselects the fallback chain
+   * (active session → last used → recent first); the send creates the
+   * session. */
+  const handleNewTask = useCallback((): void => {
+    setNewTaskOpen(true)
+  }, [])
 
   // ---- global keybindings: ⌘N new task, ⌘K task search ----
   useEffect(() => {
@@ -256,6 +252,20 @@ export default function App(): JSX.Element {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [handleNewTask])
 
+  // Escape leaves the new-task state (ticket 17) — except inside the
+  // composer, the chip dropdown, and the ⌘K palette, where Escape closes
+  // menus/overlays locally.
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent): void {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      const target = event.target
+      if (target instanceof Element && target.closest('.composer, .newtask-pop, .palette-overlay')) return
+      setNewTaskOpen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+
   // Honest liveness: the Live Follow badge and its Open control (ticket 24)
   // must flip when a watched session goes quiet even if no file changes —
   // a periodic re-render keeps the derived live state from going stale.
@@ -266,14 +276,24 @@ export default function App(): JSX.Element {
       window.picode.chat.sendToHost({ type: 'prompt', text, images: images.length > 0 ? images : undefined })
       return
     }
-    const cwd = await resolveNewTaskDirectory()
-    if (!cwd) return
-    setCreating(true)
-    // Both survive the folder pick: text AND images are delivered together
-    // as the first prompt once the session exists.
-    pendingPromptRef.current = text
-    pendingImagesRef.current = images.length > 0 ? images : null
-    sendCreateSession(cwd)
+    startTask(null, text, images)
+  }
+
+  /** Ticket 17: start a task from the empty state in the chip's project.
+   * null degrades to the system folder picker (brand-new machine with no
+   * recent projects); the first message (text + images) rides the pending
+   * chain and is delivered once the session exists. */
+  function startTask(cwd: string | null, text: string, images: ImageAttachment[]): void {
+    void (async () => {
+      const project = cwd ?? (await window.picode.chat.pickWorkingDirectory())
+      if (!project) return
+      setCreating(true)
+      // Both survive the session boot: text AND images are delivered together
+      // as the first prompt once the session exists.
+      pendingPromptRef.current = text
+      pendingImagesRef.current = images.length > 0 ? images : null
+      sendCreateSession(project)
+    })()
   }
 
   function handleSteer(text: string, images: ImageAttachment[] = []): void {
@@ -439,6 +459,7 @@ export default function App(): JSX.Element {
     if (!snapshot) return
     setFollowedFile(snapshot.file)
     setFollowItems(snapshot.items)
+    setNewTaskOpen(false)
   }
 
   function stopFollowing(): void {
@@ -454,6 +475,7 @@ export default function App(): JSX.Element {
   function resumeSession(summary: SessionSummary): void {
     stopFollowing()
     setCreating(true)
+    setNewTaskOpen(false)
     window.picode.chat.sendToHost({
       type: 'resume_session',
       sessionFile: summary.file,
@@ -561,6 +583,27 @@ export default function App(): JSX.Element {
 
   const handlePreviewNavigate = useCallback(openPreview, [openPreview])
 
+  // Ticket 17: recent workspaces for the project chip's dropdown, and the
+  // chip's default (fixed → active session → last used → recent first).
+  const recentWorkspaceList = useMemo(() => recentProjects(sessions), [sessions])
+  const newTaskDefaultProject = useMemo(
+    () =>
+      resolveNewTaskProject({
+        mode: settings.preferences.newTaskDirectory,
+        fixedProject: settings.preferences.newTaskFixedProject,
+        activeSessionCwd: chat.session?.cwd ?? null,
+        lastUsedDirectory: settings.lastUsedDirectory,
+        recentProjects: recentWorkspaceList
+      }),
+    [
+      settings.preferences.newTaskDirectory,
+      settings.preferences.newTaskFixedProject,
+      settings.lastUsedDirectory,
+      chat.session?.cwd,
+      recentWorkspaceList
+    ]
+  )
+
   const showError = chat.error !== null && chat.error !== dismissedError
   const showFollow = followedFile !== null
   const showTranscript = chat.entries.length > 0 || chat.session !== null
@@ -619,7 +662,18 @@ export default function App(): JSX.Element {
             onStop={stopFollowing}
             onOpen={() => void handleFollowOpen()}
           />
-        ) : showTranscript ? (
+        ) : newTaskOpen || !showTranscript ? (
+          // New-task mode (⌘N, ticket 17) and the boot empty state render the
+          // same chip empty state; ⌘N shows it even while a session is open.
+          <EmptyState
+            creating={creating}
+            defaultProject={newTaskDefaultProject}
+            recentProjects={recentWorkspaceList}
+            onStart={startTask}
+            onOpenFolder={() => window.picode.chat.pickWorkingDirectory()}
+            composerApi={composerApi}
+          />
+        ) : (
           <ChatView
             chat={chat}
             creating={creating}
@@ -639,8 +693,6 @@ export default function App(): JSX.Element {
             onApprove={handleApprove}
             onDeny={handleDeny}
           />
-        ) : (
-          <EmptyState creating={creating} composerApi={composerApi} />
         )}
       </main>
       <SidePanel

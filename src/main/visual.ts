@@ -138,6 +138,24 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       await sleep(700)
       await capture(win, '0-empty-state')
 
+      // ---- ticket 17: the project chip's dropdown (ZCode /tmp/chip-dd.png
+      // shape: search workspaces + recent list + bottom "Open folder…")
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const chip = document.querySelector('.newtask-chip')
+          if (!(chip instanceof HTMLElement)) return false
+          chip.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+          return true
+        })()`
+      )
+      await sleep(300)
+      await capture(win, '0a-newtask-dropdown')
+      // Click outside closes the dropdown (mousedown on anything off-chipbar).
+      await win.webContents.executeJavaScript(
+        `document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))`
+      )
+      await sleep(200)
+
       // ---- reference 03: empty state + side-panel placeholder (tab picker)
       // Skipped in terminal-harness runs: both harnesses share one window, and
       // the picker click here races the terminal flow's own picker handling.

@@ -34,7 +34,8 @@ describe('SettingsService', () => {
     writeFileSync(
       file,
       JSON.stringify({
-        preferences: { defaultThinkingLevel: 'high', newTaskDirectory: 'last-used' },
+        // A pre-ticket-17 document: 'ask' must migrate to 'last-used'.
+        preferences: { defaultThinkingLevel: 'high', newTaskDirectory: 'ask' },
         lastUsedDirectory: '/Users/dev/projects/api-server'
       })
     )
@@ -43,7 +44,8 @@ describe('SettingsService', () => {
     expect(snapshot.preferences).toEqual({
       defaultModel: null,
       defaultThinkingLevel: 'high',
-      newTaskDirectory: 'last-used'
+      newTaskDirectory: 'last-used',
+      newTaskFixedProject: null
     })
     expect(snapshot.lastUsedDirectory).toBe('/Users/dev/projects/api-server')
   })
@@ -61,7 +63,7 @@ describe('SettingsService', () => {
     })
     // Invalid patch fields are dropped by the merge.
     await service.setPreferences({ newTaskDirectory: 'whenever' })
-    expect((await service.getSnapshot()).preferences.newTaskDirectory).toBe('ask')
+    expect((await service.getSnapshot()).preferences.newTaskDirectory).toBe('last-used')
   })
 
   it('keeps concurrent patches from losing each other\u2019s fields', async () => {

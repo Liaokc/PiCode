@@ -1,9 +1,9 @@
 /**
  * PiCode application preferences (ticket 11): user-owned defaults that shape
  * NEW sessions — default model, default thinking level, and the new-task
- * working-directory behavior. Persisted by the main process in PiCode's own
- * storage (never Pi's settings.json); the host applies them at session
- * creation via the `create_session` contract's additive `defaults` field.
+ * default project. Persisted by the main process in PiCode's own storage
+ * (never Pi's settings.json); the host applies them at session creation via
+ * the `create_session` contract's additive `defaults` field.
  *
  * Pure normalize/merge functions so the persistence layer stays thin and the
  * behavior is testable without Electron.
@@ -17,26 +17,30 @@ export interface SessionDefaults {
   thinkingLevel?: ThinkingLevel
 }
 
-/** Working-directory behavior for new tasks. */
-export type NewTaskDirectoryPreference =
-  /** Open the folder picker for every new task. */
-  | 'ask'
-  /** Reuse the most recently used working directory without asking. */
-  | 'last-used'
+/**
+ * "New task default project" modes (ticket 17): the project chip follows the
+ * recent-activity chain, or a fixed pinned project. The retired 'ask' value
+ * (open the system picker for every new task — superseded by the chip)
+ * normalizes to 'last-used' when read back from older documents.
+ */
+export type NewTaskDefaultMode = 'last-used' | 'fixed'
 
 export interface AppPreferences {
   /** Default model for NEW sessions; null = Pi picks its own default. */
   defaultModel: { providerId: string; modelId: string } | null
   /** Default thinking level for NEW sessions; null = Pi default (clamped per model). */
   defaultThinkingLevel: ThinkingLevel | null
-  /** Where new tasks start: ask every time or reuse the last folder. */
-  newTaskDirectory: NewTaskDirectoryPreference
+  /** Where the new-task chip defaults: follow recent activity or a fixed project. */
+  newTaskDirectory: NewTaskDefaultMode
+  /** The pinned project for 'fixed' mode; null = not chosen (chain applies). */
+  newTaskFixedProject: string | null
 }
 
 export const DEFAULT_PREFERENCES: AppPreferences = {
   defaultModel: null,
   defaultThinkingLevel: null,
-  newTaskDirectory: 'ask'
+  newTaskDirectory: 'last-used',
+  newTaskFixedProject: null
 }
 
 const THINKING_LEVELS: ReadonlySet<string> = new Set([
@@ -62,8 +66,14 @@ function normalizedThinkingLevel(value: unknown): ThinkingLevel | null {
   return typeof value === 'string' && THINKING_LEVELS.has(value) ? (value as ThinkingLevel) : null
 }
 
-function normalizedDirectoryMode(value: unknown): NewTaskDirectoryPreference {
-  return value === 'last-used' ? 'last-used' : 'ask'
+function normalizedDirectoryMode(value: unknown): NewTaskDefaultMode {
+  return value === 'fixed' ? 'fixed' : 'last-used'
+}
+
+function normalizedFixedProject(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed === '' ? null : trimmed
 }
 
 function normalizedModelOr(prev: AppPreferences['defaultModel'], value: unknown): AppPreferences['defaultModel'] {
@@ -78,8 +88,14 @@ function normalizedThinkingOr(prev: ThinkingLevel | null, value: unknown): Think
   return value === null || normalized !== null ? normalized : prev
 }
 
-function normalizedDirectoryOr(prev: NewTaskDirectoryPreference, value: unknown): NewTaskDirectoryPreference {
-  return value === 'ask' || value === 'last-used' ? value : prev
+function normalizedDirectoryOr(prev: NewTaskDefaultMode, value: unknown): NewTaskDefaultMode {
+  return value === 'fixed' || value === 'last-used' ? value : prev
+}
+
+function normalizedFixedProjectOr(prev: string | null, value: unknown): string | null {
+  if (value === undefined) return prev
+  const normalized = normalizedFixedProject(value)
+  return value === null || normalized !== null ? normalized : prev
 }
 
 /** Defensive read of a preferences JSON document — invalid fields fall back. */
@@ -89,7 +105,8 @@ export function normalizePreferences(raw: unknown): AppPreferences {
   return {
     defaultModel: normalizedModel(record['defaultModel']),
     defaultThinkingLevel: normalizedThinkingLevel(record['defaultThinkingLevel']),
-    newTaskDirectory: normalizedDirectoryMode(record['newTaskDirectory'])
+    newTaskDirectory: normalizedDirectoryMode(record['newTaskDirectory']),
+    newTaskFixedProject: normalizedFixedProject(record['newTaskFixedProject'])
   }
 }
 
@@ -101,7 +118,8 @@ export function mergePreferences(prev: AppPreferences, patch: unknown): AppPrefe
   return {
     defaultModel: normalizedModelOr(prev.defaultModel, record['defaultModel']),
     defaultThinkingLevel: normalizedThinkingOr(prev.defaultThinkingLevel, record['defaultThinkingLevel']),
-    newTaskDirectory: normalizedDirectoryOr(prev.newTaskDirectory, record['newTaskDirectory'])
+    newTaskDirectory: normalizedDirectoryOr(prev.newTaskDirectory, record['newTaskDirectory']),
+    newTaskFixedProject: normalizedFixedProjectOr(prev.newTaskFixedProject, record['newTaskFixedProject'])
   }
 }
 
