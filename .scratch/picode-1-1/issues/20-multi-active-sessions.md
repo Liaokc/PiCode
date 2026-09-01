@@ -15,19 +15,21 @@
 
 **Blocked by:** None（建议 14 之后实施——两者都动 chat 视图层与 reducer 装配）。
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
-- [ ] 切走运行中会话：host 不被终止（对照现状替换语义），后台流事件持续收集、会话文件持续增长
-- [ ] 切回：视图重挂载追平最新状态并恢复实时流；转录无缝、无重复条目
-- [ ] ≥3 个会话并存运行实测（新建/打开互不干扰）
-- [ ] 退出：N 个 host 全部终止、无孤儿（shutdownAll 扩展到多实例）
-- [ ] 崩溃隔离回归：任一 host 崩溃仅该会话报错横幅，其余不受影响
-- [ ] 会话注册表纯模块（sessionId → 视图状态 + 焦点路由；chat reducer 原样复用）vitest 表驱动
-- [ ] 侧栏状态点固定槽位（动画/绿/空）+ 标题左缘全线对齐（像素核对）
-- [ ] **ADR-0006 落盘后再合并**
-- [ ] smoke 六阶段 + 多会话并存新场景；typecheck / lint / test 全绿
+- [x] 切走运行中会话：host 不被终止（对照现状替换语义），后台流事件持续收集、会话文件持续增长
+- [x] 切回：视图重挂载追平最新状态并恢复实时流；转录无缝、无重复条目
+- [x] ≥3 个会话并存运行实测（新建/打开互不干扰）
+- [x] 退出：N 个 host 全部终止、无孤儿（shutdownAll 扩展到多实例）
+- [x] 崩溃隔离回归：任一 host 崩溃仅该会话报错横幅，其余不受影响
+- [x] 会话注册表纯模块（sessionId → 视图状态 + 焦点路由；chat reducer 原样复用）vitest 表驱动
+- [x] 侧栏状态点固定槽位（动画/绿/空）+ 标题左缘全线对齐（像素核对留人工视觉 QA）
+- [x] **ADR-0006 落盘后再合并**
+- [x] smoke 六阶段 + 多会话并存新场景；typecheck / lint / test 全绿
 
 ## Comments
 
 - 2026-08-31 (requirements intake + grilling 定稿): R2-Q7「全部做……不要留给下次」——五边界当场定稿；两端并发写维持 out of scope。
 - 2026-08-31 (/to-tickets 重切): 后台审批 UX 拆至**票 25**；本票 = 并存与追平核心 + 状态点固定槽位 + ADR-0006。
+- 2026-09-01 (t20 实现，f654bb9 + b783171): 全部验收项落地。契约纯增量：`session_event`/`session_detached`/`session_command` + `SessionCommand`/`SessionScopedEvent` 类型重命名级提取（无成员删除/改名）。supervisor = sessionId↔host 注册表：同 host 换会话（fork）广播 `session_detached`，同 id 重公告（对本应用仍持有 host 的会话做全量 resume 接管）静默置换旧 host；退出 shutdownAll 全终止。渲染层唯一新状态模块 `src/shared/session-registry.ts`（27 表驱动 vitest）：每会话各折叠一份 chat reducer，后台事件持续收集不上屏，切回重挂载追平；失败 spawn（session_error/host_exit 未公告 id）聚焦其防御条目让横幅可见（α 对齐，review 轮修复）。侧栏固定槽位 `.sb-dot-slot`：`.sb-run-dot`（本应用运行，蓝+脉动）/`.sb-live-dot`（另一端在写，绿、静置）/空槽；本应用会话永不显示绿点（mtime 是自己的）。所有会话级命令显式定向（`session_command` → focused）；后台在应用会话重命名改走其 host。smoke 新增票 20 场景（多会话并存、后台流 + 文件增长、同 pid 切回无重复、定向 abort、SIGKILL 单会话隔离、shutdownAll 零孤儿）+ follow 阶段前置 SIGKILL 重建 host（恢复 α 前置：被跟随会话不得在本应用内持有 host）。smoke 全套 ALL GREEN（6 阶段）；typecheck / lint / 556 tests 全绿；visual harness 20/20 截图（legacy 未包装事件兼容路径验证）。code-review：两轴各 2 项发现，均已修复（fail-spawn 横幅回归 + 文件增长断言 + 缩进/文档/测试类型清理）。像素级对齐与动画/配色留人工视觉 QA 关。**Status: ready-for-human** — 请操作者 `bash scripts/merge-ticket.sh 20`。
+- 2026-09-01 (验收截图补齐，bc8b8d1): 新增 `npm run visual:multi` 关卡（`src/main/visual-multisession.ts`，独占窗口）：产出入库 `.scratch/visual/m1-multi-dots.png`（三态点同框：A 蓝色动画点后台运行 / B 绿点 TUI 在写 / C 空槽在应用空闲；三行标题左缘对齐）与 `.scratch/visual/m2-refocus-caughtup.png`（点击后台行 → 同 pid 聚焦、追平转录、实时流恢复）。像素核对可直接对照这两张 + `npm run visual:transcript` 回归套图。
