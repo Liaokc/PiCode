@@ -3377,6 +3377,32 @@ button.heat:hover {
   width: 280px;
 }
 
+/* Branch badge (ticket 21): read-only readout next to the session title;
+ * hidden entirely for non-git workspaces (branch === null). */
+.chat-topbar-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 9px;
+  background: var(--bg-inset);
+  font-size: 11px;
+  color: var(--text-secondary);
+  min-width: 0;
+  max-width: 180px;
+}
+
+.chat-topbar-branch svg {
+  flex-shrink: 0;
+}
+
+.chat-topbar-branch-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .chat-topbar-btn {
   display: inline-flex;
   align-items: center;

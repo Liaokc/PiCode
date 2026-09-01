@@ -64,7 +64,7 @@ export interface SlashCommandItem {
  * most recently announced session). */
 export type SessionCommand = Extract<
   ParentToHost,
-  { type: 'prompt' | 'abort_turn' | 'steer_prompt' | 'follow_up_prompt' | 'clear_queue' | 'set_model' | 'set_thinking_level' | 'set_access_mode' | 'approve_tool' | 'deny_tool' | 'compact_session' | 'list_files' | 'navigate_tree' | 'fork_session' | 'set_session_label' | 'request_tree' }
+  { type: 'prompt' | 'abort_turn' | 'steer_prompt' | 'follow_up_prompt' | 'clear_queue' | 'set_model' | 'set_thinking_level' | 'set_access_mode' | 'approve_tool' | 'deny_tool' | 'compact_session' | 'list_files' | 'navigate_tree' | 'fork_session' | 'set_session_label' | 'request_tree' | 'get_branch' }
 >
 
 /** Renderer → agent host system. */
@@ -111,6 +111,9 @@ export type ParentToHost =
   | { type: 'compact_session' }
   /** List candidate files under the session cwd for @-mention completion. */
   | { type: 'list_files'; requestId: string; query: string }
+  /** Ask for the git branch of the session workspace (ticket 21, READ-ONLY:
+   * no checkout, no ref writes — display only). Answered with `branch_info`. */
+  | { type: 'get_branch' }
 
 /** Supervisor → host process lifecycle control (never sent by the renderer). */
 export type HostControlCommand = { type: 'shutdown' }
@@ -196,6 +199,10 @@ export type SessionScopedEvent =
   | { type: 'approval_resolved'; toolCallId: string; approved: boolean; reason: string | null }
   /** Reply to `list_files`; relative paths under the session cwd. */
   | { type: 'file_list'; requestId: string; files: string[] }
+  /** Reply to `get_branch` (ticket 21): the git branch of the session's
+   * workspace, read-only. `null` = not a git repo / git unavailable — the
+   * UI hides the badge instead of erroring. */
+  | { type: 'branch_info'; branch: string | null }
   /** Live steering/follow-up queue contents (SDK queue state). */
   | { type: 'queue_update'; steering: string[]; followUp: string[] }
   /** Non-transcript notice (compaction progress etc.) for the toast area. */

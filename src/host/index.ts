@@ -46,6 +46,7 @@ import {
   type SdkModelLike
 } from './composer-list'
 import { listRelativeFiles } from './files'
+import { readGitBranch } from './git-branch'
 import { createApprovalGateExtension, toImageContents } from './gate-extension'
 import { parseSessionArgs } from './session-args'
 
@@ -507,6 +508,13 @@ async function handleListFiles(requestId: string, query: string): Promise<void> 
   send({ type: 'file_list', requestId, files })
 }
 
+/** Ticket 21: read-only branch readout — the one git interaction this host
+ * ever makes, a pure read. Non-git workspaces degrade to null (the UI hides
+ * the badge; no error surfaces). */
+async function handleGetBranch(): Promise<void> {
+  send({ type: 'branch_info', branch: await readGitBranch(cwd) })
+}
+
 async function handleAbort(): Promise<void> {
   const agentSession = runtime?.session
   if (!agentSession) return
@@ -630,6 +638,9 @@ process.on('message', (message: unknown) => {
       if (typeof message.requestId === 'string') {
         void handleListFiles(message.requestId, typeof message.query === 'string' ? message.query : '')
       }
+      break
+    case 'get_branch':
+      void handleGetBranch()
       break
     case 'abort_turn':
       void handleAbort()
