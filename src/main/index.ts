@@ -246,7 +246,8 @@ function fakePreferences(): AppPreferences {
   return {
     defaultModel: { providerId: 'bella', modelId: 'GLM-5.3' },
     defaultThinkingLevel: 'high',
-    newTaskDirectory: 'ask'
+    newTaskDirectory: 'fixed',
+    newTaskFixedProject: '/Users/demo/Projects/picode'
   }
 }
 

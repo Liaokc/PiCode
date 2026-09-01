@@ -382,6 +382,81 @@ export function startSmokeIfEnabled(
       log('replay_dom_ok')
     })
 
+    // Ticket 17: the new-task empty state. ⌘N must open the chip empty state
+    // (no system folder dialog), the chip preselects the active session's
+    // project, the dropdown exposes search + recent workspaces + the
+    // "Open folder…" entry, and the first send creates the session in the
+    // chip's project with the typed message delivered via the pending chain.
+    const NEWTASK_MARKER = 'PICODE_NEWTASK_FIRST_MSG'
+    const started = waitFor(
+      (e) => e.type === 'session_created' && e.cwd === cwd,
+      'newtask session_created'
+    ) as Promise<Extract<HostToParent, { type: 'session_created' }>>
+    const firstPrompt = waitFor(
+      (e) => e.type === 'user_message' && e.text.includes(NEWTASK_MARKER),
+      'newtask first prompt delivered'
+    )
+    await withWindow(getWindow, async (win) => {
+      // ⌘N → the chip empty state replaces the open session view.
+      await win.webContents.executeJavaScript(
+        `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true, bubbles: true }))`
+      )
+      const chipShown = await waitForProbe(
+        win,
+        `document.querySelector('.empty-state') !== null && document.querySelector('.newtask-chip') !== null`,
+        10_000
+      )
+      if (!chipShown) fail('⌘N never opened the new-task empty state with the project chip')
+      // The chip preselects the ACTIVE session's project (= this smoke's cwd).
+      const chipLabel = (await win.webContents.executeJavaScript(
+        `document.querySelector('.newtask-chip span')?.textContent ?? ''`
+      )) as string
+      const expectedProject = cwd.split('/').filter(Boolean).pop() ?? cwd
+      if (!chipLabel.includes(expectedProject)) {
+        fail(`project chip shows "${chipLabel}" instead of the active session's project (${expectedProject})`)
+      }
+      log('newtask_chip_default_ok', chipLabel)
+      // Dropdown: search box + recent workspaces (current one checked) +
+      // the bottom "Open folder…" entry.
+      await clickSelector(win, '.newtask-chip')
+      const dropdown = await waitForProbe(
+        win,
+        `document.querySelector('.newtask-pop .newtask-search input') !== null &&
+         document.querySelector('.newtask-pop .newtask-openfolder') !== null &&
+         document.body.textContent.includes('Open folder…') &&
+         document.querySelector('.newtask-pop .newtask-row-current') !== null`,
+        5_000
+      )
+      if (!dropdown) fail('chip dropdown never showed search + current-checked workspace + Open folder…')
+      log('newtask_dropdown_ok')
+      // Close the dropdown, then type the first message and send it.
+      await win.webContents.executeJavaScript(
+        `document.querySelector('.newtask-pop .newtask-search input')
+           ?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`
+      )
+      const typed = await win.webContents.executeJavaScript(
+        `(async () => {
+          const ta = document.querySelector('.empty-state textarea.composer-input')
+          if (!ta) return false
+          const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set
+          setter.call(ta, '${NEWTASK_MARKER}: start me in the chip project')
+          ta.dispatchEvent(new Event('input', { bubbles: true }))
+          await new Promise((r) => setTimeout(r, 100))
+          ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+          return true
+        })()`
+      )
+      if (!typed) fail('could not type into the empty-state composer')
+    })
+    const createdNow = await started
+    log('newtask_session_created', `sessionId=${createdNow.sessionId}`)
+    await firstPrompt
+    log('newtask_first_prompt_ok')
+    // Stop the agent turn the marker message started, then finish clean.
+    supervisor.handleParentCommand({ type: 'abort_turn' })
+    await waitFor((e) => e.type === 'agent_end', 'agent_end after newtask abort')
+    log('newtask_turn_aborted_ok')
+
     supervisor.shutdownAll()
     log('done')
     app.exit(0)
