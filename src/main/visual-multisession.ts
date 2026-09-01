@@ -23,11 +23,11 @@
  *                        transcript with the live stream resumed on screen
  */
 
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { mkdirSync } from 'node:fs'
 import path from 'node:path'
 import { type BrowserWindow } from 'electron'
 import { emitContractEvent, multiSessionVisualEnabled, visualOutDir } from './visual'
+import { ensureVisualStore, writeVisualSession } from './visual-store'
 
 export { multiSessionVisualEnabled } from './visual'
 
@@ -39,30 +39,6 @@ const IDLE_ID = 'multi-visual-idle'
 const API_CWD = '/Users/dev/projects/api-server'
 const WEB_CWD = '/Users/dev/projects/web-app'
 const STREAM_MARKER = 'Count the deploy checklist from one to twenty, one item per line'
-
-interface FakeSession {
-  id: string
-  cwd: string
-  userText: string
-}
-
-/** One minimal Pi session jsonl: header + one user message (the title). */
-function fakeSessionFile(dir: string, session: FakeSession): string {
-  const now = new Date().toISOString()
-  const lines = [
-    JSON.stringify({ type: 'session', version: 3, id: session.id, timestamp: now, cwd: session.cwd }),
-    JSON.stringify({
-      type: 'message',
-      id: `${session.id}-u1`,
-      parentId: null,
-      timestamp: now,
-      message: { role: 'user', content: [{ type: 'text', text: session.userText }] }
-    })
-  ]
-  const file = path.join(dir, `visual-${session.id}.jsonl`)
-  writeFileSync(file, lines.join('\n') + '\n')
-  return file
-}
 
 async function waitFor(getWindow: () => BrowserWindow | null, probe: string, budgetMs: number): Promise<boolean> {
   const win = getWindow()
@@ -106,23 +82,20 @@ export function startMultiSessionVisualIfEnabled(getWindow: () => BrowserWindow 
   if (!multiSessionVisualEnabled()) return
 
   // The session index reads PICODE_SESSION_DIR when it is constructed — this
-  // starter runs BEFORE that line in the boot sequence, so setting the env
-  // here (when unset) isolates the visual store like the smoke does.
-  if (!process.env['PICODE_SESSION_DIR']) {
-    process.env['PICODE_SESSION_DIR'] = mkdtempSync(path.join(tmpdir(), 'picode-visual-multi-'))
-  }
-  const store = process.env['PICODE_SESSION_DIR']
-  const runningFile = fakeSessionFile(store, {
+  // starter runs BEFORE that line in the boot sequence, so seeding here
+  // isolates the visual store like the smoke does.
+  const store = ensureVisualStore()
+  const runningFile = writeVisualSession(store, {
     id: RUNNING_ID,
     cwd: API_CWD,
     userText: `${STREAM_MARKER}: migration and rollback steps`
   })
-  fakeSessionFile(store, {
+  writeVisualSession(store, {
     id: TUI_ID,
     cwd: WEB_CWD,
     userText: 'Wire the new checkout form to the payments sandbox'
   })
-  const idleFile = fakeSessionFile(store, {
+  const idleFile = writeVisualSession(store, {
     id: IDLE_ID,
     cwd: API_CWD,
     userText: 'Draft the changelog entry for the 1.1 release'
