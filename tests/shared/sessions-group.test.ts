@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   decideFollowTakeover,
+  filterHiddenGroups,
   filterSessions,
   groupSessions,
   isSessionLive,
@@ -71,6 +72,66 @@ describe('filterSessions', () => {
 
   it('returns everything for a blank query', () => {
     expect(filterSessions(sessions, '  ')).toHaveLength(3)
+  })
+})
+
+describe('filterHiddenGroups', () => {
+  const groups = [
+    { cwd: '/work/api', project: 'api', sessions: [session('a', '/work/api', NOW)] },
+    { cwd: '/work/web', project: 'web', sessions: [session('b', '/work/web', NOW - HOUR)] },
+    { cwd: '/home/picode', project: 'picode', sessions: [session('c', '/home/picode', NOW - 2 * HOUR)] }
+  ]
+
+  it('drops hidden groups and keeps the rest in order (ticket 19)', () => {
+    const visible = filterHiddenGroups(groups, new Set(['/work/web']))
+    expect(visible.map((g) => g.cwd)).toEqual(['/work/api', '/home/picode'])
+  })
+
+  it('hides every matching cwd, not just one', () => {
+    const visible = filterHiddenGroups(groups, new Set(['/work/api', '/home/picode']))
+    expect(visible.map((g) => g.cwd)).toEqual(['/work/web'])
+  })
+
+  it('returns every group when nothing is hidden', () => {
+    expect(filterHiddenGroups(groups, new Set()).map((g) => g.cwd)).toEqual(groups.map((g) => g.cwd))
+  })
+
+  it('ignores hidden cwds that have no group', () => {
+    expect(filterHiddenGroups(groups, new Set(['/gone', '/missing'])).map((g) => g.cwd)).toEqual(
+      groups.map((g) => g.cwd)
+    )
+  })
+
+  it('hides only the group projection — pinned sessions of a hidden cwd stay visible', () => {
+    const sessions = [
+      session('pinned-in-hidden', '/work/api', NOW),
+      session('plain-in-hidden', '/work/api', NOW - HOUR),
+      session('other', '/work/web', NOW - 2 * HOUR)
+    ]
+    const grouped = groupSessions(sessions, new Set(['pinned-in-hidden']))
+    const visible = filterHiddenGroups(grouped.groups, new Set(['/work/api']))
+    // The /work/api group vanishes; the /work/web group stays.
+    expect(visible.map((g) => g.cwd)).toEqual(['/work/web'])
+    // The pinned row is hoisted above groups and never touched by hiding.
+    expect(grouped.pinned.map((s) => s.id)).toEqual(['pinned-in-hidden'])
+  })
+
+  it('is a sidebar projection only — ⌘K search and the all-tasks view still see hidden groups\' sessions', () => {
+    const sessions = [
+      session('hidden-one', '/work/api', NOW, 'Deploy the api'),
+      session('kept', '/work/web', NOW - HOUR)
+    ]
+    const hidden = new Set(['/work/api'])
+    const visibleGroups = filterHiddenGroups(groupSessions(sessions, new Set()).groups, hidden)
+    expect(visibleGroups.map((g) => g.cwd)).toEqual(['/work/web'])
+    // Title search (sidebar filter input and ⌘K palette share it) is NOT fed
+    // the hidden set — decluttering must never make sessions unreachable.
+    expect(filterSessions(sessions, 'deploy').map((s) => s.id)).toEqual(['hidden-one'])
+    // The Groups all-tasks view flattens the same unfiltered session list.
+    expect(groupSessions(sessions, new Set()).groups.flatMap((g) => g.sessions.map((s) => s.id))).toEqual([
+      'hidden-one',
+      'kept'
+    ])
   })
 })
 

@@ -80,6 +80,7 @@ Screenshot harnesses capture the real UI for pixel comparison against the ZCode 
 npm run visual:transcript   # transcript, menus, pill/queue, preview, review
 npm run visual:settings     # ⌘K palette + settings sections
 npm run visual:usage        # usage page (deterministic fixture)
+npm run visual:multi        # sidebar dots (ticket 20) + group hover actions (ticket 19)
 # terminal bottom-dock capture (opens the dock via the titlebar toggle):
 PICODE_VISUAL=1 PICODE_VISUAL_TERMINAL=1 npx electron .
 ```

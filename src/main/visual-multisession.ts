@@ -21,15 +21,39 @@
  *                        the background: all three dot states in one frame
  *   m2-refocus-caughtup— after clicking A's row: same host, caught-up
  *                        transcript with the live stream resumed on screen
+ *
+ * Ticket 19 extends the run with the group-hover framework (the api-server
+ * group has two seeded sessions, web-app one):
+ *   m3-group-hover     — real mouse move onto a group header: the ⋯ / new-task
+ *                        actions replace the grip dots (CSS :hover, so the
+ *                        harness synthesizes input events, not DOM clicks)
+ *   m4-group-menu      — the ⋯ menu open ("Remove from sidebar"), actions
+ *                        still visible
+ *   m5-group-hidden    — after Remove: the group is gone from the Projects
+ *                        list (task rows of the hidden cwd too) while the
+ *   m5b-search-hits-hidden — ⌘K palette still lists every hidden-cwd session
+ *   m6-hidden-restored — Settings → General restores the group via the
+ *                        "Hidden projects" recovery card; back in the
+ *   m7-group-restored  — workspace the api-server group is listed again
  */
 
 import { mkdirSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { type BrowserWindow } from 'electron'
+import { app, type BrowserWindow } from 'electron'
 import { emitContractEvent, multiSessionVisualEnabled, visualOutDir } from './visual'
 import { ensureVisualStore, writeVisualSession } from './visual-store'
 
 export { multiSessionVisualEnabled } from './visual'
+
+/** Harness runs must never touch the operator's real preferences — the
+ * ticket-19 hide/restore captures drive the REAL settings service (only the
+ * IPC-level fake settings could lie about the recovery flow). Called from
+ * index.ts at module scope, BEFORE app.whenReady reads userData. */
+export function isolateVisualUserData(): void {
+  if (!multiSessionVisualEnabled()) return
+  app.setPath('userData', path.join(tmpdir(), `picode-visual-userdata-${process.pid}`))
+}
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -76,6 +100,32 @@ async function clickRow(win: BrowserWindow, file: string): Promise<boolean> {
       return true
     })()`
   ).catch(() => false)) as boolean
+}
+
+/** Viewport point of a selector's center (null when absent or not laid out —
+ * display:none hover targets measure zero until they are revealed). */
+async function rectOf(win: BrowserWindow, selector: string): Promise<{ x: number; y: number } | null> {
+  const hit = (await win.webContents.executeJavaScript(
+    `(() => {
+      const el = document.querySelector(${JSON.stringify(selector)})
+      if (!(el instanceof Element)) return null
+      const r = el.getBoundingClientRect()
+      if (r.width === 0 && r.height === 0) return null
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+    })()`
+  ).catch(() => null)) as { x: number; y: number } | null
+  return hit
+}
+
+/** Synthesized REAL input events — CSS :hover only follows these, so the
+ * hover-state captures move the pointer instead of calling el.click(). */
+async function mouseMove(win: BrowserWindow, x: number, y: number): Promise<void> {
+  win.webContents.sendInputEvent({ type: 'mouseMove', x, y })
+}
+
+async function mouseClick(win: BrowserWindow, x: number, y: number): Promise<void> {
+  win.webContents.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 })
+  win.webContents.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 })
 }
 
 export function startMultiSessionVisualIfEnabled(getWindow: () => BrowserWindow | null): void {
@@ -223,6 +273,187 @@ export function startMultiSessionVisualIfEnabled(getWindow: () => BrowserWindow 
       if (!caught) throw new Error('multi-session visual: refocus never showed the caught-up transcript')
       await sleep(400)
       await capture(win, 'm2-refocus-caughtup')
+
+      // ---- m3: group hover actions (ticket 19) ---------------------------
+      // CSS :hover needs synthesized INPUT events. First rest the pointer on
+      // the header's right edge so the (display:none) actions get laid out,
+      // then capture the two-button form.
+      const headerRect = (await win.webContents.executeJavaScript(
+        `(() => {
+          const headers = [...document.querySelectorAll('.sb-group-header')]
+          const header = headers.find((el) => el.textContent?.includes('api-server'))
+          if (!(header instanceof Element)) return null
+          const r = header.getBoundingClientRect()
+          return { left: r.left, right: r.right, top: r.top, height: r.height }
+        })()`
+      ).catch(() => null)) as { left: number; right: number; top: number; height: number } | null
+      if (!headerRect) throw new Error('multi-session visual: api-server group header not found')
+      const headerY = Math.round(headerRect.top + headerRect.height / 2)
+      await mouseMove(win, Math.round(headerRect.right) - 24, headerY)
+      await sleep(200)
+      const hoverRevealed = (await win.webContents.executeJavaScript(
+        `(() => {
+          const actions = [...document.querySelectorAll('.sb-group-actions')]
+          const revealed = actions.find((el) => getComputedStyle(el).display !== 'none')
+          return revealed !== undefined
+        })()`
+      ).catch(() => false)) as boolean
+      if (!hoverRevealed) throw new Error('multi-session visual: hover never revealed the group actions')
+      const newTaskBtn = await rectOf(win, '[aria-label="New task in api-server"]')
+      if (!newTaskBtn) throw new Error('multi-session visual: new-task action never laid out')
+      await capture(win, 'm3-group-hover')
+
+      // ---- m4: the ⋯ more-menu ("Remove from sidebar") --------------------
+      const moreBtn = await rectOf(win, '[aria-label="Group actions: api-server"]')
+      if (!moreBtn) throw new Error('multi-session visual: more-actions button never laid out')
+      await mouseMove(win, Math.round(moreBtn.x), Math.round(moreBtn.y))
+      await mouseClick(win, Math.round(moreBtn.x), Math.round(moreBtn.y))
+      await sleep(300)
+      const menuOpen = (await win.webContents.executeJavaScript(
+        `document.querySelector('.sb-group-menu')?.textContent ?? ''`
+      ).catch(() => '')) as string
+      if (!menuOpen.includes('Remove from sidebar')) {
+        throw new Error('multi-session visual: group menu never opened')
+      }
+      await capture(win, 'm4-group-menu')
+
+      // ---- m5: Remove hides the group (locally, recoverably) --------------
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const item = document.querySelector('.sb-group-menu-item')
+          if (item instanceof HTMLElement) item.click()
+          return true
+        })()`
+      )
+      await sleep(400)
+      // Move the pointer off the list so no unrelated header shows actions.
+      await mouseMove(win, 10, 300)
+      await sleep(200)
+      const hiddenSig = (await win.webContents.executeJavaScript(
+        `JSON.stringify((() => ({
+          apiHeaders: [...document.querySelectorAll('.sb-group-header')].filter((el) => el.textContent?.includes('api-server')).length,
+          apiRows: [...document.querySelectorAll('.sb-task')].filter((el) => (el.getAttribute('data-file') ?? '').includes('api-server')).length,
+          webHeaders: [...document.querySelectorAll('.sb-group-header')].filter((el) => el.textContent?.includes('web-app')).length,
+          toast: document.querySelector('.toast')?.textContent ?? ''
+        }))())`
+      ).catch(() => 'unavailable')) as string
+      console.log(`VISUAL m5 signature ${hiddenSig}`)
+      const hidden = JSON.parse(hiddenSig) as { apiHeaders: number; apiRows: number; webHeaders: number; toast: string }
+      if (hidden.apiHeaders !== 0 || hidden.apiRows !== 0 || hidden.webHeaders !== 1) {
+        throw new Error(`multi-session visual: hiding the group left ${hiddenSig}`)
+      }
+      await capture(win, 'm5-group-hidden')
+
+      // ---- m5b: ⌘K still reaches every hidden-cwd session -----------------
+      await win.webContents.executeJavaScript(
+        `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, bubbles: true, cancelable: true }))`
+      )
+      await sleep(400)
+      const paletteItems = (await win.webContents.executeJavaScript(
+        `document.querySelectorAll('.palette-item').length`
+      ).catch(() => 0)) as number
+      if (paletteItems < 3) {
+        throw new Error(`multi-session visual: ⌘K listed ${paletteItems} items after hiding — hidden sessions must stay searchable`)
+      }
+      await capture(win, 'm5b-search-hits-hidden')
+      // The palette closes on Escape AT ITS FOCUSED INPUT (a window-level
+      // dispatch never reaches that handler) — fire it where a user's
+      // keystroke lands, then prove it is gone before the next stage.
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const input = document.querySelector('.palette-input')
+          if (input instanceof HTMLElement) {
+            input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+          }
+          return true
+        })()`
+      )
+      await sleep(300)
+      const paletteGone = (await win.webContents.executeJavaScript(
+        `document.querySelector('.palette-overlay') === null`
+      ).catch(() => false)) as boolean
+      if (!paletteGone) throw new Error('multi-session visual: ⌘K palette never closed')
+
+      // ---- m6: Settings → General restores the hidden group ---------------
+      const settingsBtn = await rectOf(win, '[aria-label="Settings"]')
+      if (!settingsBtn) throw new Error('multi-session visual: settings gear not found')
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const gear = document.querySelector('[aria-label="Settings"]')
+          if (gear instanceof HTMLElement) gear.click()
+          return true
+        })()`
+      )
+      await sleep(600)
+      const generalNav = (await win.webContents.executeJavaScript(
+        `(() => {
+          const item = [...document.querySelectorAll('.settings-item')].find((el) => el.textContent?.trim() === 'General')
+          if (item instanceof HTMLElement) item.click()
+          return item !== undefined
+        })()`
+      ).catch(() => false)) as boolean
+      if (!generalNav) throw new Error('multi-session visual: settings General nav not found')
+      await sleep(400)
+      const hiddenRow = (await win.webContents.executeJavaScript(
+        `(() => {
+          const rows = [...document.querySelectorAll('.settings-hidden-row')]
+          return rows.some((el) => el.textContent?.includes('api-server'))
+        })()`
+      ).catch(() => false)) as boolean
+      if (!hiddenRow) throw new Error('multi-session visual: hidden-projects recovery row missing')
+      // The recovery card WITH the hidden project listed (pre-restore).
+      await capture(win, 'm6a-hidden-projects-card')
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const rows = [...document.querySelectorAll('.settings-hidden-row')]
+          const row = rows.find((el) => el.textContent?.includes('api-server'))
+          const restore = row?.querySelector('.settings-fixed-pick')
+          if (restore instanceof HTMLElement) restore.click()
+          return true
+        })()`
+      )
+      await sleep(500)
+      const restoredNote = (await win.webContents.executeJavaScript(
+        `document.body.textContent.includes('No hidden projects')`
+      ).catch(() => false)) as boolean
+      if (!restoredNote) throw new Error('multi-session visual: restore did not clear the hidden list')
+      await capture(win, 'm6-hidden-restored')
+
+      // ---- m7: back in the workspace the group is listed again ------------
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const back = document.querySelector('.settings-back')
+          if (back instanceof HTMLElement) back.click()
+          return true
+        })()`
+      )
+      await sleep(600)
+      const groupBack = (await win.webContents.executeJavaScript(
+        `[...document.querySelectorAll('.sb-group-header')].some((el) => el.textContent?.includes('api-server'))`
+      ).catch(() => false)) as boolean
+      if (!groupBack) throw new Error('multi-session visual: restored group never reappeared')
+      await capture(win, 'm7-group-restored')
+
+      // ---- m8: the group's ⊕ action preselects the new-task chip ----------
+      // React state (not CSS hover) drives the click-through. The probe is
+      // deliberately against the OTHER project: the focused session is an
+      // api-server one, so the ticket-17 chain default would read api-server
+      // — only the group preset can make the chip read web-app.
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const btn = document.querySelector('[aria-label="New task in web-app"]')
+          if (btn instanceof HTMLElement) btn.click()
+          return true
+        })()`
+      )
+      await sleep(500)
+      const chip = (await win.webContents.executeJavaScript(
+        `document.querySelector('.newtask-chip span')?.textContent ?? ''`
+      ).catch(() => '')) as string
+      if (chip !== 'web-app') {
+        throw new Error(`multi-session visual: new-task chip shows "${chip}" — expected the group's project (web-app)`)
+      }
+      await capture(win, 'm8-newtask-preset')
 
       console.log('VISUAL multi-session done')
       const { app } = await import('electron')

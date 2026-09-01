@@ -34,7 +34,8 @@ describe('SettingsService', () => {
     writeFileSync(
       file,
       JSON.stringify({
-        // A pre-ticket-17 document: 'ask' must migrate to 'last-used'.
+        // A pre-ticket-17 document: 'ask' must migrate to 'last-used';
+        // pre-ticket-19 documents have no hiddenGroups at all.
         preferences: { defaultThinkingLevel: 'high', newTaskDirectory: 'ask' },
         lastUsedDirectory: '/Users/dev/projects/api-server'
       })
@@ -45,7 +46,8 @@ describe('SettingsService', () => {
       defaultModel: null,
       defaultThinkingLevel: 'high',
       newTaskDirectory: 'last-used',
-      newTaskFixedProject: null
+      newTaskFixedProject: null,
+      hiddenGroups: []
     })
     expect(snapshot.lastUsedDirectory).toBe('/Users/dev/projects/api-server')
   })

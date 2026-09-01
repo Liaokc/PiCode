@@ -1,5 +1,6 @@
 import { useState, type JSX } from 'react'
-import type { AppPreferences, NewTaskDefaultMode } from '../../../../shared/preferences'
+import { toggleHiddenGroup, type AppPreferences, type NewTaskDefaultMode } from '../../../../shared/preferences'
+import { projectLabel } from '../../../../shared/sessions/group'
 
 interface GeneralSectionProps {
   preferences: AppPreferences
@@ -22,7 +23,10 @@ const DEFAULT_PROJECT_OPTIONS: Array<{ value: NewTaskDefaultMode; label: string;
 
 /** General settings (ticket 11): startup preferences for new tasks. The
  * retired ask/last-used pair (ticket 17) is now a "New task default project"
- * selector — the project chip owns per-task project choice. */
+ * selector — the project chip owns per-task project choice. The sidebar card
+ * (ticket 19) recovers project groups hidden from the sidebar: hiding is a
+ * local preference, so the session files stay untouched and restoring just
+ * drops the cwd from the hidden list. */
 export default function GeneralSection({ preferences, lastUsedDirectory, onSetPreferences }: GeneralSectionProps): JSX.Element {
   const [picking, setPicking] = useState(false)
 
@@ -86,6 +90,38 @@ export default function GeneralSection({ preferences, lastUsedDirectory, onSetPr
               )
               : 'No folder used yet — the chip falls back to your recent projects.'}
           </p>
+        </div>
+      </section>
+
+      <section className="settings-card">
+        <h2 className="settings-card-title">Sidebar</h2>
+        <div className="settings-field">
+          <div className="settings-field-label">Hidden projects</div>
+          <p className="settings-field-note">
+            Project groups you removed from the sidebar. Hiding is local — sessions are never deleted, and hidden
+            tasks stay searchable (⌘K) and visible in the Groups all-tasks view.
+          </p>
+          {preferences.hiddenGroups.length === 0 ? (
+            <p className="settings-field-note">No hidden projects.</p>
+          ) : (
+            <ul className="settings-hidden-list">
+              {preferences.hiddenGroups.map((cwd) => (
+                <li key={cwd} className="settings-hidden-row">
+                  <div className="settings-hidden-meta">
+                    <span className="settings-hidden-name">{projectLabel(cwd)}</span>
+                    <code className="settings-inline-code">{cwd}</code>
+                  </div>
+                  <button
+                    type="button"
+                    className="settings-fixed-pick"
+                    onClick={() => onSetPreferences({ hiddenGroups: toggleHiddenGroup(preferences.hiddenGroups, cwd, false) })}
+                  >
+                    Restore
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </section>
     </div>

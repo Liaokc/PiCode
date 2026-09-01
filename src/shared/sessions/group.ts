@@ -48,6 +48,20 @@ export function filterSessions(sessions: SessionSummary[], query: string): Sessi
   )
 }
 
+/**
+ * Drop locally-hidden project groups from the sidebar's Projects list
+ * (ticket 19). Hiding is a pure sidebar PROJECTION over the session index:
+ * session files are untouched, pinned rows are hoisted above groups and stay
+ * visible, and neither ⌘K search nor the Groups all-tasks view is fed this
+ * filter — decluttering must never make a session unreachable.
+ */
+export function filterHiddenGroups<T extends { cwd: string }>(
+  groups: readonly T[],
+  hiddenCwds: ReadonlySet<string>
+): T[] {
+  return groups.filter((group) => !hiddenCwds.has(group.cwd))
+}
+
 const MINUTE_MS = 60_000
 const HOUR_MS = 60 * MINUTE_MS
 const DAY_MS = 24 * HOUR_MS

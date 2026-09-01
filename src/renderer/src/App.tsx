@@ -17,7 +17,7 @@ import { initialBridgeFeedState, projectBridgeFeed } from '../../shared/bridge/f
 import { terminalFontStack } from '../../shared/terminal/font'
 import { detectNerdFont } from './terminal/probe-font'
 import { isSessionLive, decideFollowTakeover, FOLLOW_TAKEOVER_REJECTED_TOAST } from '../../shared/sessions/group'
-import { sessionDefaultsFromPreferences, DEFAULT_PREFERENCES, type AppPreferences } from '../../shared/preferences'
+import { sessionDefaultsFromPreferences, DEFAULT_PREFERENCES, toggleHiddenGroup, type AppPreferences } from '../../shared/preferences'
 import { recentProjects, resolveNewTaskProject } from '../../shared/new-task'
 import { toastReducer, type ToastLevel, type ToastList } from '../../shared/toast'
 import type { AccessMode, ImageAttachment, ThinkingLevel } from '../../shared/contract'
@@ -118,6 +118,11 @@ export default function App(): JSX.Element {
   /** New-task empty state (ticket 17): ⌘N swaps the main zone to the chip
    * empty state even while a session is open; no system folder dialog. */
   const [newTaskOpen, setNewTaskOpen] = useState(false)
+  /** Project cwd PRESELECTED for the new-task chip (ticket 19: the group
+   * row's hover action opens the state with that project's chip). Only
+   * meaningful while the new-task state is open — the boot empty state and
+   * ⌘N follow the ticket-17 fallback chain. */
+  const [newTaskPreset, setNewTaskPreset] = useState<string | null>(null)
   /** First prompt typed before a folder exists; sent once the session is ready. */
   const pendingPromptRef = useRef<string | null>(null)
   /** Images typed (pasted) before a folder exists; attached to the first prompt. */
@@ -273,15 +278,16 @@ export default function App(): JSX.Element {
     window.picode.chat.sendToHost({ type: 'create_session', cwd, defaults })
   }, [settings.preferences])
 
-  /** Ticket 17: ⌘N / New Task opens the new-task empty state — no system
-   * folder picker. The project chip preselects the fallback chain
-   * (active session → last used → recent first); the send creates the
-   * session. */
-  const handleNewTask = useCallback((): void => {
+  /** Ticket 17/19: ⌘N, the New Task row or a group's hover action opens the
+   * new-task empty state — no system folder picker. A preset cwd preselects
+   * that project's chip; otherwise the chip follows the fallback chain
+   * (active session → last used → recent first). */
+  const handleNewTask = useCallback((presetCwd?: string): void => {
     // ⌘N × dock (ticket 17×18 decision, dock-model.dockForNewTask): the
     // new-task state replaces the MAIN ZONE only — the dock shell stays
     // exactly as the user arranged it.
     dockDispatch({ type: 'dock-for-new-task' })
+    setNewTaskPreset(presetCwd ?? null)
     setNewTaskOpen(true)
   }, [])
 
@@ -520,6 +526,21 @@ export default function App(): JSX.Element {
   const inAppIds = liveSessionIds(registry)
   const runningIds = runningSessionIds(registry)
 
+  /** Hidden project groups (ticket 19) — a read-only Set projection of the
+   * persisted preference; the pure filter consumes it in the Sidebar. */
+  const hiddenCwds = useMemo(
+    () => new Set(settings.preferences.hiddenGroups),
+    [settings.preferences.hiddenGroups]
+  )
+
+  /** Hide a project group (ticket 19): local preference only, recovered in
+   * Settings → General → Hidden projects. Session files are untouched and
+   * ⌘K / the Groups all-tasks view still reach every session. */
+  function handleHideGroup(cwd: string): void {
+    handleSetPreferences({ hiddenGroups: toggleHiddenGroup(settings.preferences.hiddenGroups, cwd, true) })
+    notify('Group hidden. Restore it in Settings → General → Hidden projects.', 'info')
+  }
+
   function handleOpenSession(summary: SessionSummary): void {
     if (summary.id === focusedId) {
       // Already the focused view — leave Follow mode, if any.
@@ -713,6 +734,10 @@ export default function App(): JSX.Element {
   const showError = chat.error !== null && chat.error !== focused?.dismissedError
   const showFollow = followedFile !== null
   const showTranscript = chat.entries.length > 0 || chat.session !== null
+  /** The group-row preset is only meaningful while the new-task state is
+   * open — closing it (Escape, session create, follow) falls back to the
+   * ticket-17 chain so the boot empty state never inherits a stale preset. */
+  const newTaskPresetActive = newTaskOpen ? newTaskPreset : null
 
   if (ui.view === 'settings') {
     return (
@@ -753,7 +778,9 @@ export default function App(): JSX.Element {
         onTogglePin={handleTogglePin}
         onOpenSession={handleOpenSession}
         onRenameSession={handleRenameSession}
-        onNewTask={() => void handleNewTask()}
+        onNewTask={(presetCwd) => void handleNewTask(presetCwd)}
+        hiddenCwds={hiddenCwds}
+        onHideGroup={handleHideGroup}
         onOpenSearch={() => setSearchOpen(true)}
         onOpenSettings={() => dispatch({ type: 'open-settings' })}
       />
@@ -777,11 +804,15 @@ export default function App(): JSX.Element {
                 onOpen={() => void handleFollowOpen()}
               />
             ) : newTaskOpen || !showTranscript ? (
-              // New-task mode (⌘N, ticket 17) and the boot empty state render the
-              // same chip empty state; ⌘N shows it even while a session is open.
+              // New-task mode (⌘N, ticket 17; group hover action, ticket 19) and
+              // the boot empty state render the same chip empty state. The key
+              // remounts it per preset so the group's chip preselection always
+              // wins over a leftover dropdown override; ⌘N and the boot state
+              // share the chain-default key and keep their draft across ⌘N.
               <EmptyState
+                key={newTaskPresetActive ?? 'newtask-chain'}
                 creating={creating}
-                defaultProject={newTaskDefaultProject}
+                defaultProject={newTaskPresetActive ?? newTaskDefaultProject}
                 recentProjects={recentWorkspaceList}
                 onStart={startTask}
                 onOpenFolder={() => window.picode.chat.pickWorkingDirectory()}

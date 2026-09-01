@@ -34,13 +34,19 @@ export interface AppPreferences {
   newTaskDirectory: NewTaskDefaultMode
   /** The pinned project for 'fixed' mode; null = not chosen (chain applies). */
   newTaskFixedProject: string | null
+  /** Project cwds hidden from the sidebar's Projects list (ticket 19). A
+   * purely local decluttering preference: session files are never touched,
+   * hidden groups' tasks stay reachable via ⌘K search and the Groups
+   * all-tasks view, and the settings page lists them for recovery. */
+  hiddenGroups: string[]
 }
 
 export const DEFAULT_PREFERENCES: AppPreferences = {
   defaultModel: null,
   defaultThinkingLevel: null,
   newTaskDirectory: 'last-used',
-  newTaskFixedProject: null
+  newTaskFixedProject: null,
+  hiddenGroups: []
 }
 
 const THINKING_LEVELS: ReadonlySet<string> = new Set([
@@ -76,6 +82,19 @@ function normalizedFixedProject(value: unknown): string | null {
   return trimmed === '' ? null : trimmed
 }
 
+/** Hidden-project cwds: strings only, trimmed, blank-free, deduped in order. */
+function normalizedHiddenGroups(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  const seen = new Set<string>()
+  for (const entry of value) {
+    if (typeof entry !== 'string') continue
+    const trimmed = entry.trim()
+    if (trimmed === '' || seen.has(trimmed)) continue
+    seen.add(trimmed)
+  }
+  return [...seen]
+}
+
 function normalizedModelOr(prev: AppPreferences['defaultModel'], value: unknown): AppPreferences['defaultModel'] {
   if (value === undefined) return prev
   const normalized = normalizedModel(value)
@@ -98,6 +117,11 @@ function normalizedFixedProjectOr(prev: string | null, value: unknown): string |
   return value === null || normalized !== null ? normalized : prev
 }
 
+function normalizedHiddenGroupsOr(prev: string[], value: unknown): string[] {
+  if (value === undefined) return prev
+  return Array.isArray(value) ? normalizedHiddenGroups(value) : prev
+}
+
 /** Defensive read of a preferences JSON document — invalid fields fall back. */
 export function normalizePreferences(raw: unknown): AppPreferences {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return { ...DEFAULT_PREFERENCES }
@@ -106,7 +130,8 @@ export function normalizePreferences(raw: unknown): AppPreferences {
     defaultModel: normalizedModel(record['defaultModel']),
     defaultThinkingLevel: normalizedThinkingLevel(record['defaultThinkingLevel']),
     newTaskDirectory: normalizedDirectoryMode(record['newTaskDirectory']),
-    newTaskFixedProject: normalizedFixedProject(record['newTaskFixedProject'])
+    newTaskFixedProject: normalizedFixedProject(record['newTaskFixedProject']),
+    hiddenGroups: normalizedHiddenGroups(record['hiddenGroups'])
   }
 }
 
@@ -119,8 +144,17 @@ export function mergePreferences(prev: AppPreferences, patch: unknown): AppPrefe
     defaultModel: normalizedModelOr(prev.defaultModel, record['defaultModel']),
     defaultThinkingLevel: normalizedThinkingOr(prev.defaultThinkingLevel, record['defaultThinkingLevel']),
     newTaskDirectory: normalizedDirectoryOr(prev.newTaskDirectory, record['newTaskDirectory']),
-    newTaskFixedProject: normalizedFixedProjectOr(prev.newTaskFixedProject, record['newTaskFixedProject'])
+    newTaskFixedProject: normalizedFixedProjectOr(prev.newTaskFixedProject, record['newTaskFixedProject']),
+    hiddenGroups: normalizedHiddenGroupsOr(prev.hiddenGroups, record['hiddenGroups'])
   }
+}
+
+/** Add or remove one hidden-project cwd (ticket 19). The result is deduped
+ * and order-stable: hiding moves the cwd to the end, restoring just drops
+ * it — the settings recovery list reads the same array back. */
+export function toggleHiddenGroup(hidden: readonly string[], cwd: string, hide: boolean): string[] {
+  const without = hidden.filter((entry) => entry !== cwd)
+  return hide ? [...without, cwd] : without
 }
 
 /**

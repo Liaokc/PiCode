@@ -3,7 +3,8 @@ import {
   DEFAULT_PREFERENCES,
   mergePreferences,
   normalizePreferences,
-  sessionDefaultsFromPreferences
+  sessionDefaultsFromPreferences,
+  toggleHiddenGroup
 } from '../../src/shared/preferences.ts'
 
 describe('normalizePreferences', () => {
@@ -25,7 +26,8 @@ describe('normalizePreferences', () => {
       defaultModel: { providerId: 'anthropic', modelId: 'claude-opus-4-5' },
       defaultThinkingLevel: 'high',
       newTaskDirectory: 'fixed',
-      newTaskFixedProject: '/Users/dev/repos/api'
+      newTaskFixedProject: '/Users/dev/repos/api',
+      hiddenGroups: []
     })
     expect(
       normalizePreferences({
@@ -64,7 +66,8 @@ describe('mergePreferences', () => {
       defaultModel: { providerId: 'bella', modelId: 'GLM-5.3' },
       defaultThinkingLevel: null,
       newTaskDirectory: 'last-used',
-      newTaskFixedProject: null
+      newTaskFixedProject: null,
+      hiddenGroups: []
     })
   })
 
@@ -92,6 +95,31 @@ describe('mergePreferences', () => {
     const cleared = mergePreferences(pinned, { newTaskFixedProject: null })
     expect(cleared.newTaskFixedProject).toBeNull()
   })
+
+  it('normalizes hiddenGroups: strings only, trimmed, blank-free, deduped, order-stable (ticket 19)', () => {
+    expect(normalizePreferences(undefined).hiddenGroups).toEqual([])
+    expect(normalizePreferences({ hiddenGroups: [] }).hiddenGroups).toEqual([])
+    expect(
+      normalizePreferences({ hiddenGroups: ['/work/api', ' /work/web ', '/work/api', '', 42, null, '/work/web'] }).hiddenGroups
+    ).toEqual(['/work/api', '/work/web'])
+    expect(normalizePreferences({ hiddenGroups: 'nope' }).hiddenGroups).toEqual([])
+    expect(normalizePreferences({ hiddenGroups: [1337] }).hiddenGroups).toEqual([])
+  })
+
+  it('patches hiddenGroups as a whole array; non-array and missing patches keep the previous value', () => {
+    const base = normalizePreferences({ hiddenGroups: ['/work/api'] })
+    expect(mergePreferences(base, { hiddenGroups: [] }).hiddenGroups).toEqual([])
+    expect(mergePreferences(base, { hiddenGroups: ['/b', '/a'] }).hiddenGroups).toEqual(['/b', '/a'])
+    expect(mergePreferences(base, {}).hiddenGroups).toEqual(['/work/api'])
+    expect(mergePreferences(base, { hiddenGroups: '/work/api' }).hiddenGroups).toEqual(['/work/api'])
+    // Arrays replace as a whole (sanitized like on read); only non-array
+    // patches keep the previous value.
+    expect(mergePreferences(base, { hiddenGroups: [7] }).hiddenGroups).toEqual([])
+  })
+
+  it('leaves session defaults untouched by hiddenGroups', () => {
+    expect(sessionDefaultsFromPreferences(normalizePreferences({ hiddenGroups: ['/work/api'] }))).toBeNull()
+  })
 })
 
 describe('sessionDefaultsFromPreferences', () => {
@@ -114,5 +142,17 @@ describe('sessionDefaultsFromPreferences', () => {
   it('carries a thinking level alone when no default model is set', () => {
     const prefs = normalizePreferences({ defaultThinkingLevel: 'off' })
     expect(sessionDefaultsFromPreferences(prefs)).toEqual({ thinkingLevel: 'off' })
+  })
+})
+
+describe('toggleHiddenGroup', () => {
+  it('re-appends an already-hidden cwd at the end (most recently hidden last)', () => {
+    expect(toggleHiddenGroup([], '/work/api', true)).toEqual(['/work/api'])
+    expect(toggleHiddenGroup(['/work/api', '/work/web'], '/work/api', true)).toEqual(['/work/web', '/work/api'])
+  })
+
+  it('removes a cwd and ignores cwds that were never hidden', () => {
+    expect(toggleHiddenGroup(['/work/api', '/work/web'], '/work/api', false)).toEqual(['/work/web'])
+    expect(toggleHiddenGroup([], '/work/api', false)).toEqual([])
   })
 })
