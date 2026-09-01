@@ -217,6 +217,12 @@ export default function App(): JSX.Element {
           // Focus is switching to the announced session — the branch-history
           // panel belongs to the view being left behind; close it.
           setTreeOpen(false)
+          // Ticket 21: the announced session's workspace may differ from the
+          // view before it (create / resume / fork / takeover) — refresh the
+          // read-only branch readout for THIS session's host.
+          if (scopeId !== null) {
+            window.picode.chat.sendToHost({ type: 'session_command', sessionId: scopeId, command: { type: 'get_branch' } })
+          }
           const pending = pendingPromptRef.current
           const pendingImages = pendingImagesRef.current
           pendingPromptRef.current = null
@@ -348,6 +354,16 @@ export default function App(): JSX.Element {
     },
     []
   )
+
+  /** Ticket 21: refresh the read-only branch readout when the focused
+   * session changes (session switch). Hostless entries are skipped — the
+   * supervisor would only answer with a null readout. */
+  const focusedAliveRef = useRef(false)
+  focusedAliveRef.current = (focused?.chat.session ?? null) !== null
+  useEffect(() => {
+    if (focusedId === null || !focusedAliveRef.current) return
+    window.picode.chat.sendToHost({ type: 'session_command', sessionId: focusedId, command: { type: 'get_branch' } })
+  }, [focusedId])
 
   async function handleComposerSend(text: string, images: ImageAttachment[] = []): Promise<void> {
     if (focusedId !== null && chat.session !== null) {
@@ -823,6 +839,7 @@ export default function App(): JSX.Element {
                 chat={chat}
                 creating={creating}
                 tree={tree}
+                branch={focused?.branch ?? null}
                 treeOpen={treeOpen}
                 onToggleTree={() => {
                   if (!treeOpen && chat.session) sendFocused({ type: 'request_tree' })

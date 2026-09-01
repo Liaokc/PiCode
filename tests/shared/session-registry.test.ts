@@ -265,4 +265,50 @@ describe('registryReducer — legacy unwrapped events (visual-QA harness shape)'
   it('drops unwrapped events when nothing is focused', () => {
     expect(run(initialRegistryState(), { type: 'text_delta', delta: 'x' })).toEqual(initialRegistryState())
   })
+
+  it('routes the unwrapped branch_info to the focused session', () => {
+    const state = run(
+      initialRegistryState(),
+      { type: 'session_created', sessionId: 's-a', cwd: '/tmp/a', model: null },
+      { type: 'branch_info', branch: 'main' }
+    )
+    expect(state.sessions.find((s) => s.id === 's-a')?.branch).toBe('main')
+  })
+})
+
+describe('registryReducer — branch readout (ticket 21, read-only)', () => {
+  it('stores branch_info on the session it belongs to, isolated per session', () => {
+    const state = run(
+      initialRegistryState(),
+      CREATED_A,
+      CREATED_B,
+      scoped('s-a', { type: 'branch_info', branch: 'main' }),
+      scoped('s-b', { type: 'branch_info', branch: null }) // s-b's workspace is not a git repo
+    )
+    expect(state.sessions.find((s) => s.id === 's-a')?.branch).toBe('main')
+    expect(state.sessions.find((s) => s.id === 's-b')?.branch).toBeNull()
+  })
+
+  it('opens a defensive entry for a branch_info racing its announcement', () => {
+    const state = run(initialRegistryState(), scoped('s-x', { type: 'branch_info', branch: 'develop' }))
+    expect(state.sessions.find((s) => s.id === 's-x')?.branch).toBe('develop')
+  })
+
+  it('a (re-)announcement resets the stale branch until the fresh readout arrives', () => {
+    const state = run(initialRegistryState(), CREATED_A, scoped('s-a', { type: 'branch_info', branch: 'main' }))
+    // Fork/resume/takeover re-announce: the workspace may have changed — the
+    // old readout must not linger while the fresh one is in flight.
+    const reannounced = run(state, scoped('s-a', { type: 'session_created', sessionId: 's-a', cwd: '/tmp/a', model: 'm1', resumed: true }))
+    expect(reannounced.sessions.find((s) => s.id === 's-a')?.branch).toBeNull()
+  })
+
+  it('a later readout overwrites an earlier one (last write wins)', () => {
+    const state = run(
+      initialRegistryState(),
+      CREATED_A,
+      scoped('s-a', { type: 'branch_info', branch: 'main' }),
+      scoped('s-a', { type: 'branch_info', branch: 'feature-late' })
+    )
+    expect(state.sessions.find((s) => s.id === 's-a')?.branch).toBe('feature-late')
+  })
 })

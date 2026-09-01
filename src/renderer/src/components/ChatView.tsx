@@ -7,13 +7,16 @@ import TreePanel from './TreePanel'
 import TurnContainer from './TurnContainer'
 import AnswerBlock from './AnswerBlock'
 import Tooltip from './Tooltip'
-import { ChevronDownIcon, PencilIcon } from './icons'
+import { ChevronDownIcon, GitBranchIcon, PencilIcon } from './icons'
 
 interface ChatViewProps {
   chat: ChatState
   creating: boolean
   /** Latest tree payload from the host (null until the first one arrives). */
   tree: SessionTreePayload | null
+  /** Read-only git branch of the focused session's workspace (ticket 21);
+   * null (non-git workspace / not yet read) hides the badge entirely. */
+  branch: string | null
   treeOpen: boolean
   onToggleTree: () => void
   onRename: (name: string) => void
@@ -36,13 +39,15 @@ interface ChatViewProps {
  * Live transcript over the bottom-docked composer (screenshot 01). All chat
  * state comes from the Seam-1 contract via the chat reducer; this component
  * only renders and issues commands. The slim topbar carries the session
- * title (double-click to rename) and the branch-history dropdown (screenshot
+ * title (double-click to rename), the read-only git branch badge (ticket 21,
+ * hidden for non-git workspaces) and the branch-history dropdown (screenshot
  * 01 shows the same title + caret pattern at the top of the main zone).
  */
 export default function ChatView({
   chat,
   creating,
   tree,
+  branch,
   treeOpen,
   onToggleTree,
   onRename,
@@ -116,6 +121,14 @@ export default function ChatView({
         ) : (
           <span className="chat-topbar-title" title={chat.session?.cwd ?? title} onDoubleClick={startRename}>
             {title}
+          </span>
+        )}
+        {branch !== null && (
+          // Data reveal (CONTEXT.md tooltip rule): the full branch name rides
+          // a native title — never the shortcut/description Tooltip.
+          <span className="chat-topbar-branch" title={branch}>
+            <GitBranchIcon size={11} />
+            <span className="chat-topbar-branch-name">{branch}</span>
           </span>
         )}
         <Tooltip label="Rename">

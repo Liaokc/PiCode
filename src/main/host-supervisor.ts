@@ -76,6 +76,15 @@ export class HostSupervisor {
       case 'session_command': {
         const binding = this.bySession.get(message.sessionId)
         if (binding === undefined) {
+          // Ticket 21: `get_branch` is a pure DISPLAY read — with no live
+          // host there is no workspace readout, which degrades to a null
+          // branch (the badge hides) instead of an error. Synthetic
+          // announcements from the visual-QA harnesses and focus switches
+          // onto crashed sessions stay toast-free this way.
+          if (message.command.type === 'get_branch') {
+            this.emitScoped(message.sessionId, { type: 'branch_info', branch: null })
+            break
+          }
           // The session has no live host (crashed, detached, or never
           // announced). Tell ITS scope so the entry can react; the renderer's
           // click routing normally prevents reaching here.
@@ -101,6 +110,7 @@ export class HostSupervisor {
       case 'deny_tool':
       case 'compact_session':
       case 'list_files':
+      case 'get_branch':
       case 'abort_turn':
       case 'navigate_tree':
       case 'fork_session':

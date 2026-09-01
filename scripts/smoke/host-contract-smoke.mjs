@@ -15,7 +15,7 @@
  *   → prompt → steer → queue_update×2 → follow-up → queue_update
  *   → clear_queue → queue_update → agent_end
  *   → set_thinking_level → thinking_level_changed; set_model → model_changed
- *   → list_files → file_list → shutdown → exit 0
+ *   → list_files → file_list → get_branch → branch_info → shutdown → exit 0
  *
  *   Round B (ticket 04: resume / rename / tree / fork against the SAME file)
  *   resume → session_created(resumed) → history_loaded → session_tree
@@ -54,6 +54,25 @@ const cwd = await mkdtemp(path.join(tmpdir(), 'picode-smoke-'))
 // A real file so the @-mention candidate listing has something to return.
 const { writeFileSync } = await import('node:fs')
 writeFileSync(path.join(cwd, 'alpha.txt'), 'mention me')
+
+// Ticket 21: the branch readout roundtrip. With git available the workspace
+// becomes a repo on a KNOWN branch and branch_info must report exactly that;
+// without git the same roundtrip must degrade to branch_info(null).
+const SMOKE_BRANCH = 'picode-smoke-branch'
+let expectedBranch = SMOKE_BRANCH
+try {
+  const { execFileSync } = await import('node:child_process')
+  const git = (...args) => execFileSync('git', args, { cwd, stdio: 'ignore' })
+  git('init', '-b', SMOKE_BRANCH)
+  git('config', 'user.email', 'smoke@picode.local')
+  git('config', 'user.name', 'Picode Smoke')
+  // HEAD must resolve for `rev-parse --abbrev-ref HEAD` — unborn HEAD fails.
+  git('-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '-m', 'smoke root')
+  console.log(`SMOKE git repo initialized on branch ${SMOKE_BRANCH}`)
+} catch {
+  expectedBranch = null
+  console.log('SMOKE git unavailable — branch readout must degrade to null')
+}
 
 let child = null
 let step = 'A session_created'
@@ -434,6 +453,16 @@ function onEvent(event) {
         fail(`file_list should contain alpha.txt, got ${JSON.stringify(event.files)}`)
       }
       console.log('SMOKE file_list ok (alpha.txt listed)')
+      step = 'A branch'
+      child.send({ type: 'get_branch' })
+      return
+    }
+    case 'A branch': {
+      if (event.type !== 'branch_info') return
+      if (event.branch !== expectedBranch) {
+        fail(`branch_info should report ${JSON.stringify(expectedBranch)}, got ${JSON.stringify(event.branch)}`)
+      }
+      console.log(`SMOKE branch_info ok (branch=${JSON.stringify(event.branch)})`)
       console.log(`SMOKE contract events ok: ${JSON.stringify(seen)}`)
       step = 'A shutdown'
       child.send({ type: 'shutdown' })

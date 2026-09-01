@@ -587,6 +587,12 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case 'session_detached':
       return state
 
+    // Branch readout (ticket 21) is REGISTRY view state, like the tree: the
+    // session registry intercepts `branch_info` before it reaches here.
+    // Defensively no-op for direct single-session consumers.
+    case 'branch_info':
+      return state
+
     case 'host_exit': {
       const cwd = state.session?.cwd ?? null
       // A dead host settles like any run end: the turn folds away and the

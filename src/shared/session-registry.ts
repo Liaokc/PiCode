@@ -31,6 +31,9 @@ export interface RegistrySession {
   chat: ChatState
   /** Latest session tree payload (branch-history panel data), per session. */
   tree: SessionTreePayload | null
+  /** Git branch of this session's workspace (ticket 21, read-only readout);
+   * null = not a git repo / unknown yet — the badge just hides. */
+  branch: string | null
   /** The error banner this session's user dismissed (per session, ticket 20). */
   dismissedError: ChatError | null
 }
@@ -103,7 +106,7 @@ function withEntryFor(state: SessionRegistryState, id: string): SessionRegistryS
     ...state,
     sessions: [
       ...state.sessions,
-      { id, cwd: null, sessionFile: null, name: null, chat: initialChatState(), tree: null, dismissedError: null }
+      { id, cwd: null, sessionFile: null, name: null, chat: initialChatState(), tree: null, branch: null, dismissedError: null }
     ]
   }
 }
@@ -126,7 +129,7 @@ function applyAnnouncement(state: SessionRegistryState, id: string, event: Extra
     ...withEntry,
     sessions: withEntry.sessions.map((s) =>
       s.id === id
-        ? { ...s, cwd: event.cwd, sessionFile: event.sessionFile ?? null, name: event.name ?? null, tree: null, dismissedError: null }
+        ? { ...s, cwd: event.cwd, sessionFile: event.sessionFile ?? null, name: event.name ?? null, tree: null, branch: null, dismissedError: null }
         : s
     ),
     focusedId: id
@@ -166,6 +169,13 @@ function foldEvent(state: SessionRegistryState, event: HostToParent): SessionReg
         sessions: withEntry.sessions.map((s) => (s.id === sessionId ? { ...s, tree: scoped.tree } : s))
       }
     }
+    // Same for the branch readout (ticket 21): per-session view state.
+    if (scoped.type === 'branch_info') {
+      return {
+        ...withEntry,
+        sessions: withEntry.sessions.map((s) => (s.id === sessionId ? { ...s, branch: scoped.branch } : s))
+      }
+    }
     return foldInto(withEntry, sessionId, scoped)
   }
   // Legacy unwrapped event (single-session shape): the visual-QA harnesses
@@ -180,6 +190,16 @@ function foldEvent(state: SessionRegistryState, event: HostToParent): SessionReg
     return {
       ...state,
       sessions: state.sessions.map((s) => (s.id === focused ? { ...s, tree: event.tree } : s))
+    }
+  }
+  // Legacy unwrapped branch readout belongs to the FOCUSED session, like the
+  // other legacy events the visual-QA harnesses inject.
+  if (event.type === 'branch_info') {
+    const focused = state.focusedId
+    if (focused === null) return state
+    return {
+      ...state,
+      sessions: state.sessions.map((s) => (s.id === focused ? { ...s, branch: event.branch } : s))
     }
   }
   const focused = state.focusedId
