@@ -53,7 +53,7 @@ export class HostSupervisor {
     return this.bindings.map((b) => b.child.pid ?? 0).filter((pid) => pid > 0)
   }
 
-  /** The most recently announced session's host pid (smoke + legacy callers). */
+  /** The most recently spawned host's pid (smoke + legacy callers). */
   get hostPid(): number | null {
     const last = this.bindings[this.bindings.length - 1]
     return last?.child.pid ?? null

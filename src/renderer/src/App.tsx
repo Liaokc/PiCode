@@ -308,7 +308,7 @@ export default function App(): JSX.Element {
       if (id !== null) window.picode.chat.sendToHost({ type: 'session_command', sessionId: id, command })
     },
     []
- )
+  )
 
   async function handleComposerSend(text: string, images: ImageAttachment[] = []): Promise<void> {
     if (focusedId !== null && chat.session !== null) {

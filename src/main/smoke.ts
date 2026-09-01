@@ -33,7 +33,7 @@
  */
 
 import os from 'node:os'
-import { utimesSync } from 'node:fs'
+import { statSync, utimesSync } from 'node:fs'
 import { app, type BrowserWindow } from 'electron'
 import type { HostSupervisor } from './host-supervisor'
 import type { HostToParent, SessionScopedEvent } from '../shared/contract'
@@ -527,6 +527,7 @@ export function startSmokeIfEnabled(
       command: { type: 'prompt', text: `Reply with exactly: ${MULTI_MARKER}` }
     })
     await waitFor((e) => e.type === 'agent_end' && e.sessionId === ms1.sessionId, 'multi warm agent_end 1')
+    const ms1SizeWarm = statSync(ms1.sessionFile).size
 
     // Session 1 starts a LONG streaming run. The dot probe below starts in
     // the same instant as agent_start — the run state is guaranteed until
@@ -591,6 +592,10 @@ export function startSmokeIfEnabled(
       (e) => e.type === 'text_delta' && e.sessionId === ms1.sessionId,
       'background text_delta after session 3 exists'
     )
+    // The background session's file KEEPS GROWING while nothing renders it —
+    // the run-start user message is already appended beyond the warm turn.
+    const ms1SizeDuring = statSync(ms1.sessionFile).size
+    if (ms1SizeDuring <= ms1SizeWarm) fail('background session file did not grow while streaming')
     log('multi_background_streaming_ok')
 
     // Switch BACK to session 1 through its sidebar row: pure focus change —

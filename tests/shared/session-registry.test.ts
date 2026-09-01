@@ -8,11 +8,11 @@ import {
   liveSessionIds,
   type SessionRegistryState
 } from '../../src/shared/session-registry'
-import type { HostToParent } from '../../src/shared/contract'
+import type { HostToParent, SessionScopedEvent } from '../../src/shared/contract'
 
 /** Wrap a scoped event for a session (the supervisor's tagging shape). */
-function scoped(sessionId: string, event: HostToParent): HostToParent {
-  return { type: 'session_event', sessionId, event } as HostToParent
+function scoped(sessionId: string, event: SessionScopedEvent): HostToParent {
+  return { type: 'session_event', sessionId, event }
 }
 
 const CREATED_A = scoped('s-a', { type: 'session_created', sessionId: 's-a', cwd: '/tmp/a', model: 'm1' })
@@ -110,6 +110,33 @@ describe('sidebarDotState — fixed-slot dot derivation (ticket 20)', () => {
     [false, false, false, 'idle']
   ])('running=%p inAppIdle=%p liveElsewhere=%p → %p', (runningHere, inAppIdle, liveElsewhere, expected) => {
     expect(sidebarDotState(runningHere as boolean, inAppIdle as boolean, liveElsewhere as boolean)).toBe(expected)
+  })
+})
+
+describe('registryReducer — failed spawn surfaces its banner (α parity)', () => {
+  it('focuses the defensive entry on session_error for an unknown id', () => {
+    const state = run(initialRegistryState(), CREATED_A)
+    const failed = run(state, scoped('pending-1', { type: 'session_error', message: 'boot failed' }))
+    expect(failed.focusedId).toBe('pending-1')
+    const entry = failed.sessions.find((s) => s.id === 'pending-1')
+    expect(entry?.chat.error).toEqual({ kind: 'session', message: 'boot failed' })
+    // The previously focused session is untouched.
+    expect(failed.sessions.find((s) => s.id === 's-a')?.chat.error).toBeNull()
+  })
+
+  it('focuses the defensive entry on host_exit for an unknown id (instant spawn death)', () => {
+    const failed = run(
+      initialRegistryState(),
+      scoped('pending-2', { type: 'host_exit', clean: false, code: null, signal: 'SIGKILL' })
+    )
+    expect(failed.focusedId).toBe('pending-2')
+    expect(failed.sessions.find((s) => s.id === 'pending-2')?.chat.error?.kind).toBe('host')
+  })
+
+  it('does NOT refocus on failures of already-known sessions (background crash stays put)', () => {
+    const state = run(initialRegistryState(), CREATED_A, CREATED_B)
+    const crashed = run(state, scoped('s-a', { type: 'host_exit', clean: false, code: 1, signal: null }))
+    expect(crashed.focusedId).toBe('s-b')
   })
 })
 

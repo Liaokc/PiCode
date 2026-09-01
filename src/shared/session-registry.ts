@@ -147,6 +147,16 @@ function foldEvent(state: SessionRegistryState, event: HostToParent): SessionReg
     const { sessionId, event: scoped } = event
     if (scoped.type === 'session_detached') return detach(state, sessionId)
     if (scoped.type === 'session_created') return applyAnnouncement(state, sessionId, scoped)
+    // A spawn that fails BEFORE its announcement (boot error, instant death)
+    // has no announced session anywhere — focusing its defensive entry is
+    // what surfaces the failure banner, exactly like the α single-session
+    // world did.
+    if (
+      (scoped.type === 'session_error' || scoped.type === 'host_exit') &&
+      findSession(state, sessionId) === undefined
+    ) {
+      return foldInto({ ...withEntryFor(state, sessionId), focusedId: sessionId }, sessionId, scoped)
+    }
     const withEntry = withEntryFor(state, sessionId)
     // The tree is registry view state (per session, ticket 20) — the chat
     // reducer deliberately ignores tree payloads.
