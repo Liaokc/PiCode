@@ -6,7 +6,7 @@
 
 **Blocked by:** 19（悬停框架与按钮槽位）。
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [ ] 悬停钮加入第三枚「查看文件」；点击切换侧栏为文件浏览器
 - [ ] 文件树按目录懒加载（复用既有目录读取通道；隐藏条目与类型图标对照 ZCode `vf2.png`）
@@ -25,3 +25,5 @@
   - **visual:multi 扩展**：`ensureVisualProjectFixture`（tmpdir 隔离真实 fixture 目录，basename 保持 api-server 使 m3–m7 探针不变）+ m9a–m9d 四帧（根列表含隐藏条目 / src 懒加载展开 / README.md 预览深链 / 返回恢复任务列表），全部 DOM 探针门禁后真鼠标事件截图，归档 `.scratch/compare/m9*.png`。重跑验证 m3 现为三钮形态。
   - **验证**：typecheck / lint / vitest 634 全绿（新增 14 例）。smoke 未扩新阶段（无新契约事件，理由同票 19）；全量 smoke 含真实模型调用受 dev-app 串行约束，留待合并会话/操作者按惯例执行。
   - **披露**：① `vf2.png` 未在 `.scratch/compare/` 归档（取证链缺帧），形态依据 findings 行 16 三钮实拍 + grilling R4-Q4 决议 A 构建，操作者可补帧；② 浏览器态保留底部账户栏（ZCode 形态证据未覆盖此细节，判定为侧栏常驻 chrome）；③ 失败/空目录行内提示为超验收最小面。合并：请操作者执行 `bash scripts/merge-ticket.sh 26`。
+
+- 2026-09-01 (merge session, T00): merged as **d8e4b8f** (`merge: t26-sidebar-file-browser`, rebase 零冲突 + no-ff onto main)。验收口径：操作者明确「已验收」；实现会话记录「查看文件」第三钮消费 19 悬停框架 + 22 tooltip、侧栏切换为项目文件树（懒加载复用既有目录通道、含隐藏条目、File Preview 打开、「← 返回任务」恢复）、m9a–m9d 证据帧；合并后 main 上 typecheck + vitest 657/657 全绿。**本票为 1.1 里程碑最后一张——13/13 全部闭环。**
