@@ -45,6 +45,12 @@ export function multiSessionVisualEnabled(): boolean {
   return process.env['PICODE_VISUAL_MULTI'] === '1'
 }
 
+/** Ticket-25 background-approval harness (orange badge + parked pill + deny
+ * story). Exclusive: owns the window alone. */
+export function approvalVisualEnabled(): boolean {
+  return process.env['PICODE_VISUAL_APPROVAL'] === '1'
+}
+
 export function visualOutDir(): string {
   return process.env['PICODE_VISUAL_OUT'] || path.join(process.cwd(), '.scratch', 'visual')
 }
@@ -134,6 +140,8 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
   if (process.env['PICODE_VISUAL_DENSITY'] === '1') return
   // The multi-session harness (ticket 20) owns the window alone too.
   if (multiSessionVisualEnabled()) return
+  // Same for the background-approval harness (ticket 25).
+  if (approvalVisualEnabled()) return
 
   // Deterministic sidebar content for the shots (ticket 20): the empty-state
   // frame must show a status dot (a session written by ANOTHER end — fresh

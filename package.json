@@ -25,7 +25,8 @@
     "visual:density": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_DENSITY=1 electron .",
     "visual:settings": "npm run build && PICODE_VISUAL_SETTINGS=1 PICODE_FAKE_SETTINGS=1 electron .",
     "visual:usage": "npm run build && PICODE_VISUAL_USAGE=1 PICODE_FAKE_USAGE=1 electron .",
-    "visual:multi": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_MULTI=1 electron ."
+    "visual:multi": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_MULTI=1 electron .",
+    "visual:approval": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_APPROVAL=1 electron ."
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.84.3",

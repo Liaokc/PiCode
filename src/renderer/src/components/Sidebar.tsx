@@ -7,7 +7,7 @@ import {
   isSessionLive,
   relativeTime
 } from '../../../shared/sessions/group'
-import { sidebarDotState } from '../../../shared/session-registry'
+import { sidebarDotState, type SidebarDotState } from '../../../shared/session-registry'
 import { useNowTick } from './use-now'
 import Tooltip from './Tooltip'
 import {
@@ -44,6 +44,8 @@ interface SidebarProps {
   inAppIds: ReadonlySet<string>
   /** Sessions with a run in flight in this app (the animated dot). */
   runningIds: ReadonlySet<string>
+  /** Sessions parked at the approval gate (ticket 25): the orange badge. */
+  awaitingIds: ReadonlySet<string>
   onTogglePin: (session: SessionSummary) => void
   onOpenSession: (session: SessionSummary) => void
   onRenameSession: (session: SessionSummary, name: string) => void
@@ -76,8 +78,9 @@ function TaskItem({
   session: SessionSummary
   now: number
   state: 'idle' | 'active' | 'followed'
-  /** Fixed-slot dot state (ticket 20): animated / green / empty slot. */
-  dot: 'run-here' | 'tui-live' | 'idle'
+  /** Fixed-slot dot state (ticket 20 + 25): orange / animated / green /
+   * empty slot. */
+  dot: SidebarDotState
   pinned: boolean
   onOpen: () => void
   onTogglePin: () => void
@@ -111,9 +114,11 @@ function TaskItem({
       }}
     >
       {/* Fixed slot (ticket 20): always rendered so every title's left edge
-          aligns — the dot appears inside only for live states. */}
+          aligns — the dot appears inside only for live states. Orange badge
+          = parked at the approval gate (ticket 25). */}
       <span className="sb-dot-slot">
         {dot === 'run-here' && <span className="sb-run-dot" aria-label="Running in PiCode" />}
+        {dot === 'awaiting-approval' && <span className="sb-await-dot" aria-label="Awaiting approval" />}
         {dot === 'tui-live' && <span className="sb-live-dot" aria-label="Running in another window" />}
       </span>
       {renaming ? (
@@ -160,6 +165,7 @@ export default function Sidebar({
   pinnedIds,
   inAppIds,
   runningIds,
+  awaitingIds,
   onTogglePin,
   onOpenSession,
   onRenameSession,
@@ -212,11 +218,13 @@ export default function Sidebar({
     }
   }, [groupMenuCwd])
 
-  /** Fixed-slot dot state for one row (ticket 20): animated = running in
-   * this app, green = written by another end (120s rule), empty = idle. An
-   * in-app session never shows the TUI dot — its mtime is ours. */
-  function dotFor(s: SessionSummary): 'run-here' | 'tui-live' | 'idle' {
-    return sidebarDotState(runningIds.has(s.id), inAppIds.has(s.id), isSessionLive(s, now))
+  /** Fixed-slot dot state for one row (ticket 20 + 25): orange = parked at
+   * the approval gate, animated = running in this app, green = written by
+   * another end (120s rule), empty = idle. An in-app session never shows
+   * the TUI dot — its mtime is ours. */
+  function dotFor(s: SessionSummary): SidebarDotState {
+    return sidebarDotState(awaitingIds.has(s.id), runningIds.has(s.id), inAppIds.has(s.id), isSessionLive(s, now))
+
   }
 
   function toggleExpanded(cwd: string): void {

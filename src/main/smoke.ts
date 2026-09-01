@@ -28,14 +28,24 @@
  * a targeted abort settles it, a SIGKILLed host isolates its crash to its
  * own session, and shutdownAll leaves zero orphaned processes.
  *
+ * Ticket 25 adds the background-approval stage: a gate hit in a background
+ * session parks the pill inside that session (the agent stays suspended —
+ * nothing auto-approves), lights the sidebar's orange badge, and requests
+ * the OS notification; the notification's click path foregrounds the window
+ * and focuses the session, where the SAME approve/deny controls work as in
+ * the foreground — Approve & Remember sticks (no second ask), and deny
+ * terminates the round, round-trips the reason, and updates the transcript.
+ *
  * Any missed step times out and exits non-zero. Progress logs as
  * `SMOKE <step>` lines on stdout. Not part of `npm test`.
  */
 
 import os from 'node:os'
-import { statSync, utimesSync } from 'node:fs'
+import path from 'node:path'
+import { existsSync, statSync, utimesSync } from 'node:fs'
 import { app, type BrowserWindow } from 'electron'
 import type { HostSupervisor } from './host-supervisor'
+import { focusSessionFromNotification, type ApprovalNotice } from './notifications'
 import type { HostToParent, SessionScopedEvent } from '../shared/contract'
 import { FOLLOW_TAKEOVER_REJECTED_TOAST } from '../shared/sessions/group'
 
@@ -45,8 +55,21 @@ const ABORT_AFTER_DELTAS = 3
 /** Marker prompt of the ticket-20 multi-session stage (unique in the DOM). */
 const MULTI_MARKER = 'PICODE_MULTI_SESSION_ONE'
 
+/** Markers of the ticket-25 background-approval stage. */
+const BG_APPROVAL_MARKER = 'PICODE_BG_APPROVAL'
+const BG_REMEMBER_MARKER = 'PICODE_BG_REMEMBERED'
+const BG_DENY_MARKER = 'PICODE_BG_DENY'
+const BG_DENY_REASON = 'No new files today.'
+
 export function smokeEnabled(): boolean {
   return process.env['PICODE_SMOKE'] === '1'
+}
+
+/** What the smoke exposes to main (index.ts): the host-event tap plus the
+ * notification-notice tap (ticket 25 asserts the notification pipeline). */
+export interface SmokeHooks {
+  onHostEvent: (event: HostToParent) => void
+  onApprovalNotice: (notice: ApprovalNotice) => void
 }
 
 /** Every event the smoke sees carries its session scope: the supervisor
@@ -62,24 +85,39 @@ interface Waiter {
 }
 
 /**
- * Drive the smoke sequence against `supervisor` and return a tap for host
- * events (waiters only; the caller keeps forwarding events to the renderer).
- * Returns null when PICODE_SMOKE is unset.
+ * Drive the smoke sequence against `supervisor` and return hooks for host
+ * events and approval notices (waiters only; the caller keeps forwarding
+ * events to the renderer). Returns null when PICODE_SMOKE is unset.
  */
 export function startSmokeIfEnabled(
   supervisor: HostSupervisor,
   getWindow: () => BrowserWindow | null
-): ((event: HostToParent) => void) | null {
+): SmokeHooks | null {
   if (!smokeEnabled()) return null
   const cwd = process.env['PICODE_SMOKE_CWD'] || os.tmpdir()
   const waiters = new Set<Waiter>()
+  const approvalNotices: ApprovalNotice[] = []
   const log = (step: string, detail = ''): void => console.log(`SMOKE ${step}${detail ? ` ${detail}` : ''}`)
 
   const fail: (message: string) => never = (message) => {
     console.error(`SMOKE FAIL ${message}`)
+    console.error(`SMOKE FAIL recent events: ${recentEvents.join(' | ') || '(none)'}`)
     app.exit(1)
     throw new Error(`SMOKE FAIL ${message}`)
   }
+
+  /** Ring buffer of the last scoped events — dumped on failure so a timeout
+   * says WHAT actually arrived instead of just what never did. */
+  const recentEvents: string[] = []
+  const noteEvent = (scoped: Scoped): void => {
+    const detail = scoped.type === 'approval_resolved' ? `(${String(scoped.approved)}:${scoped.reason ?? '-'})` : ''
+    recentEvents.push(`${scoped.sessionId.slice(-6)}:${scoped.type}${detail}`)
+    if (recentEvents.length > 40) recentEvents.shift()
+  }
+
+  /** Stage-local observers (ticket 25 negative assertions need to SEE that
+   * an event never came, not just wait for ones that must). */
+  const observers: Array<(event: Scoped) => void> = []
 
   function onHostEvent(event: HostToParent): void {
     // Flatten the ticket-20 wrapping: scoped events reach matchers tagged
@@ -94,6 +132,8 @@ export function startSmokeIfEnabled(
         waiter.resolve(scoped)
       }
     }
+    noteEvent(scoped)
+    for (const observe of observers) observe(scoped)
   }
 
   function waitFor(match: (event: Scoped) => boolean, label: string): Promise<Scoped> {
@@ -656,6 +696,208 @@ export function startSmokeIfEnabled(
     await waitFor((e) => e.type === 'agent_end' && e.sessionId === ms1.sessionId, 'multi agent_end 1 after isolation')
     log('multi_crash_isolation_ok')
 
+    // ---- ticket 25: background approval — pill parks, badge lights, notification knocks ----
+    log('bg_approval_start')
+    // A fresh session becomes the foreground view; session 1 (host still
+    // alive from the multi stage, gate rules empty) becomes the background
+    // session the gate fires in.
+    supervisor.createSession(cwd)
+    await waitFor((e) => e.type === 'session_created', 'bg foreground session_created')
+    const bgId = ms1.sessionId
+    if (!ms1.sessionFile) fail('bg session did not report its file')
+    const bgFile: string = ms1.sessionFile
+
+    // Stage-local observation: the suspension and remember assertions need
+    // to SEE that an event never came, not just wait for ones that must.
+    let bgApprovalRequired = 0
+    let bgApprovedResolved = false
+    let bgDeniedReason: string | null = null
+    let bgAgentEnded = 0
+    observers.push((event) => {
+      if (event.sessionId !== bgId) return
+      if (event.type === 'approval_required') bgApprovalRequired += 1
+      if (event.type === 'approval_resolved') {
+        if (event.approved) bgApprovedResolved = true
+        else bgDeniedReason = event.reason
+      }
+      if (event.type === 'agent_end') bgAgentEnded += 1
+    })
+
+    // The background session runs a gated tool call while the view is on
+    // the fresh session: the pill must park INSIDE the background session.
+    supervisor.handleParentCommand({
+      type: 'session_command',
+      sessionId: bgId,
+      command: { type: 'prompt', text: `Use the bash tool to run exactly: echo ${BG_APPROVAL_MARKER}` }
+    })
+    const bgAsk = (await waitFor(
+      (e) => e.type === 'approval_required' && e.sessionId === bgId && e.toolName === 'bash',
+      'bg approval_required'
+    )) as Extract<Scoped, { type: 'approval_required' }>
+    log('bg_approval_required', `tool=${bgAsk.toolName} call=${bgAsk.toolCallId}`)
+
+    // The agent is SUSPENDED at the gate: no agent_end may arrive while the
+    // pill waits — and nothing approves it on the user's behalf.
+    await new Promise((r) => setTimeout(r, 2000))
+    if (bgAgentEnded > 0) fail('the agent run ended while parked at the approval gate — the pill must suspend the run')
+    log('bg_agent_suspended_ok')
+
+    // Sidebar: the orange badge replaces the animated dot on the background
+    // row, and the pill does NOT reach the DOM (the view is elsewhere — it
+    // lives in the session's registry state).
+    await withWindow(getWindow, async (win) => {
+      const badge = await waitForProbe(
+        win,
+        `(() => {
+          const row = document.querySelector('[data-file="${bgFile}"]')
+          if (!row) return false
+          return row.querySelector('.sb-await-dot') !== null &&
+                 row.querySelector('.sb-run-dot') === null &&
+                 document.querySelectorAll('.approval-pill-pending').length === 0
+        })()`,
+        10_000
+      )
+      if (!badge) fail('background approval never lit the sidebar orange badge (or leaked the pill into the DOM)')
+      log('bg_badge_ok')
+    })
+
+    // The notification pipeline asked for THIS session's gate hit...
+    let notice: ApprovalNotice | undefined
+    for (let waited = 0; waited < 10_000; waited += 100) {
+      notice = approvalNotices.find((n) => n.sessionId === bgId && n.toolName === 'bash')
+      if (notice !== undefined) break
+      await new Promise((r) => setTimeout(r, 100))
+    }
+    if (notice === undefined) fail('no approval notification was requested for the background session')
+    log('bg_notification_ok', `title=${notice.title ?? '-'}`)
+
+    // ...and its click path foregrounds the window and focuses the session:
+    // the parked pill appears, ready for the same controls a foreground
+    // approval always had.
+    focusSessionFromNotification(getWindow, bgId)
+    await withWindow(getWindow, async (win) => {
+      const focused = await waitForProbe(
+        win,
+        `document.querySelector('[data-file="${bgFile}"]')?.classList.contains('sb-task-active') === true`,
+        5_000
+      )
+      if (!focused) fail('notification click did not focus the background session')
+      const pill = await waitForProbe(win, `document.querySelector('.approval-pill-pending[data-tool="bash"]') !== null`, 5_000)
+      if (!pill) fail('the refocused session does not render its parked pending pill')
+      log('bg_jump_ok')
+    })
+
+    // Approve & Remember through the pill's own button — the exact control
+    // path a foreground approval uses (sendFocused → session_command). The
+    // ack waiters exist BEFORE the click (same anti-race rule as below).
+    const approveAck = waitFor(
+      (e) => e.type === 'approval_resolved' && e.sessionId === bgId && e.approved === true,
+      'bg approval_resolved (approve)'
+    )
+    const approveToolEnd = waitFor((e) => e.type === 'tool_end' && e.sessionId === bgId, 'bg tool ran after approve')
+    const approveEnded = waitFor((e) => e.type === 'agent_end' && e.sessionId === bgId, 'bg agent_end after approve')
+    await withWindow(getWindow, async (win) => {
+      const clicked = (await win.webContents
+        .executeJavaScript(`(() => {
+          const pill = document.querySelector('.approval-pill-pending[data-tool="bash"]')
+          if (!pill) return false
+          const btn = [...pill.querySelectorAll('button')].find((b) => b.textContent?.includes('Remember'))
+          if (!btn) return false
+          btn.click()
+          return true
+        })()`)
+        .catch(() => false)) as boolean
+      if (!clicked) fail('Approve & Remember button not found on the parked pill')
+    })
+    await approveAck
+    await approveToolEnd
+    await approveEnded
+    if (!bgApprovedResolved) fail('approval_resolved(approve) never reached the stream')
+    log('bg_approve_remember_ok')
+
+    // The remember rule sticks under the current tier: the NEXT bash call
+    // must not ask again (the gate decides before execution, so any second
+    // ask would fire before this agent_end — the wait would hang).
+    const asksBeforeRemember = bgApprovalRequired
+    supervisor.handleParentCommand({
+      type: 'session_command',
+      sessionId: bgId,
+      command: { type: 'prompt', text: `Use the bash tool to run exactly: echo ${BG_REMEMBER_MARKER}` }
+    })
+    await waitFor((e) => e.type === 'agent_end' && e.sessionId === bgId, 'bg agent_end (remembered round)')
+    if (bgApprovalRequired !== asksBeforeRemember) fail('remembered bash asked again — the approve+remember rule did not stick')
+    log('bg_remember_ok')
+
+    // Deny path in the refocused session: write is NOT remembered, so the
+    // gate asks again; denying through the pill UI must terminate the round,
+    // round-trip the reason, and update the transcript (no file written).
+    supervisor.handleParentCommand({
+      type: 'session_command',
+      sessionId: bgId,
+      command: {
+        type: 'prompt',
+        text: `Use the write tool to create a file named picode-deny-probe.txt whose content is exactly: ${BG_DENY_MARKER}. Then confirm.`
+      }
+    })
+    const denyAsk = (await waitFor(
+      (e) => e.type === 'approval_required' && e.sessionId === bgId && e.toolName === 'write',
+      'bg deny approval_required'
+    )) as Extract<Scoped, { type: 'approval_required' }>
+    log('bg_deny_ask', `call=${denyAsk.toolCallId}`)
+    // The ack waiters exist BEFORE the UI click: the renderer→host→renderer
+    // round-trip races the DOM script's own return (the host resolves the
+    // moment Deny is clicked, while executeJavaScript is still unwinding).
+    const denyAck = waitFor(
+      (e) => e.type === 'approval_resolved' && e.sessionId === bgId && e.approved === false,
+      'bg approval_resolved (deny)'
+    )
+    const denyEnded = waitFor((e) => e.type === 'agent_end' && e.sessionId === bgId, 'bg agent_end after deny (turn terminated)')
+    await withWindow(getWindow, async (win) => {
+      // The pill must be on screen first — the smoke's event waiter and the
+      // renderer's React commit race, so poll before driving the UI.
+      const pillShown = await waitForProbe(win, `document.querySelector('.approval-pill-pending[data-tool="write"]') !== null`, 10_000)
+      if (!pillShown) fail('the write pill never rendered after the deny ask')
+      const denied = (await win.webContents
+        .executeJavaScript(`(async () => {
+          const pill = document.querySelector('.approval-pill-pending[data-tool="write"]')
+          if (!pill) return 'no-pill'
+          const opener = [...pill.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Deny…')
+          if (!opener) return 'no-opener'
+          opener.click()
+          await new Promise((r) => setTimeout(r, 150))
+          const input = pill.querySelector('.approval-pill-reason-input')
+          if (!input) return 'no-input'
+          const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+          setter.call(input, '${BG_DENY_REASON}')
+          input.dispatchEvent(new Event('input', { bubbles: true }))
+          await new Promise((r) => setTimeout(r, 150))
+          const denyBtn = [...pill.querySelectorAll('.approval-pill-deny button')].find((b) => b.textContent?.trim() === 'Deny')
+          if (!denyBtn || denyBtn.disabled) return 'no-confirm'
+          denyBtn.click()
+          return true
+        })()`)
+        .catch(() => 'js-error')) as string | boolean
+      if (denied !== true) fail(`could not deny through the parked pill UI (${String(denied)})`)
+    })
+    const denyResolved = (await denyAck) as Extract<Scoped, { type: 'approval_resolved' }>
+    if (denyResolved.reason !== BG_DENY_REASON) fail(`deny reason did not round-trip: ${denyResolved.reason}`)
+    await denyEnded
+    if (bgDeniedReason !== BG_DENY_REASON) fail('deny ack never reached the stream')
+    if (existsSync(path.join(cwd, 'picode-deny-probe.txt'))) fail('the denied write tool executed anyway')
+    await withWindow(getWindow, async (win) => {
+      const shown = await waitForProbe(
+        win,
+        `(() => {
+          const pill = document.querySelector('.approval-pill-denied[data-tool="write"]')
+          return pill !== null && pill.textContent.includes('${BG_DENY_REASON}')
+        })()`,
+        5_000
+      )
+      if (!shown) fail('the denied pill did not surface the denial reason in the transcript')
+      log('bg_deny_ok')
+    })
+    log('bg_approval_done')
+
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
     const livePids = supervisor.hostPids
     if (livePids.length < 2) fail(`expected at least 2 live hosts before quit, saw ${livePids.length}`)
@@ -692,7 +934,12 @@ export function startSmokeIfEnabled(
     fail(err instanceof Error ? err.message : String(err))
   })
 
-  return onHostEvent
+  return {
+    onHostEvent,
+    onApprovalNotice: (notice: ApprovalNotice): void => {
+      approvalNotices.push(notice)
+    }
+  }
 }
 
 async function withWindow(

@@ -59,6 +59,15 @@ interface PicodeTerminalBridge {
   onExit(listener: (message: TerminalExitMessage) => void): () => void
 }
 
+interface PicodeNotificationsBridge {
+  /** Raise the OS notification for one background session's approval gate
+   * (ticket 25). Only asked for sessions whose pill is not on screen. */
+  requestApproval(notice: { sessionId: string; toolName: string; title: string | null }): void
+  /** The notification was clicked: main asks the renderer to focus that
+   * session (pure focus change through the session registry). */
+  onFocusRequest(listener: (sessionId: string) => void): () => void
+}
+
 interface PicodeSettingsBridge {
   /** Preferences + last used directory in one query (ticket 11). */
   get(): Promise<{ preferences: AppPreferences; lastUsedDirectory: string | null }>
@@ -87,6 +96,7 @@ declare global {
       review: PicodeReviewBridge
       preview: PicodePreviewBridge
       terminal: PicodeTerminalBridge
+      notifications: PicodeNotificationsBridge
     }
   }
 }

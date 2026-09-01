@@ -9,17 +9,19 @@ import type { AuthProbeReport } from '../shared/auth-status'
 import type { AppPreferences } from '../shared/preferences'
 import { createWindowOptions } from './window-options'
 import { HostSupervisor, defaultHostEntryPath } from './host-supervisor'
+import { createApprovalNotifier, parseApprovalNotice } from './notifications'
 import { collectReview } from './review/collect'
 import { readPreview } from './preview/read'
 import { SessionIndexService, type FollowUpdate } from './sessions/index-service'
 import { SettingsService, type SettingsSnapshot } from './settings/service'
 import { runAuthProbeHost } from './settings/probe-runner'
-import { startSmokeIfEnabled } from './smoke'
+import { startSmokeIfEnabled, type SmokeHooks } from './smoke'
 import { startVisualIfEnabled } from './visual'
 import { startDensityVisualIfEnabled } from './visual-density'
 import { startSettingsVisualIfEnabled } from './visual-settings'
 import { startTerminalVisualIfEnabled } from './visual-terminal'
 import { startMultiSessionVisualIfEnabled, isolateVisualUserData } from './visual-multisession'
+import { startApprovalVisualIfEnabled } from './visual-approval'
 import { startUsageVisualIfEnabled } from './visual-usage'
 import { fakeUsageSnapshot } from '../shared/usage/fixture'
 import { TerminalService, type TerminalDataMessage, type TerminalExitMessage } from './terminal/service'
@@ -92,23 +94,37 @@ app.whenReady().then(() => {
       : settings.authReport(true)
   )
 
-  let smokeTap: ((event: HostToParent) => void) | null = null
+  let smokeHooks: SmokeHooks | null = null
   let mainWindow: BrowserWindow | null = null
+  const smokeWindow = (): BrowserWindow | null => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null)
   supervisor = new HostSupervisor({
     hostEntryPath: defaultHostEntryPath(),
     onHostEvent: (event) => {
       broadcastToWindows(event)
-      smokeTap?.(event)
+      smokeHooks?.onHostEvent(event)
     },
     onHostLog: (stream, chunk) => console.log(`[host ${stream}]`, chunk.trimEnd())
   })
-  smokeTap = startSmokeIfEnabled(supervisor, () => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  smokeHooks = startSmokeIfEnabled(supervisor, smokeWindow)
+  // System notifications for background-session approval gates (ticket 25):
+  // the renderer asks only for sessions whose pill is not on screen; the
+  // click deep-links back to the waiting session and approves nothing.
+  const approvalNotifier = createApprovalNotifier({
+    getWindow: smokeWindow,
+    onNotice: (notice) => smokeHooks?.onApprovalNotice(notice)
+  })
+  ipcMain.on('notifications:approval-request', (_event, payload: unknown) => {
+    const notice = parseApprovalNotice(payload)
+    if (notice !== null) approvalNotifier.notify(notice)
+  })
   startVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   startDensityVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   startTerminalVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-20 dot/alignment harness must run BEFORE the session index is
   // constructed: it seeds an isolated store via PICODE_SESSION_DIR.
   startMultiSessionVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  // Ticket-25 badge/parked-pill harness — same seeding constraint.
+  startApprovalVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
 
   // Renderer → host relay (Seam-1: the only chat channel the renderer has).
   ipcMain.on('chat:to-host', (_event, message: ParentToHost) => {

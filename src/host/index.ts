@@ -615,20 +615,25 @@ process.on('message', (message: unknown) => {
       break
     case 'approve_tool':
       if (typeof message.toolCallId === 'string') {
-        gate.resolve(message.toolCallId, {
-          approved: true,
-          reason: '',
-          remember: message.remember === true
-        })
+        // Resolve, then ack the pill (ticket 25: the ack is what makes the
+        // transcript story right in BACKGROUND sessions too — the renderer
+        // may not have been watching the pill convert into a tool card).
+        if (gate.resolve(message.toolCallId, { approved: true, reason: '', remember: message.remember === true })) {
+          send({ type: 'approval_resolved', toolCallId: message.toolCallId, approved: true, reason: null })
+        }
       }
       break
     case 'deny_tool':
       if (typeof message.toolCallId === 'string') {
-        gate.resolve(message.toolCallId, {
-          approved: false,
-          reason: typeof message.reason === 'string' ? message.reason : '',
-          remember: false
-        })
+        const reason = typeof message.reason === 'string' ? message.reason : ''
+        if (gate.resolve(message.toolCallId, { approved: false, reason, remember: false })) {
+          send({
+            type: 'approval_resolved',
+            toolCallId: message.toolCallId,
+            approved: false,
+            reason: reason.trim() !== '' ? reason : null
+          })
+        }
       }
       break
     case 'compact_session':
