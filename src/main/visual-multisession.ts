@@ -35,6 +35,20 @@
  *   m6-hidden-restored — Settings → General restores the group via the
  *                        "Hidden projects" recovery card; back in the
  *   m7-group-restored  — workspace the api-server group is listed again
+ *   m8-newtask-preset  — the group's ⊕ action preselects that project's chip
+ *
+ * Ticket 26 extends the run with the sidebar file browser (the api-server
+ * project is now a REAL fixture directory — see ensureVisualProjectFixture
+ * — because the tree reads through the actual preview channel):
+ *   m9a-filebrowser-root    — hover → "View files": the sidebar swaps to the
+ *                        browser (back bar + title bar + root listing with
+ *                        hidden entries .git/.gitignore included)
+ *   m9b-filebrowser-expanded — clicking src lazy-loads its children through
+ *                        the preview channel, type icons per extension
+ *   m9c-file-preview   — clicking README.md opens the File Preview tab on
+ *                        that path (side panel, existing ticket-07 channel)
+ *   m9d-back-to-tasks  — "← Back to tasks" restores the task list, browser
+ *                        gone (no residue)
  */
 
 import { mkdirSync } from 'node:fs'
@@ -42,7 +56,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { app, type BrowserWindow } from 'electron'
 import { emitContractEvent, multiSessionVisualEnabled, visualOutDir } from './visual'
-import { ensureVisualStore, writeVisualSession } from './visual-store'
+import { ensureVisualProjectFixture, ensureVisualStore, writeVisualSession } from './visual-store'
 
 export { multiSessionVisualEnabled } from './visual'
 
@@ -60,7 +74,6 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 const RUNNING_ID = 'multi-visual-running'
 const TUI_ID = 'multi-visual-tui'
 const IDLE_ID = 'multi-visual-idle'
-const API_CWD = '/Users/dev/projects/api-server'
 const WEB_CWD = '/Users/dev/projects/web-app'
 const STREAM_MARKER = 'Count the deploy checklist from one to twenty, one item per line'
 
@@ -117,6 +130,19 @@ async function rectOf(win: BrowserWindow, selector: string): Promise<{ x: number
   return hit
 }
 
+/** Viewport center of the file-browser row with the exact given name
+ * (ticket 26) — null when the tree does not show it. */
+async function fbRowPoint(win: BrowserWindow, name: string): Promise<{ x: number; y: number } | null> {
+  return (await win.webContents.executeJavaScript(
+    `(() => {
+      const row = [...document.querySelectorAll('.fb-row')].find((el) => el.textContent?.trim() === ${JSON.stringify(name)})
+      if (!(row instanceof Element)) return null
+      const r = row.getBoundingClientRect()
+      return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
+    })()`
+  ).catch(() => null)) as { x: number; y: number } | null
+}
+
 /** Synthesized REAL input events — CSS :hover only follows these, so the
  * hover-state captures move the pointer instead of calling el.click(). */
 async function mouseMove(win: BrowserWindow, x: number, y: number): Promise<void> {
@@ -133,11 +159,13 @@ export function startMultiSessionVisualIfEnabled(getWindow: () => BrowserWindow 
 
   // The session index reads PICODE_SESSION_DIR when it is constructed — this
   // starter runs BEFORE that line in the boot sequence, so seeding here
-  // isolates the visual store like the smoke does.
+  // isolates the visual store like the smoke does. The api-server cwd is a
+  // REAL fixture directory (ticket 26: the file browser reads it live).
   const store = ensureVisualStore()
+  const apiCwd = ensureVisualProjectFixture()
   const runningFile = writeVisualSession(store, {
     id: RUNNING_ID,
-    cwd: API_CWD,
+    cwd: apiCwd,
     userText: `${STREAM_MARKER}: migration and rollback steps`
   })
   writeVisualSession(store, {
@@ -147,7 +175,7 @@ export function startMultiSessionVisualIfEnabled(getWindow: () => BrowserWindow 
   })
   const idleFile = writeVisualSession(store, {
     id: IDLE_ID,
-    cwd: API_CWD,
+    cwd: apiCwd,
     userText: 'Draft the changelog entry for the 1.1 release'
   })
 
@@ -176,7 +204,7 @@ export function startMultiSessionVisualIfEnabled(getWindow: () => BrowserWindow 
       emitContractEvent({
         type: 'session_event',
         sessionId: RUNNING_ID,
-        event: { type: 'session_created', sessionId: RUNNING_ID, cwd: API_CWD, model: 'claude-opus-4-5', sessionFile: runningFile }
+        event: { type: 'session_created', sessionId: RUNNING_ID, cwd: apiCwd, model: 'claude-opus-4-5', sessionFile: runningFile }
       })
       emitContractEvent({
         type: 'session_event',
@@ -195,7 +223,7 @@ export function startMultiSessionVisualIfEnabled(getWindow: () => BrowserWindow 
       emitContractEvent({
         type: 'session_event',
         sessionId: IDLE_ID,
-        event: { type: 'session_created', sessionId: IDLE_ID, cwd: API_CWD, model: 'claude-opus-4-5', sessionFile: idleFile }
+        event: { type: 'session_created', sessionId: IDLE_ID, cwd: apiCwd, model: 'claude-opus-4-5', sessionFile: idleFile }
       })
       emitContractEvent({
         type: 'session_event',
@@ -454,6 +482,86 @@ export function startMultiSessionVisualIfEnabled(getWindow: () => BrowserWindow 
         throw new Error(`multi-session visual: new-task chip shows "${chip}" — expected the group's project (web-app)`)
       }
       await capture(win, 'm8-newtask-preset')
+
+      // ---- m9a: "View files" swaps the sidebar to the file browser -------
+      // (ticket 26). Hover reveals the actions (CSS :hover — real input
+      // events, the m3 pattern), then a real click on the middle button.
+      const headerPoint = (await win.webContents.executeJavaScript(
+        `(() => {
+          const header = [...document.querySelectorAll('.sb-group-header')].find((el) => el.textContent?.includes('api-server'))
+          if (!(header instanceof Element)) return null
+          const r = header.getBoundingClientRect()
+          return { x: Math.round(r.right) - 24, y: Math.round(r.top + r.height / 2) }
+        })()`
+      ).catch(() => null)) as { x: number; y: number } | null
+      if (!headerPoint) throw new Error('multi-session visual: api-server header missing before the browser capture')
+      await mouseMove(win, headerPoint.x, headerPoint.y)
+      await sleep(200)
+      const viewFilesBtn = await rectOf(win, '[aria-label="View files in api-server"]')
+      if (!viewFilesBtn) throw new Error('multi-session visual: view-files action never laid out')
+      await mouseClick(win, Math.round(viewFilesBtn.x), Math.round(viewFilesBtn.y))
+      const browserShown = await waitFor(
+        getWindow,
+        `(() => {
+          const browser = document.querySelector('.fb-browser')
+          if (!browser) return false
+          const names = [...document.querySelectorAll('.fb-row')].map((el) => el.textContent?.trim() ?? '')
+          return document.querySelector('[aria-label="Back to tasks"]') !== null &&
+            document.querySelector('.fb-title-name')?.textContent === 'api-server' &&
+            names.includes('src') && names.includes('.git') &&
+            names.includes('.gitignore') && names.includes('README.md')
+        })()`,
+        10_000
+      )
+      if (!browserShown) throw new Error('multi-session visual: file browser never rendered the root listing')
+      await capture(win, 'm9a-filebrowser-root')
+
+      // ---- m9b: expanding src lazy-loads through the preview channel ------
+      const srcRow = await fbRowPoint(win, 'src')
+      if (!srcRow) throw new Error('multi-session visual: src row missing')
+      await mouseClick(win, srcRow.x, srcRow.y)
+      const srcLoaded = await waitFor(
+        getWindow,
+        `(() => {
+          const names = [...document.querySelectorAll('.fb-row')].map((el) => el.textContent?.trim() ?? '')
+          return names.includes('App.tsx') && names.includes('index.ts') && names.includes('host')
+        })()`,
+        10_000
+      )
+      if (!srcLoaded) throw new Error('multi-session visual: src children never lazy-loaded')
+      const iconSig = (await win.webContents.executeJavaScript(
+        `JSON.stringify((() => ({
+          folders: document.querySelectorAll('.fb-icon-folder').length,
+          code: document.querySelectorAll('.fb-icon-code').length,
+          git: document.querySelectorAll('.fb-icon-git').length
+        }))())`
+      ).catch(() => 'unavailable')) as string
+      console.log(`VISUAL m9b icons ${iconSig}`)
+      await capture(win, 'm9b-filebrowser-expanded')
+
+      // ---- m9c: a file click deep-links the File Preview tab --------------
+      const readmeRow = await fbRowPoint(win, 'README.md')
+      if (!readmeRow) throw new Error('multi-session visual: README.md row missing')
+      await mouseClick(win, readmeRow.x, readmeRow.y)
+      const previewOpen = await waitFor(
+        getWindow,
+        `document.querySelector('.preview-crumbs')?.textContent?.includes('README.md') === true`,
+        10_000
+      )
+      if (!previewOpen) throw new Error('multi-session visual: file click never opened the File Preview tab')
+      await capture(win, 'm9c-file-preview')
+
+      // ---- m9d: Back to tasks restores the list, browser gone -------------
+      const backBtn = await rectOf(win, '[aria-label="Back to tasks"]')
+      if (!backBtn) throw new Error('multi-session visual: back button missing')
+      await mouseClick(win, Math.round(backBtn.x), Math.round(backBtn.y))
+      const restored = await waitFor(
+        getWindow,
+        `document.querySelector('.fb-browser') === null && document.querySelectorAll('.sb-task').length >= 3`,
+        10_000
+      )
+      if (!restored) throw new Error('multi-session visual: back-to-tasks never restored the task list')
+      await capture(win, 'm9d-back-to-tasks')
 
       console.log('VISUAL multi-session done')
       const { app } = await import('electron')

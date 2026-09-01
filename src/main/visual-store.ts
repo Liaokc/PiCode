@@ -7,7 +7,7 @@
  * from the operator's real session store. Never touches ~/.pi/agent/sessions.
  */
 
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 
@@ -43,4 +43,26 @@ export function ensureVisualStore(): string {
     process.env['PICODE_SESSION_DIR'] = mkdtempSync(path.join(tmpdir(), 'picode-visual-store-'))
   }
   return process.env['PICODE_SESSION_DIR'] as string
+}
+
+/** Real project fixture for the ticket-26 file-browser captures: the tree
+ * reads through the REAL preview channel, so the browsed cwd must exist
+ * with hidden entries (.git, .idea) and typed files on disk. Returns the
+ * api-server project path (basename kept — the m3–m7 probes match the
+ * group label). Like the visual store: isolated in tmpdir, never the
+ * operator's filesystem. */
+export function ensureVisualProjectFixture(): string {
+  const api = path.join(tmpdir(), `picode-visual-projects-${process.pid}`, 'api-server')
+  mkdirSync(path.join(api, '.git'), { recursive: true })
+  mkdirSync(path.join(api, '.idea'), { recursive: true })
+  mkdirSync(path.join(api, 'src', 'host'), { recursive: true })
+  writeFileSync(path.join(api, '.git', 'HEAD'), 'ref: refs/heads/main\n')
+  writeFileSync(path.join(api, '.idea', 'modules.xml'), '<?xml version="1.0"?>\n')
+  writeFileSync(path.join(api, '.gitignore'), 'node_modules\n')
+  writeFileSync(path.join(api, 'package.json'), '{\n  "name": "api-server"\n}\n')
+  writeFileSync(path.join(api, 'README.md'), '# api-server\n\nFixture for the ticket-26 file browser captures.\n')
+  writeFileSync(path.join(api, 'src', 'index.ts'), 'export const main = (): void => undefined\n')
+  writeFileSync(path.join(api, 'src', 'App.tsx'), 'export const App = (): void => undefined\n')
+  writeFileSync(path.join(api, 'src', 'host', 'files.ts'), 'export const list = (): string[] => []\n')
+  return api
 }

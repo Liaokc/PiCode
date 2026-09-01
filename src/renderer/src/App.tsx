@@ -832,6 +832,7 @@ export default function App(): JSX.Element {
         onNewTask={(presetCwd) => void handleNewTask(presetCwd)}
         hiddenCwds={hiddenCwds}
         onHideGroup={handleHideGroup}
+        onOpenPreview={openPreview}
         onOpenSearch={() => setSearchOpen(true)}
         onOpenSettings={() => dispatch({ type: 'open-settings' })}
       />

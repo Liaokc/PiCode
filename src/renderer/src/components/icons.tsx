@@ -471,3 +471,37 @@ export function MessagePlusIcon({ size, className }: IconProps): JSX.Element {
     </svg>
   )
 }
+
+/** Group-row hover action (ticket 26): ZCode's view-files glyph — the list
+ * icon, "browse this project's files". */
+export function FilesListIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M9 6h11M9 12h11M9 18h11" />
+      <circle cx="4.8" cy="6" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="4.8" cy="12" r="1.1" fill="currentColor" stroke="none" />
+      <circle cx="4.8" cy="18" r="1.1" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
+/** File-type icon (ticket 26): config/json files — braces glyph. */
+export function BracesIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M8.5 4H8a2.5 2.5 0 0 0-2.5 2.5v2.6a1.9 1.9 0 0 1-1.5 1.9 1.9 1.9 0 0 1 1.5 1.9v2.6A2.5 2.5 0 0 0 8 18h.5" />
+      <path d="M15.5 4h.5a2.5 2.5 0 0 1 2.5 2.5v2.6a1.9 1.9 0 0 0 1.5 1.9 1.9 1.9 0 0 0-1.5 1.9v2.6A2.5 2.5 0 0 1 16 18h-.5" />
+    </svg>
+  )
+}
+
+/** File-type icon (ticket 26): image files — framed picture glyph. */
+export function ImageIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <rect x="3.5" y="5" width="17" height="14" rx="2.2" />
+      <circle cx="9" cy="10" r="1.6" />
+      <path d="m5.5 17 4.2-4.2a1.6 1.6 0 0 1 2.3 0l4.5 4.2M14 14.5l1.7-1.7a1.6 1.6 0 0 1 2.3 0l2 2" />
+    </svg>
+  )
+}
