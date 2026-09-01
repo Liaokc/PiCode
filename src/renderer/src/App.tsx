@@ -278,6 +278,10 @@ export default function App(): JSX.Element {
    * (active session → last used → recent first); the send creates the
    * session. */
   const handleNewTask = useCallback((): void => {
+    // ⌘N × dock (ticket 17×18 decision, dock-model.dockForNewTask): the
+    // new-task state replaces the MAIN ZONE only — the dock shell stays
+    // exactly as the user arranged it.
+    dockDispatch({ type: 'dock-for-new-task' })
     setNewTaskOpen(true)
   }, [])
 

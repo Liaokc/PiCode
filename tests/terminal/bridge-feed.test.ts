@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { HostToParent } from '../../src/shared/contract'
 import {
+  MAX_FEED_ENTRIES,
   initialBridgeFeedState,
   projectBridgeFeed,
   sanitizeBridgeCommand,
@@ -19,6 +20,11 @@ function bashEnd(id: string, output: string, isError = false): HostToParent {
   return { type: 'tool_end', toolCallId: id, output, isError }
 }
 
+/** Ticket 20: the supervisor wraps session-scoped events for session `id`. */
+function wrapped(sessionId: string, event: HostToParent): HostToParent {
+  return { type: 'session_event', sessionId, event: event as never }
+}
+
 function fold(events: HostToParent[]): BridgeFeedState {
   let state = initialBridgeFeedState
   for (const event of events) state = projectBridgeFeed(state, event)
@@ -30,7 +36,15 @@ describe('bridge feed — command entries', () => {
     const state = fold([bashStart('t1', 'npm test')])
 
     expect(state.entries).toEqual([
-      { toolCallId: 't1', command: 'npm test', status: 'running', output: '' }
+      { toolCallId: 't1', sessionId: null, command: 'npm test', status: 'running', output: '' }
+    ])
+  })
+
+  it('unwraps supervisor-wrapped events and tags the entry with its session', () => {
+    const state = fold([wrapped('s1', bashStart('t1', 'npm test')), wrapped('s1', bashUpdate('t1', 'running\n'))])
+
+    expect(state.entries).toEqual([
+      { toolCallId: 't1', sessionId: 's1', command: 'npm test', status: 'running', output: 'running\n' }
     ])
   })
 
@@ -49,11 +63,11 @@ describe('bridge feed — command entries', () => {
     expect(state.entries[0].command).not.toMatch(/[\r\n]/)
   })
 
-  it('ignores non-bash tools entirely', () => {
+  it('ignores non-bash tools entirely (wrapped or not)', () => {
     const state = fold([
       { type: 'tool_start', toolCallId: 'r1', name: 'read', args: { path: '/tmp/x' } },
-      { type: 'tool_update', toolCallId: 'r1', partial: 'contents' },
-      { type: 'tool_end', toolCallId: 'r1', output: 'contents', isError: false }
+      wrapped('s1', { type: 'tool_start', toolCallId: 'r2', name: 'read', args: { path: '/tmp/y' } }),
+      wrapped('s1', { type: 'tool_update', toolCallId: 'r2', partial: 'contents' })
     ])
 
     expect(state.entries).toEqual([])
@@ -100,30 +114,63 @@ describe('bridge feed — completion', () => {
   })
 })
 
-describe('bridge feed — session & run boundaries', () => {
-  it('resets the feed when a new session is created (per-session history)', () => {
-    const settled = fold([bashStart('t1', 'echo A'), bashEnd('t1', 'A\n')])
-    const next = projectBridgeFeed(settled, { type: 'session_created', sessionId: 's2', cwd: '/tmp', model: null })
+describe('bridge feed — session scope (ticket 20 registry stream)', () => {
+  it('does NOT reset on session_created: background sessions keep running and their entries stay', () => {
+    const running = fold([wrapped('s1', bashStart('t1', 'sleep 100'))])
+    const next = projectBridgeFeed(
+      running,
+      wrapped('s2', { type: 'session_created', sessionId: 's2', cwd: '/tmp', model: null })
+    )
 
-    expect(next).toBe(initialBridgeFeedState)
+    expect(next.entries).toHaveLength(1)
+    expect(next.entries[0].status).toBe('running')
   })
 
-  it('settles still-running entries as interrupted when the agent run ends', () => {
-    const state = fold([bashStart('t1', 'sleep 100'), { type: 'agent_end' }])
+  it('settles only the owning session\u0027s running entries when its run ends', () => {
+    const state = fold([
+      wrapped('s1', bashStart('t1', 'sleep 100')),
+      wrapped('s2', bashStart('t2', 'sleep 200')),
+      wrapped('s1', { type: 'agent_end' })
+    ])
 
-    expect(state.entries[0].status).toBe('interrupted')
+    expect(state.entries.map((e) => [e.toolCallId, e.status])).toEqual([
+      ['t1', 'interrupted'],
+      ['t2', 'running']
+    ])
   })
 
-  it('settles running entries on turn errors and host death, ignoring late events', () => {
-    const errored = fold([bashStart('t1', 'sleep 100'), { type: 'turn_error', message: 'boom' }])
+  it('settles per session on turn errors and host death (wrapped)', () => {
+    const errored = fold([wrapped('s1', bashStart('t1', 'sleep 100')), wrapped('s1', { type: 'turn_error', message: 'boom' })])
     expect(errored.entries[0].status).toBe('interrupted')
 
-    const died = fold([bashStart('t1', 'sleep 100'), { type: 'host_exit', clean: false, code: 1, signal: null }])
+    const died = fold([wrapped('s1', bashStart('t1', 'sleep 100')), wrapped('s1', { type: 'host_exit', clean: false, code: 1, signal: null })])
     expect(died.entries[0].status).toBe('interrupted')
 
-    // After settling, a late end for the stale id changes nothing.
-    const late = projectBridgeFeed(errored, bashEnd('t1', 'late', false))
+    // A late end for a settled id changes nothing.
+    const late = projectBridgeFeed(errored, wrapped('s1', bashEnd('t1', 'late', false)))
     expect(late).toBe(errored)
+  })
+
+  it('unwrapped lifecycle events settle EVERYTHING (legacy single-session shape)', () => {
+    const state = fold([
+      wrapped('s1', bashStart('t1', 'sleep 100')),
+      bashStart('t2', 'sleep 200'),
+      { type: 'agent_end' }
+    ])
+
+    expect(state.entries.map((e) => e.status)).toEqual(['interrupted', 'interrupted'])
+  })
+
+  it('caps the feed length, dropping the oldest entries', () => {
+    let state = initialBridgeFeedState
+    for (let i = 0; i < MAX_FEED_ENTRIES + 10; i++) {
+      state = projectBridgeFeed(state, bashStart(`t${i}`, `cmd ${i}`))
+      state = projectBridgeFeed(state, bashEnd(`t${i}`, 'ok\n'))
+    }
+
+    expect(state.entries).toHaveLength(MAX_FEED_ENTRIES)
+    expect(state.entries[0].toolCallId).toBe('t10')
+    expect(state.entries[state.entries.length - 1].toolCallId).toBe(`t${MAX_FEED_ENTRIES + 9}`)
   })
 })
 
@@ -155,7 +202,9 @@ describe('bridge feed — robustness & purity', () => {
       { type: 'agent_start' },
       { type: 'text_delta', delta: 'hello' },
       { type: 'thinking_delta', delta: 'hmm' },
-      { type: 'session_tree', tree: { sessionId: 's', leafId: 'l', name: null, nodes: [] } }
+      { type: 'session_tree', tree: { sessionId: 's', leafId: 'l', name: null, nodes: [] } },
+      wrapped('s1', { type: 'text_delta', delta: 'wrapped hello' }),
+      { type: 'session_detached' }
     ]
     let state = initialBridgeFeedState
     for (const event of events) state = projectBridgeFeed(state, event)
@@ -165,7 +214,7 @@ describe('bridge feed — robustness & purity', () => {
 
   it('never mutates the previous state', () => {
     const frozen = Object.freeze({
-      entries: Object.freeze([{ toolCallId: 't1', command: 'x', status: 'running', output: '' }])
+      entries: Object.freeze([{ toolCallId: 't1', sessionId: null, command: 'x', status: 'running', output: '' }])
     }) as unknown as BridgeFeedState
     const next = projectBridgeFeed(frozen, bashUpdate('t1', 'more'))
     expect(next).not.toBe(frozen)

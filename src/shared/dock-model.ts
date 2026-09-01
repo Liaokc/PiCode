@@ -47,6 +47,9 @@ export type DockAction =
   | { type: 'hide-dock' }
   | { type: 'close-terminal-tab' }
   | { type: 'new-session' }
+  /** ⌘N new-task marker (ticket 17×18): folded through dockForNewTask —
+   * deliberately a no-op, pinned so the decision stays explicit. */
+  | { type: 'dock-for-new-task' }
   | { type: 'set-height'; height: number }
   | { type: 'reset-height' }
 
@@ -80,6 +83,8 @@ export function dockReducer(state: DockState, action: DockAction): DockState {
     case 'new-session':
       // Always a fresh shell: repeating + respawns the workspace.
       return { ...state, tabOpen: true, open: true, gen: state.gen + 1 }
+    case 'dock-for-new-task':
+      return dockForNewTask(state)
     case 'set-height':
       return clampHeight(action.height) === state.height ? state : { ...state, height: clampHeight(action.height) }
     case 'reset-height':
@@ -87,4 +92,24 @@ export function dockReducer(state: DockState, action: DockAction): DockState {
     default:
       return state
   }
+}
+
+// ---- ⌘N × dock combination (ticket 17 × 18 integration decision) ----
+
+/**
+ * What happens to the bottom dock when the new-task empty state opens
+ * (⌘N / New Task, ticket 17)? DECIDED: nothing. The new-task state replaces
+ * the MAIN ZONE only; the dock is a SHELL-LEVEL zone anchored to the
+ * focused session, so it is left exactly as the user arranged it — open
+ * stays open (still watching the focused session's shell/feed), closed
+ * stays closed, no panel switch. When the new task is announced
+ * (session_created) the dock re-anchors through the workspace remount
+ * (cwd-keyed) and the feed keeps its global history.
+ *
+ * Kept as a named pure function + table tests so the decision is pinned:
+ * if a future ticket wants ⌘N to collapse the dock, it changes HERE and
+ * the tests force the choice to be made explicitly.
+ */
+export function dockForNewTask(state: DockState): DockState {
+  return state
 }
