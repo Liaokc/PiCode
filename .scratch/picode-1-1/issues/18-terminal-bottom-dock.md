@@ -15,16 +15,36 @@
 
 **Blocked by:** 22（右上切换钮等新按钮的 tooltip 用统一组件）。
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
-- [ ] ⌘J 与右上切换钮均可开/关底部终端；快捷键不与 Composer/输入框冲突
-- [ ] 底部面板全宽、可拖高；ResizeObserver → FitAddon 联动（Seam-3 fake-pty 测试迁移通过）
-- [ ] Bridge 投屏在底部终端内工作正常（真 PTY 冒烟 + agent bash 投屏实测，输入永不回注）
-- [ ] 右侧栏 picker 仅剩审查卡；File Preview 深链与面包屑不受影响
-- [ ] 启动默认收起；应用退出无孤儿 shell（disposeAll 语义不变）
-- [ ] visual harness 终端三连拍更新为底部形态；`npm run smoke` ALL GREEN
-- [ ] typecheck / lint / test 全绿
+- [x] ⌘J 与右上切换钮均可开/关底部终端；快捷键不与 Composer/输入框冲突
+- [x] 底部面板全宽、可拖高；ResizeObserver → FitAddon 联动（Seam-3 fake-pty 测试迁移通过）
+- [x] Bridge 投屏在底部终端内工作正常（真 PTY 冒烟 + agent bash 投屏实测，输入永不回注）
+- [x] 右侧栏 picker 仅剩审查卡；File Preview 深链与面包屑不受影响
+- [x] 启动默认收起；应用退出无孤儿 shell（disposeAll 语义不变）
+- [x] visual harness 终端三连拍更新为底部形态；`npm run smoke` ALL GREEN
+- [x] typecheck / lint / test 全绿
 
 ## Comments
 
 - 2026-08-31 (requirements intake + grilling 定稿): 建票。取证：ZCode ⌘J 底部终端实拍 `/tmp/term-j.png`（两度确认：空态与任务态均底部展开）；Bridge 保留由 R3-Q1 拍板。ADR-0004 不需修订（PTY 与桥接决策不变，仅停靠位置）。
+- 2026-09-01 (implement session, t18): 实现于 `ab00463`，Status → ready-for-human。要点：
+  - 布局模型：新增纯 reducer `src/shared/dock-model.ts`（visible / tabOpen / height / gen 四维；隐藏面板保留 shell，关闭终端标签才 kill，15 单测）；Seam-3 fake-pty（terminal-session controller）零改动全绿。
+  - 双入口：⌘J 全局键（preventDefault，不漏进 Composer）+ 标题栏 PanelBottom 切换钮（tooltip = ⌘J 键帽，票 22 组件）。CDP 实探：启动收起 / ⌘J 开 / ⌘J 藏（保持挂载）/ 再开 / 切换钮双向，全过。
+  - 标签条：`Terminal | fish | <session> ×` + 右侧 +/×；shell 名取自与 pty factory 同源的 `$SHELL`（preload `versions.shell`，纯函数 shell-name）。语义裁定：+ = 新会话（gen 重挂载换新 shell）；会话标签 × = 关闭标签（杀 shell）；面板 × = 隐藏（shell 存活）——VS Code 同构，已写入 CONTEXT.md 新术语「终端停靠（Terminal Dock）」。
+  - Bridge 随迁：projector/写入面零改动，投屏与输入隔离语义不变（terminal-1/2/3 取证：桥接运行/落定 + 用户键入 `echo PICODE_TYPED_OK` 回显，桥格无输入路径）。
+  - picker 收缩为审查单卡（单测 + CDP 实探 `['Review']`）；File Preview 深链不动。
+  - 验证：typecheck / lint / 547 unit 全绿；`npm run smoke` ALL GREEN（6 阶段，session hygiene 无增长）。视觉三连拍底部形态归档 `.scratch/compare/t18-terminal-{1,2,3}.png`（fish shell、全宽、chat 压缩在上，与 `/tmp/term-j.png` 对照一致）。
+  - 合并：请操作者执行 `bash scripts/merge-ticket.sh 18`。
+- 2026-09-01 (operator feedback round, t18): 三项修改实现在 `64053a4`，仍为 ready-for-human：
+  - **字体适配**：starship powerline 字形原为 tofu。新探针 `probe-font.ts`：逐候选字体在 canvas 上画 U+E0B0 并数着色像素——实测 Chrome 里缺字形渲染为空白（0 像素）而非 tofu，宽度对比无效（tofu 步进宽 ≈ 等宽步进宽，差仅 0.39px）。操作员实装的 JetBrainsMono Nerd Font 命中并置顶字体栈（截图已验证字形完整）；候选表含 starship 推荐的 Meslo 及常见 Nerd Font。
+  - **Bridge 重设计**：弃用第二个 xterm，改为 DOM 命令卡片流（新纯 reducer `shared/bridge/feed.ts`，16 单测；同一条 Seam-1 流折叠；会话级历史、尾部增量、中断沉降语义与旧 projector 对齐）。旧 frame projector 已无消费者，连同其测试删除；单向观察语义不变（feed 无任何写入路径）。
+  - **独立下侧栏**：Bridge 迁出终端 dock，新开独立 dock + 新快捷键 ⌘B + 标题栏 pulse 切换钮；feed 状态在 App 层折叠（隐藏/设置窗口往返均不丢历史；dock 恒挂载，隐藏用 display:none）。终端 dock（⌘J）贴底，Bridge 堆叠其上。CONTEXT.md 新术语「桥接停靠（Bridge Dock）」。
+  - 验证：typecheck / lint / 562 unit 全绿；`npm run smoke` ALL GREEN；⌘B CDP 实探（启动隐藏、开/关、切换钮）全过；证据刷新 `.scratch/compare/t18-terminal-{1..3}.png` + 新增 `t18-bridge-{1,2}.png`。
+  - 合并：请操作者执行 `bash scripts/merge-ticket.sh 18`（包含 ab00463 / 478ed50 / 64053a4）。
+- 2026-09-01 (operator feedback round 2, t18): 同级面板重构实现在 `f79e186`，仍为 ready-for-human：
+  - **单 dock 双同级面板**：取消堆叠。一个 dock 框架（BottomDock）承载 Terminal 与 Bridge 两个面板；⌘J / ⌘B = 打开·互切·关闭（内容原位替换，位置/拖拽高度共享）；未显示的面板保持挂载（display:none），shell 与 feed 历史均不丢。dock-model 增加 `panel` 维度 + `open-bridge-panel`（深链专用，只开不关），bridge-dock-model 并入删除；17 reducer 单测。CDP 实探五步矩阵全绿。
+  - **工具卡深链**：转录中 bash 工具卡操作行新增 Bridge chip（BridgeJumpChip，PreviewLinkChip 同构：span role=button、阻断冒泡），点击打开面板并 scrollIntoView + 橙色 flash 定位对应 feed 条目（`.bridge-entry-flash`，1.6s）；feed 条目携 data-tool-call-id。
+  - **快捷键判断：保留 ⌘B**。chip 只能单向跳入 Bridge；⌘J/⌘B 成对保证纯键盘双向切换，且 tooltip 体系（有快捷键只显键帽）与 ⌘J 对称。
+  - 验证：typecheck / lint / 555 unit 全绿；`npm run smoke` ALL GREEN；证据刷新 `.scratch/compare/t18-terminal-{1..3}.png` + `t18-bridge-{1,2}.png`（terminal-2 为原位切回证明，bridge-1 为同位置切入）。
+  - 合并：请操作者执行 `bash scripts/merge-ticket.sh 18`（包含 ab00463 / 478ed50 / 64053a4 / f79e186）。
