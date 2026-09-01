@@ -21,28 +21,43 @@
  * and otherwise resumes the session in full — auto-switching to the chat
  * view with no duplicate content.
  *
+ * Ticket 20 adds the multi-active-sessions stage: several hosts stay alive
+ * while focus switches (registry semantics, ADR-0006), a background session
+ * keeps streaming, the sidebar shows fixed-slot dot states, switching back
+ * is a same-pid focus change with a caught-up transcript and no duplicates,
+ * a targeted abort settles it, a SIGKILLed host isolates its crash to its
+ * own session, and shutdownAll leaves zero orphaned processes.
+ *
  * Any missed step times out and exits non-zero. Progress logs as
  * `SMOKE <step>` lines on stdout. Not part of `npm test`.
  */
 
 import os from 'node:os'
-import { utimesSync } from 'node:fs'
+import { statSync, utimesSync } from 'node:fs'
 import { app, type BrowserWindow } from 'electron'
 import type { HostSupervisor } from './host-supervisor'
-import type { HostToParent } from '../shared/contract'
+import type { HostToParent, SessionScopedEvent } from '../shared/contract'
 import { FOLLOW_TAKEOVER_REJECTED_TOAST } from '../shared/sessions/group'
 
 const STEP_TIMEOUT_MS = 90_000
 const ABORT_AFTER_DELTAS = 3
 
+/** Marker prompt of the ticket-20 multi-session stage (unique in the DOM). */
+const MULTI_MARKER = 'PICODE_MULTI_SESSION_ONE'
+
 export function smokeEnabled(): boolean {
   return process.env['PICODE_SMOKE'] === '1'
 }
 
+/** Every event the smoke sees carries its session scope: the supervisor
+ * wraps host events in `session_event` (ticket 20), and the tap flattens
+ * that onto the scoped event so matchers can address a session. */
+type Scoped = SessionScopedEvent & { sessionId: string }
+
 interface Waiter {
-  match: (event: HostToParent) => boolean
+  match: (event: Scoped) => boolean
   label: string
-  resolve: (event: HostToParent) => void
+  resolve: (event: Scoped) => void
   timer: NodeJS.Timeout
 }
 
@@ -67,21 +82,26 @@ export function startSmokeIfEnabled(
   }
 
   function onHostEvent(event: HostToParent): void {
+    // Flatten the ticket-20 wrapping: scoped events reach matchers tagged
+    // with the session they belong to.
+    const scoped: Scoped = (
+      event.type === 'session_event' ? { ...event.event, sessionId: event.sessionId } : { ...event, sessionId: '' }
+    ) as Scoped
     for (const waiter of [...waiters]) {
-      if (waiter.match(event)) {
+      if (waiter.match(scoped)) {
         clearTimeout(waiter.timer)
         waiters.delete(waiter)
-        waiter.resolve(event)
+        waiter.resolve(scoped)
       }
     }
   }
 
-  function waitFor(match: (event: HostToParent) => boolean, label: string): Promise<Extract<HostToParent, { type: string }>> {
+  function waitFor(match: (event: Scoped) => boolean, label: string): Promise<Scoped> {
     return new Promise((resolve, reject) => {
       const waiter: Waiter = {
         match,
         label,
-        resolve: resolve as (event: HostToParent) => void,
+        resolve: resolve as (event: Scoped) => void,
         timer: setTimeout(() => {
           waiters.delete(waiter)
           reject(new Error(`${label} timed out after ${STEP_TIMEOUT_MS}ms`))
@@ -104,7 +124,7 @@ export function startSmokeIfEnabled(
     // Round 1: stream a few deltas, then abort mid-flight.
     supervisor.createSession(cwd)
     const created = (await waitFor((e) => e.type === 'session_created', 'session_created')) as Extract<
-      HostToParent,
+      Scoped,
       { type: 'session_created' }
     >
     log('session_created', `sessionId=${created.sessionId} model=${created.model ?? '?'}`)
@@ -141,23 +161,24 @@ export function startSmokeIfEnabled(
       log('sidebar_index_ok')
     })
 
-    // Crash isolation: SIGKILL the host; supervisor must report it unclean.
+    // Crash isolation: SIGKILL the host; supervisor must report it unclean —
+    // and scoped to exactly the session that died (ticket 20).
     const pid = supervisor.hostPid
     if (!pid) fail('no host pid to kill')
     process.kill(pid, 'SIGKILL')
-    const exitEvent = (await waitFor((e) => e.type === 'host_exit', 'host_exit')) as Extract<
-      HostToParent,
-      { type: 'host_exit' }
-    >
+    const exitEvent = (await waitFor(
+      (e) => e.type === 'host_exit' && e.sessionId === created.sessionId,
+      'host_exit'
+    )) as Extract<Scoped, { type: 'host_exit' }>
     if (exitEvent.clean) fail('host_exit should be unclean after SIGKILL')
-    log('host_exit', `code=${exitEvent.code} signal=${exitEvent.signal ?? '-'}`)
+    log('host_exit', `session=${exitEvent.sessionId} code=${exitEvent.code} signal=${exitEvent.signal ?? '-'}`)
 
     // Rebuild on the same cwd, give it one real turn (a fresh session file is
     // only written on the first assistant response), then exercise ticket 04's
     // Live Follow.
     supervisor.createSession(cwd)
     const rebuilt = (await waitFor((e) => e.type === 'session_created', 'rebuild session_created')) as Extract<
-      HostToParent,
+      Scoped,
       { type: 'session_created' }
     >
     log('rebuild_ok')
@@ -172,7 +193,21 @@ export function startSmokeIfEnabled(
     await waitFor((e) => e.type === 'session_created', 'round 3 session_created')
     log('round3_ok')
 
-    // Live Follow: simulate the TUI appending to the (now inactive) session
+    // Registry semantics (ticket 20) keep EVERY host alive — including the
+    // rebuilt session's. The follow stage needs a session that is NOT hosted
+    // in this app (the α world's precondition: switching killed it), so the
+    // smoke SIGKILLs the rebuilt host before following its file. Its death
+    // must be scoped to that session alone.
+    const rebuiltPid = supervisor.pidForSession(rebuilt.sessionId)
+    if (!rebuiltPid) fail('rebuilt host pid missing')
+    process.kill(rebuiltPid, 'SIGKILL')
+    await waitFor(
+      (e) => e.type === 'host_exit' && e.sessionId === rebuilt.sessionId,
+      'rebuilt host_exit before follow stage'
+    )
+    log('rebuilt_host_killed', rebuilt.sessionId)
+
+    // Live Follow: simulate the TUI appending to the (now host-less) session
     // file, open it from the sidebar, and watch the line appear read-only.
     // The row is addressed by data-file so real sessions on this machine
     // (also live within the 120s window) can never steal the click.
@@ -315,7 +350,7 @@ export function startSmokeIfEnabled(
     })
     await resumedPromise
     log('takeover_resumed_ok')
-    const replayed = (await replayPromise) as Extract<HostToParent, { type: 'history_loaded' }>
+    const replayed = (await replayPromise) as Extract<Scoped, { type: 'history_loaded' }>
     const replayItems = replayed.items
     if (!Array.isArray(replayItems) || replayItems.length < 5) {
       fail(`replayed history too small: ${replayItems?.length}`)
@@ -391,7 +426,7 @@ export function startSmokeIfEnabled(
     const started = waitFor(
       (e) => e.type === 'session_created' && e.cwd === cwd,
       'newtask session_created'
-    ) as Promise<Extract<HostToParent, { type: 'session_created' }>>
+    ) as Promise<Extract<Scoped, { type: 'session_created' }>>
     const firstPrompt = waitFor(
       (e) => e.type === 'user_message' && e.text.includes(NEWTASK_MARKER),
       'newtask first prompt delivered'
@@ -457,7 +492,198 @@ export function startSmokeIfEnabled(
     await waitFor((e) => e.type === 'agent_end', 'agent_end after newtask abort')
     log('newtask_turn_aborted_ok')
 
+    // ---- ticket 20: multi-active sessions (registry semantics) ----
+    log('multi_session_start')
+    supervisor.createSession(cwd)
+    const ms1 = (await waitFor((e) => e.type === 'session_created', 'multi session_created 1')) as Extract<
+      Scoped,
+      { type: 'session_created' }
+    >
+    supervisor.createSession(cwd)
+    const ms2 = (await waitFor((e) => e.type === 'session_created', 'multi session_created 2')) as Extract<
+      Scoped,
+      { type: 'session_created' }
+    >
+    if (ms1.sessionId === ms2.sessionId) fail('distinct sessions must announce distinct ids')
+    const ms1Pid = supervisor.pidForSession(ms1.sessionId)
+    if (!ms1Pid) fail('multi session 1 host pid missing')
+    if (!ms1.sessionFile || !ms2.sessionFile) fail('multi sessions did not report their files')
+
+    // Session 2 gets a quick settled turn so its file exists: after this it is
+    // the "in-app idle" row (fresh mtime, but its dot slot stays EMPTY — an
+    // in-app session never shows the TUI green dot).
+    supervisor.handleParentCommand({
+      type: 'session_command',
+      sessionId: ms2.sessionId,
+      command: { type: 'prompt', text: 'Reply with exactly: PICODE_SMOKE_OK' }
+    })
+    await waitFor((e) => e.type === 'agent_end' && e.sessionId === ms2.sessionId, 'multi agent_end 2')
+
+    // Session 1 gets a warm-up turn so ITS file exists too (the sidebar row
+    // must be present while the next turn streams).
+    supervisor.handleParentCommand({
+      type: 'session_command',
+      sessionId: ms1.sessionId,
+      command: { type: 'prompt', text: `Reply with exactly: ${MULTI_MARKER}` }
+    })
+    await waitFor((e) => e.type === 'agent_end' && e.sessionId === ms1.sessionId, 'multi warm agent_end 1')
+    const ms1SizeWarm = statSync(ms1.sessionFile).size
+
+    // Session 1 starts a LONG streaming run. The dot probe below starts in
+    // the same instant as agent_start — the run state is guaranteed until
+    // the model finishes, long after the probe's first poll.
+    supervisor.handleParentCommand({
+      type: 'session_command',
+      sessionId: ms1.sessionId,
+      command: {
+        type: 'prompt',
+        text: `${MULTI_MARKER}: count from 1 to 150. Output each number on its own line, one number per line. Do not summarize and do not stop early.`
+      }
+    })
+    await waitFor((e) => e.type === 'agent_start' && e.sessionId === ms1.sessionId, 'multi agent_start 1')
+
+    // Sidebar dot states while session 1 runs: run-here for session 1, empty
+    // fixed slot for the in-app idle session 2 (fresh mtime but never the
+    // TUI green dot).
+    await withWindow(getWindow, async (win) => {
+      const row2 = `[data-file="${ms2.sessionFile}"]`
+      const dots = await waitForProbe(
+        win,
+        `(() => {
+          const row1 = document.querySelector('[data-file="${ms1.sessionFile}"]')
+          const row2 = document.querySelector('${row2}')
+          if (!row1 || !row2) return false
+          return (
+            row1.querySelector('.sb-run-dot') !== null &&
+            row1.querySelector('.sb-live-dot') === null &&
+            row2.querySelector('.sb-run-dot') === null &&
+            row2.querySelector('.sb-live-dot') === null &&
+            row2.querySelector('.sb-dot-slot') !== null
+          )
+        })()`,
+        10_000
+      )
+      if (!dots) {
+        const diag = (await win.webContents.executeJavaScript(
+          `JSON.stringify({
+            row1: document.querySelector('[data-file="${ms1.sessionFile}"]')?.className ?? null,
+            row1Run: document.querySelectorAll('[data-file="${ms1.sessionFile}"] .sb-run-dot').length,
+            row1Live: document.querySelectorAll('[data-file="${ms1.sessionFile}"] .sb-live-dot').length,
+            row2: document.querySelector('${row2}')?.className ?? null,
+            row2Slot: document.querySelectorAll('${row2} .sb-dot-slot').length,
+            row2Live: document.querySelectorAll('${row2} .sb-live-dot').length,
+            slots: document.querySelectorAll('.sb-dot-slot').length,
+            runDots: document.querySelectorAll('.sb-run-dot').length,
+            liveDots: document.querySelectorAll('.sb-live-dot').length,
+            rows: document.querySelectorAll('.sb-task').length,
+            dbg: document.documentElement.dataset['picodeDebug'] ?? null
+          })`
+        ).catch(() => 'unavailable')) as string
+        fail(`sidebar dots: running-here/idle slot states wrong (ticket 20 fixed slot); DOM: ${diag}`)
+      }
+      log('multi_dot_states_ok')
+    })
+
+    // A THIRD session opens while session 1 streams — pure focus switch, the
+    // run keeps going in the background (nothing is terminated).
+    supervisor.createSession(cwd)
+    await waitFor((e) => e.type === 'session_created', 'multi session_created 3')
+    await waitFor(
+      (e) => e.type === 'text_delta' && e.sessionId === ms1.sessionId,
+      'background text_delta after session 3 exists'
+    )
+    // The background session's file KEEPS GROWING while nothing renders it —
+    // the run-start user message is already appended beyond the warm turn.
+    const ms1SizeDuring = statSync(ms1.sessionFile).size
+    if (ms1SizeDuring <= ms1SizeWarm) fail('background session file did not grow while streaming')
+    log('multi_background_streaming_ok')
+
+    // Switch BACK to session 1 through its sidebar row: pure focus change —
+    // same host process (same pid, no session_created), view remounts caught
+    // up with NO duplicate entries, and the live stream resumes on screen.
+    await withWindow(getWindow, async (win) => {
+      const row1 = `[data-file="${ms1.sessionFile}"]`
+      const clicked = await clickSelector(win, row1)
+      if (!clicked) fail('sidebar row of the background session never appeared to click')
+      const caught = await waitForProbe(
+        win,
+        `document.querySelector('.follow-badge') === null &&
+         document.querySelectorAll('.msg-user').length === 2 && // warm-up + count turns; duplicates would inflate
+         document.body.textContent.includes('${MULTI_MARKER}') &&
+         document.querySelector('.msg-assistant') !== null`,
+        10_000
+      )
+      if (!caught) fail('switching back to the background session did not show its caught-up transcript')
+    })
+    if (supervisor.pidForSession(ms1.sessionId) !== ms1Pid) {
+      fail('switching back respawned the host — registry semantics broken')
+    }
+    await waitFor(
+      (e) => e.type === 'text_delta' && e.sessionId === ms1.sessionId,
+      'text_delta after refocus (stream resumed)'
+    )
+    log('multi_refocus_ok')
+
+    // Targeted abort settles session 1's run; session 1 stays usable.
+    supervisor.handleParentCommand({
+      type: 'session_command',
+      sessionId: ms1.sessionId,
+      command: { type: 'abort_turn' }
+    })
+    await waitFor((e) => e.type === 'agent_end' && e.sessionId === ms1.sessionId, 'multi agent_end 1 after abort')
+    log('multi_abort_ok')
+
+    // Crash isolation, session-scoped: SIGKILL session 2's host — ONLY that
+    // session reports an exit; session 1 keeps working.
+    const ms2Pid = supervisor.pidForSession(ms2.sessionId)
+    if (!ms2Pid) fail('multi session 2 host pid missing')
+    let tripwireFired = false
+    void waitFor((e) => e.type === 'host_exit' && e.sessionId === ms1.sessionId, 'tripwire').then(() => {
+      tripwireFired = true
+    })
+    process.kill(ms2Pid, 'SIGKILL')
+    const ms2Exit = (await waitFor(
+      (e) => e.type === 'host_exit' && e.sessionId === ms2.sessionId,
+      'multi session 2 host_exit'
+    )) as Extract<Scoped, { type: 'host_exit' }>
+    if (ms2Exit.clean) fail('session 2 host_exit should be unclean after SIGKILL')
+    if (tripwireFired) fail('session 1 was affected by session 2’s crash (isolation broken)')
+    supervisor.handleParentCommand({
+      type: 'session_command',
+      sessionId: ms1.sessionId,
+      command: { type: 'prompt', text: 'Reply with exactly: PICODE_SMOKE_OK' }
+    })
+    await waitFor((e) => e.type === 'agent_end' && e.sessionId === ms1.sessionId, 'multi agent_end 1 after isolation')
+    log('multi_crash_isolation_ok')
+
+    // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
+    const livePids = supervisor.hostPids
+    if (livePids.length < 2) fail(`expected at least 2 live hosts before quit, saw ${livePids.length}`)
+
+
     supervisor.shutdownAll()
+    for (let waited = 0; waited < 10_000; waited += 100) {
+      const alive = livePids.filter((p) => {
+        try {
+          process.kill(p, 0)
+          return true
+        } catch {
+          return false
+        }
+      })
+      if (alive.length === 0) break
+      await new Promise((r) => setTimeout(r, 100))
+    }
+    const stillAlive = livePids.filter((p) => {
+      try {
+        process.kill(p, 0)
+        return true
+      } catch {
+        return false
+      }
+    })
+    if (stillAlive.length > 0) fail(`orphaned hosts after shutdownAll: ${stillAlive.join(', ')}`)
+    log('multi_shutdown_no_orphans_ok', `${livePids.length} hosts`)
     log('done')
     app.exit(0)
   }

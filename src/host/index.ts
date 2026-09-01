@@ -29,6 +29,7 @@ import type {
   HostToParent,
   ImageAttachment,
   ModelRef,
+  SessionScopedEvent,
   ThinkingLevel
 } from '../shared/contract'
 import type { SessionDefaults } from '../shared/preferences'
@@ -57,8 +58,9 @@ let newSessionDefaults: SessionDefaults | null = null
  * later in-host session replacements (fork). */
 let pendingSeed = false
 
-/** Every contract event except `host_exit`, which only the supervisor emits. */
-type HostEvent = Exclude<HostToParent, { type: 'host_exit' }>
+/** What this process sends: one session's scoped events (the supervisor
+ * tags them with the session id and relays; `host_exit` is supervisor-only). */
+type HostEvent = Exclude<SessionScopedEvent, { type: 'host_exit' }>
 
 function send(event: HostEvent): void {
   try {

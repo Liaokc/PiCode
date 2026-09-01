@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type JSX } from 'react'
-import { chatReducer, initialChatState, type ChatError } from '../../shared/chat-reducer'
+import {
+  focusedSession,
+  initialRegistryState,
+  liveSessionIds,
+  registryReducer,
+  runningSessionIds
+} from '../../shared/session-registry'
+import { initialChatState } from '../../shared/chat-reducer'
+import type { SessionCommand } from '../../shared/contract'
 import { resolvePreviewPath } from '../../shared/preview/policy'
 import type { PreviewSelection } from '../../shared/preview/view-model'
 import { initialShellUiState, shellUiReducer } from '../../shared/layout-model'
@@ -10,7 +18,7 @@ import { recentProjects, resolveNewTaskProject } from '../../shared/new-task'
 import { toastReducer, type ToastLevel, type ToastList } from '../../shared/toast'
 import type { AccessMode, ImageAttachment, ThinkingLevel } from '../../shared/contract'
 import type { AuthProbeReport } from '../../shared/auth-status'
-import type { SessionSummary, SessionTreePayload, TranscriptItem } from '../../shared/sessions/types'
+import type { SessionSummary, TranscriptItem } from '../../shared/sessions/types'
 import TitleBar from './components/TitleBar'
 import Sidebar from './components/Sidebar'
 import EmptyState from './components/EmptyState'
@@ -61,11 +69,15 @@ function loadPinnedIds(): Set<string> {
  * `VITE_PICODE_PANEL_OPEN=1` expands the panel at startup and
  * `VITE_PICODE_VIEW=settings` opens the settings shell (screenshot-QA hooks).
  *
- * Chat state is folded exclusively from the Seam-1 IPC contract stream
- * (window.picode.chat.onHostEvent → chatReducer); the composer only issues
- * ParentToHost commands. The sidebar consumes the read-only session index
- * (window.picode.sessions) and drives resume / fork / tree navigation /
- * rename write-back / Live Follow.
+ * Chat state lives in the session registry (ticket 20, ADR-0006): the
+ * Seam-1 IPC contract stream (window.picode.chat.onHostEvent) folds into
+ * per-session chat states via the registry; the FOCUSED session's state
+ * drives the main zone. Multi-active sessions keep running in the
+ * background while only the focused one renders. The composer and all
+ * session-level commands target the focused session explicitly
+ * (`session_command`); the sidebar consumes the read-only session index
+ * (window.picode.sessions) and drives focus / resume / fork / tree
+ * navigation / rename write-back / Live Follow.
  */
 export default function App(): JSX.Element {
   const [ui, dispatch] = useReducer(shellUiReducer, undefined, () => ({
@@ -77,14 +89,17 @@ export default function App(): JSX.Element {
   const [panel, panelDispatch] = useReducer(panelReducer, undefined, initialPanelState)
   /** File Preview deep-link target (ticket 07) — token increments force reloads. */
   const [previewTarget, setPreviewTarget] = useState<PreviewSelection | null>(null)
-  const [chat, chatDispatch] = useReducer(chatReducer, undefined, initialChatState)
+  /** Multi-active sessions (ticket 20): per-session view state + focus. */
+  const [registry, registryDispatch] = useReducer(registryReducer, undefined, initialRegistryState)
+  /** The focused session's view state (registry projection for rendering). */
+  const focused = focusedSession(registry)
+  const chat = focused?.chat ?? initialChatState()
+  const tree = focused?.tree ?? null
   /** True between create/resume and its terminal event. */
   const [creating, setCreating] = useState(false)
   /** New-task empty state (ticket 17): ⌘N swaps the main zone to the chip
    * empty state even while a session is open; no system folder dialog. */
   const [newTaskOpen, setNewTaskOpen] = useState(false)
-  /** Agent errors are dismissible; host/session errors keep their actions. */
-  const [dismissedError, setDismissedError] = useState<ChatError | null>(null)
   /** First prompt typed before a folder exists; sent once the session is ready. */
   const pendingPromptRef = useRef<string | null>(null)
   /** Images typed (pasted) before a folder exists; attached to the first prompt. */
@@ -93,7 +108,6 @@ export default function App(): JSX.Element {
   // ---- session index + sidebar state ----
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [pinnedIds, setPinnedIds] = useState<ReadonlySet<string>>(() => loadPinnedIds())
-  const [tree, setTree] = useState<SessionTreePayload | null>(null)
   const [treeOpen, setTreeOpen] = useState(false)
   /** Live Follow: the session file being watched read-only, its transcript. */
   const [followedFile, setFollowedFile] = useState<string | null>(null)
@@ -161,24 +175,35 @@ export default function App(): JSX.Element {
 
   useEffect(() => {
     const unsubscribe = window.picode.chat.onHostEvent((event) => {
-      chatDispatch(event)
-      switch (event.type) {
+      // Every event (focused or not) folds into its session's view state.
+      registryDispatch(event)
+      // App-level side effects key off the event's SESSION SCOPE (ticket 20:
+      // wrapped `session_event` from the supervisor, or the legacy unwrapped
+      // shape the visual harnesses inject).
+      const scopeType = event.type === 'session_event' ? event.event.type : event.type
+      const scopeId = event.type === 'session_event' ? event.sessionId : event.type === 'session_created' ? event.sessionId : null
+      switch (scopeType) {
         case 'session_created': {
           setCreating(false)
           setNewTaskOpen(false)
           setFollowedFile(null)
           window.picode.sessions.unfollow()
-          setTree(null)
+          // Focus is switching to the announced session — the branch-history
+          // panel belongs to the view being left behind; close it.
           setTreeOpen(false)
           const pending = pendingPromptRef.current
           const pendingImages = pendingImagesRef.current
           pendingPromptRef.current = null
           pendingImagesRef.current = null
-          if (pending !== null || pendingImages !== null) {
+          if ((pending !== null || pendingImages !== null) && scopeId !== null) {
             window.picode.chat.sendToHost({
-              type: 'prompt',
-              text: pending !== null && pending.trim() !== '' ? pending : 'Describe the attached images.',
-              images: pendingImages ?? undefined
+              type: 'session_command',
+              sessionId: scopeId,
+              command: {
+                type: 'prompt',
+                text: pending !== null && pending.trim() !== '' ? pending : 'Describe the attached images.',
+                images: pendingImages ?? undefined
+              }
             })
           }
           refreshSessions()
@@ -188,23 +213,22 @@ export default function App(): JSX.Element {
           // Transcript replay arrived — the session is usable.
           setCreating(false)
           break
-        case 'session_tree':
-          setTree(event.tree)
-          break
         case 'session_renamed':
           refreshSessions()
           break
         case 'fork_created':
           // Kept for contract symmetry: the fork now continues in-host (the
           // host re-announces via session_created); just refresh the index.
-          setTreeOpen(false)
           refreshSessions()
           break
-        case 'host_notice':
-          notify(event.message, event.level)
+        case 'host_notice': {
+          const notice = event.type === 'session_event' ? event.event : event
+          if (notice.type === 'host_notice') notify(notice.message, notice.level)
           break
+        }
         case 'session_command_error':
-          notify(event.message, 'error')
+          if (event.type === 'session_event') notify(event.event.message, 'error')
+          else notify(event.message, 'error')
           break
         case 'session_error':
         case 'host_exit':
@@ -217,7 +241,7 @@ export default function App(): JSX.Element {
       }
     })
     // Marker for harness/e2e drivers: the Seam-1 subscription is live and no
-    // contract event emitted before this point was seen by the reducer.
+    // contract event emitted before this point was seen by the registry.
     document.documentElement.dataset.chatSubscribed = 'true'
     return unsubscribe
   }, [refreshSessions, notify])
@@ -271,9 +295,28 @@ export default function App(): JSX.Element {
   // a periodic re-render keeps the derived live state from going stale.
   const now = useNowTick(30_000)
 
+  /** The id of the session whose view is on screen (commands target it). */
+  const focusedId = registry.focusedId
+  /** Latest focus without re-creating the callbacks below. */
+  const focusedIdRef = useRef<string | null>(null)
+  focusedIdRef.current = focusedId
+  /** Target one session-scoped command at the focused session's host
+   * (ticket 20 registry semantics). No focus → nothing to target. */
+  const sendFocused = useCallback(
+    (command: SessionCommand): void => {
+      const id = focusedIdRef.current
+      if (id !== null) window.picode.chat.sendToHost({ type: 'session_command', sessionId: id, command })
+    },
+    []
+  )
+
   async function handleComposerSend(text: string, images: ImageAttachment[] = []): Promise<void> {
-    if (chat.session) {
-      window.picode.chat.sendToHost({ type: 'prompt', text, images: images.length > 0 ? images : undefined })
+    if (focusedId !== null && chat.session !== null) {
+      window.picode.chat.sendToHost({
+        type: 'session_command',
+        sessionId: focusedId,
+        command: { type: 'prompt', text, images: images.length > 0 ? images : undefined }
+      })
       return
     }
     startTask(null, text, images)
@@ -297,31 +340,31 @@ export default function App(): JSX.Element {
   }
 
   function handleSteer(text: string, images: ImageAttachment[] = []): void {
-    window.picode.chat.sendToHost({ type: 'steer_prompt', text, images: images.length > 0 ? images : undefined })
+    sendFocused({ type: 'steer_prompt', text, images: images.length > 0 ? images : undefined })
   }
 
   function handleFollowUp(text: string, images: ImageAttachment[] = []): void {
-    window.picode.chat.sendToHost({ type: 'follow_up_prompt', text, images: images.length > 0 ? images : undefined })
+    sendFocused({ type: 'follow_up_prompt', text, images: images.length > 0 ? images : undefined })
   }
 
   function handleClearQueue(): void {
-    window.picode.chat.sendToHost({ type: 'clear_queue' })
+    sendFocused({ type: 'clear_queue' })
   }
 
   function handleSetAccessMode(mode: AccessMode): void {
-    window.picode.chat.sendToHost({ type: 'set_access_mode', mode })
+    sendFocused({ type: 'set_access_mode', mode })
   }
 
   function handleSetModel(providerId: string, modelId: string): void {
-    window.picode.chat.sendToHost({ type: 'set_model', providerId, modelId })
+    sendFocused({ type: 'set_model', providerId, modelId })
   }
 
   function handleSetThinkingLevel(level: ThinkingLevel): void {
-    window.picode.chat.sendToHost({ type: 'set_thinking_level', level })
+    sendFocused({ type: 'set_thinking_level', level })
   }
 
   function handleListFiles(requestId: string, query: string): void {
-    window.picode.chat.sendToHost({ type: 'list_files', requestId, query })
+    sendFocused({ type: 'list_files', requestId, query })
   }
 
   async function handlePickImages(): Promise<ImageAttachment[]> {
@@ -329,11 +372,11 @@ export default function App(): JSX.Element {
   }
 
   function handleApprove(toolCallId: string, remember: boolean): void {
-    window.picode.chat.sendToHost({ type: 'approve_tool', toolCallId, remember })
+    sendFocused({ type: 'approve_tool', toolCallId, remember })
   }
 
   function handleDeny(toolCallId: string, reason: string): void {
-    window.picode.chat.sendToHost({ type: 'deny_tool', toolCallId, reason })
+    sendFocused({ type: 'deny_tool', toolCallId, reason })
   }
 
   /** The `/` menu's built-in commands drive PiCode's own controls. */
@@ -344,7 +387,7 @@ export default function App(): JSX.Element {
         break
       case 'tree':
         if (chat.session) {
-          window.picode.chat.sendToHost({ type: 'request_tree' })
+          sendFocused({ type: 'request_tree' })
           setTreeOpen(true)
         }
         break
@@ -366,7 +409,7 @@ export default function App(): JSX.Element {
         window.dispatchEvent(new Event(OPEN_THINKING_MENU_EVENT))
         break
       case 'compact':
-        if (chat.session) window.picode.chat.sendToHost({ type: 'compact_session' })
+        if (chat.session) sendFocused({ type: 'compact_session' })
         break
       default:
         break
@@ -388,7 +431,7 @@ export default function App(): JSX.Element {
   }
 
   function handleStop(): void {
-    window.picode.chat.sendToHost({ type: 'abort_turn' })
+    sendFocused({ type: 'abort_turn' })
   }
 
   function handleRebuild(): void {
@@ -439,9 +482,23 @@ export default function App(): JSX.Element {
 
   // ---- sidebar interactions ----
 
+  /** Registry projection for the sidebar: which sessions have a live host in
+   * this app (click = focus, never respawn) and which are running (dot). */
+  const inAppIds = liveSessionIds(registry)
+  const runningIds = runningSessionIds(registry)
+
   function handleOpenSession(summary: SessionSummary): void {
-    if (summary.id === chat.session?.sessionId) {
-      // Already open in the chat view — leave Follow mode, if any.
+    if (summary.id === focusedId) {
+      // Already the focused view — leave Follow mode, if any.
+      stopFollowing()
+      return
+    }
+    if (inAppIds.has(summary.id)) {
+      // Multi-active sessions (ticket 20): the host is alive in this app —
+      // switching is a pure focus change. Nothing is terminated; the view
+      // remounts already caught up and live.
+      registryDispatch({ type: 'focus_session', sessionId: summary.id })
+      setTreeOpen(false)
       stopFollowing()
       return
     }
@@ -524,9 +581,14 @@ export default function App(): JSX.Element {
     setSessions((prev) =>
       prev.map((s) => (s.file === summary.file ? { ...s, name, title: name } : s))
     )
-    if (summary.id === chat.session?.sessionId) {
-      // Active session: write back through its host process (leaf consistency).
-      window.picode.chat.sendToHost({ type: 'set_session_label', name })
+    if (inAppIds.has(summary.id)) {
+      // A session hosted in this app renames through ITS host process
+      // (leaf consistency) — focused or not (ticket 20).
+      window.picode.chat.sendToHost({
+        type: 'session_command',
+        sessionId: summary.id,
+        command: { type: 'set_session_label', name }
+      })
       return
     }
     void window.picode.sessions.rename(summary.file, name).then(refreshSessions)
@@ -534,22 +596,21 @@ export default function App(): JSX.Element {
 
   /** Rename the ACTIVE session from the chat topbar (host write-back path). */
   function handleRenameActive(name: string): void {
-    const activeId = chat.session?.sessionId
+    const activeId = focusedId
     if (!activeId) return
     setSessions((prev) => prev.map((s) => (s.id === activeId ? { ...s, name, title: name } : s)))
-    setTree((prev) => (prev !== null ? { ...prev, name } : prev))
-    window.picode.chat.sendToHost({ type: 'set_session_label', name })
+    sendFocused({ type: 'set_session_label', name })
   }
 
   function handleNavigateTree(entryId: string): void {
-    window.picode.chat.sendToHost({ type: 'navigate_tree', entryId })
+    sendFocused({ type: 'navigate_tree', entryId })
   }
 
   /** Fork the session at an entry (branch-history panel or message action
    * row, ticket 16). The host swaps to the branched session by re-announcing
    * session_created — the toast confirms the switch the user just got. */
   function handleFork(entryId: string): void {
-    window.picode.chat.sendToHost({ type: 'fork_session', entryId })
+    sendFocused({ type: 'fork_session', entryId })
     notify('Forked to a new session.', 'info')
   }
 
@@ -575,16 +636,18 @@ export default function App(): JSX.Element {
     [chat.session?.cwd, openPreview]
   )
 
-  /** Fold/unfold one turn's work container (ticket 23) — a UI action folded
-   * into the same Seam-1 reducer as the contract events. */
+  /** Fold/unfold one turn's work container (ticket 23) — a UI action routed
+   * to the focused session through the registry. */
   const handleToggleTurn = useCallback((turnId: string): void => {
-    chatDispatch({ type: 'toggle_turn_expanded', turnId })
+    registryDispatch({ type: 'toggle_turn_expanded', turnId })
   }, [])
 
   const handlePreviewNavigate = useCallback(openPreview, [openPreview])
 
   // Ticket 17: recent workspaces for the project chip's dropdown, and the
-  // chip's default (fixed → active session → last used → recent first).
+  // chip's default (fixed → focused session → last used → recent first).
+  // Anchored at the FOCUSED session's cwd (ticket 20: chat IS the focused
+  // session's view state).
   const recentWorkspaceList = useMemo(() => recentProjects(sessions), [sessions])
   const newTaskDefaultProject = useMemo(
     () =>
@@ -604,7 +667,9 @@ export default function App(): JSX.Element {
     ]
   )
 
-  const showError = chat.error !== null && chat.error !== dismissedError
+  // Ticket 20: the error dismissal lives in the session registry (per
+  // session) — no local state.
+  const showError = chat.error !== null && chat.error !== focused?.dismissedError
   const showFollow = followedFile !== null
   const showTranscript = chat.entries.length > 0 || chat.session !== null
 
@@ -635,9 +700,11 @@ export default function App(): JSX.Element {
       <Sidebar
         open={ui.sidebarOpen}
         sessions={sessions}
-        activeSessionId={chat.session?.sessionId ?? null}
+        activeSessionId={focusedId}
         followedFile={followedFile}
         pinnedIds={pinnedIds}
+        inAppIds={inAppIds}
+        runningIds={runningIds}
         onTogglePin={handleTogglePin}
         onOpenSession={handleOpenSession}
         onRenameSession={handleRenameSession}
@@ -651,7 +718,7 @@ export default function App(): JSX.Element {
             error={chat.error}
             onRebuild={handleRebuild}
             onPickAnotherFolder={handlePickAnotherFolder}
-            onDismiss={() => setDismissedError(chat.error)}
+            onDismiss={() => registryDispatch({ type: 'dismiss_error' })}
           />
         )}
         {showFollow ? (
@@ -680,7 +747,7 @@ export default function App(): JSX.Element {
             tree={tree}
             treeOpen={treeOpen}
             onToggleTree={() => {
-              if (!treeOpen && chat.session) window.picode.chat.sendToHost({ type: 'request_tree' })
+              if (!treeOpen && chat.session) sendFocused({ type: 'request_tree' })
               setTreeOpen((v) => !v)
             }}
             onRename={handleRenameActive}

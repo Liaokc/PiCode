@@ -32,10 +32,17 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { app, BrowserWindow } from 'electron'
 import { terminalVisualEnabled } from './visual-terminal'
+import { ensureVisualStore, writeVisualSession } from './visual-store'
 import type { HostToParent } from '../shared/contract'
 
 export function visualEnabled(): boolean {
   return process.env['PICODE_VISUAL'] === '1'
+}
+
+/** Ticket-20 multi-session harness (sidebar dots + alignment). Exclusive:
+ * when set, the transcript/density/terminal harnesses stand down. */
+export function multiSessionVisualEnabled(): boolean {
+  return process.env['PICODE_VISUAL_MULTI'] === '1'
 }
 
 export function visualOutDir(): string {
@@ -125,6 +132,21 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
   // Density runs (ticket 15) own the window alone: a fixed sample transcript
   // plus geometry probe, no composer menus / preview flow alongside.
   if (process.env['PICODE_VISUAL_DENSITY'] === '1') return
+  // The multi-session harness (ticket 20) owns the window alone too.
+  if (multiSessionVisualEnabled()) return
+
+  // Deterministic sidebar content for the shots (ticket 20): the empty-state
+  // frame must show a status dot (a session written by ANOTHER end — fresh
+  // mtime, no registry events = static green dot) next to the ticket-17
+  // chip. Seed an isolated store before the session index constructs.
+  if (!terminalVisualEnabled() && !process.env['PICODE_SESSION_DIR']) {
+    const store = ensureVisualStore()
+    writeVisualSession(store, {
+      id: 'visual-tui-live',
+      cwd: '/Users/dev/projects/api-server',
+      userText: 'Wire the new checkout form to the payments sandbox'
+    })
+  }
 
   void (async () => {
     try {

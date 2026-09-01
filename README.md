@@ -47,7 +47,7 @@ Stages (fail fast, per-stage timings):
 3. **pty** — real pseudo-terminal under Electron's node ABI
 4. **usage aggregation** — read-only scan of the real TUI store + incremental fold machinery on a temp store
 5. **TUI↔SDK interop** — both directions: a TUI-written session parses through the session index, transcript, and the SDK's own `SessionManager`; a host-written session re-opens via the SDK, shows in the index, folds into usage, and resumes in a second host process
-6. **electron app smoke** — the real shell: main→host→renderer DOM, sidebar index, Live Follow, host crash isolation
+6. **electron app smoke** — the real shell: main→host→renderer DOM, sidebar index, Live Follow, session-scoped crash isolation, multi-active sessions (several hosts alive across focus switches, background streaming, same-pid refocus with a caught-up transcript, no-orphan shutdown)
 
 Stages 2, 5, and 6 make real model calls (a few minutes total).
 

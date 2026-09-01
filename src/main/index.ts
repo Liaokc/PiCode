@@ -19,6 +19,7 @@ import { startVisualIfEnabled } from './visual'
 import { startDensityVisualIfEnabled } from './visual-density'
 import { startSettingsVisualIfEnabled } from './visual-settings'
 import { startTerminalVisualIfEnabled } from './visual-terminal'
+import { startMultiSessionVisualIfEnabled } from './visual-multisession'
 import { startUsageVisualIfEnabled } from './visual-usage'
 import { fakeUsageSnapshot } from '../shared/usage/fixture'
 import { TerminalService, type TerminalDataMessage, type TerminalExitMessage } from './terminal/service'
@@ -100,6 +101,9 @@ app.whenReady().then(() => {
   startVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   startDensityVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   startTerminalVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  // Ticket-20 dot/alignment harness must run BEFORE the session index is
+  // constructed: it seeds an isolated store via PICODE_SESSION_DIR.
+  startMultiSessionVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
 
   // Renderer → host relay (Seam-1: the only chat channel the renderer has).
   ipcMain.on('chat:to-host', (_event, message: ParentToHost) => {

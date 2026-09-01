@@ -15,10 +15,12 @@
  */
 
 import type { InlineExtension, ToolCallEvent, ToolCallEventResult } from '@earendil-works/pi-coding-agent'
-import type { HostToParent, ImageAttachment } from '../shared/contract'
+import type { ImageAttachment, SessionScopedEvent } from '../shared/contract'
 import type { ApprovalGate } from './approval-gate'
 
-type HostEvent = Exclude<HostToParent, { type: 'host_exit' }>
+/** What the extension may send: one session's scoped events (the supervisor
+ * tags and relays; `host_exit` is supervisor-only). */
+type HostEvent = Exclude<SessionScopedEvent, { type: 'host_exit' }>
 
 /** Structural mirror of the SDK's ImageContent (not re-exported at the root). */
 interface ImageContentLike {

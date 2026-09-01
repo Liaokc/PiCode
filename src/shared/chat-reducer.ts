@@ -581,6 +581,12 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case 'host_notice':
       return state
 
+    // ---- ticket 20: session-scoped wrappers never reach the chat reducer —
+    // the session registry unwraps and routes them first. Defensively no-op.
+    case 'session_event':
+    case 'session_detached':
+      return state
+
     case 'host_exit': {
       const cwd = state.session?.cwd ?? null
       // A dead host settles like any run end: the turn folds away and the
