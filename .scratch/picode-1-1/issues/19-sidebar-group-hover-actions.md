@@ -9,7 +9,7 @@
 
 **Blocked by:** 17（新建任务依赖芯片形态）、22（按钮 tooltip 用统一组件）。
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] 分组行悬停出现操作钮（含空分组「暂无任务」态），样式对照 ZCode，移开消失
 - [x] 隐藏：分组从侧栏消失 + 设置页「隐藏的项目」恢复入口；会话文件零改动；被隐藏分组的会话仍出现在 ⌘K 搜索与 Groups 全部视图
@@ -29,3 +29,5 @@
   - **visual:multi 扩展**：m3 悬停（sendInputEvent 合成真鼠标移过才有 CSS `:hover`）/ m4 菜单 / m5 隐藏（组头+任务行消失+toast）/ m5b ⌘K 三条全命中 / m6a 恢复卡带隐藏项 / m6 恢复后 / m7 回工作区分组重现 / m8 芯片预选，全部 DOM 探针门禁后截图，归档 `.scratch/compare/m{3,4,5,5b,6,6a,7,8}-*.png`。新增 `isolateVisualUserData()`（index.ts 模块级、whenReady 前）：harness 的隐藏/恢复驱动**真实** settings service，userData 指向临时目录，绝不碰操作者真偏好。
   - **验证**：typecheck / lint / 620 unit 全绿（新增 12 个纯函数用例 + settings-service 文档形状更新）；smoke 未扩新阶段（本票改动面 = 侧栏投影 + 设置卡 + 空态 preset，无新契约事件；全量 smoke 含真实模型调用受 dev-app 串行约束，留待合并会话/操作者按惯例执行）。code-review 双轴：Standards 无硬违规（判定项 = filterHiddenGroups 单消费方的轻泛型）；Spec 五项验收逐条落实，两项披露（hide toast、空分组形态偏差），无范围外行为。
   - 合并：请操作者执行 `bash scripts/merge-ticket.sh 19`。
+
+- 2026-08-31 (merge session, T00): merged as **ed700a2** (`merge: t19-group-hover-actions`, rebase 零冲突 + no-ff onto main——基点即当时 main，无代差)。验收口径：操作者明确「已验收」；实现会话记录隐藏过滤纯函数表驱动 + 新任务芯片预选复用 17 形态 + tooltip 用 22 统一组件 + m3–m8 证据帧；合并会话另将 19 会话的跨票回归证据入库（20 的 multi-dot 状态在悬停侧栏上重验证：m1/m2）。合并后 main 上 typecheck + vitest 620/620 全绿。
