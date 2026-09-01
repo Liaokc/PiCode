@@ -36,3 +36,9 @@
   - picker 收缩为审查单卡（单测 + CDP 实探 `['Review']`）；File Preview 深链不动。
   - 验证：typecheck / lint / 547 unit 全绿；`npm run smoke` ALL GREEN（6 阶段，session hygiene 无增长）。视觉三连拍底部形态归档 `.scratch/compare/t18-terminal-{1,2,3}.png`（fish shell、全宽、chat 压缩在上，与 `/tmp/term-j.png` 对照一致）。
   - 合并：请操作者执行 `bash scripts/merge-ticket.sh 18`。
+- 2026-09-01 (operator feedback round, t18): 三项修改实现在 `64053a4`，仍为 ready-for-human：
+  - **字体适配**：starship powerline 字形原为 tofu。新探针 `probe-font.ts`：逐候选字体在 canvas 上画 U+E0B0 并数着色像素——实测 Chrome 里缺字形渲染为空白（0 像素）而非 tofu，宽度对比无效（tofu 步进宽 ≈ 等宽步进宽，差仅 0.39px）。操作员实装的 JetBrainsMono Nerd Font 命中并置顶字体栈（截图已验证字形完整）；候选表含 starship 推荐的 Meslo 及常见 Nerd Font。
+  - **Bridge 重设计**：弃用第二个 xterm，改为 DOM 命令卡片流（新纯 reducer `shared/bridge/feed.ts`，16 单测；同一条 Seam-1 流折叠；会话级历史、尾部增量、中断沉降语义与旧 projector 对齐）。旧 frame projector 已无消费者，连同其测试删除；单向观察语义不变（feed 无任何写入路径）。
+  - **独立下侧栏**：Bridge 迁出终端 dock，新开独立 dock + 新快捷键 ⌘B + 标题栏 pulse 切换钮；feed 状态在 App 层折叠（隐藏/设置窗口往返均不丢历史；dock 恒挂载，隐藏用 display:none）。终端 dock（⌘J）贴底，Bridge 堆叠其上。CONTEXT.md 新术语「桥接停靠（Bridge Dock）」。
+  - 验证：typecheck / lint / 562 unit 全绿；`npm run smoke` ALL GREEN；⌘B CDP 实探（启动隐藏、开/关、切换钮）全过；证据刷新 `.scratch/compare/t18-terminal-{1..3}.png` + 新增 `t18-bridge-{1,2}.png`。
+  - 合并：请操作者执行 `bash scripts/merge-ticket.sh 18`（包含 ab00463 / 478ed50 / 64053a4）。
