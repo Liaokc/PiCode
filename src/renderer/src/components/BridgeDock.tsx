@@ -1,31 +1,33 @@
-import { useEffect, useRef, type Dispatch, type JSX, type PointerEvent } from 'react'
-import type { BridgeDockAction } from '../../../shared/bridge-dock-model'
+import { useEffect, useRef, type Dispatch, type JSX } from 'react'
+import type { DockAction } from '../../../shared/dock-model'
 import type { BridgeFeedEntry, BridgeFeedState } from '../../../shared/bridge/feed'
 import { CloseIcon } from './icons'
 import Tooltip from './Tooltip'
 
 /**
- * Bridge Dock (ticket 18 feedback) — the Agent Bridge's own bottom dock,
- * independent of the terminal dock (⌘B / titlebar pulse toggle). Renders the
- * agent's bash commands as a feed of cards: status mark, sanitized command,
- * live output beneath. WRITE-ONLY by construction — every byte on screen is
- * a pure projection of Seam-1 contract events folded at the App level
- * (shared/bridge/feed.ts); there is no input path into any pty (ADR-0004).
+ * Bridge panel (ticket 18 feedback): the Agent Bridge's card feed inside
+ * the shared bottom dock frame (BottomDock.tsx) — a SIBLING of the terminal
+ * panel, shown in the same position (⌘B swaps it in; the tool-card chip in
+ * the transcript deep-links here). Renders the agent's bash commands as
+ * cards: status mark, sanitized command, live output beneath. WRITE-ONLY by
+ * construction — every byte on screen is a pure projection of Seam-1
+ * contract events folded at the App level (shared/bridge/feed.ts); there is
+ * no input path into any pty (ADR-0004).
  *
- * The dock is always mounted and hidden with display:none — the feed state
- * lives in the App shell, so hiding the panel or visiting settings never
- * loses projection history.
+ * The panel is always mounted (display toggled by the frame) and the feed
+ * state lives in the App shell, so hiding the dock or visiting settings
+ * never loses projection history.
  */
 
 interface BridgeDockProps {
-  /** Panel visibility (⌘B / titlebar toggle); false hides but keeps folding. */
-  open: boolean
-  /** Panel height in px (drag handle dispatches set-bridge-height). */
-  height: number
+  feed: BridgeFeedState
   /** Probe-resolved mono/Nerd-Font stack for command + output text. */
   fontStack: string
-  feed: BridgeFeedState
-  dispatch: Dispatch<BridgeDockAction>
+  /** Tool-call id to scroll to + flash (tool-card deep link); null = none. */
+  highlight: string | null
+  /** Clears the highlight once the feed has flashed it. */
+  onHighlightDone: () => void
+  dispatch: Dispatch<DockAction>
 }
 
 const MAX_RENDERED_LINES = 200
@@ -50,8 +52,7 @@ function statusMark(status: BridgeFeedEntry['status']): { text: string; classNam
   }
 }
 
-export default function BridgeDock({ open, height, fontStack, feed, dispatch }: BridgeDockProps): JSX.Element {
-  const drag = useRef<{ startY: number; startHeight: number } | null>(null)
+export default function BridgeDock({ feed, fontStack, highlight, onHighlightDone, dispatch }: BridgeDockProps): JSX.Element {
   const scrollRef = useRef<HTMLDivElement | null>(null)
   /** Stick to the live tail unless the user scrolled up to read history. */
   const stickToTail = useRef(true)
@@ -69,39 +70,25 @@ export default function BridgeDock({ open, height, fontStack, feed, dispatch }: 
     stickToTail.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48
   }
 
-  function startResize(event: PointerEvent<HTMLDivElement>): void {
-    event.preventDefault()
-    drag.current = { startY: event.clientY, startHeight: height }
-    event.currentTarget.setPointerCapture(event.pointerId)
-  }
-
-  function moveResize(event: PointerEvent<HTMLDivElement>): void {
-    if (!drag.current) return
-    dispatch({ type: 'set-bridge-height', height: drag.current.startHeight + (drag.current.startY - event.clientY) })
-  }
-
-  function endResize(event: PointerEvent<HTMLDivElement>): void {
-    drag.current = null
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId)
+  // Deep link (tool-card chip): scroll the requested command into view and
+  // flash it; a missing id (session switched) is a silent no-op.
+  useEffect(() => {
+    if (highlight === null) return
+    const el = scrollRef.current?.querySelector(`[data-tool-call-id="${highlight}"]`)
+    if (el instanceof HTMLElement) {
+      el.scrollIntoView({ block: 'center' })
+      el.classList.add('bridge-entry-flash')
+      const timer = window.setTimeout(() => el.classList.remove('bridge-entry-flash'), 1800)
+      onHighlightDone()
+      return () => window.clearTimeout(timer)
     }
-  }
+    onHighlightDone()
+  }, [highlight, onHighlightDone])
 
   const running = feed.entries.some((entry) => entry.status === 'running')
 
   return (
-    <section className="terminal-dock bridge-dock" aria-label="Agent Bridge" style={{ height, display: open ? undefined : 'none' }}>
-      <div
-        className="terminal-dock-resizer"
-        role="separator"
-        aria-orientation="horizontal"
-        aria-label="Resize agent bridge panel"
-        onPointerDown={startResize}
-        onPointerMove={moveResize}
-        onPointerUp={endResize}
-        onDoubleClick={() => dispatch({ type: 'reset-bridge-height' })}
-      />
-
+    <>
       <header className="terminal-dock-header">
         <span className="terminal-dock-title">Agent Bridge</span>
         <span className="bridge-status">
@@ -109,13 +96,8 @@ export default function BridgeDock({ open, height, fontStack, feed, dispatch }: 
           {running ? 'Agent running' : 'Idle'}
         </span>
         <span className="terminal-dock-actions">
-          <Tooltip label="Hide agent bridge">
-            <button
-              type="button"
-              className="tb-btn"
-              aria-label="Hide agent bridge"
-              onClick={() => dispatch({ type: 'hide-bridge-dock' })}
-            >
+          <Tooltip label="Hide panel">
+            <button type="button" className="tb-btn" aria-label="Hide panel" onClick={() => dispatch({ type: 'hide-dock' })}>
               <CloseIcon size={13} />
             </button>
           </Tooltip>
@@ -136,7 +118,7 @@ export default function BridgeDock({ open, height, fontStack, feed, dispatch }: 
             const mark = statusMark(entry.status)
             const { lines, omitted } = clampLines(entry.output)
             return (
-              <article key={entry.toolCallId} className={`bridge-entry bridge-entry-${entry.status}`}>
+              <article key={entry.toolCallId} data-tool-call-id={entry.toolCallId} className={`bridge-entry bridge-entry-${entry.status}`}>
                 <div className="bridge-entry-head">
                   <span className={`bridge-entry-mark ${mark.className}`}>{mark.text}</span>
                   <span className="bridge-entry-cmd" style={{ fontFamily: fontStack }}>
@@ -155,6 +137,6 @@ export default function BridgeDock({ open, height, fontStack, feed, dispatch }: 
           })
         )}
       </div>
-    </section>
+    </>
   )
 }

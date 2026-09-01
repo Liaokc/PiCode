@@ -1,6 +1,7 @@
 import { useState, type JSX } from 'react'
 import type { ToolEntry } from '../../../shared/chat-reducer'
 import { toolSummary } from '../../../shared/tool-format'
+import BridgeJumpChip from './BridgeJumpChip'
 import PreviewLinkChip from './PreviewLinkChip'
 import { CheckIcon, ChevronDownIcon, CloseIcon, LoaderIcon } from './icons'
 
@@ -12,6 +13,8 @@ interface ToolCardProps {
   entry: ToolEntry
   /** Present when a preview target is available; the card then shows Open. */
   onOpenFile?: (path: string) => void
+  /** Bash cards only: deep-link into the Bridge panel (ticket 18 feedback). */
+  onShowInBridge?: (toolCallId: string) => void
 }
 
 /**
@@ -22,7 +25,7 @@ interface ToolCardProps {
  * File-arg cards carry an Open button (screenshot 04) that deep-links the
  * file into the side panel's Preview tab.
  */
-export default function ToolCard({ entry, onOpenFile }: ToolCardProps): JSX.Element {
+export default function ToolCard({ entry, onOpenFile, onShowInBridge }: ToolCardProps): JSX.Element {
   const [open, setOpen] = useState(false)
   const summary = toolSummary(entry.name, entry.args)
   const failed = entry.state === 'error'
@@ -51,6 +54,9 @@ export default function ToolCard({ entry, onOpenFile }: ToolCardProps): JSX.Elem
         </span>
         {previewPath !== null && onOpenFile && (
           <PreviewLinkChip path={previewPath} onOpen={onOpenFile} label={`Preview ${previewPath}`} className="tool-card-preview-link" />
+        )}
+        {entry.name === 'bash' && onShowInBridge && (
+          <BridgeJumpChip toolCallId={entry.id} onShow={onShowInBridge} />
         )}
         <ChevronDownIcon size={13} className="row-chevron" />
       </button>

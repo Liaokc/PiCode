@@ -1,15 +1,15 @@
 /**
- * Terminal + Bridge dock visual-QA harness (tickets 08/18 + 18 feedback).
- * Enabled with PICODE_VISUAL=1 plus PICODE_VISUAL_TERMINAL=1. Opens the
- * BOTTOM TERMINAL DOCK via the titlebar toggle (the real ⌘J entry point),
- * lets the REAL user pty print its prompt, then opens the BRIDGE DOCK via
- * its own toggle (⌘B entry) and injects a bash sequence into the contract
- * stream. Captures PNGs for the human visual pass:
+ * Terminal + Bridge dock visual-QA harness (tickets 08/18 + feedback
+ * rounds). Enabled with PICODE_VISUAL=1 plus PICODE_VISUAL_TERMINAL=1.
+ * Both panels live in ONE bottom dock frame: the harness opens the terminal
+ * (⌘J entry), then swaps the bridge panel in at the SAME position (⌘B
+ * entry), injects a bash sequence into the contract stream, and exercises
+ * the tool-card deep link. Captures PNGs for the human visual pass:
  *
- *   terminal-1 — terminal dock alone: shell prompt, ZCode tab strip, nerd-glyph prompt
- *   bridge-1   — bridge dock with a command mid-run (live streaming output)
- *   bridge-2   — bridge feed settled (✓ done / ✗ failed cards)
- *   terminal-2 — both docks stacked (bridge above terminal at the bottom edge)
+ *   terminal-1 — dock showing the terminal: shell prompt, ZCode tab strip
+ *   bridge-1   — same dock, bridge panel swapped in, command mid-run
+ *   bridge-2   — feed settled (✓ done / ✗ failed cards)
+ *   terminal-2 — swapped back to the terminal in place (panel switch proof)
  *   terminal-3 — user-pane input proof (pasted command echoed by the shell)
  *
  * PNGs land in the visual out dir (default <cwd>/.scratch/visual/). Not part
@@ -94,16 +94,16 @@ export function startTerminalVisualIfEnabled(getWindow: () => BrowserWindow | nu
         `(() => ({
           xterms: document.querySelectorAll('.terminal-tab .xterm').length,
           userPanes: document.querySelectorAll('.terminal-user').length,
-          dockTitle: document.querySelector('.terminal-dock-title')?.textContent ?? null,
-          shellChip: document.querySelector('.terminal-dock-header .terminal-dock-chip')?.textContent ?? null,
+          dockTitle: document.querySelector('.dock-panel .terminal-dock-title')?.textContent ?? null,
+          shellChip: document.querySelector('.terminal-dock-chip')?.textContent ?? null,
           sessionChip: document.querySelector('.terminal-dock-session-chip .terminal-dock-chip-label')?.textContent ?? null,
-          bridgeFeed: document.querySelectorAll('.bridge-entry').length
+          bridgeEntries: document.querySelectorAll('.bridge-entry').length
         }))()`
       )
       console.log(`VISUAL terminal probe ${JSON.stringify(mounted)}`)
       await capture(win, 'terminal-1')
 
-      // ---- bridge dock: open through its own toggle (⌘B entry) ----
+      // ---- bridge panel: swap in at the SAME position (⌘B entry) ----
       if (!(await clickToggle(win, 'Toggle agent bridge'))) throw new Error('bridge dock toggle not found')
       await sleep(300)
 
@@ -156,12 +156,34 @@ export function startTerminalVisualIfEnabled(getWindow: () => BrowserWindow | nu
       await sleep(700)
       await capture(win, 'bridge-2')
 
-      // ---- both docks stacked: bridge above terminal at the bottom edge ----
+      // ---- panel switch proof: ⌘J swaps back to the terminal in place,
+      // then the tool card's Bridge chip deep-links into the feed again.
+      if (!(await clickToggle(win, 'Toggle terminal'))) throw new Error('terminal dock toggle not found')
+      await sleep(400)
       await capture(win, 'terminal-2')
 
-      // Input-path proof: paste a command into the user pane and run it —
-      // fish must echo the marker back (keystroke path = onData → session →
-      // pty → shell). The bridge feed never receives such an input path.
+      await probe(
+        win,
+        `(() => {
+          const chip = document.querySelector('.tool-card-preview-link[aria-label="Show in Agent Bridge"]')
+          if (!chip) return false
+          chip.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+          return true
+        })()`
+      )
+      await sleep(500)
+      const deepLinkState = await probe(
+        win,
+        `(() => ({
+          bridgeVisible: document.querySelector('.dock-panel:nth-child(3)')?.style.display !== 'none',
+          flashed: document.querySelector('.bridge-entry-flash') !== null
+        }))()`
+      )
+      console.log(`VISUAL deep-link probe ${JSON.stringify(deepLinkState)}`)
+
+      // ---- input-path proof on the terminal panel ----
+      if (!(await clickToggle(win, 'Toggle terminal'))) throw new Error('terminal dock toggle not found')
+      await sleep(300)
       const pasted = await probe(
         win,
         `(() => {

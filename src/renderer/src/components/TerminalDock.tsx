@@ -10,30 +10,18 @@ import Tooltip from './Tooltip'
 import { createTerminalOptions } from '../terminal/theme'
 
 /**
- * Bottom terminal dock (ticket 18) — VS Code-style panel under the chat:
- * full workspace-column width, draggable height (top-edge handle → fit
- * addon), opened by ⌘J or the titlebar toggle. The header carries the ZCode
+ * Terminal panel (ticket 18): the user's own interactive shell inside the
+ * shared bottom dock frame (BottomDock.tsx). The header carries the ZCode
  * tab strip (「Terminal | <shell> | <session> ×」) plus new/close actions.
- *
- * One pane: the user's own interactive shell — a full PTY spawned in the
- * main process and driven over the Seam-3 byte channels. The Agent Bridge
- * projection is NOT here anymore: since the 18-feedback revision it lives
- * in its own Bridge Dock (BridgeDock.tsx, ⌘B), keeping the user shell and
- * the read-only projection visually separate.
- *
- * Visibility and lifecycle are independent (dock-model): hiding the panel
- * keeps the workspace mounted so a live shell survives ⌘J cycles; closing
- * the tab (chip ×) unmounts and kills the shell.
+ * A full PTY spawns in the main process and is driven over the Seam-3 byte
+ * channels; the panel stays mounted across dock hide and panel switches,
+ * so a live shell survives both (closing the tab — chip × — kills it).
  */
 
 interface TerminalDockProps {
-  /** Panel visibility (⌘J / titlebar toggle); false hides but keeps the shell. */
-  open: boolean
-  /** Whether a terminal tab exists at all; false unmounts everything. */
-  mounted: boolean
-  /** Panel height in px (drag handle dispatches set-height). */
-  height: number
-  /** Active session working directory; null shows the dock's empty state. */
+  /** Whether a terminal tab exists (drives workspace vs empty state). */
+  tabOpen: boolean
+  /** Active session working directory; null shows the empty state. */
   workspaceCwd: string | null
   /** Active session display label for the tab strip; null hides the chip. */
   sessionLabel: string | null
@@ -47,52 +35,16 @@ interface TerminalDockProps {
 }
 
 export default function TerminalDock({
-  open,
-  mounted,
-  height,
+  tabOpen,
   workspaceCwd,
   sessionLabel,
   shellName,
   gen,
   fontStack,
   dispatch
-}: TerminalDockProps): JSX.Element | null {
-  const drag = useRef<{ startY: number; startHeight: number } | null>(null)
-
-  if (!mounted) return null
-
-  function startResize(event: PointerEvent<HTMLDivElement>): void {
-    event.preventDefault()
-    drag.current = { startY: event.clientY, startHeight: height }
-    event.currentTarget.setPointerCapture(event.pointerId)
-  }
-
-  function moveResize(event: PointerEvent<HTMLDivElement>): void {
-    if (!drag.current) return
-    // Dragging up grows the panel (dock hangs from the bottom edge).
-    dispatch({ type: 'set-height', height: drag.current.startHeight + (drag.current.startY - event.clientY) })
-  }
-
-  function endResize(event: PointerEvent<HTMLDivElement>): void {
-    drag.current = null
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId)
-    }
-  }
-
+}: TerminalDockProps): JSX.Element {
   return (
-    <section className="terminal-dock" aria-label="Terminal" style={{ height, display: open ? undefined : 'none' }}>
-      <div
-        className="terminal-dock-resizer"
-        role="separator"
-        aria-orientation="horizontal"
-        aria-label="Resize terminal panel"
-        onPointerDown={startResize}
-        onPointerMove={moveResize}
-        onPointerUp={endResize}
-        onDoubleClick={() => dispatch({ type: 'reset-height' })}
-      />
-
+    <>
       <header className="terminal-dock-header">
         <span className="terminal-dock-title">Terminal</span>
         <span className="terminal-dock-chip">{shellName}</span>
@@ -104,7 +56,7 @@ export default function TerminalDock({
                 type="button"
                 className="terminal-dock-chip-close"
                 aria-label="Close terminal tab"
-                onClick={() => dispatch({ type: 'close-tab' })}
+                onClick={() => dispatch({ type: 'close-terminal-tab' })}
               >
                 <CloseIcon size={11} />
               </button>
@@ -122,13 +74,8 @@ export default function TerminalDock({
               <PlusIcon size={15} />
             </button>
           </Tooltip>
-          <Tooltip label="Hide terminal">
-            <button
-              type="button"
-              className="tb-btn"
-              aria-label="Hide terminal"
-              onClick={() => dispatch({ type: 'hide-dock' })}
-            >
+          <Tooltip label="Hide panel">
+            <button type="button" className="tb-btn" aria-label="Hide panel" onClick={() => dispatch({ type: 'hide-dock' })}>
               <CloseIcon size={13} />
             </button>
           </Tooltip>
@@ -136,7 +83,7 @@ export default function TerminalDock({
       </header>
 
       <div className="terminal-dock-body">
-        {workspaceCwd === null ? (
+        {!tabOpen || workspaceCwd === null ? (
           <div className="review-empty">
             <TerminalSquareIcon size={28} />
             <p className="review-empty-title">No workspace yet</p>
@@ -148,7 +95,7 @@ export default function TerminalDock({
           <TerminalWorkspace key={`${workspaceCwd}:${gen}`} cwd={workspaceCwd} fontStack={fontStack} />
         )}
       </div>
-    </section>
+    </>
   )
 }
 

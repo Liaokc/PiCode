@@ -1,18 +1,21 @@
 /**
- * Bottom terminal dock model (ticket 18): VS Code-style panel under the chat
- * zone — full width of the workspace column, draggable height, opened by ⌘J
- * or the titlebar toggle. Two independent concerns:
+ * Bottom dock model (ticket 18, sibling-panel revision): ONE full-width dock
+ * frame under the chat with two SIBLING panels — the user shell (⌘J) and
+ * the Agent Bridge feed (⌘B). The panels share the same position: pressing
+ * the other panel's key swaps the content in place; pressing the same key
+ * again closes the dock. Both panels stay mounted while the dock lives, so
+ * a live shell survives panel switches and Bridge history survives them
+ * too (the feed itself folds at the App level).
  *
- *   - `visible` — panel visibility only. Hiding (⌘J again, or the panel
- *     close button) keeps the terminal tab mounted, so a live shell and its
- *     Bridge projection survive a hide/show cycle.
- *   - `tabOpen` — whether a terminal tab exists at all. Launch starts
- *     collapsed with no tab (ticket 18f); closing the tab kills the shell
- *     (same semantics as the old side-panel tab close).
+ * Lifecycle split:
+ *   - `open`   — frame visibility (⌘J/⌘B, titlebar toggles, panel ×).
+ *   - `panel`  — which sibling fills the frame.
+ *   - `tabOpen` — whether a terminal tab exists at all; closing the tab
+ *     (chip ×) kills the shell and collapses the dock. Showing the terminal
+ *     always implies a tab. Launch starts collapsed with no tab (18f).
+ *   - `gen`    — bumped by "new session" (+) to respawn a fresh shell.
  *
- * `gen` counts workspace remounts: "new session" (the header + button)
- * bumps it so the renderer replaces the workspace with a fresh shell while
- * the dock stays open. Pure reducer — TerminalDock only dispatches.
+ * Pure reducer — the BottomDock frame only dispatches.
  */
 
 export const DOCK_MIN_HEIGHT_PX = 120
@@ -21,28 +24,35 @@ export const DOCK_MAX_HEIGHT_PX = 800
 /** Default height leaves the transcript dominant, ZCode ⌘J proportions. */
 export const DOCK_DEFAULT_HEIGHT_PX = 320
 
+export type DockPanel = 'terminal' | 'bridge'
+
 export interface DockState {
-  /** A terminal tab exists in the dock (a shell may be live behind it). */
-  tabOpen: boolean
-  /** Panel visibility; hiding never kills the shell. */
-  visible: boolean
-  /** Panel height in px (workspace column is width-full; only height drags). */
+  open: boolean
+  panel: DockPanel
+  /** Panel height in px (one frame, one shared drag height). */
   height: number
+  /** A terminal tab exists (a shell may be live behind it). */
+  tabOpen: boolean
   /** Bumped on "new session" — remounts the workspace with a fresh shell. */
   gen: number
 }
 
 export type DockAction =
-  | { type: 'toggle-dock' }
+  /** ⌘J: open showing the terminal / swap from bridge / close if showing. */
+  | { type: 'toggle-terminal-panel' }
+  /** ⌘B: open showing the bridge / swap from terminal / close if showing. */
+  | { type: 'toggle-bridge-panel' }
+  /** Deep link (tool card chip): always show the bridge, never toggle off. */
+  | { type: 'open-bridge-panel' }
   | { type: 'hide-dock' }
-  | { type: 'close-tab' }
+  | { type: 'close-terminal-tab' }
   | { type: 'new-session' }
   | { type: 'set-height'; height: number }
   | { type: 'reset-height' }
 
-/** Launch state: dock collapsed, no terminal (ticket 18f). */
+/** Launch state: dock hidden, terminal panel preselected, no shell (18f). */
 export function initialDockState(): DockState {
-  return { tabOpen: false, visible: false, height: DOCK_DEFAULT_HEIGHT_PX, gen: 0 }
+  return { open: false, panel: 'terminal', height: DOCK_DEFAULT_HEIGHT_PX, tabOpen: false, gen: 0 }
 }
 
 function clampHeight(height: number): number {
@@ -52,19 +62,24 @@ function clampHeight(height: number): number {
 
 export function dockReducer(state: DockState, action: DockAction): DockState {
   switch (action.type) {
-    case 'toggle-dock': {
-      const visible = !state.visible
-      // Opening the panel with no tab spawns the terminal tab (first ⌘J).
-      const tabOpen = state.tabOpen || visible
-      return tabOpen === state.tabOpen && visible === state.visible ? state : { ...state, visible, tabOpen }
+    case 'toggle-terminal-panel': {
+      if (state.open && state.panel === 'terminal') return { ...state, open: false }
+      // Showing the terminal implies its tab (first ⌘J spawns the shell).
+      return { ...state, open: true, panel: 'terminal', tabOpen: true }
     }
+    case 'toggle-bridge-panel': {
+      if (state.open && state.panel === 'bridge') return { ...state, open: false }
+      return { ...state, open: true, panel: 'bridge' }
+    }
+    case 'open-bridge-panel':
+      return state.open && state.panel === 'bridge' ? state : { ...state, open: true, panel: 'bridge' }
     case 'hide-dock':
-      return state.visible ? { ...state, visible: false } : state
-    case 'close-tab':
-      return state.tabOpen || state.visible ? { ...state, tabOpen: false, visible: false } : state
+      return state.open ? { ...state, open: false } : state
+    case 'close-terminal-tab':
+      return state.tabOpen || state.open ? { ...state, tabOpen: false, open: false } : state
     case 'new-session':
       // Always a fresh shell: repeating + respawns the workspace.
-      return { ...state, tabOpen: true, visible: true, gen: state.gen + 1 }
+      return { ...state, tabOpen: true, open: true, gen: state.gen + 1 }
     case 'set-height':
       return clampHeight(action.height) === state.height ? state : { ...state, height: clampHeight(action.height) }
     case 'reset-height':

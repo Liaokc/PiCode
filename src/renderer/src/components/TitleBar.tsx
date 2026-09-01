@@ -1,5 +1,4 @@
 import type { Dispatch, JSX } from 'react'
-import type { BridgeDockAction } from '../../../shared/bridge-dock-model'
 import type { DockAction } from '../../../shared/dock-model'
 import type { ShellUiAction, ShellUiState } from '../../../shared/layout-model'
 import {
@@ -17,10 +16,8 @@ import { APP_NAME } from '../../../shared/brand'
 interface TitleBarProps {
   ui: ShellUiState
   dispatch: Dispatch<ShellUiAction>
-  /** Bottom terminal dock toggle (ticket 18); ⌘J drives the same action. */
+  /** Bottom dock dispatch (ticket 18): ⌘J terminal + ⌘B bridge panels. */
   dispatchDock: Dispatch<DockAction>
-  /** Bottom bridge dock toggle (ticket 18 feedback); ⌘B drives the same. */
-  dispatchBridge: Dispatch<BridgeDockAction>
 }
 
 /**
@@ -28,8 +25,11 @@ interface TitleBarProps {
  * lights float over the left edge (hiddenInset), and the app title stays
  * centered across the full window width (screenshots 02/03). The settings
  * shell drops the workspace toggles and retitles the window (screenshot 09).
+ * The two dock buttons are sibling-panel toggles: each opens its panel in
+ * the shared bottom dock, swaps it in while the other shows, or closes the
+ * dock when its own panel is already showing.
  */
-export default function TitleBar({ ui, dispatch, dispatchDock, dispatchBridge }: TitleBarProps): JSX.Element {
+export default function TitleBar({ ui, dispatch, dispatchDock }: TitleBarProps): JSX.Element {
   const settings = ui.view === 'settings'
   return (
     <header className="titlebar">
@@ -68,7 +68,7 @@ export default function TitleBar({ ui, dispatch, dispatchDock, dispatchBridge }:
               type="button"
               className="tb-btn"
               aria-label="Toggle agent bridge"
-              onClick={() => dispatchBridge({ type: 'toggle-bridge-dock' })}
+              onClick={() => dispatchDock({ type: 'toggle-bridge-panel' })}
             >
               <PulseIcon />
             </button>
@@ -80,7 +80,7 @@ export default function TitleBar({ ui, dispatch, dispatchDock, dispatchBridge }:
               type="button"
               className="tb-btn"
               aria-label="Toggle terminal"
-              onClick={() => dispatchDock({ type: 'toggle-dock' })}
+              onClick={() => dispatchDock({ type: 'toggle-terminal-panel' })}
             >
               <PanelBottomIcon />
             </button>

@@ -13,10 +13,6 @@ import type { PreviewSelection } from '../../shared/preview/view-model'
 import { initialShellUiState, shellUiReducer } from '../../shared/layout-model'
 import { initialPanelState, panelReducer } from '../../shared/panel-model'
 import { initialDockState, dockReducer } from '../../shared/dock-model'
-import {
-  initialBridgeDockState,
-  bridgeDockReducer
-} from '../../shared/bridge-dock-model'
 import { initialBridgeFeedState, projectBridgeFeed } from '../../shared/bridge/feed'
 import { terminalFontStack } from '../../shared/terminal/font'
 import { detectNerdFont } from './terminal/probe-font'
@@ -31,8 +27,7 @@ import TitleBar from './components/TitleBar'
 import Sidebar from './components/Sidebar'
 import EmptyState from './components/EmptyState'
 import SidePanel from './components/SidePanel'
-import TerminalDock from './components/TerminalDock'
-import BridgeDock from './components/BridgeDock'
+import BottomDock from './components/BottomDock'
 import ChatView, { RENAME_EVENT } from './components/ChatView'
 import { OPEN_MODEL_MENU_EVENT, OPEN_THINKING_MENU_EVENT } from './components/Composer'
 import FollowView from './components/FollowView'
@@ -98,12 +93,12 @@ export default function App(): JSX.Element {
   }))
   /** Panel tab framework state (tabs, picker, dragged width) — ticket 06. */
   const [panel, panelDispatch] = useReducer(panelReducer, undefined, initialPanelState)
-  /** Bottom terminal dock (open/close, drag height) — ticket 18. Launches
-   * collapsed (18f); ⌘J / the titlebar toggle drive it. */
+  /** Bottom dock (ticket 18, sibling-panel revision): ONE frame hosting the
+   * terminal (⌘J) and Agent Bridge (⌘B) panels; launches collapsed (18f). */
   const [dock, dockDispatch] = useReducer(dockReducer, undefined, initialDockState)
-  /** Bottom bridge dock (18 feedback) — independent of the terminal dock;
-   * ⌘B / the titlebar pulse toggle drive it. */
-  const [bridgeDock, bridgeDockDispatch] = useReducer(bridgeDockReducer, undefined, initialBridgeDockState)
+  /** Deep-link highlight: a bash tool card's Bridge chip opens the panel
+   * AND flashes the matching feed entry; cleared after the flash. */
+  const [bridgeHighlight, setBridgeHighlight] = useState<string | null>(null)
   /** Agent Bridge feed: the SAME Seam-1 stream folded into a read-only
    * command list. Folded at the App level so hiding the dock or visiting
    * the settings shell never loses projection history. */
@@ -297,13 +292,13 @@ export default function App(): JSX.Element {
         event.preventDefault()
         setSearchOpen((open) => !open)
       } else if (event.key === 'j' || event.key === 'J') {
-        // Toggling a dock must never leak into the composer/editor —
+        // Toggling a dock panel must never leak into the composer/editor —
         // preventDefault keeps the keystroke ours (ticket 18b).
         event.preventDefault()
-        dockDispatch({ type: 'toggle-dock' })
+        dockDispatch({ type: 'toggle-terminal-panel' })
       } else if (event.key === 'b' || event.key === 'B') {
         event.preventDefault()
-        bridgeDockDispatch({ type: 'toggle-bridge-dock' })
+        dockDispatch({ type: 'toggle-bridge-panel' })
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -676,6 +671,14 @@ export default function App(): JSX.Element {
     registryDispatch({ type: 'toggle_turn_expanded', turnId })
   }, [])
 
+  /** Tool card → Bridge deep link: open the panel in place and flash the
+   * matching feed entry (the panel clears it after the flash). */
+  const handleShowInBridge = useCallback((toolCallId: string): void => {
+    dockDispatch({ type: 'open-bridge-panel' })
+    setBridgeHighlight(toolCallId)
+  }, [])
+  const clearBridgeHighlight = useCallback(() => setBridgeHighlight(null), [])
+
   const handlePreviewNavigate = useCallback(openPreview, [openPreview])
 
   // Ticket 17: recent workspaces for the project chip's dropdown, and the
@@ -710,7 +713,7 @@ export default function App(): JSX.Element {
   if (ui.view === 'settings') {
     return (
       <div className="app-shell">
-        <TitleBar ui={ui} dispatch={dispatch} dispatchDock={dockDispatch} dispatchBridge={bridgeDockDispatch} />
+        <TitleBar ui={ui} dispatch={dispatch} dispatchDock={dockDispatch} />
         <SettingsWindow
           dispatchShell={dispatch}
           preferences={settings.preferences}
@@ -734,7 +737,7 @@ export default function App(): JSX.Element {
 
   return (
     <div className="app-shell">
-      <TitleBar ui={ui} dispatch={dispatch} dispatchDock={dockDispatch} dispatchBridge={bridgeDockDispatch} />
+      <TitleBar ui={ui} dispatch={dispatch} dispatchDock={dockDispatch} />
       <Sidebar
         open={ui.sidebarOpen}
         sessions={sessions}
@@ -795,6 +798,7 @@ export default function App(): JSX.Element {
                 onFork={handleFork}
                 onCloseTree={() => setTreeOpen(false)}
                 onOpenFile={handleOpenFileFromTranscript}
+                onShowInBridge={handleShowInBridge}
                 onToggleTurn={handleToggleTurn}
                 composerApi={composerApi}
                 onApprove={handleApprove}
@@ -812,24 +816,17 @@ export default function App(): JSX.Element {
             onPreviewNavigate={handlePreviewNavigate}
           />
         </div>
-        {/* Bridge Dock first: the terminal (⌘J muscle memory) hugs the very
-            bottom edge; the bridge stacks above it when both are open. */}
-        <BridgeDock
-          open={bridgeDock.open}
-          height={bridgeDock.height}
-          fontStack={fontStack}
-          feed={bridgeFeed}
-          dispatch={bridgeDockDispatch}
-        />
-        <TerminalDock
-          mounted={dock.tabOpen}
-          open={dock.visible}
-          height={dock.height}
-          gen={dock.gen}
+        {/* Bottom dock: ONE frame, sibling panels — terminal (⌘J) and the
+            Agent Bridge feed (⌘B / tool-card deep link) swap in place. */}
+        <BottomDock
+          dock={dock}
           workspaceCwd={chat.session?.cwd ?? null}
           sessionLabel={sessionLabel}
           shellName={window.picode.versions.shell}
           fontStack={fontStack}
+          bridgeFeed={bridgeFeed}
+          bridgeHighlight={bridgeHighlight}
+          onBridgeHighlightDone={clearBridgeHighlight}
           dispatch={dockDispatch}
         />
       </div>

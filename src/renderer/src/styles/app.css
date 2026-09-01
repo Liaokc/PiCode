@@ -4627,6 +4627,33 @@ button.preview-crumb:hover {
   color: var(--text-faint);
 }
 
+/* deep-link flash (tool card → bridge, ticket 18 feedback) */
+
+.bridge-entry-flash {
+  animation: bridge-flash 1.6s ease-out;
+}
+
+@keyframes bridge-flash {
+  0%,
+  45% {
+    background: color-mix(in srgb, var(--accent-orange) 14%, var(--bg-card));
+    border-color: color-mix(in srgb, var(--accent-orange) 55%, var(--border));
+  }
+  100% {
+    background: var(--bg-card);
+    border-color: var(--border);
+  }
+}
+
+/* sibling panels inside the one dock frame (ticket 18 feedback) */
+
+.dock-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .bridge-entry-done .bridge-entry-output {
   max-height: 180px;
   overflow-y: auto;

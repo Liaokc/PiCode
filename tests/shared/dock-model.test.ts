@@ -9,11 +9,12 @@ import {
 } from '../../src/shared/dock-model'
 
 describe('initialDockState', () => {
-  it('launches with the dock collapsed and no terminal tab (ticket 18f)', () => {
+  it('launches hidden, terminal panel preselected, no shell (ticket 18f)', () => {
     expect(initialDockState()).toEqual({
-      tabOpen: false,
-      visible: false,
+      open: false,
+      panel: 'terminal',
       height: DOCK_DEFAULT_HEIGHT_PX,
+      tabOpen: false,
       gen: 0
     })
   })
@@ -24,73 +25,95 @@ describe('initialDockState', () => {
   })
 })
 
-describe('dockReducer — visibility (⌘J / titlebar toggle)', () => {
-  it('first toggle opens the dock AND opens the terminal tab (fresh shell)', () => {
-    const state = dockReducer(initialDockState(), { type: 'toggle-dock' })
-    expect(state.visible).toBe(true)
+describe('dockReducer — ⌘J terminal panel', () => {
+  it('opens the dock showing the terminal and spawns the tab', () => {
+    const state = dockReducer(initialDockState(), { type: 'toggle-terminal-panel' })
+    expect(state.open).toBe(true)
+    expect(state.panel).toBe('terminal')
     expect(state.tabOpen).toBe(true)
-    expect(state.gen).toBe(0)
   })
 
-  it('second toggle hides the dock but keeps the tab (shell survives ⌘J)', () => {
-    const opened = dockReducer(initialDockState(), { type: 'toggle-dock' })
-    const hidden = dockReducer(opened, { type: 'toggle-dock' })
-    expect(hidden.visible).toBe(false)
-    expect(hidden.tabOpen).toBe(true)
+  it('second ⌘J closes the dock; the shell survives (tab stays open)', () => {
+    const opened = dockReducer(initialDockState(), { type: 'toggle-terminal-panel' })
+    const closed = dockReducer(opened, { type: 'toggle-terminal-panel' })
+    expect(closed.open).toBe(false)
+    expect(closed.tabOpen).toBe(true)
+    // Re-opening shows the SAME shell (no gen bump).
+    expect(dockReducer(closed, { type: 'toggle-terminal-panel' }).gen).toBe(0)
   })
 
-  it('re-showing a hidden dock keeps the mount generation (same shell)', () => {
-    let state = dockReducer(initialDockState(), { type: 'toggle-dock' })
-    state = dockReducer(state, { type: 'toggle-dock' })
-    const reshow = dockReducer(state, { type: 'toggle-dock' })
-    expect(reshow.visible).toBe(true)
-    expect(reshow.tabOpen).toBe(true)
-    expect(reshow.gen).toBe(0)
+  it('⌘J while the bridge shows switches to the terminal in place', () => {
+    let state = dockReducer(initialDockState(), { type: 'toggle-bridge-panel' })
+    state = dockReducer(state, { type: 'toggle-terminal-panel' })
+    expect(state.open).toBe(true)
+    expect(state.panel).toBe('terminal')
+    expect(state.tabOpen).toBe(true)
+  })
+})
+
+describe('dockReducer — ⌘B bridge panel (same frame, sibling panel)', () => {
+  it('opens the dock showing the bridge; no terminal tab is spawned', () => {
+    const state = dockReducer(initialDockState(), { type: 'toggle-bridge-panel' })
+    expect(state.open).toBe(true)
+    expect(state.panel).toBe('bridge')
+    expect(state.tabOpen).toBe(false)
   })
 
-  it('hide-dock is an explicit idempotent hide that keeps the tab', () => {
-    const opened = dockReducer(initialDockState(), { type: 'toggle-dock' })
-    const hidden = dockReducer(opened, { type: 'hide-dock' })
-    expect(hidden.visible).toBe(false)
-    expect(hidden.tabOpen).toBe(true)
-    expect(dockReducer(hidden, { type: 'hide-dock' })).toEqual(hidden)
+  it('⌘B while the terminal shows switches panels and keeps the shell', () => {
+    const terminal = dockReducer(initialDockState(), { type: 'toggle-terminal-panel' })
+    const bridge = dockReducer(terminal, { type: 'toggle-bridge-panel' })
+    expect(bridge.open).toBe(true)
+    expect(bridge.panel).toBe('bridge')
+    expect(bridge.tabOpen).toBe(true)
+    expect(bridge.gen).toBe(terminal.gen)
+  })
+
+  it('second ⌘B closes the dock', () => {
+    const opened = dockReducer(initialDockState(), { type: 'toggle-bridge-panel' })
+    expect(dockReducer(opened, { type: 'toggle-bridge-panel' }).open).toBe(false)
+  })
+})
+
+describe('dockReducer — deep link (tool card → bridge)', () => {
+  it('open-bridge-panel shows the bridge and is idempotent', () => {
+    const opened = dockReducer(initialDockState(), { type: 'open-bridge-panel' })
+    expect(opened.open).toBe(true)
+    expect(opened.panel).toBe('bridge')
+    expect(dockReducer(opened, { type: 'open-bridge-panel' })).toEqual(opened)
   })
 })
 
 describe('dockReducer — terminal tab lifecycle', () => {
   it('close-tab kills the tab and collapses the dock', () => {
-    const opened = dockReducer(initialDockState(), { type: 'toggle-dock' })
-    const closed = dockReducer(opened, { type: 'close-tab' })
+    const opened = dockReducer(initialDockState(), { type: 'toggle-terminal-panel' })
+    const closed = dockReducer(opened, { type: 'close-terminal-tab' })
     expect(closed.tabOpen).toBe(false)
-    expect(closed.visible).toBe(false)
+    expect(closed.open).toBe(false)
   })
 
   it('toggle after close-tab opens a fresh tab again', () => {
-    let state = dockReducer(initialDockState(), { type: 'toggle-dock' })
-    state = dockReducer(state, { type: 'close-tab' })
-    state = dockReducer(state, { type: 'toggle-dock' })
-    expect(state.visible).toBe(true)
+    let state = dockReducer(initialDockState(), { type: 'toggle-terminal-panel' })
+    state = dockReducer(state, { type: 'close-terminal-tab' })
+    state = dockReducer(state, { type: 'toggle-terminal-panel' })
+    expect(state.open).toBe(true)
+    expect(state.panel).toBe('terminal')
     expect(state.tabOpen).toBe(true)
   })
 
   it('new-session bumps the generation so the shell remounts fresh', () => {
-    const opened = dockReducer(initialDockState(), { type: 'toggle-dock' })
+    const opened = dockReducer(initialDockState(), { type: 'toggle-terminal-panel' })
     const next = dockReducer(opened, { type: 'new-session' })
     expect(next.tabOpen).toBe(true)
-    expect(next.visible).toBe(true)
+    expect(next.open).toBe(true)
     expect(next.gen).toBe(opened.gen + 1)
   })
 
-  it('new-session on a fully closed dock opens it with a fresh tab', () => {
-    const state = dockReducer(initialDockState(), { type: 'new-session' })
-    expect(state.visible).toBe(true)
-    expect(state.tabOpen).toBe(true)
-    expect(state.gen).toBe(1)
-  })
-
-  it('close-tab is idempotent', () => {
-    const closed = dockReducer(initialDockState(), { type: 'close-tab' })
-    expect(dockReducer(closed, { type: 'close-tab' })).toEqual(closed)
+  it('hide-dock is an explicit idempotent hide that keeps the shell', () => {
+    const opened = dockReducer(initialDockState(), { type: 'toggle-terminal-panel' })
+    const hidden = dockReducer(opened, { type: 'hide-dock' })
+    expect(hidden.open).toBe(false)
+    expect(hidden.tabOpen).toBe(true)
+    expect(dockReducer(hidden, { type: 'hide-dock' })).toEqual(hidden)
   })
 })
 
@@ -120,10 +143,10 @@ describe('dockReducer — height drag', () => {
 describe('dockReducer — purity', () => {
   it('never mutates the previous state and ignores unknown actions', () => {
     const state = Object.freeze(initialDockState())
-    const next = dockReducer(state, { type: 'toggle-dock' })
+    const next = dockReducer(state, { type: 'toggle-terminal-panel' })
     expect(next).not.toBe(state)
-    expect(state.visible).toBe(false)
-    expect(state.tabOpen).toBe(false)
+    expect(state.open).toBe(false)
+    expect(state.panel).toBe('terminal')
     expect(dockReducer(state, { type: 'nonsense' } as unknown as DockAction)).toBe(state)
   })
 })
