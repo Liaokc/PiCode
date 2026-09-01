@@ -21,7 +21,4 @@
 
 - 2026-08-31 (/to-tickets 重切): 自票 14 拆出（原 (a) 转正与 (c) 渲染两缺口合并为一票；取证 `pi-follow-raw-markdown.png`）。
 - 2026-08-31 (implement session, t24-follow-takeover): 已实现并提交 **daf3de1**，未自行 merge —— 请操作者运行 `bash scripts/merge-ticket.sh 24`。要点：FollowView 消费票 14 结构化条目并复用 live 同一套渲染路径（Markdown / ThinkingRow / ToolCard 抽入共享 `TranscriptEntry`，chat/replay/follow 三面同构），严格零写入不变；Open 仅在非活跃（>120s）渲染，点击瞬间以新鲜 `sessions.list()` 重查活跃态（纯缝 `decideFollowTakeover`，表驱动 vitest 落 sessions-group 套件）——仍活跃 toast 拒绝（文案常量与冒烟断言共享），安静则走既有 resume 链路完整打开（`resumeSession` 与侧栏同路径，session_created 自动切换，history_loaded 整表替换无重复条目）；App 级 30s liveness tick 保证安静翻转真实可达。electron smoke follow 场景扩展为完整转正链（结构化 follow 渲染 / live 无 Open / 唤醒拒绝 / 安静转正 + 票 14 DOM 断言全部经由按钮链路）；顺带修复冒烟夹具：模拟 TUI 回合改用唯一 entry id（重复 id 会使 resume host exit 1）。验证：typecheck/lint 全绿、vitest 491/491、`npm run smoke` ALL GREEN（6/6）。code-review 双轴：Standards 0 硬违规（3 处判断项均已内联修复或记录理由）、Spec 0 缺口 0 越界。
-<<<<<<< HEAD
 - 2026-08-31 (implement session): 验收实拍入库 **fbe504c** —— `.scratch/compare/t24-follow-structured.png`（① 渲染升级：markdown + 折叠思考行 + 终态工具卡，live 无 Open）、`t24-follow-open.png`（安静后 Open 出现）、`t24-follow-rejected.png`（唤醒竞态 toast 拒绝）、`t24-takeover-resumed.png`（转正后完整打开，与 live 同构）。均由 electron smoke 真实链路在关键时刻捕获。
-=======
->>>>>>> e47dc9a (chore(tracker): 24 implemented (daf3de1) — ready-for-human, awaiting operator merge)
