@@ -23,6 +23,7 @@
 
   /* accents */
   --accent-orange: #ec7931;
+  --accent-blue: #4285f4;
   --send-bg: #21211e;
   --send-bg-hover: #000000;
 
@@ -418,13 +419,33 @@ kbd {
   color: var(--accent-orange);
 }
 
+/* Fixed dot slot (ticket 20): every Task row reserves the slot so all
+   title left edges align regardless of state (fixes the conditional-render
+   9px misalignment of the old conditional .sb-live-dot). */
+.sb-dot-slot {
+  width: 7px;
+  flex-shrink: 0;
+  display: inline-flex;
+  justify-content: center;
+}
+
+/* Running in THIS app (ticket 20): animated accent dot. */
+.sb-run-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-blue);
+  flex-shrink: 0;
+  animation: live-pulse 1.6s ease-in-out infinite;
+}
+
+/* Written by another end (TUI, 120s rule): static green dot. */
 .sb-live-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: #34a853;
   flex-shrink: 0;
-  animation: live-pulse 1.6s ease-in-out infinite;
 }
 
 @keyframes live-pulse {

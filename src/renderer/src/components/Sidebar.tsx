@@ -6,6 +6,7 @@ import {
   isSessionLive,
   relativeTime
 } from '../../../shared/sessions/group'
+import { sidebarDotState } from '../../../shared/session-registry'
 import { useNowTick } from './use-now'
 import Tooltip from './Tooltip'
 import {
@@ -29,11 +30,16 @@ const SHOW_FIRST = 5
 interface SidebarProps {
   open: boolean
   sessions: SessionSummary[]
-  /** The session currently open in the chat view (highlighted row). */
+  /** The session currently focused in the chat view (highlighted row). */
   activeSessionId: string | null
   /** The session currently being followed read-only (highlighted row). */
   followedFile: string | null
   pinnedIds: ReadonlySet<string>
+  /** Sessions whose host process is alive in this app (ticket 20): their dot
+   * is app-owned (animated while running, empty slot when idle). */
+  inAppIds: ReadonlySet<string>
+  /** Sessions with a run in flight in this app (the animated dot). */
+  runningIds: ReadonlySet<string>
   onTogglePin: (session: SessionSummary) => void
   onOpenSession: (session: SessionSummary) => void
   onRenameSession: (session: SessionSummary, name: string) => void
@@ -48,6 +54,7 @@ function TaskItem({
   session,
   now,
   state,
+  dot,
   pinned,
   onOpen,
   onTogglePin,
@@ -56,6 +63,8 @@ function TaskItem({
   session: SessionSummary
   now: number
   state: 'idle' | 'active' | 'followed'
+  /** Fixed-slot dot state (ticket 20): animated / green / empty slot. */
+  dot: 'run-here' | 'tui-live' | 'idle'
   pinned: boolean
   onOpen: () => void
   onTogglePin: () => void
@@ -88,9 +97,12 @@ function TaskItem({
         setRenaming(true)
       }}
     >
-      {isSessionLive(session, now) && state !== 'active' && (
-        <span className="sb-live-dot" aria-label="Running in another window" />
-      )}
+      {/* Fixed slot (ticket 20): always rendered so every title's left edge
+          aligns — the dot appears inside only for live states. */}
+      <span className="sb-dot-slot">
+        {dot === 'run-here' && <span className="sb-run-dot" aria-label="Running in PiCode" />}
+        {dot === 'tui-live' && <span className="sb-live-dot" aria-label="Running in another window" />}
+      </span>
       {renaming ? (
         <input
           ref={inputRef}
@@ -133,6 +145,8 @@ export default function Sidebar({
   activeSessionId,
   followedFile,
   pinnedIds,
+  inAppIds,
+  runningIds,
   onTogglePin,
   onOpenSession,
   onRenameSession,
@@ -152,6 +166,13 @@ export default function Sidebar({
   const filtering = query.trim() !== ''
   const visibleGroups = view === 'projects' ? grouped.groups : [{ cwd: '', project: 'All tasks', sessions: filtered.filter((s) => !pinnedIds.has(s.id)) }]
   const activeSession = sessions.find((s) => s.id === activeSessionId) ?? null
+
+  /** Fixed-slot dot state for one row (ticket 20): animated = running in
+   * this app, green = written by another end (120s rule), empty = idle. An
+   * in-app session never shows the TUI dot — its mtime is ours. */
+  function dotFor(s: SessionSummary): 'run-here' | 'tui-live' | 'idle' {
+    return sidebarDotState(runningIds.has(s.id), inAppIds.has(s.id), isSessionLive(s, now))
+  }
 
   function toggleExpanded(cwd: string): void {
     setExpanded((prev) => {
@@ -268,6 +289,7 @@ export default function Sidebar({
                 session={s}
                 now={now}
                 state={s.id === activeSessionId ? 'active' : s.file === followedFile ? 'followed' : 'idle'}
+                dot={dotFor(s)}
                 pinned
                 onOpen={() => onOpenSession(s)}
                 onTogglePin={() => onTogglePin(s)}
@@ -307,6 +329,7 @@ export default function Sidebar({
                   session={s}
                   now={now}
                   state={s.id === activeSessionId ? 'active' : s.file === followedFile ? 'followed' : 'idle'}
+                  dot={dotFor(s)}
                   pinned={false}
                   onOpen={() => onOpenSession(s)}
                   onTogglePin={() => onTogglePin(s)}

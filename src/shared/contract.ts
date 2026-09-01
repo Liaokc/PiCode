@@ -57,6 +57,16 @@ export interface SlashCommandItem {
   source: 'prompt' | 'skill' | 'builtin'
 }
 
+/** The per-session commands the renderer sends to ONE backing host process
+ * (ticket 20): the session-scoped slice of the command vocabulary, targeted
+ * through `session_command` so the supervisor can route it by sessionId.
+ * The un-targeted legacy members stay for compatibility (they route to the
+ * most recently announced session). */
+export type SessionCommand = Extract<
+  ParentToHost,
+  { type: 'prompt' | 'abort_turn' | 'steer_prompt' | 'follow_up_prompt' | 'clear_queue' | 'set_model' | 'set_thinking_level' | 'set_access_mode' | 'approve_tool' | 'deny_tool' | 'compact_session' | 'list_files' | 'navigate_tree' | 'fork_session' | 'set_session_label' | 'request_tree' }
+>
+
 /** Renderer → agent host system. */
 export type ParentToHost =
   /** Spawn a host process and create a Session working in `cwd`.
@@ -70,6 +80,9 @@ export type ParentToHost =
   | { type: 'abort_turn' }
   /** Spawn a host process that reopens an existing session file (Handoff). */
   | { type: 'resume_session'; sessionFile: string; cwd: string }
+  /** Send one session-scoped command to the host process backing `sessionId`
+   * (ticket 20 registry semantics: the target session, not "the" session). */
+  | { type: 'session_command'; sessionId: string; command: SessionCommand }
   /** In-place tree navigation: move the leaf to an earlier entry, same file. */
   | { type: 'navigate_tree'; entryId: string }
   /** Fork: extract the path root→entry into a NEW session file. */
@@ -102,8 +115,11 @@ export type ParentToHost =
 /** Supervisor → host process lifecycle control (never sent by the renderer). */
 export type HostControlCommand = { type: 'shutdown' }
 
-/** Agent host system → renderer. Applied in arrival order by the chat reducer. */
-export type HostToParent =
+/** One session's worth of contract events: everything a host process emits
+ * for the session it backs, plus the supervisor-synthesized lifecycle events
+ * for it (`host_exit`, `session_detached`). Tagged with a sessionId by the
+ * supervisor (ticket 20) so the renderer can route events per session. */
+export type SessionScopedEvent =
   /** A host process created the session; any previous session is replaced. */
   | {
       type: 'session_created'
@@ -123,7 +139,7 @@ export type HostToParent =
   | { type: 'history_loaded'; items: TranscriptItem[] }
   /** The session's entry tree (resume, navigation, rename, request_tree). */
   | { type: 'session_tree'; tree: SessionTreePayload }
-  /** The active session's label was written back successfully. */
+  /** The session's label was written back successfully. */
   | { type: 'session_renamed'; name: string | null }
   /** A fork extracted a new session file; resume it to continue there. */
   | { type: 'fork_created'; sessionFile: string; cwd: string }
@@ -184,3 +200,18 @@ export type HostToParent =
   | { type: 'queue_update'; steering: string[]; followUp: string[] }
   /** Non-transcript notice (compaction progress etc.) for the toast area. */
   | { type: 'host_notice'; level: 'info' | 'error'; message: string }
+  /** Supervisor-synthesized: this session's host moved on to a DIFFERENT
+   * session (in-host fork re-announcement). The session no longer has a
+   * backing host; its file remains and can be resumed (ticket 20). */
+  | { type: 'session_detached' }
+
+/** Agent host system → renderer. Applied in arrival order; since ticket 20
+ * every event carries its session scope: the supervisor wraps host events in
+ * `session_event`, and the renderer's session registry routes them by
+ * sessionId. The unwrapped shapes remain valid for single-session consumers
+ * (visual-QA harnesses inject them directly). */
+export type HostToParent =
+  | SessionScopedEvent
+  /** A session-scoped event, tagged with the session it belongs to (ticket
+   * 20). Background sessions keep emitting these while unfocused. */
+  | { type: 'session_event'; sessionId: string; event: SessionScopedEvent }
