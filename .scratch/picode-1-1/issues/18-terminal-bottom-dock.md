@@ -15,7 +15,7 @@
 
 **Blocked by:** 22（右上切换钮等新按钮的 tooltip 用统一组件）。
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] ⌘J 与右上切换钮均可开/关底部终端；快捷键不与 Composer/输入框冲突
 - [x] 底部面板全宽、可拖高；ResizeObserver → FitAddon 联动（Seam-3 fake-pty 测试迁移通过）
@@ -56,3 +56,5 @@
   - **全套 visual 帧重拍**：transcript / terminal（dock·面板·深链探针全绿）/ settings / usage / density 五套 exit 0，43 帧；0-empty-state 冲突即此因，已按整合后构图重摄。
   - **验证**：typecheck / lint / 609 unit 全绿；`npm run smoke` ALL GREEN（并集套件，含票 20 多活动会话场景 + 本票 dock 在 registry 架构下运行）；code-review 双轴无硬违规（Standards：registry 一致性/文案/测试原则 ✓，判定项=拖拽 handler 复用模式；Spec：五项指令逐条落实，无缺失无蔓延）。
   - 合并：请操作者执行 `bash scripts/merge-ticket.sh 18`（rebase 后线性提交 620ebb9…328f76f + 整合 e64ace3）。
+
+- 2026-08-31 (merge session, T00): merged as **8642513** (`merge: t18-terminal-bottom-dock`, rebase 零冲突 + no-ff onto main)。验收口径：操作者明确「已验收」×2（另含两轮实现内反馈：nerd font / bridge card feed / 独立 bridge dock；整合轮）。整合轮 `e64ace3`：registry 脊柱承载 dock（dismiss_error 走 dispatch、props 对齐 focused 派生）、17 的 new-task 三分支嵌入 workspace 布局壳（dock 为 sibling 面板共存）、dock-model 纯 reducer 表驱动、全套 visual 帧重拍。合并后 main 上 typecheck + vitest 609/609 全绿；合并会话终态审计通过（无冲突标记、零 setDismissedError 残留）。
