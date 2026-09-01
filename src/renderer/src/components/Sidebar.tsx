@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import type { SessionSummary } from '../../../shared/sessions/types'
 import {
+  filterHiddenGroups,
   filterSessions,
   groupSessions,
   isSessionLive,
@@ -11,12 +12,15 @@ import { useNowTick } from './use-now'
 import Tooltip from './Tooltip'
 import {
   ChevronDownIcon,
+  CloseIcon,
+  EllipsisIcon,
   ExpandArrowsIcon,
   FilterIcon,
   FolderIcon,
   GearIcon,
   GripDotsIcon,
   HashIcon,
+  MessagePlusIcon,
   PinIcon,
   PlusIcon,
   ProjectsFolderIcon,
@@ -43,7 +47,16 @@ interface SidebarProps {
   onTogglePin: (session: SessionSummary) => void
   onOpenSession: (session: SessionSummary) => void
   onRenameSession: (session: SessionSummary, name: string) => void
-  onNewTask: () => void
+  /** Open the new-task state; a cwd PRESELECTS that project's chip
+   * (ticket 19: the group row's hover action), undefined follows the
+   * ticket-17 fallback chain. */
+  onNewTask: (presetCwd?: string) => void
+  /** Project cwds hidden from the Projects list (ticket 19; local
+   * preference — sessions are untouched and stay searchable). */
+  hiddenCwds: ReadonlySet<string>
+  /** Hide one project group (ticket 19): local-only, recoverable in
+   * Settings → General → Hidden projects. */
+  onHideGroup: (cwd: string) => void
   /** Open the ⌘K task-search palette (ticket 11). */
   onOpenSearch: () => void
   /** Open the settings window (ticket 10). */
@@ -151,6 +164,8 @@ export default function Sidebar({
   onOpenSession,
   onRenameSession,
   onNewTask,
+  hiddenCwds,
+  onHideGroup,
   onOpenSearch,
   onOpenSettings
 }: SidebarProps): JSX.Element | null {
@@ -159,13 +174,43 @@ export default function Sidebar({
   const [query, setQuery] = useState('')
   const [view, setView] = useState<'projects' | 'groups'>('projects')
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
+  /** The project group whose ⋯ menu is open (ticket 19); null = none. */
+  const [groupMenuCwd, setGroupMenuCwd] = useState<string | null>(null)
   const filterRef = useRef<HTMLInputElement>(null)
 
   const filtered = useMemo(() => filterSessions(sessions, query), [sessions, query])
   const grouped = useMemo(() => groupSessions(filtered, pinnedIds), [filtered, pinnedIds])
+  // Ticket 19: hiding is a group-level projection — pinned rows and the
+  // Groups all-tasks view below are untouched, so hidden sessions stay
+  // reachable from both.
+  const visibleProjectGroups = useMemo(
+    () => filterHiddenGroups(grouped.groups, hiddenCwds),
+    [grouped.groups, hiddenCwds]
+  )
   const filtering = query.trim() !== ''
-  const visibleGroups = view === 'projects' ? grouped.groups : [{ cwd: '', project: 'All tasks', sessions: filtered.filter((s) => !pinnedIds.has(s.id)) }]
+  const visibleGroups =
+    view === 'projects'
+      ? visibleProjectGroups
+      : [{ cwd: '', project: 'All tasks', sessions: filtered.filter((s) => !pinnedIds.has(s.id)) }]
   const activeSession = sessions.find((s) => s.id === activeSessionId) ?? null
+
+  // Outside click / Escape closes the group menu.
+  useEffect(() => {
+    if (groupMenuCwd === null) return
+    function onPointerDown(event: MouseEvent): void {
+      if (event.target instanceof Element && event.target.closest('.sb-group-actions, .sb-group-menu')) return
+      setGroupMenuCwd(null)
+    }
+    function onKeyDown(event: KeyboardEvent): void {
+      if (event.key === 'Escape') setGroupMenuCwd(null)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [groupMenuCwd])
 
   /** Fixed-slot dot state for one row (ticket 20): animated = running in
    * this app, green = written by another end (120s rule), empty = idle. An
@@ -309,17 +354,71 @@ export default function Sidebar({
         {visibleGroups.map((group) => {
           const isExpanded = filtering || expanded.has(group.cwd)
           const shown = isExpanded ? group.sessions : group.sessions.slice(0, SHOW_FIRST)
+          // The Groups view's flattened "All tasks" pseudo-group has no cwd —
+          // hiding it is meaningless, so it gets no hover actions.
+          const isRealGroup = group.cwd !== ''
+          const menuOpen = isRealGroup && groupMenuCwd === group.cwd
           return (
             <section key={group.cwd || 'all'} className="sb-group">
-              <div className="sb-group-header" onClick={() => group.cwd !== '' && toggleExpanded(group.cwd)}>
+              <div className="sb-group-header" onClick={() => isRealGroup && toggleExpanded(group.cwd)}>
                 <FolderIcon />
                 <span>{group.project}</span>
                 <span className="sb-section-spacer" />
                 {group.sessions.length > SHOW_FIRST && (
                   <ChevronDownIcon size={13} className={isExpanded ? 'sb-caret sb-caret-up' : 'sb-caret'} />
                 )}
-                <GripDotsIcon />
+                {isRealGroup && (
+                  <span className="sb-group-actions">
+                    <Tooltip label="More actions">
+                      <button
+                        type="button"
+                        className="sb-group-action"
+                        aria-label={`Group actions: ${group.project}`}
+                        aria-haspopup="menu"
+                        aria-expanded={menuOpen}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setGroupMenuCwd(menuOpen ? null : group.cwd)
+                        }}
+                      >
+                        <EllipsisIcon size={15} />
+                      </button>
+                    </Tooltip>
+                    <Tooltip label="New task">
+                      <button
+                        type="button"
+                        className="sb-group-action"
+                        aria-label={`New task in ${group.project}`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setGroupMenuCwd(null)
+                          onNewTask(group.cwd)
+                        }}
+                      >
+                        <MessagePlusIcon size={15} />
+                      </button>
+                    </Tooltip>
+                  </span>
+                )}
+                <GripDotsIcon className="sb-grip" />
               </div>
+              {menuOpen && (
+                <div className="sb-group-menu" role="menu" aria-label={`Group actions: ${group.project}`}>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="sb-group-menu-item"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setGroupMenuCwd(null)
+                      onHideGroup(group.cwd)
+                    }}
+                  >
+                    <CloseIcon size={13} />
+                    <span>Remove from sidebar</span>
+                  </button>
+                </div>
+              )}
               {group.sessions.length === 0 && filtering && (
                 <div className="sb-empty-hint">No matching tasks</div>
               )}

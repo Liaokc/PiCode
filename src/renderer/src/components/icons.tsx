@@ -449,3 +449,25 @@ export function GitBranchIcon({ size, className }: IconProps): JSX.Element {
     </svg>
   )
 }
+
+/** Group-row hover action (ticket 19): ZCode's ⋯ more-menu glyph. */
+export function EllipsisIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)} fill="currentColor" stroke="none">
+      <circle cx="5.5" cy="12" r="1.5" />
+      <circle cx="12" cy="12" r="1.5" />
+      <circle cx="18.5" cy="12" r="1.5" />
+    </svg>
+  )
+}
+
+/** Group-row hover action (ticket 19): ZCode's new-task glyph — a speech
+ * bubble with a plus, "start a task in this project". */
+export function MessagePlusIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M21 11.4a8.4 8.4 0 0 1-8.5 8.3 9 9 0 0 1-3.9-.9L3.5 20l1.2-4.1a8 8 0 0 1-1.2-4.5A8.4 8.4 0 0 1 12 3.1a8.4 8.4 0 0 1 9 8.3Z" />
+      <path d="M12 8.2v6M9 11.2h6" />
+    </svg>
+  )
+}

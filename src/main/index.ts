@@ -19,7 +19,7 @@ import { startVisualIfEnabled } from './visual'
 import { startDensityVisualIfEnabled } from './visual-density'
 import { startSettingsVisualIfEnabled } from './visual-settings'
 import { startTerminalVisualIfEnabled } from './visual-terminal'
-import { startMultiSessionVisualIfEnabled } from './visual-multisession'
+import { startMultiSessionVisualIfEnabled, isolateVisualUserData } from './visual-multisession'
 import { startUsageVisualIfEnabled } from './visual-usage'
 import { fakeUsageSnapshot } from '../shared/usage/fixture'
 import { TerminalService, type TerminalDataMessage, type TerminalExitMessage } from './terminal/service'
@@ -29,6 +29,11 @@ import { createUsageService } from './usage/service'
 let supervisor: HostSupervisor | null = null
 let sessionIndex: SessionIndexService | null = null
 let terminalService: TerminalService | null = null
+
+// Ticket-19 visual harness: the hide/restore captures drive the REAL
+// settings service, so the multi-session visual run gets throwaway userData
+// (no-op unless PICODE_VISUAL_MULTI=1). Must run before app.whenReady.
+isolateVisualUserData()
 
 function createMainWindow(): BrowserWindow {
   const win = new BrowserWindow(createWindowOptions(path.join(__dirname, '../preload/index.js')))
@@ -251,7 +256,8 @@ function fakePreferences(): AppPreferences {
     defaultModel: { providerId: 'bella', modelId: 'GLM-5.3' },
     defaultThinkingLevel: 'high',
     newTaskDirectory: 'fixed',
-    newTaskFixedProject: '/Users/demo/Projects/picode'
+    newTaskFixedProject: '/Users/demo/Projects/picode',
+    hiddenGroups: ['/Users/demo/Projects/archive']
   }
 }
 
