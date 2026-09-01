@@ -42,3 +42,9 @@
   - **独立下侧栏**：Bridge 迁出终端 dock，新开独立 dock + 新快捷键 ⌘B + 标题栏 pulse 切换钮；feed 状态在 App 层折叠（隐藏/设置窗口往返均不丢历史；dock 恒挂载，隐藏用 display:none）。终端 dock（⌘J）贴底，Bridge 堆叠其上。CONTEXT.md 新术语「桥接停靠（Bridge Dock）」。
   - 验证：typecheck / lint / 562 unit 全绿；`npm run smoke` ALL GREEN；⌘B CDP 实探（启动隐藏、开/关、切换钮）全过；证据刷新 `.scratch/compare/t18-terminal-{1..3}.png` + 新增 `t18-bridge-{1,2}.png`。
   - 合并：请操作者执行 `bash scripts/merge-ticket.sh 18`（包含 ab00463 / 478ed50 / 64053a4）。
+- 2026-09-01 (operator feedback round 2, t18): 同级面板重构实现在 `f79e186`，仍为 ready-for-human：
+  - **单 dock 双同级面板**：取消堆叠。一个 dock 框架（BottomDock）承载 Terminal 与 Bridge 两个面板；⌘J / ⌘B = 打开·互切·关闭（内容原位替换，位置/拖拽高度共享）；未显示的面板保持挂载（display:none），shell 与 feed 历史均不丢。dock-model 增加 `panel` 维度 + `open-bridge-panel`（深链专用，只开不关），bridge-dock-model 并入删除；17 reducer 单测。CDP 实探五步矩阵全绿。
+  - **工具卡深链**：转录中 bash 工具卡操作行新增 Bridge chip（BridgeJumpChip，PreviewLinkChip 同构：span role=button、阻断冒泡），点击打开面板并 scrollIntoView + 橙色 flash 定位对应 feed 条目（`.bridge-entry-flash`，1.6s）；feed 条目携 data-tool-call-id。
+  - **快捷键判断：保留 ⌘B**。chip 只能单向跳入 Bridge；⌘J/⌘B 成对保证纯键盘双向切换，且 tooltip 体系（有快捷键只显键帽）与 ⌘J 对称。
+  - 验证：typecheck / lint / 555 unit 全绿；`npm run smoke` ALL GREEN；证据刷新 `.scratch/compare/t18-terminal-{1..3}.png` + `t18-bridge-{1,2}.png`（terminal-2 为原位切回证明，bridge-1 为同位置切入）。
+  - 合并：请操作者执行 `bash scripts/merge-ticket.sh 18`（包含 ab00463 / 478ed50 / 64053a4 / f79e186）。
