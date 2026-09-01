@@ -38,6 +38,12 @@ export function visualEnabled(): boolean {
   return process.env['PICODE_VISUAL'] === '1'
 }
 
+/** Ticket-20 multi-session harness (sidebar dots + alignment). Exclusive:
+ * when set, the transcript/density/terminal harnesses stand down. */
+export function multiSessionVisualEnabled(): boolean {
+  return process.env['PICODE_VISUAL_MULTI'] === '1'
+}
+
 export function visualOutDir(): string {
   return process.env['PICODE_VISUAL_OUT'] || path.join(process.cwd(), '.scratch', 'visual')
 }
@@ -125,6 +131,8 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
   // Density runs (ticket 15) own the window alone: a fixed sample transcript
   // plus geometry probe, no composer menus / preview flow alongside.
   if (process.env['PICODE_VISUAL_DENSITY'] === '1') return
+  // The multi-session harness (ticket 20) owns the window alone too.
+  if (multiSessionVisualEnabled()) return
 
   void (async () => {
     try {
