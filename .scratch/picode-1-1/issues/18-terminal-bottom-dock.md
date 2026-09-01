@@ -15,16 +15,24 @@
 
 **Blocked by:** 22（右上切换钮等新按钮的 tooltip 用统一组件）。
 
-**Status:** claimed
+**Status:** ready-for-human
 
-- [ ] ⌘J 与右上切换钮均可开/关底部终端；快捷键不与 Composer/输入框冲突
-- [ ] 底部面板全宽、可拖高；ResizeObserver → FitAddon 联动（Seam-3 fake-pty 测试迁移通过）
-- [ ] Bridge 投屏在底部终端内工作正常（真 PTY 冒烟 + agent bash 投屏实测，输入永不回注）
-- [ ] 右侧栏 picker 仅剩审查卡；File Preview 深链与面包屑不受影响
-- [ ] 启动默认收起；应用退出无孤儿 shell（disposeAll 语义不变）
-- [ ] visual harness 终端三连拍更新为底部形态；`npm run smoke` ALL GREEN
-- [ ] typecheck / lint / test 全绿
+- [x] ⌘J 与右上切换钮均可开/关底部终端；快捷键不与 Composer/输入框冲突
+- [x] 底部面板全宽、可拖高；ResizeObserver → FitAddon 联动（Seam-3 fake-pty 测试迁移通过）
+- [x] Bridge 投屏在底部终端内工作正常（真 PTY 冒烟 + agent bash 投屏实测，输入永不回注）
+- [x] 右侧栏 picker 仅剩审查卡；File Preview 深链与面包屑不受影响
+- [x] 启动默认收起；应用退出无孤儿 shell（disposeAll 语义不变）
+- [x] visual harness 终端三连拍更新为底部形态；`npm run smoke` ALL GREEN
+- [x] typecheck / lint / test 全绿
 
 ## Comments
 
 - 2026-08-31 (requirements intake + grilling 定稿): 建票。取证：ZCode ⌘J 底部终端实拍 `/tmp/term-j.png`（两度确认：空态与任务态均底部展开）；Bridge 保留由 R3-Q1 拍板。ADR-0004 不需修订（PTY 与桥接决策不变，仅停靠位置）。
+- 2026-09-01 (implement session, t18): 实现于 `ab00463`，Status → ready-for-human。要点：
+  - 布局模型：新增纯 reducer `src/shared/dock-model.ts`（visible / tabOpen / height / gen 四维；隐藏面板保留 shell，关闭终端标签才 kill，15 单测）；Seam-3 fake-pty（terminal-session controller）零改动全绿。
+  - 双入口：⌘J 全局键（preventDefault，不漏进 Composer）+ 标题栏 PanelBottom 切换钮（tooltip = ⌘J 键帽，票 22 组件）。CDP 实探：启动收起 / ⌘J 开 / ⌘J 藏（保持挂载）/ 再开 / 切换钮双向，全过。
+  - 标签条：`Terminal | fish | <session> ×` + 右侧 +/×；shell 名取自与 pty factory 同源的 `$SHELL`（preload `versions.shell`，纯函数 shell-name）。语义裁定：+ = 新会话（gen 重挂载换新 shell）；会话标签 × = 关闭标签（杀 shell）；面板 × = 隐藏（shell 存活）——VS Code 同构，已写入 CONTEXT.md 新术语「终端停靠（Terminal Dock）」。
+  - Bridge 随迁：projector/写入面零改动，投屏与输入隔离语义不变（terminal-1/2/3 取证：桥接运行/落定 + 用户键入 `echo PICODE_TYPED_OK` 回显，桥格无输入路径）。
+  - picker 收缩为审查单卡（单测 + CDP 实探 `['Review']`）；File Preview 深链不动。
+  - 验证：typecheck / lint / 547 unit 全绿；`npm run smoke` ALL GREEN（6 阶段，session hygiene 无增长）。视觉三连拍底部形态归档 `.scratch/compare/t18-terminal-{1,2,3}.png`（fish shell、全宽、chat 压缩在上，与 `/tmp/term-j.png` 对照一致）。
+  - 合并：请操作者执行 `bash scripts/merge-ticket.sh 18`。
