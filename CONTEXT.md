@@ -51,8 +51,12 @@ _Avoid_: 花费（暗示精确）
 _Avoid_: 对话、聊天室、Conversation
 
 **侧边面板（Side Panel）**：
-主区右侧可展开的标签页容器。1.0 承载两类标签：终端（Terminal）、审查（Review）。浏览器标签不属于本项目。
+主区右侧可展开的标签页容器，承载审查（Review）与文件预览（File Preview）两类标签；终端不在其中（已迁往终端停靠）。
 _Avoid_: 右侧栏、抽屉
+
+**终端停靠（Terminal Dock）**：
+主区下方可开合的全宽终端面板，承载用户 shell 与桥接（Bridge）投屏；⌘J 与标题栏切换钮只隐藏/显示面板，关闭终端标签才结束 shell。
+_Avoid_: 底部面板、下方面板、控制台
 
 **访问模式（Access Mode）**：
 Composer 上的「完全访问」等芯片，映射为审批闸门的预设策略档位。

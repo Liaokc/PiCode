@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type JSX, type PointerEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type Dispatch, type JSX, type PointerEvent } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
@@ -7,24 +7,154 @@ import {
   projectBridgeEvent,
   type BridgeProjectorState
 } from '../../../shared/bridge/projector'
+import type { DockAction } from '../../../shared/dock-model'
 import type { HostToParent } from '../../../shared/contract'
 import type { PtyFactory, PtyHandle } from '../../../shared/terminal/pty'
 import { TerminalSession, type TerminalLifecycle } from '../../../shared/terminal/terminal-session'
-import { RefreshIcon, TerminalSquareIcon } from './icons'
+import { CloseIcon, PlusIcon, RefreshIcon, TerminalSquareIcon } from './icons'
+import Tooltip from './Tooltip'
 import { createTerminalOptions } from '../terminal/theme'
 
 /**
- * Terminal tab (ticket 08). Top pane: the Agent Bridge — a WRITE-ONLY
- * projection of the agent's bash commands and their output (CONTEXT.md:
- * 桥接). It has no key listener, no focus handling, and no path into any
- * pty: keystrokes can never re-enter the agent's execution stream
- * (ADR-0004). Bottom pane: the user's own interactive shell, a full PTY
- * spawned in the main process and driven over the Seam-3 byte channels.
+ * Bottom terminal dock (ticket 18) — VS Code-style panel under the chat:
+ * full workspace-column width, draggable height (top-edge handle → fit
+ * addon), opened by ⌘J or the titlebar toggle. The header carries the ZCode
+ * tab strip (「Terminal | <shell> | <session> ×」) plus new/close actions.
+ *
+ * Top pane: the Agent Bridge — a WRITE-ONLY projection of the agent's bash
+ * commands and their output (CONTEXT.md: 桥接). It has no key listener, no
+ * focus handling, and no path into any pty: keystrokes can never re-enter
+ * the agent's execution stream (ADR-0004). Bottom pane: the user's own
+ * interactive shell, a full PTY spawned in the main process and driven over
+ * the Seam-3 byte channels — the same channels the old side-panel tab used;
+ * the pty backend is untouched by this move.
+ *
+ * Visibility and lifecycle are independent (dock-model): hiding the panel
+ * keeps the workspace mounted so a live shell and its Bridge projection
+ * survive ⌘J cycles; closing the tab (chip ×) unmounts and kills the shell.
  */
 
-interface TerminalTabProps {
-  /** Active session working directory; null when no task is running. */
-  cwd: string | null
+interface TerminalDockProps {
+  /** Panel visibility (⌘J / titlebar toggle); false hides but keeps the shell. */
+  open: boolean
+  /** Whether a terminal tab exists at all; false unmounts everything. */
+  mounted: boolean
+  /** Panel height in px (drag handle dispatches set-height). */
+  height: number
+  /** Active session working directory; null shows the dock's empty state. */
+  workspaceCwd: string | null
+  /** Active session display label for the tab strip; null hides the chip. */
+  sessionLabel: string | null
+  /** Login shell display name (e.g. "fish") from the preload versions block. */
+  shellName: string
+  /** Dock mount generation — bumping it respawns the shell (new session). */
+  gen: number
+  dispatch: Dispatch<DockAction>
+}
+
+export default function TerminalDock({
+  open,
+  mounted,
+  height,
+  workspaceCwd,
+  sessionLabel,
+  shellName,
+  gen,
+  dispatch
+}: TerminalDockProps): JSX.Element | null {
+  const drag = useRef<{ startY: number; startHeight: number } | null>(null)
+
+  if (!mounted) return null
+
+  function startResize(event: PointerEvent<HTMLDivElement>): void {
+    event.preventDefault()
+    drag.current = { startY: event.clientY, startHeight: height }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  function moveResize(event: PointerEvent<HTMLDivElement>): void {
+    if (!drag.current) return
+    // Dragging up grows the panel (dock hangs from the bottom edge).
+    dispatch({ type: 'set-height', height: drag.current.startHeight + (drag.current.startY - event.clientY) })
+  }
+
+  function endResize(event: PointerEvent<HTMLDivElement>): void {
+    drag.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }
+
+  return (
+    <section className="terminal-dock" aria-label="Terminal" style={{ height, display: open ? undefined : 'none' }}>
+      <div
+        className="terminal-dock-resizer"
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="Resize terminal panel"
+        onPointerDown={startResize}
+        onPointerMove={moveResize}
+        onPointerUp={endResize}
+        onDoubleClick={() => dispatch({ type: 'reset-height' })}
+      />
+
+      <header className="terminal-dock-header">
+        <span className="terminal-dock-title">Terminal</span>
+        <span className="terminal-dock-chip">{shellName}</span>
+        {sessionLabel !== null && (
+          <span className="terminal-dock-chip terminal-dock-session-chip">
+            <span className="terminal-dock-chip-label">{sessionLabel}</span>
+            <Tooltip label="Close terminal tab">
+              <button
+                type="button"
+                className="terminal-dock-chip-close"
+                aria-label="Close terminal tab"
+                onClick={() => dispatch({ type: 'close-tab' })}
+              >
+                <CloseIcon size={11} />
+              </button>
+            </Tooltip>
+          </span>
+        )}
+        <span className="terminal-dock-actions">
+          <Tooltip label="New terminal session">
+            <button
+              type="button"
+              className="tb-btn"
+              aria-label="New terminal session"
+              onClick={() => dispatch({ type: 'new-session' })}
+            >
+              <PlusIcon size={15} />
+            </button>
+          </Tooltip>
+          <Tooltip label="Hide terminal">
+            <button
+              type="button"
+              className="tb-btn"
+              aria-label="Hide terminal"
+              onClick={() => dispatch({ type: 'hide-dock' })}
+            >
+              <CloseIcon size={13} />
+            </button>
+          </Tooltip>
+        </span>
+      </header>
+
+      <div className="terminal-dock-body">
+        {workspaceCwd === null ? (
+          <div className="review-empty">
+            <TerminalSquareIcon size={28} />
+            <p className="review-empty-title">No workspace yet</p>
+            <p className="review-empty-hint">Start a task in a project folder to anchor the terminal to it.</p>
+          </div>
+        ) : (
+          // Keyed by workspace + generation: switching tasks replaces the
+          // whole workspace (and its shell); + respawns a fresh shell in place.
+          <TerminalWorkspace key={`${workspaceCwd}:${gen}`} cwd={workspaceCwd} />
+        )}
+      </div>
+    </section>
+  )
 }
 
 /** Main-process pty seen through the Seam-3 handle, addressed by `id`. */
@@ -47,20 +177,6 @@ function remotePtyFactory(id: string, api: Window['picode']['terminal']): PtyFac
     }
     return handle
   }
-}
-
-export default function TerminalTab({ cwd }: TerminalTabProps): JSX.Element {
-  if (cwd === null) {
-    return (
-      <div className="review-empty">
-        <TerminalSquareIcon size={28} />
-        <p className="review-empty-title">No workspace yet</p>
-        <p className="review-empty-hint">Start a task in a project folder to anchor the terminal to it.</p>
-      </div>
-    )
-  }
-  // Key by cwd: switching tasks replaces the whole workspace (and its shell).
-  return <TerminalWorkspace key={cwd} cwd={cwd} />
 }
 
 function exitDetailLabel(state: TerminalLifecycle): string {

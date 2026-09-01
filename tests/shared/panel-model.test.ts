@@ -39,36 +39,36 @@ describe('panelReducer — tabs', () => {
     expect(state.pickerOpen).toBe(false)
   })
 
-  it('adds further tabs without duplicating and activates them', () => {
+  it('adds further tabs without duplicating and activates them (deep-linked Preview, ticket 07)', () => {
     let state = panelReducer(initialPanelState(), { type: 'open-tab', tab: 'review' })
-    state = panelReducer(state, { type: 'open-tab', tab: 'terminal' })
-    expect(state.openTabs).toEqual(['review', 'terminal'])
-    expect(state.activeTab).toBe('terminal')
+    state = panelReducer(state, { type: 'open-tab', tab: 'preview' })
+    expect(state.openTabs).toEqual(['review', 'preview'])
+    expect(state.activeTab).toBe('preview')
     state = panelReducer(state, { type: 'open-tab', tab: 'review' })
-    expect(state.openTabs).toEqual(['review', 'terminal'])
+    expect(state.openTabs).toEqual(['review', 'preview'])
     expect(state.activeTab).toBe('review')
   })
 
   it('switches tabs explicitly', () => {
     let state = panelReducer(initialPanelState(), { type: 'open-tab', tab: 'review' })
-    state = panelReducer(state, { type: 'open-tab', tab: 'terminal' })
+    state = panelReducer(state, { type: 'open-tab', tab: 'preview' })
     state = panelReducer(state, { type: 'activate-tab', tab: 'review' })
     expect(state.activeTab).toBe('review')
   })
 
   it('closing the active tab activates the neighbor (right, else left)', () => {
     let state = panelReducer(initialPanelState(), { type: 'open-tab', tab: 'review' })
-    state = panelReducer(state, { type: 'open-tab', tab: 'terminal' })
+    state = panelReducer(state, { type: 'open-tab', tab: 'preview' })
     state = panelReducer(state, { type: 'activate-tab', tab: 'review' })
     state = panelReducer(state, { type: 'close-tab', tab: 'review' })
-    expect(state.openTabs).toEqual(['terminal'])
-    expect(state.activeTab).toBe('terminal')
+    expect(state.openTabs).toEqual(['preview'])
+    expect(state.activeTab).toBe('preview')
 
     state = panelReducer(state, { type: 'open-tab', tab: 'review' })
     state = panelReducer(state, { type: 'activate-tab', tab: 'review' })
     state = panelReducer(state, { type: 'close-tab', tab: 'review' })
-    expect(state.openTabs).toEqual(['terminal'])
-    expect(state.activeTab).toBe('terminal')
+    expect(state.openTabs).toEqual(['preview'])
+    expect(state.activeTab).toBe('preview')
   })
 
   it('closing the last tab returns to the empty picker composition', () => {
@@ -81,9 +81,9 @@ describe('panelReducer — tabs', () => {
 
   it('closing an inactive tab keeps the active tab', () => {
     let state = panelReducer(initialPanelState(), { type: 'open-tab', tab: 'review' })
-    state = panelReducer(state, { type: 'open-tab', tab: 'terminal' })
+    state = panelReducer(state, { type: 'open-tab', tab: 'preview' })
     state = panelReducer(state, { type: 'activate-tab', tab: 'review' })
-    state = panelReducer(state, { type: 'close-tab', tab: 'terminal' })
+    state = panelReducer(state, { type: 'close-tab', tab: 'preview' })
     expect(state.openTabs).toEqual(['review'])
     expect(state.activeTab).toBe('review')
   })

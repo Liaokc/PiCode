@@ -1,12 +1,15 @@
 import type { Dispatch, JSX } from 'react'
+import type { DockAction } from '../../../shared/dock-model'
 import type { ShellUiAction, ShellUiState } from '../../../shared/layout-model'
-import { ChevronLeftIcon, ChevronRightIcon, HelpCircleIcon, PanelLeftIcon, PanelRightIcon } from './icons'
+import { ChevronLeftIcon, ChevronRightIcon, HelpCircleIcon, PanelBottomIcon, PanelLeftIcon, PanelRightIcon } from './icons'
 import Tooltip from './Tooltip'
 import { APP_NAME } from '../../../shared/brand'
 
 interface TitleBarProps {
   ui: ShellUiState
   dispatch: Dispatch<ShellUiAction>
+  /** Bottom terminal dock toggle (ticket 18); ⌘J drives the same action. */
+  dispatchDock: Dispatch<DockAction>
 }
 
 /**
@@ -15,7 +18,7 @@ interface TitleBarProps {
  * centered across the full window width (screenshots 02/03). The settings
  * shell drops the workspace toggles and retitles the window (screenshot 09).
  */
-export default function TitleBar({ ui, dispatch }: TitleBarProps): JSX.Element {
+export default function TitleBar({ ui, dispatch, dispatchDock }: TitleBarProps): JSX.Element {
   const settings = ui.view === 'settings'
   return (
     <header className="titlebar">
@@ -48,6 +51,18 @@ export default function TitleBar({ ui, dispatch }: TitleBarProps): JSX.Element {
             <HelpCircleIcon />
           </button>
         </Tooltip>
+        {!settings && (
+          <Tooltip shortcut="⌘J">
+            <button
+              type="button"
+              className="tb-btn"
+              aria-label="Toggle terminal"
+              onClick={() => dispatchDock({ type: 'toggle-dock' })}
+            >
+              <PanelBottomIcon />
+            </button>
+          </Tooltip>
+        )}
         {!settings && (
           <Tooltip label={ui.sidePanelOpen ? 'Close side panel' : 'Open side panel'}>
             <button

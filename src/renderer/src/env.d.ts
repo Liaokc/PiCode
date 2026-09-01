@@ -76,6 +76,7 @@ declare global {
         electron: string
         chrome: string
         node: string
+        shell: string
       }
       chat: PicodeChatBridge
       sessions: PicodeSessionsBridge

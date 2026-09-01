@@ -1,12 +1,13 @@
 /**
- * Terminal visual-QA harness (ticket 08). Enabled with PICODE_VISUAL=1 plus
- * PICODE_VISUAL_TERMINAL=1 (and VITE_PICODE_PANEL_OPEN=1 so the side panel
- * starts expanded). Opens the Terminal tab, lets the REAL user pty print its
- * prompt, injects a bash Bridge sequence into the contract stream, and
+ * Terminal visual-QA harness (tickets 08/18). Enabled with PICODE_VISUAL=1
+ * plus PICODE_VISUAL_TERMINAL=1. Opens the BOTTOM TERMINAL DOCK via the
+ * titlebar toggle (the real ⌘J entry point), lets the REAL user pty print
+ * its prompt, injects a bash Bridge sequence into the contract stream, and
  * captures PNGs for the human visual pass:
  *
- *   terminal-1 — bridge mid-run (command header + streaming output) over the live shell
+ *   terminal-1 — dock with bridge mid-run (command header + streaming output) over the live shell
  *   terminal-2 — bridge settled (✓/✗ end states)
+ *   terminal-3 — user-pane input proof (pasted command echoed by the shell)
  *
  * PNGs land in the visual out dir (default <cwd>/.scratch/visual/). Not part
  * of `npm test`.
@@ -68,17 +69,18 @@ export function startTerminalVisualIfEnabled(getWindow: () => BrowserWindow | nu
         model: 'claude-opus-4-5'
       })
 
-      // Open the Terminal tab from the picker card.
+      // Open the bottom dock through the titlebar toggle — the same entry
+      // point the ⌘J shortcut drives (ticket 18b).
       const opened = await probe(
         win,
         `(() => {
-          const card = document.querySelector('.panel-tab-card[aria-label="Open Terminal tab"]')
-          if (!card) return false
-          card.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+          const toggle = document.querySelector('button[aria-label="Toggle terminal"]')
+          if (!toggle) return false
+          toggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
           return true
         })()`
       )
-      if (!opened) throw new Error('terminal picker card not found')
+      if (!opened) throw new Error('terminal dock toggle not found')
       await sleep(2500) // login shell prompt lands in the user pane
 
       const mounted = await probe(
@@ -86,6 +88,9 @@ export function startTerminalVisualIfEnabled(getWindow: () => BrowserWindow | nu
         `(() => ({
           xterms: document.querySelectorAll('.terminal-tab .xterm').length,
           userPanes: document.querySelectorAll('.terminal-user').length,
+          dockTitle: document.querySelector('.terminal-dock-title')?.textContent ?? null,
+          shellChip: document.querySelector('.terminal-dock-header .terminal-dock-chip')?.textContent ?? null,
+          sessionChip: document.querySelector('.terminal-dock-session-chip .terminal-dock-chip-label')?.textContent ?? null,
           bridgeHeader: document.querySelector('.terminal-bridge-title')?.textContent ?? null,
           placeholder: document.querySelector('.terminal-bridge-placeholder')?.textContent ?? null
         }))()`

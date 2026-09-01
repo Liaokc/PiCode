@@ -78,6 +78,17 @@ export function PanelRightIcon({ size, className }: IconProps): JSX.Element {
   )
 }
 
+/** Bottom-panel glyph (ticket 18): the terminal dock toggle in the titlebar.
+ * Filled lower band reads as "panel docked at the bottom" (ZCode parity). */
+export function PanelBottomIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <rect x="3" y="4" width="18" height="16" rx="2.5" />
+      <rect x="5.2" y="14" width="13.6" height="3.8" rx="1" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
+
 export function HelpCircleIcon({ size, className }: IconProps): JSX.Element {
   return (
     <svg {...svgProps(size, className)}>

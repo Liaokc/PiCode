@@ -4,19 +4,16 @@ import type { PanelAction, PanelState } from '../../../shared/panel-model'
 import type { PreviewSelection } from '../../../shared/preview/view-model'
 import ReviewTab from './ReviewTab'
 import PreviewTab from './PreviewTab'
-import TerminalTab from './TerminalTab'
 import Tooltip from './Tooltip'
-import { ChevronDownIcon, CloseIcon, CodeIcon, FileTextIcon, PlusIcon, TerminalSquareIcon } from './icons'
+import { ChevronDownIcon, CloseIcon, CodeIcon, FileTextIcon, PlusIcon } from './icons'
 
 const TAB_ICONS: Record<SidePanelTab, JSX.Element> = {
   review: <FileTextIcon />,
-  terminal: <TerminalSquareIcon />,
   preview: <CodeIcon />
 }
 
 const TAB_LABELS: Record<SidePanelTab, string> = {
   review: 'Review',
-  terminal: 'Terminal',
   preview: 'Preview'
 }
 
@@ -76,8 +73,7 @@ export default function SidePanel({
 
   function tabBody(tab: SidePanelTab): JSX.Element {
     if (tab === 'review') return <ReviewTab cwd={workspaceCwd} onOpenFile={workspaceCwd !== null ? (path) => onPreviewNavigate(workspaceCwd, path) : undefined} />
-    if (tab === 'preview') return <PreviewTab target={previewTarget} onNavigate={onPreviewNavigate} />
-    return <TerminalTab cwd={workspaceCwd} />
+    return <PreviewTab target={previewTarget} onNavigate={onPreviewNavigate} />
   }
 
   return (

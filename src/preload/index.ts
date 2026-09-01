@@ -7,6 +7,7 @@ import type { PreviewResult } from '../shared/preview/types'
 import type { AuthProbeReport } from '../shared/auth-status'
 import type { AppPreferences } from '../shared/preferences'
 import type { TerminalDataMessage, TerminalExitMessage } from '../shared/terminal/messages'
+import { shellDisplayName } from '../shared/terminal/shell-name'
 
 /**
  * Renderer-facing bridge. Ticket 01 exposed environment versions; ticket 02
@@ -26,7 +27,10 @@ contextBridge.exposeInMainWorld('picode', {
     app: process.env.npm_package_version ?? 'dev',
     electron: process.versions.electron ?? '?',
     chrome: process.versions.chrome ?? '?',
-    node: process.versions.node ?? '?'
+    node: process.versions.node ?? '?',
+    /** Login shell display name for the dock tab strip (ticket 18c) — the
+     * same environment the pty factory spawns from. */
+    shell: shellDisplayName(process.env, process.platform)
   },
   chat: {
     sendToHost: (message: ParentToHost): void => {
