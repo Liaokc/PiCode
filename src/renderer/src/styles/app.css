@@ -573,6 +573,168 @@ kbd {
   transform: rotate(180deg);
 }
 
+/* ---------- sidebar: file browser mode (ticket 26) ---------- */
+
+/* The whole sidebar swaps to this mode from a group's "View files" hover
+   action: back bar + project title bar + lazily loaded file tree. The
+   account bar below stays as the sidebar's persistent chrome. */
+.fb-browser {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.fb-back-bar {
+  padding: 10px 12px 0;
+}
+
+.fb-back-btn {
+  width: 100%;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 9px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.fb-back-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.fb-back-caret {
+  flex-shrink: 0;
+}
+
+.fb-title-bar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 8px 12px 2px;
+  padding: 6px 9px;
+  border-radius: 8px;
+  background: var(--bg-inset);
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.fb-title-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fb-scroll {
+  padding-top: 2px;
+}
+
+.fb-row {
+  width: 100%;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 10px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.fb-row:hover {
+  background: var(--bg-hover);
+}
+
+.fb-row-failed {
+  color: var(--text-faint);
+}
+
+.fb-caret-slot {
+  width: 11px;
+  flex-shrink: 0;
+  display: inline-flex;
+  justify-content: center;
+  color: var(--text-secondary);
+}
+
+.fb-caret {
+  transition: transform 0.15s ease;
+}
+
+.fb-caret-closed {
+  transform: rotate(-90deg);
+}
+
+.fb-row-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fb-hint {
+  height: 24px;
+  display: flex;
+  align-items: center;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.fb-hint-action {
+  text-align: left;
+}
+
+.fb-hint-action:hover {
+  color: var(--text-secondary);
+}
+
+/* Type icons (ZCode parity): one hue per file family. */
+.fb-icon-folder {
+  color: #d8a657;
+  flex-shrink: 0;
+}
+
+.fb-icon-git {
+  color: #f0623d;
+  flex-shrink: 0;
+}
+
+.fb-icon-docs {
+  color: #5b9cf5;
+  flex-shrink: 0;
+}
+
+.fb-icon-image {
+  color: #a175e8;
+  flex-shrink: 0;
+}
+
+.fb-icon-style {
+  color: #e05fa0;
+  flex-shrink: 0;
+}
+
+.fb-icon-config {
+  color: #c9a227;
+  flex-shrink: 0;
+}
+
+.fb-icon-code {
+  color: #4d9fd6;
+  flex-shrink: 0;
+}
+
+.fb-icon-file {
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
 /* ---------- workspace column: chat row + bottom terminal dock (ticket 18) ---------- */
 
 /* The column owns the titlebar offset; the dock spans its full width below

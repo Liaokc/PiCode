@@ -10,11 +10,13 @@ import {
 import { sidebarDotState, type SidebarDotState } from '../../../shared/session-registry'
 import { useNowTick } from './use-now'
 import Tooltip from './Tooltip'
+import FileBrowser from './FileBrowser'
 import {
   ChevronDownIcon,
   CloseIcon,
   EllipsisIcon,
   ExpandArrowsIcon,
+  FilesListIcon,
   FilterIcon,
   FolderIcon,
   GearIcon,
@@ -59,6 +61,9 @@ interface SidebarProps {
   /** Hide one project group (ticket 19): local-only, recoverable in
    * Settings → General → Hidden projects. */
   onHideGroup: (cwd: string) => void
+  /** Open one path (workspace-relative) in the side panel's File Preview
+   * tab — the file browser's file click rides the ticket-07 channel. */
+  onOpenPreview: (cwd: string, path: string) => void
   /** Open the ⌘K task-search palette (ticket 11). */
   onOpenSearch: () => void
   /** Open the settings window (ticket 10). */
@@ -172,6 +177,7 @@ export default function Sidebar({
   onNewTask,
   hiddenCwds,
   onHideGroup,
+  onOpenPreview,
   onOpenSearch,
   onOpenSettings
 }: SidebarProps): JSX.Element | null {
@@ -182,6 +188,10 @@ export default function Sidebar({
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
   /** The project group whose ⋯ menu is open (ticket 19); null = none. */
   const [groupMenuCwd, setGroupMenuCwd] = useState<string | null>(null)
+  /** The project whose files the sidebar is browsing (ticket 26); null =
+   * the regular task list. Back unmounts the browser, so no tree state
+   * survives the return (acceptance: the browser leaves no residue). */
+  const [browserTarget, setBrowserTarget] = useState<{ cwd: string; project: string } | null>(null)
   const filterRef = useRef<HTMLInputElement>(null)
 
   const filtered = useMemo(() => filterSessions(sessions, query), [sessions, query])
@@ -240,6 +250,16 @@ export default function Sidebar({
 
   return (
     <aside className="sidebar">
+      {browserTarget !== null ? (
+        <FileBrowser
+          key={browserTarget.cwd}
+          cwd={browserTarget.cwd}
+          project={browserTarget.project}
+          onBack={() => setBrowserTarget(null)}
+          onOpenFile={onOpenPreview}
+        />
+      ) : (
+      <>
       <nav className="sb-actions">
         <button
           type="button"
@@ -392,6 +412,23 @@ export default function Sidebar({
                         <EllipsisIcon size={15} />
                       </button>
                     </Tooltip>
+                    {/* Middle slot (ticket 26): ZCode's three-button hover
+                        form — ⋯ / view files / new task. Swaps the whole
+                        sidebar to this project's file browser. */}
+                    <Tooltip label="View files">
+                      <button
+                        type="button"
+                        className="sb-group-action"
+                        aria-label={`View files in ${group.project}`}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setGroupMenuCwd(null)
+                          setBrowserTarget({ cwd: group.cwd, project: group.project })
+                        }}
+                      >
+                        <FilesListIcon size={15} />
+                      </button>
+                    </Tooltip>
                     <Tooltip label="New task">
                       <button
                         type="button"
@@ -463,6 +500,8 @@ export default function Sidebar({
           </div>
         )}
       </div>
+      </>
+      )}
 
       <footer className="sb-account-bar">
         <span className="sb-avatar" aria-hidden="true">
