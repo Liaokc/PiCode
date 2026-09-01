@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { filterSessions, groupSessions, isSessionLive, projectLabel, relativeTime } from '../../src/shared/sessions/group.ts'
+import {
+  decideFollowTakeover,
+  filterSessions,
+  groupSessions,
+  isSessionLive,
+  projectLabel,
+  relativeTime
+} from '../../src/shared/sessions/group.ts'
 import type { SessionSummary } from '../../src/shared/sessions/types.ts'
 
 function session(file: string, cwd: string, modifiedAt: number, title = `Task ${file}`): SessionSummary {
@@ -90,6 +97,28 @@ describe('isSessionLive', () => {
   it('tolerates clock skew — an mtime in the future counts as live', () => {
     // A stale render tick vs a freshly appended file yields a negative delta.
     expect(isSessionLive(session('c', '/w', NOW + 60_000), NOW)).toBe(true)
+  })
+})
+
+describe('decideFollowTakeover', () => {
+  // Ticket 24: the Live Follow view's Open button re-checks liveness at click
+  // time against a FRESH index scan. Table of (fresh-scan summary, now) → decision.
+  const cases: Array<[string, SessionSummary | null, number, ReturnType<typeof decideFollowTakeover>]> = [
+    ['quiet session → resume (full Handoff)', session('a', '/w', NOW - 5 * MIN), NOW, 'resume'],
+    ['session just inside the live window → still-live (toast reject)', session('b', '/w', NOW - 30_000), NOW, 'still-live'],
+    ['future mtime (clock skew) → still-live', session('c', '/w', NOW + MIN), NOW, 'still-live'],
+    ['session vanished from the fresh scan → missing', null, NOW, 'missing']
+  ]
+  for (const [name, summary, now, expected] of cases) {
+    it(name, () => {
+      expect(decideFollowTakeover(summary, now)).toBe(expected)
+    })
+  }
+
+  it('sits exactly on the live window boundary → still-live', () => {
+    // isSessionLive uses a strict `<` on the window, so delta == window is quiet.
+    const boundary = session('d', '/w', NOW - 120_000)
+    expect(decideFollowTakeover(boundary, NOW)).toBe('resume')
   })
 })
 
