@@ -15,7 +15,7 @@
 
 **Blocked by:** None（建议 14 之后实施——两者都动 chat 视图层与 reducer 装配）。
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] 切走运行中会话：host 不被终止（对照现状替换语义），后台流事件持续收集、会话文件持续增长
 - [x] 切回：视图重挂载追平最新状态并恢复实时流；转录无缝、无重复条目
@@ -34,3 +34,5 @@
 - 2026-09-01 (t20 实现，f654bb9 + b783171): 全部验收项落地。契约纯增量：`session_event`/`session_detached`/`session_command` + `SessionCommand`/`SessionScopedEvent` 类型重命名级提取（无成员删除/改名）。supervisor = sessionId↔host 注册表：同 host 换会话（fork）广播 `session_detached`，同 id 重公告（对本应用仍持有 host 的会话做全量 resume 接管）静默置换旧 host；退出 shutdownAll 全终止。渲染层唯一新状态模块 `src/shared/session-registry.ts`（27 表驱动 vitest）：每会话各折叠一份 chat reducer，后台事件持续收集不上屏，切回重挂载追平；失败 spawn（session_error/host_exit 未公告 id）聚焦其防御条目让横幅可见（α 对齐，review 轮修复）。侧栏固定槽位 `.sb-dot-slot`：`.sb-run-dot`（本应用运行，蓝+脉动）/`.sb-live-dot`（另一端在写，绿、静置）/空槽；本应用会话永不显示绿点（mtime 是自己的）。所有会话级命令显式定向（`session_command` → focused）；后台在应用会话重命名改走其 host。smoke 新增票 20 场景（多会话并存、后台流 + 文件增长、同 pid 切回无重复、定向 abort、SIGKILL 单会话隔离、shutdownAll 零孤儿）+ follow 阶段前置 SIGKILL 重建 host（恢复 α 前置：被跟随会话不得在本应用内持有 host）。smoke 全套 ALL GREEN（6 阶段）；typecheck / lint / 556 tests 全绿；visual harness 20/20 截图（legacy 未包装事件兼容路径验证）。code-review：两轴各 2 项发现，均已修复（fail-spawn 横幅回归 + 文件增长断言 + 缩进/文档/测试类型清理）。像素级对齐与动画/配色留人工视觉 QA 关。**Status: ready-for-human** — 请操作者 `bash scripts/merge-ticket.sh 20`。
 - 2026-09-01 (验收截图补齐，bc8b8d1): 新增 `npm run visual:multi` 关卡（`src/main/visual-multisession.ts`，独占窗口）：产出入库 `.scratch/visual/m1-multi-dots.png`（三态点同框：A 蓝色动画点后台运行 / B 绿点 TUI 在写 / C 空槽在应用空闲；三行标题左缘对齐）与 `.scratch/visual/m2-refocus-caughtup.png`（点击后台行 → 同 pid 聚焦、追平转录、实时流恢复）。像素核对可直接对照这两张 + `npm run visual:transcript` 回归套图。
 - 2026-09-01 (17 整合，25cf50b): rebase main@374ac2a（t17-newtask-chips）完成。App.tsx 架构冲突按注册表脊柱解决：newTaskOpen/startTask/Escape/下拉接线全保留；dismissedError 弃本地 state（注册表 per-session `dismiss_error`）；newTaskDefaultProject/recentWorkspaceList 锚 focused 会话 cwd。smoke 同一插入点先 17 newtask 阶段（Scoped waiter 适配，un-targeted abort 走 most-recent-host 回退）后 20 multi 阶段，并集全绿。截图全部在整合代码上重拍：0-empty-state 同框含 17 芯片 + 20 绿点/空槽（转录 harness 现播种确定性隔离存储，shared `visual-store.ts`），0a 下拉、m1/m2、全套装图同步更新。vitest 573 / typecheck / lint / smoke 六阶段 ALL GREEN；code-review 两轴无硬违规（17 芯片断言的 settings 依赖为已验收同源项）。**Status 保持 ready-for-human**。
+
+- 2026-08-31 (merge session, T00): merged as **44f41ff** (`merge: t20-multi-active-sessions`, rebase 零冲突 + no-ff onto main)。特别项：ADR-0006（`0006-multi-active-sessions-registry-supervisor.md`）合并前已确认在分支落盘，随合并入库。验收口径：操作者明确「已验收」×2——首轮合并因 App.tsx 架构级对撞中止（registry 单一事实源 vs 17 的本地 dismissedError/`chat.session?.cwd` 接线），退回实现会话；`25cf50b integrate` 完成整合（registry 为脊柱、newTaskOpen 保留、dismissedError 走 focused 视图状态、newTaskDefaultProject 重锚 focused 会话 cwd、smoke 两阶段并集、证据帧整合后重拍），操作者二次验收。合并后 main 上 typecheck + vitest 573/573 全绿；合并会话终态审计通过（ADR-0006 在位、App 双架构共存、无冲突标记残留）。
