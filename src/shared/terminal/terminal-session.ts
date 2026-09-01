@@ -5,8 +5,8 @@
  * resize, and exit (spec: testing seam #3).
  *
  * Single-direction rule: `handleInput` exists for the USER's interactive
- * pane only. The Bridge projector (src/shared/bridge/projector.ts) produces
- * display frames and nothing else — it never sees a write path back into any
+ * pane only. The Bridge feed (src/shared/bridge/feed.ts) folds display
+ * state and nothing else — it never sees a write path back into any
  * execution stream.
  */
 import type { PtyExitEvent, PtyFactory, PtyHandle } from './pty'

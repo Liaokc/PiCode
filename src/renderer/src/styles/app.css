@@ -4486,54 +4486,30 @@ button.preview-crumb:hover {
   background: var(--bg-card);
 }
 
-.terminal-bridge {
-  display: flex;
-  flex-direction: column;
-  height: 42%;
-  min-height: 132px;
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--border);
-}
+/* ---------- bridge dock (ticket 18 feedback): command feed ---------- */
 
-.terminal-bridge-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 30px;
-  padding: 0 12px;
-  flex-shrink: 0;
-  background: var(--bg-inset);
-  border-bottom: 1px solid var(--border);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-}
-
-.terminal-bridge-status {
-  margin-left: auto;
+.bridge-status {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  font-size: 11.5px;
   font-weight: 500;
-  letter-spacing: 0;
-  text-transform: none;
+  color: var(--text-secondary);
 }
 
-.terminal-bridge-dot {
+.bridge-dot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
   background: var(--text-faint);
 }
 
-.terminal-bridge-dot-running {
+.bridge-dot-running {
   background: var(--accent-orange);
-  animation: terminal-pulse 1.2s ease-in-out infinite;
+  animation: bridge-pulse 1.2s ease-in-out infinite;
 }
 
-@keyframes terminal-pulse {
+@keyframes bridge-pulse {
   0%,
   100% {
     opacity: 1;
@@ -4543,24 +4519,121 @@ button.preview-crumb:hover {
   }
 }
 
-.terminal-bridge-body {
-  position: relative;
+.bridge-feed {
   flex: 1;
   min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--bg-main);
 }
 
-.terminal-bridge-placeholder {
-  position: absolute;
-  inset: 0;
+.bridge-empty {
+  flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 18px;
-  color: var(--text-faint);
+  gap: 6px;
+  text-align: center;
+  padding: 24px 48px;
+}
+
+.bridge-empty-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.bridge-empty-hint {
+  margin: 0;
   font-size: 12.5px;
   line-height: 1.55;
-  text-align: center;
-  pointer-events: none;
+  color: var(--text-faint);
+}
+
+.bridge-entry {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.bridge-entry-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+}
+
+.bridge-entry-mark {
+  flex-shrink: 0;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.bridge-entry-mark-running {
+  color: var(--accent-orange);
+  animation: bridge-pulse 1.2s ease-in-out infinite;
+}
+
+.bridge-entry-mark-done {
+  color: #2e7d43;
+}
+
+.bridge-entry-mark-failed {
+  color: #c44343;
+}
+
+.bridge-entry-mark-interrupted {
+  color: var(--text-faint);
+}
+
+.bridge-entry-cmd {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--text-primary);
+}
+
+.bridge-entry-live {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 10.5px;
+  letter-spacing: 0.03em;
+  color: var(--accent-orange);
+}
+
+.bridge-entry-output {
+  margin: 0;
+  padding: 6px 12px 8px 29px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  background: color-mix(in srgb, var(--bg-inset) 45%, transparent);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
+.bridge-output-omitted {
+  color: var(--text-faint);
+}
+
+.bridge-entry-done .bridge-entry-output {
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.bridge-entry-failed .bridge-entry-output {
+  color: #b04a4a;
 }
 
 .terminal-user {

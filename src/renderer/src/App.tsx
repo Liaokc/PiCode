@@ -13,6 +13,13 @@ import type { PreviewSelection } from '../../shared/preview/view-model'
 import { initialShellUiState, shellUiReducer } from '../../shared/layout-model'
 import { initialPanelState, panelReducer } from '../../shared/panel-model'
 import { initialDockState, dockReducer } from '../../shared/dock-model'
+import {
+  initialBridgeDockState,
+  bridgeDockReducer
+} from '../../shared/bridge-dock-model'
+import { initialBridgeFeedState, projectBridgeFeed } from '../../shared/bridge/feed'
+import { terminalFontStack } from '../../shared/terminal/font'
+import { detectNerdFont } from './terminal/probe-font'
 import { isSessionLive, decideFollowTakeover, FOLLOW_TAKEOVER_REJECTED_TOAST } from '../../shared/sessions/group'
 import { sessionDefaultsFromPreferences, DEFAULT_PREFERENCES, type AppPreferences } from '../../shared/preferences'
 import { recentProjects, resolveNewTaskProject } from '../../shared/new-task'
@@ -25,6 +32,7 @@ import Sidebar from './components/Sidebar'
 import EmptyState from './components/EmptyState'
 import SidePanel from './components/SidePanel'
 import TerminalDock from './components/TerminalDock'
+import BridgeDock from './components/BridgeDock'
 import ChatView, { RENAME_EVENT } from './components/ChatView'
 import { OPEN_MODEL_MENU_EVENT, OPEN_THINKING_MENU_EVENT } from './components/Composer'
 import FollowView from './components/FollowView'
@@ -65,10 +73,10 @@ function loadPinnedIds(): Set<string> {
 
 /**
  * Window shell — matching reference screenshots 02/03 plus the ticket-18
- * bottom dock: [nav sidebar | (main zone | collapsible side panel) above an
- * optionally docked terminal], launched with the panel and the dock
- * collapsed and the sidebar visible. The settings window shell (screenshot
- * 09) replaces the workspace zones while open.
+ * bottom docks: [nav sidebar | (main zone | collapsible side panel) above
+ * an optionally docked Agent Bridge (⌘B) and terminal (⌘J)], launched with
+ * both docks collapsed and the sidebar visible. The settings window shell
+ * (screenshot 09) replaces the workspace zones while open.
  * `VITE_PICODE_PANEL_OPEN=1` expands the side panel at startup and
  * `VITE_PICODE_VIEW=settings` opens the settings shell (screenshot-QA hooks).
  *
@@ -93,6 +101,15 @@ export default function App(): JSX.Element {
   /** Bottom terminal dock (open/close, drag height) — ticket 18. Launches
    * collapsed (18f); ⌘J / the titlebar toggle drive it. */
   const [dock, dockDispatch] = useReducer(dockReducer, undefined, initialDockState)
+  /** Bottom bridge dock (18 feedback) — independent of the terminal dock;
+   * ⌘B / the titlebar pulse toggle drive it. */
+  const [bridgeDock, bridgeDockDispatch] = useReducer(bridgeDockReducer, undefined, initialBridgeDockState)
+  /** Agent Bridge feed: the SAME Seam-1 stream folded into a read-only
+   * command list. Folded at the App level so hiding the dock or visiting
+   * the settings shell never loses projection history. */
+  const [bridgeFeed, bridgeFeedDispatch] = useReducer(projectBridgeFeed, undefined, () => initialBridgeFeedState)
+  /** Nerd Font probe (starship glyphs): resolved once per window lifetime. */
+  const fontStack = useMemo(() => terminalFontStack(detectNerdFont()), [])
   /** File Preview deep-link target (ticket 07) — token increments force reloads. */
   const [previewTarget, setPreviewTarget] = useState<PreviewSelection | null>(null)
   /** Multi-active sessions (ticket 20): per-session view state + focus. */
@@ -183,6 +200,9 @@ export default function App(): JSX.Element {
     const unsubscribe = window.picode.chat.onHostEvent((event) => {
       // Every event (focused or not) folds into its session's view state.
       registryDispatch(event)
+      // The Bridge feed folds the SAME stream read-only (ticket 18) — all
+      // sessions' bash commands stream to the observation panel.
+      bridgeFeedDispatch(event)
       // App-level side effects key off the event's SESSION SCOPE (ticket 20:
       // wrapped `session_event` from the supervisor, or the legacy unwrapped
       // shape the visual harnesses inject).
@@ -266,7 +286,7 @@ export default function App(): JSX.Element {
     setNewTaskOpen(true)
   }, [])
 
-  // ---- global keybindings: ⌘N new task, ⌘K task search, ⌘J terminal dock ----
+  // ---- global keybindings: ⌘N new task, ⌘K task search, ⌘J terminal dock, ⌘B bridge dock ----
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
       if (!event.metaKey || event.shiftKey || event.altKey || event.ctrlKey) return
@@ -277,10 +297,13 @@ export default function App(): JSX.Element {
         event.preventDefault()
         setSearchOpen((open) => !open)
       } else if (event.key === 'j' || event.key === 'J') {
-        // Toggling the dock must never leak into the composer/editor —
+        // Toggling a dock must never leak into the composer/editor —
         // preventDefault keeps the keystroke ours (ticket 18b).
         event.preventDefault()
         dockDispatch({ type: 'toggle-dock' })
+      } else if (event.key === 'b' || event.key === 'B') {
+        event.preventDefault()
+        bridgeDockDispatch({ type: 'toggle-bridge-dock' })
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -687,7 +710,7 @@ export default function App(): JSX.Element {
   if (ui.view === 'settings') {
     return (
       <div className="app-shell">
-        <TitleBar ui={ui} dispatch={dispatch} dispatchDock={dockDispatch} />
+        <TitleBar ui={ui} dispatch={dispatch} dispatchDock={dockDispatch} dispatchBridge={bridgeDockDispatch} />
         <SettingsWindow
           dispatchShell={dispatch}
           preferences={settings.preferences}
@@ -711,7 +734,7 @@ export default function App(): JSX.Element {
 
   return (
     <div className="app-shell">
-      <TitleBar ui={ui} dispatch={dispatch} dispatchDock={dockDispatch} />
+      <TitleBar ui={ui} dispatch={dispatch} dispatchDock={dockDispatch} dispatchBridge={bridgeDockDispatch} />
       <Sidebar
         open={ui.sidebarOpen}
         sessions={sessions}
@@ -789,6 +812,15 @@ export default function App(): JSX.Element {
             onPreviewNavigate={handlePreviewNavigate}
           />
         </div>
+        {/* Bridge Dock first: the terminal (⌘J muscle memory) hugs the very
+            bottom edge; the bridge stacks above it when both are open. */}
+        <BridgeDock
+          open={bridgeDock.open}
+          height={bridgeDock.height}
+          fontStack={fontStack}
+          feed={bridgeFeed}
+          dispatch={bridgeDockDispatch}
+        />
         <TerminalDock
           mounted={dock.tabOpen}
           open={dock.visible}
@@ -797,6 +829,7 @@ export default function App(): JSX.Element {
           workspaceCwd={chat.session?.cwd ?? null}
           sessionLabel={sessionLabel}
           shellName={window.picode.versions.shell}
+          fontStack={fontStack}
           dispatch={dockDispatch}
         />
       </div>

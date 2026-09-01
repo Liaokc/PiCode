@@ -1,7 +1,16 @@
 import type { Dispatch, JSX } from 'react'
+import type { BridgeDockAction } from '../../../shared/bridge-dock-model'
 import type { DockAction } from '../../../shared/dock-model'
 import type { ShellUiAction, ShellUiState } from '../../../shared/layout-model'
-import { ChevronLeftIcon, ChevronRightIcon, HelpCircleIcon, PanelBottomIcon, PanelLeftIcon, PanelRightIcon } from './icons'
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  HelpCircleIcon,
+  PanelBottomIcon,
+  PanelLeftIcon,
+  PanelRightIcon,
+  PulseIcon
+} from './icons'
 import Tooltip from './Tooltip'
 import { APP_NAME } from '../../../shared/brand'
 
@@ -10,6 +19,8 @@ interface TitleBarProps {
   dispatch: Dispatch<ShellUiAction>
   /** Bottom terminal dock toggle (ticket 18); ⌘J drives the same action. */
   dispatchDock: Dispatch<DockAction>
+  /** Bottom bridge dock toggle (ticket 18 feedback); ⌘B drives the same. */
+  dispatchBridge: Dispatch<BridgeDockAction>
 }
 
 /**
@@ -18,7 +29,7 @@ interface TitleBarProps {
  * centered across the full window width (screenshots 02/03). The settings
  * shell drops the workspace toggles and retitles the window (screenshot 09).
  */
-export default function TitleBar({ ui, dispatch, dispatchDock }: TitleBarProps): JSX.Element {
+export default function TitleBar({ ui, dispatch, dispatchDock, dispatchBridge }: TitleBarProps): JSX.Element {
   const settings = ui.view === 'settings'
   return (
     <header className="titlebar">
@@ -51,6 +62,18 @@ export default function TitleBar({ ui, dispatch, dispatchDock }: TitleBarProps):
             <HelpCircleIcon />
           </button>
         </Tooltip>
+        {!settings && (
+          <Tooltip shortcut="⌘B">
+            <button
+              type="button"
+              className="tb-btn"
+              aria-label="Toggle agent bridge"
+              onClick={() => dispatchBridge({ type: 'toggle-bridge-dock' })}
+            >
+              <PulseIcon />
+            </button>
+          </Tooltip>
+        )}
         {!settings && (
           <Tooltip shortcut="⌘J">
             <button

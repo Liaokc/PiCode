@@ -89,6 +89,16 @@ export function PanelBottomIcon({ size, className }: IconProps): JSX.Element {
   )
 }
 
+/** Activity pulse glyph (ticket 18 feedback): the Bridge Dock toggle —
+ * a heartbeat line reads as "agent command activity feed". */
+export function PulseIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M3 12h4.2l2.3-6.2 4.4 12.4 2.3-6.2H21" />
+    </svg>
+  )
+}
+
 export function HelpCircleIcon({ size, className }: IconProps): JSX.Element {
   return (
     <svg {...svgProps(size, className)}>

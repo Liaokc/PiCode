@@ -2,13 +2,7 @@ import { useCallback, useEffect, useRef, useState, type Dispatch, type JSX, type
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
-import {
-  initialBridgeProjectorState,
-  projectBridgeEvent,
-  type BridgeProjectorState
-} from '../../../shared/bridge/projector'
 import type { DockAction } from '../../../shared/dock-model'
-import type { HostToParent } from '../../../shared/contract'
 import type { PtyFactory, PtyHandle } from '../../../shared/terminal/pty'
 import { TerminalSession, type TerminalLifecycle } from '../../../shared/terminal/terminal-session'
 import { CloseIcon, PlusIcon, RefreshIcon, TerminalSquareIcon } from './icons'
@@ -21,17 +15,15 @@ import { createTerminalOptions } from '../terminal/theme'
  * addon), opened by ⌘J or the titlebar toggle. The header carries the ZCode
  * tab strip (「Terminal | <shell> | <session> ×」) plus new/close actions.
  *
- * Top pane: the Agent Bridge — a WRITE-ONLY projection of the agent's bash
- * commands and their output (CONTEXT.md: 桥接). It has no key listener, no
- * focus handling, and no path into any pty: keystrokes can never re-enter
- * the agent's execution stream (ADR-0004). Bottom pane: the user's own
- * interactive shell, a full PTY spawned in the main process and driven over
- * the Seam-3 byte channels — the same channels the old side-panel tab used;
- * the pty backend is untouched by this move.
+ * One pane: the user's own interactive shell — a full PTY spawned in the
+ * main process and driven over the Seam-3 byte channels. The Agent Bridge
+ * projection is NOT here anymore: since the 18-feedback revision it lives
+ * in its own Bridge Dock (BridgeDock.tsx, ⌘B), keeping the user shell and
+ * the read-only projection visually separate.
  *
  * Visibility and lifecycle are independent (dock-model): hiding the panel
- * keeps the workspace mounted so a live shell and its Bridge projection
- * survive ⌘J cycles; closing the tab (chip ×) unmounts and kills the shell.
+ * keeps the workspace mounted so a live shell survives ⌘J cycles; closing
+ * the tab (chip ×) unmounts and kills the shell.
  */
 
 interface TerminalDockProps {
@@ -49,6 +41,8 @@ interface TerminalDockProps {
   shellName: string
   /** Dock mount generation — bumping it respawns the shell (new session). */
   gen: number
+  /** Probe-resolved mono/Nerd-Font stack for the shell (starship glyphs). */
+  fontStack: string
   dispatch: Dispatch<DockAction>
 }
 
@@ -60,6 +54,7 @@ export default function TerminalDock({
   sessionLabel,
   shellName,
   gen,
+  fontStack,
   dispatch
 }: TerminalDockProps): JSX.Element | null {
   const drag = useRef<{ startY: number; startHeight: number } | null>(null)
@@ -150,7 +145,7 @@ export default function TerminalDock({
         ) : (
           // Keyed by workspace + generation: switching tasks replaces the
           // whole workspace (and its shell); + respawns a fresh shell in place.
-          <TerminalWorkspace key={`${workspaceCwd}:${gen}`} cwd={workspaceCwd} />
+          <TerminalWorkspace key={`${workspaceCwd}:${gen}`} cwd={workspaceCwd} fontStack={fontStack} />
         )}
       </div>
     </section>
@@ -189,40 +184,26 @@ function exitDetailLabel(state: TerminalLifecycle): string {
 interface TerminalKit {
   id: string
   userTerm: Terminal
-  bridgeTerm: Terminal
   userFit: FitAddon
-  bridgeFit: FitAddon
   session: TerminalSession
-  projector: BridgeProjectorState
-  seenFrames: boolean
 }
 
-function TerminalWorkspace({ cwd }: { cwd: string }): JSX.Element {
+function TerminalWorkspace({ cwd, fontStack }: { cwd: string; fontStack: string }): JSX.Element {
   const rootRef = useRef<HTMLDivElement | null>(null)
   const userHostRef = useRef<HTMLDivElement | null>(null)
-  const bridgeHostRef = useRef<HTMLDivElement | null>(null)
   const kitRef = useRef<TerminalKit | null>(null)
   const [lifecycle, setLifecycle] = useState<TerminalLifecycle>({ phase: 'idle' })
-  const [bridgeLive, setBridgeLive] = useState(false)
-  const [bridgeRunning, setBridgeRunning] = useState(false)
 
   useEffect(() => {
     const userHost = userHostRef.current
-    const bridgeHost = bridgeHostRef.current
     const root = rootRef.current
-    if (!userHost || !bridgeHost || !root) return
+    if (!userHost || !root) return
 
     const id = crypto.randomUUID()
-    const userTerm = new Terminal({ ...createTerminalOptions(), cursorBlink: true })
-    // The bridge pane is write-only: disableStdin AND no onData wiring —
-    // there is no code path from its keystrokes to any process.
-    const bridgeTerm = new Terminal({ ...createTerminalOptions(), disableStdin: true, cursorBlink: false })
+    const userTerm = new Terminal({ ...createTerminalOptions(fontStack), cursorBlink: true })
     const userFit = new FitAddon()
-    const bridgeFit = new FitAddon()
     userTerm.loadAddon(userFit)
-    bridgeTerm.loadAddon(bridgeFit)
     userTerm.open(userHost)
-    bridgeTerm.open(bridgeHost)
 
     const session = new TerminalSession(
       remotePtyFactory(id, window.picode.terminal),
@@ -230,48 +211,22 @@ function TerminalWorkspace({ cwd }: { cwd: string }): JSX.Element {
       (state) => setLifecycle(state)
     )
     // Keystrokes AND terminal query responses (e.g. DA answers the shell
-    // waits for) flow out through the session to the pty. The bridge pane
-    // deliberately gets NO such wiring.
+    // waits for) flow out through the session to the pty.
     userTerm.onData((data) => session.handleInput(data))
-    const kit: TerminalKit = {
-      id,
-      userTerm,
-      bridgeTerm,
-      userFit,
-      bridgeFit,
-      session,
-      projector: initialBridgeProjectorState,
-      seenFrames: false
-    }
+    const kit: TerminalKit = { id, userTerm, userFit, session }
     kitRef.current = kit
 
-    fitBoth()
+    fit()
     session.start({ cwd, cols: userTerm.cols, rows: userTerm.rows })
 
-    // Agent Bridge: consume the SAME Seam-1 contract stream the chat uses;
-    // the projector reduces it to write-only display frames.
-    const unwireChat = window.picode.chat.onHostEvent((event: HostToParent) => {
-      const projection = projectBridgeEvent(kit.projector, event)
-      kit.projector = projection.state
-      if (projection.frames.length > 0) {
-        bridgeTerm.write(projection.frames.join(''))
-        if (!kit.seenFrames) {
-          kit.seenFrames = true
-          setBridgeLive(true)
-        }
-      }
-      setBridgeRunning(Object.keys(kit.projector.streamed).length > 0)
-    })
-
-    const observer = new ResizeObserver(() => fitBoth())
+    const observer = new ResizeObserver(() => fit())
     observer.observe(root)
 
-    function fitBoth(): void {
+    function fit(): void {
       const container = rootRef.current
       if (!container || container.clientWidth === 0 || container.clientHeight === 0) return
       try {
         kit.userFit.fit()
-        kit.bridgeFit.fit()
       } catch {
         // Fit before layout settles can fail; the ResizeObserver retries.
         return
@@ -283,14 +238,12 @@ function TerminalWorkspace({ cwd }: { cwd: string }): JSX.Element {
 
     return () => {
       observer.disconnect()
-      unwireChat()
       session.dispose()
       window.picode.terminal.kill(id)
       userTerm.dispose()
-      bridgeTerm.dispose()
       kitRef.current = null
     }
-  }, [cwd])
+  }, [cwd, fontStack])
 
   const restart = useCallback((): void => {
     const kit = kitRef.current
@@ -310,25 +263,6 @@ function TerminalWorkspace({ cwd }: { cwd: string }): JSX.Element {
 
   return (
     <div className="terminal-tab" ref={rootRef}>
-      <section className="terminal-bridge" aria-label="Agent Bridge">
-        <header className="terminal-bridge-header">
-          <span className="terminal-bridge-title">Agent Bridge</span>
-          <span className="terminal-bridge-status">
-            <span className={`terminal-bridge-dot${bridgeRunning ? ' terminal-bridge-dot-running' : ''}`} />
-            {bridgeRunning ? 'Agent running' : 'Idle'}
-          </span>
-        </header>
-        <div className="terminal-bridge-body">
-          <div className="terminal-xterm-host" ref={bridgeHostRef} />
-          {!bridgeLive && (
-            <div className="terminal-bridge-placeholder">
-              Bash commands the agent runs — and their live output — stream here. Read-only: this pane never
-              accepts input.
-            </div>
-          )}
-        </div>
-      </section>
-
       <div className="terminal-user" onPointerDown={focusUser}>
         <div className="terminal-xterm-host" ref={userHostRef} />
       </div>
