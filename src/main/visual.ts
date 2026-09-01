@@ -226,6 +226,11 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
         model: 'claude-opus-4-5'
       })
       await sleep(200)
+      // Ticket 21: the branch badge. The synthetic session has no live host,
+      // so the supervisor's branch_info(null) degradation has settled by now
+      // (fires within ms of the announcement) — inject the display value
+      // AFTER that so it wins (last write wins).
+      emit({ type: 'branch_info', branch: 'main' })
 
       emit({ type: 'user_message', text: 'Add input validation to the register endpoint and re-run its tests.' })
       emit({ type: 'agent_start' })
@@ -537,6 +542,10 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
         ]
       })
       await sleep(700)
+      // Ticket 21: same as above — the resume announcement reset the badge
+      // and the null degradation has settled; re-inject the readout so the
+      // replayed transcript shows the badge too.
+      emit({ type: 'branch_info', branch: 'main' })
       // Replay gates (tickets 14 + 23): every turn arrives FOLDED — inner
       // rows not in the DOM yet — with the skill marker waiting inside.
       const replaySig = (await win.webContents.executeJavaScript(
