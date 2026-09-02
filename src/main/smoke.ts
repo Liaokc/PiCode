@@ -41,6 +41,13 @@
  * physical-key events (code + modifiers only) — toggle sidebar, side
  * panel, terminal dock and bridge dock.
  *
+ * Ticket 28 adds the selection-follows-view and unread assertions: the
+ * followed row carries the selected styling while the focused row reverts
+ * (clicking the focused row exits Follow and the highlight follows back), a
+ * running-in-background row keeps its animated dot with a plain background,
+ * and a background turn lights the indigo unread dot once settled — masked
+ * by the animated dot while in flight — until the session is focused again.
+ *
  * Any missed step times out and exits non-zero. Progress logs as
  * `SMOKE <step>` lines on stdout. Not part of `npm test`.
  */
@@ -234,9 +241,18 @@ export function startSmokeIfEnabled(
 
     // Round 3: open a third session so the rebuilt one becomes inactive —
     // Live Follow targets sessions running elsewhere, never the active one.
+    // A warm turn gives it a session file on disk, so its row exists in the
+    // sidebar: the ticket-28 selection assertions click it to exit Follow.
     supervisor.createSession(cwd)
-    await waitFor((e) => e.type === 'session_created', 'round 3 session_created')
-    log('round3_ok')
+    const round3 = (await waitFor((e) => e.type === 'session_created', 'round 3 session_created')) as Extract<
+      Scoped,
+      { type: 'session_created' }
+    >
+    supervisor.handleParentCommand({ type: 'prompt', text: 'Reply with exactly: PICODE_SMOKE_OK' })
+    await waitFor((e) => e.type === 'agent_end', 'agent_end round 3 warm turn')
+    const round3SessionFile = round3.sessionFile
+    if (!round3SessionFile) fail('round 3 session did not announce its file')
+    log('round3_ok', round3SessionFile)
 
     // Registry semantics (ticket 20) keep EVERY host alive — including the
     // rebuilt session's. The follow stage needs a session that is NOT hosted
@@ -300,6 +316,65 @@ export function startSmokeIfEnabled(
         fail(`follow view did not stream the TUI turn; DOM: ${diag}`)
       }
       log('follow_streamed_ok')
+
+      // Ticket 28: selection follows the view. The followed row carries the
+      // selected styling while the focused row (round 3) reverts to plain —
+      // and the followed row KEEPS its green dot: selection and running
+      // state are decoupled.
+      if (!round3SessionFile) fail('round 3 session did not report its file')
+      const focusedRow = `[data-file="${round3SessionFile}"]`
+      const selected = await waitForProbe(
+        win,
+        `(() => {
+          const followed = document.querySelector('${rowSelector}')
+          const focused = document.querySelector('${focusedRow}')
+          if (!followed || !focused) return false
+          return (
+            followed.classList.contains('sb-task-active') &&
+            followed.querySelector('.sb-live-dot') !== null &&
+            !focused.classList.contains('sb-task-active')
+          )
+        })()`,
+        10_000
+      )
+      if (!selected) fail('followed row never took the selected styling (ticket 28 selection follows the view)')
+      log('follow_selection_ok')
+
+      // Clicking the focused row again exits Follow: the highlight returns
+      // to it and the follow view closes; clicking the followed row re-opens
+      // the view with the followed row selected again.
+      const exited = await clickSelector(win, focusedRow)
+      if (!exited) fail('round 3 row never appeared to click for the follow exit')
+      const backOnFocused = await waitForProbe(
+        win,
+        `(() => {
+          const followed = document.querySelector('${rowSelector}')
+          const focused = document.querySelector('${focusedRow}')
+          return (
+            document.querySelector('.follow-badge') === null &&
+            focused !== null && focused.classList.contains('sb-task-active') &&
+            followed !== null && !followed.classList.contains('sb-task-active')
+          )
+        })()`,
+        10_000
+      )
+      if (!backOnFocused) fail('clicking the focused row did not exit Follow and restore its highlight (ticket 28)')
+      log('follow_exit_ok')
+      const reopened = await clickSelector(win, rowSelector)
+      if (!reopened) fail('followed row never appeared to click for the re-follow')
+      const reselected = await waitForProbe(
+        win,
+        `(() => {
+          const followed = document.querySelector('${rowSelector}')
+          return (
+            document.querySelector('.follow-badge') !== null &&
+            followed !== null && followed.classList.contains('sb-task-active')
+          )
+        })()`,
+        10_000
+      )
+      if (!reselected) fail('re-opening the follow view did not restore the followed row selection (ticket 28)')
+      log('follow_reselected_ok')
     })
 
     // Ticket 24 ①: structured rendering inside the follow view. The appended
@@ -645,6 +720,25 @@ export function startSmokeIfEnabled(
     if (ms1SizeDuring <= ms1SizeWarm) fail('background session file did not grow while streaming')
     log('multi_background_streaming_ok')
 
+    // Ticket 28: selection follows the view — session 1 keeps its animated
+    // dot while running in the background but its row reverts to a plain
+    // background (selection and running state are decoupled; session 3 has
+    // no row yet — a fresh session file is only written on the first turn).
+    await withWindow(getWindow, async (win) => {
+      const decoupled = await waitForProbe(
+        win,
+        `(() => {
+          const running = document.querySelector('[data-file="${ms1.sessionFile}"]')
+          return running !== null &&
+            running.querySelector('.sb-run-dot') !== null &&
+            !running.classList.contains('sb-task-active')
+        })()`,
+        10_000
+      )
+      if (!decoupled) fail('background running row stayed selected — selection must follow the view (ticket 28)')
+      log('multi_selection_decoupled_ok')
+    })
+
     // Switch BACK to session 1 through its sidebar row: pure focus change —
     // same host process (same pid, no session_created), view remounts caught
     // up with NO duplicate entries, and the live stream resumes on screen.
@@ -679,6 +773,73 @@ export function startSmokeIfEnabled(
     })
     await waitFor((e) => e.type === 'agent_end' && e.sessionId === ms1.sessionId, 'multi agent_end 1 after abort')
     log('multi_abort_ok')
+
+    // ---- ticket 28: unread dot — a background turn sets it, focus clears it ----
+    // Session 1 stays focused while the idle session 2 runs a LONG background
+    // turn: growth past its watermark sets unread, the animated dot masks it
+    // while the run is in flight, and once the turn settles the indigo dot
+    // shows; clicking the row (focus switch) clears unread again.
+    log('unread_start')
+    supervisor.handleParentCommand({
+      type: 'session_command',
+      sessionId: ms2.sessionId,
+      command: {
+        type: 'prompt',
+        text: 'Count from 51 to 150. Output each number on its own line, one number per line. Do not summarize and do not stop early.'
+      }
+    })
+    await waitFor((e) => e.type === 'agent_start' && e.sessionId === ms2.sessionId, 'unread agent_start ms2')
+    if (!ms2.sessionFile) fail('multi session 2 did not report its file')
+    const ms2Row = `[data-file="${ms2.sessionFile}"]`
+    await withWindow(getWindow, async (win) => {
+      const masked = await waitForProbe(
+        win,
+        `(() => {
+          const row = document.querySelector('${ms2Row}')
+          return row !== null &&
+            row.querySelector('.sb-run-dot') !== null &&
+            row.querySelector('.sb-unread-dot') === null
+        })()`,
+        10_000
+      )
+      if (!masked) fail('unread was not masked by the animated dot while the background run was in flight (ticket 28)')
+      log('unread_masked_ok')
+    })
+    supervisor.handleParentCommand({
+      type: 'session_command',
+      sessionId: ms2.sessionId,
+      command: { type: 'abort_turn' }
+    })
+    await waitFor((e) => e.type === 'agent_end' && e.sessionId === ms2.sessionId, 'unread agent_end ms2')
+    await withWindow(getWindow, async (win) => {
+      const lit = await waitForProbe(
+        win,
+        `(() => {
+          const row = document.querySelector('${ms2Row}')
+          const focused = document.querySelector('[data-file="${ms1.sessionFile}"]')
+          return row !== null &&
+            row.querySelector('.sb-unread-dot') !== null &&
+            row.querySelector('.sb-run-dot') === null &&
+            focused !== null && focused.querySelector('.sb-unread-dot') === null &&
+            focused.classList.contains('sb-task-active')
+        })()`,
+        10_000
+      )
+      if (!lit) fail('the settled background turn never lit the indigo unread dot (ticket 28)')
+      log('unread_lit_ok')
+      const clicked = await clickSelector(win, ms2Row)
+      if (!clicked) fail('unread session row never appeared to click')
+      const cleared = await waitForProbe(
+        win,
+        `(() => {
+          const row = document.querySelector('${ms2Row}')
+          return row !== null && row.querySelector('.sb-unread-dot') === null
+        })()`,
+        10_000
+      )
+      if (!cleared) fail('focusing the session never cleared its unread dot (ticket 28)')
+      log('unread_cleared_ok')
+    })
 
     // Crash isolation, session-scoped: SIGKILL session 2's host — ONLY that
     // session reports an exit; session 1 keeps working.

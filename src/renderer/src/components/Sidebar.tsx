@@ -7,7 +7,7 @@ import {
   isSessionLive,
   relativeTime
 } from '../../../shared/sessions/group'
-import { sidebarDotState, type SidebarDotState } from '../../../shared/session-registry'
+import { sidebarDotState, sidebarRowState, type SidebarDotState } from '../../../shared/session-registry'
 import { useNowTick } from './use-now'
 import Tooltip from './Tooltip'
 import FileBrowser from './FileBrowser'
@@ -36,9 +36,11 @@ const SHOW_FIRST = 5
 interface SidebarProps {
   open: boolean
   sessions: SessionSummary[]
-  /** The session currently focused in the chat view (highlighted row). */
+  /** The session currently focused in the chat view. NOT the selected row
+   * while Follow is active — selection follows the view (ticket 28). */
   activeSessionId: string | null
-  /** The session currently being followed read-only (highlighted row). */
+  /** The session file currently being followed read-only; while set, the
+   * followed row carries the selected styling and the focused row reverts. */
   followedFile: string | null
   pinnedIds: ReadonlySet<string>
   /** Sessions whose host process is alive in this app (ticket 20): their dot
@@ -48,6 +50,9 @@ interface SidebarProps {
   runningIds: ReadonlySet<string>
   /** Sessions parked at the approval gate (ticket 25): the orange badge. */
   awaitingIds: ReadonlySet<string>
+  /** Sessions with unread state (ticket 28): the indigo dot, masked by
+   * higher-priority dots via sidebarDotState. */
+  unreadIds: ReadonlySet<string>
   onTogglePin: (session: SessionSummary) => void
   onOpenSession: (session: SessionSummary) => void
   onRenameSession: (session: SessionSummary, name: string) => void
@@ -73,7 +78,7 @@ interface SidebarProps {
 function TaskItem({
   session,
   now,
-  state,
+  selected,
   dot,
   pinned,
   onOpen,
@@ -82,9 +87,11 @@ function TaskItem({
 }: {
   session: SessionSummary
   now: number
-  state: 'idle' | 'active' | 'followed'
-  /** Fixed-slot dot state (ticket 20 + 25): orange / animated / green /
-   * empty slot. */
+  /** Selection follows the view (ticket 28): the row whose view is on
+   * screen — focused, or followed while Follow is active. */
+  selected: boolean
+  /** Fixed-slot dot state (ticket 20 + 25 + 28): orange / animated / green /
+   * indigo unread / empty slot. */
   dot: SidebarDotState
   pinned: boolean
   onOpen: () => void
@@ -105,8 +112,7 @@ function TaskItem({
     if (name !== '' && name !== session.title) onRename(name)
   }
 
-  const cls =
-    state === 'active' ? 'sb-task sb-task-active' : state === 'followed' ? 'sb-task sb-task-followed' : 'sb-task'
+  const cls = selected ? 'sb-task sb-task-active' : 'sb-task'
 
   return (
     <div
@@ -120,11 +126,13 @@ function TaskItem({
     >
       {/* Fixed slot (ticket 20): always rendered so every title's left edge
           aligns — the dot appears inside only for live states. Orange badge
-          = parked at the approval gate (ticket 25). */}
+          = parked at the approval gate (ticket 25); indigo = unread
+          (ticket 28). */}
       <span className="sb-dot-slot">
         {dot === 'run-here' && <span className="sb-run-dot" aria-label="Running in PiCode" />}
         {dot === 'awaiting-approval' && <span className="sb-await-dot" aria-label="Awaiting approval" />}
         {dot === 'tui-live' && <span className="sb-live-dot" aria-label="Running in another window" />}
+        {dot === 'unread' && <span className="sb-unread-dot" aria-label="Unread" />}
       </span>
       {renaming ? (
         <input
@@ -171,6 +179,7 @@ export default function Sidebar({
   inAppIds,
   runningIds,
   awaitingIds,
+  unreadIds,
   onTogglePin,
   onOpenSession,
   onRenameSession,
@@ -228,13 +237,18 @@ export default function Sidebar({
     }
   }, [groupMenuCwd])
 
-  /** Fixed-slot dot state for one row (ticket 20 + 25): orange = parked at
-   * the approval gate, animated = running in this app, green = written by
-   * another end (120s rule), empty = idle. An in-app session never shows
-   * the TUI dot — its mtime is ours. */
+  /** Fixed-slot dot state for one row (ticket 20 + 25 + 28): orange = parked
+   * at the approval gate, animated = running in this app, green = written by
+   * another end (120s rule), indigo = unread, empty = idle. An in-app
+   * session never shows the TUI dot — its mtime is ours. */
   function dotFor(s: SessionSummary): SidebarDotState {
-    return sidebarDotState(awaitingIds.has(s.id), runningIds.has(s.id), inAppIds.has(s.id), isSessionLive(s, now))
-
+    return sidebarDotState(
+      awaitingIds.has(s.id),
+      runningIds.has(s.id),
+      inAppIds.has(s.id),
+      isSessionLive(s, now),
+      unreadIds.has(s.id)
+    )
   }
 
   function toggleExpanded(cwd: string): void {
@@ -361,7 +375,7 @@ export default function Sidebar({
                 key={s.file}
                 session={s}
                 now={now}
-                state={s.id === activeSessionId ? 'active' : s.file === followedFile ? 'followed' : 'idle'}
+                selected={sidebarRowState(activeSessionId, followedFile, s.id, s.file) === 'selected'}
                 dot={dotFor(s)}
                 pinned
                 onOpen={() => onOpenSession(s)}
@@ -472,7 +486,7 @@ export default function Sidebar({
                   key={s.file}
                   session={s}
                   now={now}
-                  state={s.id === activeSessionId ? 'active' : s.file === followedFile ? 'followed' : 'idle'}
+                  selected={sidebarRowState(activeSessionId, followedFile, s.id, s.file) === 'selected'}
                   dot={dotFor(s)}
                   pinned={false}
                   onOpen={() => onOpenSession(s)}

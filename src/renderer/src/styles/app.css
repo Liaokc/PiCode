@@ -24,6 +24,7 @@
   /* accents */
   --accent-orange: #ec7931;
   --accent-blue: #4285f4;
+  --accent-indigo: #3f51b5;
   --send-bg: #21211e;
   --send-bg-hover: #000000;
 
@@ -461,6 +462,17 @@ kbd {
   flex-shrink: 0;
 }
 
+/* Unread (ticket 28): solid indigo — the session grew unseen since the last
+   read (or was manually flagged); masked by higher-priority dots until the
+   session goes quiet. */
+.sb-unread-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-indigo);
+  flex-shrink: 0;
+}
+
 @keyframes live-pulse {
   0%,
   100% {
@@ -469,10 +481,6 @@ kbd {
   50% {
     opacity: 0.35;
   }
-}
-
-.sb-task-followed {
-  background: var(--bg-inset);
 }
 
 .sb-rename-input {

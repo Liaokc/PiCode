@@ -277,7 +277,8 @@ function fakePreferences(): AppPreferences {
     defaultThinkingLevel: 'high',
     newTaskDirectory: 'fixed',
     newTaskFixedProject: '/Users/demo/Projects/picode',
-    hiddenGroups: ['/Users/demo/Projects/archive']
+    hiddenGroups: ['/Users/demo/Projects/archive'],
+    readStates: {}
   }
 }
 
