@@ -28,7 +28,8 @@ describe('normalizePreferences', () => {
       newTaskDirectory: 'fixed',
       newTaskFixedProject: '/Users/dev/repos/api',
       hiddenGroups: [],
-      readStates: {}
+      readStates: {},
+      recentlyClosedTabs: []
     })
     expect(
       normalizePreferences({
@@ -69,7 +70,8 @@ describe('mergePreferences', () => {
       newTaskDirectory: 'last-used',
       newTaskFixedProject: null,
       hiddenGroups: [],
-      readStates: {}
+      readStates: {},
+      recentlyClosedTabs: []
     })
   })
 
@@ -173,6 +175,34 @@ describe('mergePreferences', () => {
 
   it('leaves session defaults untouched by hiddenGroups', () => {
     expect(sessionDefaultsFromPreferences(normalizePreferences({ hiddenGroups: ['/work/api'] }))).toBeNull()
+  })
+
+  it('normalizes recentlyClosedTabs: valid file/trace entries only, capped (ticket 31)', () => {
+    expect(normalizePreferences(undefined).recentlyClosedTabs).toEqual([])
+    expect(normalizePreferences({ recentlyClosedTabs: 'nope' }).recentlyClosedTabs).toEqual([])
+    const prefs = normalizePreferences({
+      recentlyClosedTabs: [
+        { tab: { kind: 'file', cwd: '/w', path: 'a.md' }, closedAt: 3000 },
+        { tab: { kind: 'review' }, closedAt: 4000 },
+        { tab: { kind: 'trace', sessionFile: '/s/one.jsonl' }, closedAt: 1000 }
+      ]
+    })
+    expect(prefs.recentlyClosedTabs).toEqual([
+      { tab: { kind: 'file', cwd: '/w', path: 'a.md' }, closedAt: 3000 },
+      { tab: { kind: 'trace', sessionFile: '/s/one.jsonl' }, closedAt: 1000 }
+    ])
+  })
+
+  it('patches recentlyClosedTabs as a whole list: valid replaces, invalid keeps (ticket 31)', () => {
+    const base = normalizePreferences({
+      recentlyClosedTabs: [{ tab: { kind: 'file', cwd: '/w', path: 'a.md' }, closedAt: 1000 }]
+    })
+    const patched = mergePreferences(base, {
+      recentlyClosedTabs: [{ tab: { kind: 'trace', sessionFile: '/s/two.jsonl' }, closedAt: 2000 }]
+    })
+    expect(patched.recentlyClosedTabs).toEqual([{ tab: { kind: 'trace', sessionFile: '/s/two.jsonl' }, closedAt: 2000 }])
+    expect(mergePreferences(base, { recentlyClosedTabs: 7 }).recentlyClosedTabs).toEqual(base.recentlyClosedTabs)
+    expect(mergePreferences(base, {}).recentlyClosedTabs).toEqual(base.recentlyClosedTabs)
   })
 })
 

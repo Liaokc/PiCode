@@ -10,10 +10,9 @@ import {
 import { initialChatState } from '../../shared/chat-reducer'
 import type { SessionCommand } from '../../shared/contract'
 import { resolvePreviewPath } from '../../shared/preview/policy'
-import type { PreviewSelection } from '../../shared/preview/view-model'
 import { initialShellUiState, shellUiReducer } from '../../shared/layout-model'
 import { resolveKeybinding } from '../../shared/keymap'
-import { initialPanelState, panelReducer } from '../../shared/panel-model'
+import { initialPanelState, normalizeRecentlyClosed, panelReducer } from '../../shared/panel-model'
 import { initialDockState, dockReducer } from '../../shared/dock-model'
 import { initialBridgeFeedState, projectBridgeFeed } from '../../shared/bridge/feed'
 import { terminalFontStack } from '../../shared/terminal/font'
@@ -114,8 +113,6 @@ export default function App(): JSX.Element {
   const [bridgeFeed, bridgeFeedDispatch] = useReducer(projectBridgeFeed, undefined, () => initialBridgeFeedState)
   /** Nerd Font probe (starship glyphs): resolved once per window lifetime. */
   const fontStack = useMemo(() => terminalFontStack(detectNerdFont()), [])
-  /** File Preview deep-link target (ticket 07) — token increments force reloads. */
-  const [previewTarget, setPreviewTarget] = useState<PreviewSelection | null>(null)
   /** Multi-active sessions (ticket 20): per-session view state + focus. */
   const [registry, registryDispatch] = useReducer(registryReducer, undefined, initialRegistryState)
   /** The focused session's view state (registry projection for rendering). */
@@ -163,6 +160,9 @@ export default function App(): JSX.Element {
    * defaults — that could overwrite watermarks persisted by a previous run
    * and lose unread state for sessions that grew while the app was closed. */
   const [settingsLoaded, setSettingsLoaded] = useState(false)
+  /** Recently closed persistence guard (ticket 31): the JSON of the last
+   * hydrated/written history, so no-op renders never write preferences. */
+  const lastClosedTabsJsonRef = useRef(JSON.stringify([]))
   const followedFileRef = useRef<string | null>(null)
   followedFileRef.current = followedFile
 
@@ -176,7 +176,8 @@ export default function App(): JSX.Element {
   }, [])
 
   // Settings load once at boot; the snapshot drives both the settings window
-  // and the new-task flow (defaults + "reuse last folder").
+  // and the new-task flow (defaults + "reuse last folder"). The snapshot's
+  // recently closed tab history also hydrates the panel framework (ticket 31).
   useEffect(() => {
     let cancelled = false
     void window.picode.settings
@@ -190,6 +191,11 @@ export default function App(): JSX.Element {
           authScanning: false
         })
         setSettingsLoaded(true)
+        const closed = normalizeRecentlyClosed(snapshot.preferences.recentlyClosedTabs)
+        panelDispatch({ type: 'hydrate-recently-closed', entries: closed })
+        // Seed the persistence guard with the normalized form so hydration
+        // alone never triggers a redundant write-back.
+        lastClosedTabsJsonRef.current = JSON.stringify(closed)
       })
       .catch(() => {
         if (!cancelled) notify('Settings could not be loaded — using defaults.', 'error')
@@ -794,15 +800,16 @@ export default function App(): JSX.Element {
     notify('Forked to a new session.', 'info')
   }
 
-  // ---- File Preview deep-links (ticket 07) ----
+  // ---- File Preview deep-links (ticket 07, multi-tab semantics ticket 31) ----
 
-  /** Open any path (file or folder) in the side panel's Preview tab. */
+  /** Open any path (file or folder) in the side panel: a NEW tab per path,
+   * or focus the existing tab for the same path. Never replaces another
+   * tab's target — deep links leave the current tabs exactly as they are. */
   const openPreview = useCallback(
     (cwd: string, rawPath: string): void => {
       const absolute = resolvePreviewPath(cwd, rawPath)
       if (absolute === null) return
-      setPreviewTarget((prev) => ({ cwd, path: absolute, token: (prev?.token ?? 0) + 1 }))
-      panelDispatch({ type: 'open-tab', tab: 'preview' })
+      panelDispatch({ type: 'open-tab', tab: { kind: 'file', cwd, path: absolute } })
       dispatch({ type: 'open-side-panel' })
     },
     [panelDispatch, dispatch]
@@ -830,7 +837,19 @@ export default function App(): JSX.Element {
   }, [])
   const clearBridgeHighlight = useCallback(() => setBridgeHighlight(null), [])
 
-  const handlePreviewNavigate = useCallback(openPreview, [openPreview])
+  const handlePreviewNavigate = openPreview
+
+  /** Recently closed persistence (ticket 31): every change to the panel's
+   * closed-history stack writes the whole list into preferences (capacity 10,
+   * already enforced by the reducer). The JSON guard keeps hydration and
+   * no-op renders from writing back the same value forever. */
+  useEffect(() => {
+    if (!settingsLoaded) return
+    const json = JSON.stringify(panel.recentlyClosed)
+    if (json === lastClosedTabsJsonRef.current) return
+    lastClosedTabsJsonRef.current = json
+    handleSetPreferences({ recentlyClosedTabs: panel.recentlyClosed })
+  }, [panel.recentlyClosed, settingsLoaded, handleSetPreferences])
 
   // Ticket 17: recent workspaces for the project chip's dropdown, and the
   // chip's default (fixed → focused session → last used → recent first).
@@ -975,9 +994,7 @@ export default function App(): JSX.Element {
             open={ui.sidePanelOpen}
             panel={panel}
             dispatch={panelDispatch}
-            onCollapse={() => dispatch({ type: 'close-side-panel' })}
             workspaceCwd={chat.session?.cwd ?? null}
-            previewTarget={previewTarget}
             onPreviewNavigate={handlePreviewNavigate}
           />
         </div>

@@ -9,6 +9,7 @@
  * behavior is testable without Electron.
  */
 import type { ThinkingLevel } from './contract.ts'
+import { normalizeRecentlyClosed, type RecentlyClosedTab } from './panel-model.ts'
 import type { ReadStates } from './sessions/unread.ts'
 
 /** Model/thinking defaults handed to a NEW session (all fields optional). */
@@ -45,6 +46,10 @@ export interface AppPreferences {
    * upsert per session (see mergePreferences) so racing writers never lose
    * each other's entries. */
   readStates: ReadStates
+  /** Recently closed side panel tabs (ticket 31): closed file/trace tab
+   * identities with their close times, newest first. The tab-management
+   * dropdown lists them for one-click reopening; capacity 10. */
+  recentlyClosedTabs: RecentlyClosedTab[]
 }
 
 export const DEFAULT_PREFERENCES: AppPreferences = {
@@ -53,7 +58,8 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   newTaskDirectory: 'last-used',
   newTaskFixedProject: null,
   hiddenGroups: [],
-  readStates: {}
+  readStates: {},
+  recentlyClosedTabs: []
 }
 
 const THINKING_LEVELS: ReadonlySet<string> = new Set([
@@ -161,6 +167,14 @@ function normalizedReadStatesOr(prev: ReadStates, value: unknown): ReadStates {
   return merged
 }
 
+/** Recently closed tabs are written whole by the panel (the single writer):
+ * a valid array replaces, anything else keeps the previous history. The
+ * tab framework's normalizer does the defensive work (kinds, caps, dedupe). */
+function normalizedRecentlyClosedOr(prev: RecentlyClosedTab[], value: unknown): RecentlyClosedTab[] {
+  if (value === undefined) return prev
+  return Array.isArray(value) ? normalizeRecentlyClosed(value) : prev
+}
+
 /** Defensive read of a preferences JSON document — invalid fields fall back. */
 export function normalizePreferences(raw: unknown): AppPreferences {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return { ...DEFAULT_PREFERENCES }
@@ -171,7 +185,8 @@ export function normalizePreferences(raw: unknown): AppPreferences {
     newTaskDirectory: normalizedDirectoryMode(record['newTaskDirectory']),
     newTaskFixedProject: normalizedFixedProject(record['newTaskFixedProject']),
     hiddenGroups: normalizedHiddenGroups(record['hiddenGroups']),
-    readStates: normalizedReadStates(record['readStates'])
+    readStates: normalizedReadStates(record['readStates']),
+    recentlyClosedTabs: normalizeRecentlyClosed(record['recentlyClosedTabs'])
   }
 }
 
@@ -186,7 +201,8 @@ export function mergePreferences(prev: AppPreferences, patch: unknown): AppPrefe
     newTaskDirectory: normalizedDirectoryOr(prev.newTaskDirectory, record['newTaskDirectory']),
     newTaskFixedProject: normalizedFixedProjectOr(prev.newTaskFixedProject, record['newTaskFixedProject']),
     hiddenGroups: normalizedHiddenGroupsOr(prev.hiddenGroups, record['hiddenGroups']),
-    readStates: normalizedReadStatesOr(prev.readStates, record['readStates'])
+    readStates: normalizedReadStatesOr(prev.readStates, record['readStates']),
+    recentlyClosedTabs: normalizedRecentlyClosedOr(prev.recentlyClosedTabs, record['recentlyClosedTabs'])
   }
 }
 

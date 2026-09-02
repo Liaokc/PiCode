@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain } from 'electron'
-import { homedir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import fs from 'node:fs/promises'
 import type { HostToParent, ImageAttachment, ParentToHost } from '../shared/contract'
@@ -15,7 +15,7 @@ import { readPreview } from './preview/read'
 import { SessionIndexService, type FollowUpdate } from './sessions/index-service'
 import { SettingsService, type SettingsSnapshot } from './settings/service'
 import { runAuthProbeHost } from './settings/probe-runner'
-import { startSmokeIfEnabled, type SmokeHooks } from './smoke'
+import { startSmokeIfEnabled, smokeEnabled, type SmokeHooks } from './smoke'
 import { startVisualIfEnabled } from './visual'
 import { startDensityVisualIfEnabled } from './visual-density'
 import { startSettingsVisualIfEnabled } from './visual-settings'
@@ -42,6 +42,14 @@ isolateVisualUserData()
 // the pin preference) — throwaway userData for it too (no-op unless
 // PICODE_VISUAL_ROW_GEOMETRY=1).
 isolateRowGeometryUserData()
+
+// Ticket-13 hygiene, extended by ticket 31: the smoke drives the REAL
+// settings service too (panel recently closed round-trip), so it gets the
+// same throwaway userData — the operator's PiCode preferences are never
+// touched by a smoke run. No-op unless PICODE_SMOKE=1.
+if (smokeEnabled()) {
+  app.setPath('userData', path.join(tmpdir(), `picode-smoke-userdata-${process.pid}`))
+}
 
 function createMainWindow(): BrowserWindow {
   const win = new BrowserWindow(createWindowOptions(path.join(__dirname, '../preload/index.js')))
@@ -286,7 +294,8 @@ function fakePreferences(): AppPreferences {
     newTaskDirectory: 'fixed',
     newTaskFixedProject: '/Users/demo/Projects/picode',
     hiddenGroups: ['/Users/demo/Projects/archive'],
-    readStates: {}
+    readStates: {},
+    recentlyClosedTabs: []
   }
 }
 
