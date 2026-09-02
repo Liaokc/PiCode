@@ -233,9 +233,11 @@ function PreviewFile({
       )}
       {rendered ? (
         <div className="preview-md">
-          {/* chrome={false}: block cards are a transcript affordance (ticket 16);
-            the preview reader keeps its bare layout. */}
-          <Markdown text={file.text} chrome={false} />
+          {/* Ticket 32: the rendered preview consumes the transcript's block
+            chrome (code cards + table containers) — one grammar of blocks;
+            the operator overturned ticket 16's bare-reader scope. The source
+            state stays windowed bare text. */}
+          <Markdown text={file.text} />
         </div>
       ) : (
         <CodeView text={file.text} name={file.name} visibleLines={visibleLines} totalLines={file.totalLines} wrap={wrap} />

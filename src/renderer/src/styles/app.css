@@ -4320,7 +4320,9 @@ button.preview-crumb:hover {
   overflow: auto;
   display: flex;
   flex-direction: column;
-  background: var(--bg-card);
+  /* Same surface the transcript sits on (ticket 32): the block cards are
+     white (--bg-card) and only read against the warm page tone. */
+  background: var(--bg-main);
 }
 
 .preview-notice {
@@ -4338,11 +4340,8 @@ button.preview-crumb:hover {
   user-select: text;
 }
 
-.preview-md table {
-  display: block;
-  overflow-x: auto;
-  max-width: 100%;
-}
+/* Tables render inside the transcript's .md-table-scroll container (ticket
+   32 chrome) — the container owns the overflow, never the table itself. */
 
 /* source view */
 
