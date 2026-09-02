@@ -1,23 +1,29 @@
 import { useEffect, useMemo, useRef, useState, type Dispatch, type JSX, type PointerEvent } from 'react'
 import type { SessionSummary } from '../../../shared/sessions/types'
 import { clampSidebarWidth, type ShellUiAction } from '../../../shared/layout-model'
+import { archivedList, filterArchived } from '../../../shared/sessions/archive'
 import {
   filterHiddenGroups,
   groupSessions,
   isSessionLive,
+  projectLabel,
   relativeTime,
   timelineSessions,
   type SessionSort,
   type SessionView
 } from '../../../shared/sessions/group'
+import { sessionMenuGroups, type SessionMenuAction, type SessionRowAction } from '../../../shared/sessions/context-menu'
 import { sidebarDotState, sidebarRowState, type SidebarDotState } from '../../../shared/session-registry'
 import { useNowTick } from './use-now'
 import Tooltip from './Tooltip'
 import FileBrowser from './FileBrowser'
 import {
+  ArchiveBoxIcon,
+  ArrowUpIcon,
   CalendarIcon,
   CheckIcon,
   ChevronDownIcon,
+  ChevronLeftIcon,
   ClockIcon,
   CloseIcon,
   EllipsisIcon,
@@ -31,11 +37,24 @@ import {
   PinIcon,
   PlusIcon,
   SearchIcon,
-  TrashIcon
 } from './icons'
 
 /** Rows shown per project group before "Show more". */
 const SHOW_FIRST = 5
+
+/** Context-menu clamp (viewport fit): keeps the fixed-position menu inside
+ * the window no matter where the row was right-clicked. Generous — the real
+ * menu is ~200×300; clipping a few px of shadow is fine, losing an item is
+ * not. */
+const MENU_WIDTH_PX = 216
+const MENU_HEIGHT_PX = 320
+
+/** Where + on which session the context menu is open (ticket 35). */
+interface SessionMenuState {
+  session: SessionSummary
+  x: number
+  y: number
+}
 
 interface SidebarProps {
   open: boolean
@@ -57,9 +76,18 @@ interface SidebarProps {
   /** Sessions with unread state (ticket 28): the indigo dot, masked by
    * higher-priority dots via sidebarDotState. */
   unreadIds: ReadonlySet<string>
+  /** Session ids archived from the sidebar lists (ticket 35): a local
+   * preference projection — archived rows vanish from both views while ⌘K
+   * still reaches them (hiding never makes a session unreachable). */
+  archivedIds: ReadonlySet<string>
   onTogglePin: (session: SessionSummary) => void
   onOpenSession: (session: SessionSummary) => void
   onRenameSession: (session: SessionSummary, name: string) => void
+  /** Everything the row context menu dispatches past the sidebar (ticket
+   * 35): archive/restore, the unread toggle, the read-only reveal/copy
+   * actions and the call-trace entry. Pin and rename stay here — the pin
+   * preference and the inline rename input are sidebar-owned. */
+  onSessionAction: (session: SessionSummary, action: SessionRowAction) => void
   /** Open the new-task state; a cwd PRESELECTS that project's chip
    * (ticket 19: the group row's hover action), undefined follows the
    * ticket-17 fallback chain. */
@@ -104,9 +132,16 @@ function TaskItem({
   selected,
   dot,
   pinned,
+  renaming,
+  draft,
   onOpen,
   onTogglePin,
-  onRename
+  onRename,
+  onRenameStart,
+  onRenameEnd,
+  onDraftChange,
+  onArchive,
+  onContextMenu
 }: {
   session: SessionSummary
   now: number
@@ -117,21 +152,26 @@ function TaskItem({
    * indigo unread / empty slot. */
   dot: SidebarDotState
   pinned: boolean
+  /** Controlled inline rename (ticket 35): WHICH row is renaming and the
+   * draft live in the sidebar, so the context menu's Rename task enters the
+   * same flow as a double-click — both call onRenameStart, no effect-joined
+   * state. */
+  renaming: boolean
+  draft: string
   onOpen: () => void
   onTogglePin: () => void
   onRename: (name: string) => void
+  onRenameStart: () => void
+  onRenameEnd: () => void
+  onDraftChange: (name: string) => void
+  /** Archive from the row hover (ticket 35): the archive-box button that
+   * temporarily takes the dot slot. */
+  onArchive: () => void
+  onContextMenu: (x: number, y: number) => void
 }): JSX.Element {
-  const [renaming, setRenaming] = useState(false)
-  const [draft, setDraft] = useState(session.title)
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    if (renaming) inputRef.current?.select()
-  }, [renaming])
-
   function commit(): void {
     const name = draft.trim()
-    setRenaming(false)
+    onRenameEnd()
     if (name !== '' && name !== session.title) onRename(name)
   }
 
@@ -142,33 +182,49 @@ function TaskItem({
       className={cls}
       data-file={session.file}
       onClick={onOpen}
-      onDoubleClick={() => {
-        setDraft(session.name ?? session.title)
-        setRenaming(true)
+      onDoubleClick={onRenameStart}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        onContextMenu(e.clientX, e.clientY)
       }}
     >
       {/* Fixed slot (ticket 20): always rendered so every title's left edge
           aligns — the dot appears inside only for live states. Orange badge
           = parked at the approval gate (ticket 25); indigo = unread
-          (ticket 28). */}
+          (ticket 28). On hover (ticket 35, grilling Q6①-i) the dot yields
+          the slot to the archive button — a pure content swap inside the
+          same box, so nothing overlaps and nothing shifts. */}
       <span className="sb-dot-slot">
         {dot === 'run-here' && <span className="sb-run-dot" aria-label="Running in PiCode" />}
         {dot === 'awaiting-approval' && <span className="sb-await-dot" aria-label="Awaiting approval" />}
         {dot === 'tui-live' && <span className="sb-live-dot" aria-label="Running in another window" />}
         {dot === 'unread' && <span className="sb-unread-dot" aria-label="Unread" />}
+        <Tooltip label="Archive task">
+          <button
+            type="button"
+            className="sb-arch-btn"
+            aria-label={`Archive task: ${session.title}`}
+            onClick={(e) => {
+              e.stopPropagation()
+              onArchive()
+            }}
+          >
+            <ArchiveBoxIcon size={12} />
+          </button>
+        </Tooltip>
       </span>
       {renaming ? (
         <input
-          ref={inputRef}
           className="sb-rename-input"
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => onDraftChange(e.target.value)}
           onClick={(e) => e.stopPropagation()}
           onBlur={commit}
+          onFocus={(e) => e.currentTarget.select()}
           onKeyDown={(e) => {
             e.stopPropagation()
             if (e.key === 'Enter') commit()
-            if (e.key === 'Escape') setRenaming(false)
+            if (e.key === 'Escape') onRenameEnd()
           }}
           autoFocus
         />
@@ -208,9 +264,11 @@ export default function Sidebar({
   runningIds,
   awaitingIds,
   unreadIds,
+  archivedIds,
   onTogglePin,
   onOpenSession,
   onRenameSession,
+  onSessionAction,
   onNewTask,
   hiddenCwds,
   onHideGroup,
@@ -233,6 +291,17 @@ export default function Sidebar({
    * the regular task list. Back unmounts the browser, so no tree state
    * survives the return (acceptance: the browser leaves no residue). */
   const [browserTarget, setBrowserTarget] = useState<{ cwd: string; project: string } | null>(null)
+  /** The archive list view behind the archive button (ticket 35) — the same
+   * whole-sidebar swap the file browser uses. */
+  const [showArchived, setShowArchived] = useState(false)
+  /** The session-row context menu (ticket 35); null = closed. */
+  const [menu, setMenu] = useState<SessionMenuState | null>(null)
+  /** Which row's inline rename is active (controlled TaskItem state — the
+   * context menu's Rename task enters the same flow as a double-click). */
+  const [renamingFile, setRenamingFile] = useState<string | null>(null)
+  /** The rename input's draft, seeded by startRename — both the menu and
+   * the double-click go through it, so no effect ever syncs the draft. */
+  const [renameDraft, setRenameDraft] = useState('')
 
   // Sidebar width drag (ticket 29): pointermove NEVER dispatches — the raw
   // width is rAF-coalesced and written straight to the aside's style (the
@@ -283,16 +352,24 @@ export default function Sidebar({
     }
   }
 
-  // Ticket 33: the two dropdown pipelines share the persisted sort key. The
-  // projects view additionally projects away hidden groups; the timeline
-  // flattens the WHOLE index — hiding never makes a session unreachable.
-  const grouped = useMemo(() => groupSessions(sessions, pinnedIds, sort), [sessions, pinnedIds, sort])
-  const timeline = useMemo(() => timelineSessions(sessions, pinnedIds, sort), [sessions, pinnedIds, sort])
+  // Ticket 35 × 33 composed pipeline: archiving is the MOST-UPSTREAM pure
+  // projection over the session index (the filterHiddenGroups invariant:
+  // hiding never makes a session unreachable) — BOTH sidebar views and the
+  // Pinned section draw from `listed`; ⌘K search and the follow/resume
+  // paths still receive the UNFILTERED index. The ticket-33 dropdown
+  // pipelines consume the listed (archive-filtered) sessions with the
+  // persisted sort; the ticket-33 text filter is retired (⌘K covers search).
+  const listed = useMemo(() => filterArchived(sessions, archivedIds), [sessions, archivedIds])
+  const grouped = useMemo(() => groupSessions(listed, pinnedIds, sort), [listed, pinnedIds, sort])
+  const timeline = useMemo(() => timelineSessions(listed, pinnedIds, sort), [listed, pinnedIds, sort])
   const visibleProjectGroups = useMemo(
     () => filterHiddenGroups(grouped.groups, hiddenCwds),
     [grouped.groups, hiddenCwds]
   )
   const activeSession = sessions.find((s) => s.id === activeSessionId) ?? null
+  /** The archive button's view rows (ticket 35): exactly the archived
+   * sessions, newest first, one click from restore. */
+  const archived = useMemo(() => archivedList(sessions, archivedIds), [sessions, archivedIds])
 
   // Outside click / Escape closes the group menu.
   useEffect(() => {
@@ -329,6 +406,55 @@ export default function Sidebar({
       document.removeEventListener('keydown', onKeyDown)
     }
   }, [filterMenuOpen])
+
+  // Outside click / Escape closes the session context menu (ticket 35).
+  useEffect(() => {
+    if (menu === null) return
+    function onPointerDown(event: MouseEvent): void {
+      if (event.target instanceof Element && event.target.closest('.sb-context-menu')) return
+      setMenu(null)
+    }
+    function onKeyDown(event: KeyboardEvent): void {
+      if (event.key === 'Escape') setMenu(null)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [menu])
+
+  /** Open the row context menu at the cursor, clamped into the viewport. */
+  function openSessionMenu(session: SessionSummary, x: number, y: number): void {
+    setRenamingFile(null)
+    setMenu({
+      session,
+      x: Math.max(8, Math.min(x, window.innerWidth - MENU_WIDTH_PX)),
+      y: Math.max(8, Math.min(y, window.innerHeight - MENU_HEIGHT_PX))
+    })
+  }
+
+  /** Dispatch one menu entry. Pin and rename are sidebar-owned; everything
+   * else rides onSessionAction to the shell. */
+  function runMenuAction(session: SessionSummary, action: SessionMenuAction): void {
+    setMenu(null)
+    if (action === 'rename') {
+      startRename(session)
+      return
+    }
+    if (action === 'toggle-pin') {
+      onTogglePin(session)
+      return
+    }
+    onSessionAction(session, action)
+  }
+
+  /** Enter inline rename with a fresh draft (double-click + menu entry). */
+  function startRename(session: SessionSummary): void {
+    setRenameDraft(session.name ?? session.title)
+    setRenamingFile(session.file)
+  }
 
   /** Fixed-slot dot state for one row (ticket 20 + 25 + 28): orange = parked
    * at the approval gate, animated = running in this app, green = written by
@@ -376,6 +502,8 @@ export default function Sidebar({
           onBack={() => setBrowserTarget(null)}
           onOpenFile={onOpenPreview}
         />
+      ) : showArchived ? (
+        <ArchivedView sessions={archived} onRestore={(s) => onSessionAction(s, 'restore')} onBack={() => setShowArchived(false)} />
       ) : (
       <>
       <nav className="sb-actions">
@@ -419,9 +547,20 @@ export default function Sidebar({
               <FilterIcon />
             </button>
           </Tooltip>
-          <button type="button" className="sb-icon-btn" aria-label="Deleted tasks">
-            <TrashIcon />
-          </button>
+          <Tooltip label="Archived tasks">
+            <button
+              type="button"
+              className="sb-icon-btn"
+              aria-label="Archived tasks"
+              onClick={() => {
+                setBrowserTarget(null)
+                setMenu(null)
+                setShowArchived(true)
+              }}
+            >
+              <ArchiveBoxIcon />
+            </button>
+          </Tooltip>
         </div>
         {filterMenuOpen && (
           <div className="sb-filter-menu" role="menu" aria-label="View and sort">
@@ -502,9 +641,16 @@ export default function Sidebar({
                 selected={sidebarRowState(activeSessionId, followedFile, s.id, s.file) === 'selected'}
                 dot={dotFor(s)}
                 pinned
+                renaming={renamingFile === s.file}
+                draft={renameDraft}
                 onOpen={() => onOpenSession(s)}
                 onTogglePin={() => onTogglePin(s)}
                 onRename={(name) => onRenameSession(s, name)}
+                onRenameStart={() => startRename(s)}
+                onRenameEnd={() => setRenamingFile(null)}
+                onDraftChange={setRenameDraft}
+                onArchive={() => onSessionAction(s, 'archive')}
+                onContextMenu={(x, y) => openSessionMenu(s, x, y)}
               />
             ))}
           </>
@@ -559,6 +705,7 @@ export default function Sidebar({
                           onClick={(e) => {
                             e.stopPropagation()
                             setGroupMenuCwd(null)
+                            setShowArchived(false)
                             setBrowserTarget({ cwd: group.cwd, project: group.project })
                           }}
                         >
@@ -607,9 +754,16 @@ export default function Sidebar({
                       selected={sidebarRowState(activeSessionId, followedFile, s.id, s.file) === 'selected'}
                       dot={dotFor(s)}
                       pinned={false}
+                      renaming={renamingFile === s.file}
+                      draft={renameDraft}
                       onOpen={() => onOpenSession(s)}
                       onTogglePin={() => onTogglePin(s)}
                       onRename={(name) => onRenameSession(s, name)}
+                      onRenameStart={() => startRename(s)}
+                      onRenameEnd={() => setRenamingFile(null)}
+                      onDraftChange={setRenameDraft}
+                      onArchive={() => onSessionAction(s, 'archive')}
+                      onContextMenu={(x, y) => openSessionMenu(s, x, y)}
                     />
                   ))}
                   {!isExpanded && group.sessions.length > SHOW_FIRST && (
@@ -639,9 +793,16 @@ export default function Sidebar({
                 selected={sidebarRowState(activeSessionId, followedFile, s.id, s.file) === 'selected'}
                 dot={dotFor(s)}
                 pinned={false}
+                renaming={renamingFile === s.file}
+                draft={renameDraft}
                 onOpen={() => onOpenSession(s)}
                 onTogglePin={() => onTogglePin(s)}
                 onRename={(name) => onRenameSession(s, name)}
+                onRenameStart={() => startRename(s)}
+                onRenameEnd={() => setRenamingFile(null)}
+                onDraftChange={setRenameDraft}
+                onArchive={() => onSessionAction(s, 'archive')}
+                onContextMenu={(x, y) => openSessionMenu(s, x, y)}
               />
             ))}
           </>
@@ -650,8 +811,41 @@ export default function Sidebar({
         {sessions.length === 0 && (
           <div className="sb-empty-hint">No tasks yet — press ⌘N to start one.</div>
         )}
+        {listed.length === 0 && sessions.length > 0 && (
+          <div className="sb-empty-hint">All tasks are archived — restore from the Archived view.</div>
+        )}
       </div>
       </>
+      )}
+
+      {/* Session-row context menu (ticket 35, z-context-menu.png): nine
+          entries in three groups, hairline between groups. Rendered at the
+          sidebar root so row scrolls never move it; fixed-position at the
+          clamped cursor point. */}
+      {menu !== null && (
+        <div
+          className="sb-context-menu"
+          role="menu"
+          aria-label="Task actions"
+          style={{ left: menu.x, top: menu.y }}
+        >
+          {sessionMenuGroups(pinnedIds.has(menu.session.id), unreadIds.has(menu.session.id)).map((group, gi) => (
+            <div key={gi} className="sb-context-group">
+              {group.map((entry) => (
+                <button
+                  key={entry.action}
+                  type="button"
+                  role="menuitem"
+                  className="sb-context-item"
+                  data-menu-action={entry.action}
+                  onClick={() => runMenuAction(menu.session, entry.action)}
+                >
+                  {entry.label}
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
       )}
 
       <footer className="sb-account-bar">
@@ -666,5 +860,59 @@ export default function Sidebar({
         </Tooltip>
       </footer>
     </aside>
+  )
+}
+
+/**
+ * The archive button's view (ticket 35): the whole sidebar swaps into
+ * it — the same mode switch the file browser uses. Exactly the archived
+ * sessions, newest first; each row one click from restore. Rows are
+ * display-only (opening an archived task goes through ⌘K, the reachability
+ * invariant), the account bar below stays as persistent chrome.
+ */
+function ArchivedView({
+  sessions,
+  onRestore,
+  onBack
+}: {
+  sessions: SessionSummary[]
+  onRestore: (session: SessionSummary) => void
+  onBack: () => void
+}): JSX.Element {
+  const now = useNowTick(30_000)
+  return (
+    <div className="sb-archived">
+      <div className="sb-archived-bar">
+        <Tooltip label="Back to tasks">
+          <button type="button" className="sb-icon-btn" aria-label="Back to tasks" onClick={onBack}>
+            <ChevronLeftIcon />
+          </button>
+        </Tooltip>
+        <span className="sb-archived-title">Archived</span>
+        <span className="sb-archived-count">{sessions.length}</span>
+      </div>
+      <div className="sb-scroll">
+        {sessions.length === 0 && <div className="sb-empty-hint">No archived tasks.</div>}
+        {sessions.map((s) => (
+          <div key={s.file} className="sb-archived-row" data-file={s.file}>
+            <span className="sb-archived-main">
+              <span className="sb-archived-title-text">{s.title}</span>
+              <span className="sb-archived-project">{projectLabel(s.cwd)}</span>
+            </span>
+            <span className="sb-task-time">{relativeTime(s.modifiedAt, now)}</span>
+            <Tooltip label="Restore task">
+              <button
+                type="button"
+                className="sb-restore-btn"
+                aria-label={`Restore task: ${s.title}`}
+                onClick={() => onRestore(s)}
+              >
+                <ArrowUpIcon size={13} />
+              </button>
+            </Tooltip>
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }

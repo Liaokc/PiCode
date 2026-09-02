@@ -4,6 +4,7 @@ import {
   mergePreferences,
   normalizePreferences,
   sessionDefaultsFromPreferences,
+  setSessionArchived,
   toggleHiddenGroup
 } from '../../src/shared/preferences.ts'
 import { SIDEBAR_WIDTH_PX } from '../../src/shared/layout-model.ts'
@@ -29,6 +30,7 @@ describe('normalizePreferences', () => {
       defaultThinkingLevel: 'high',
       newTaskDirectory: 'fixed',
       newTaskFixedProject: '/Users/dev/repos/api',
+      archivedSessions: [],
       hiddenGroups: [],
       readStates: {},
       recentlyClosedTabs: [],
@@ -75,6 +77,7 @@ describe('mergePreferences', () => {
       defaultThinkingLevel: null,
       newTaskDirectory: 'last-used',
       newTaskFixedProject: null,
+      archivedSessions: [],
       hiddenGroups: [],
       readStates: {},
       recentlyClosedTabs: [],
@@ -258,6 +261,16 @@ describe('mergePreferences', () => {
     expect(sessionDefaultsFromPreferences(normalizePreferences({ hiddenGroups: ['/work/api'] }))).toBeNull()
   })
 
+  it('normalizes archivedSessions: session ids only, trimmed, blank-free, deduped, order-stable (ticket 35)', () => {
+    expect(normalizePreferences(undefined).archivedSessions).toEqual([])
+    expect(normalizePreferences({ archivedSessions: [] }).archivedSessions).toEqual([])
+    expect(
+      normalizePreferences({ archivedSessions: ['s-b', ' s-a ', 's-b', '', 42, null, 's-a'] }).archivedSessions
+    ).toEqual(['s-b', 's-a'])
+    expect(normalizePreferences({ archivedSessions: 'nope' }).archivedSessions).toEqual([])
+    expect(normalizePreferences({ archivedSessions: [1337] }).archivedSessions).toEqual([])
+  })
+
   it('normalizes recentlyClosedTabs: valid file/trace entries only, capped (ticket 31)', () => {
     expect(normalizePreferences(undefined).recentlyClosedTabs).toEqual([])
     expect(normalizePreferences({ recentlyClosedTabs: 'nope' }).recentlyClosedTabs).toEqual([])
@@ -272,6 +285,15 @@ describe('mergePreferences', () => {
       { tab: { kind: 'file', cwd: '/w', path: 'a.md' }, closedAt: 3000 },
       { tab: { kind: 'trace', sessionFile: '/s/one.jsonl' }, closedAt: 1000 }
     ])
+  })
+
+  it('patches archivedSessions as a whole list; non-array and missing patches keep the previous value (ticket 35)', () => {
+    const base = normalizePreferences({ archivedSessions: ['s-a'] })
+    expect(mergePreferences(base, { archivedSessions: [] }).archivedSessions).toEqual([])
+    expect(mergePreferences(base, { archivedSessions: ['s-b', 's-a'] }).archivedSessions).toEqual(['s-b', 's-a'])
+    expect(mergePreferences(base, {}).archivedSessions).toEqual(['s-a'])
+    expect(mergePreferences(base, { archivedSessions: 's-a' }).archivedSessions).toEqual(['s-a'])
+    expect(mergePreferences(base, { archivedSessions: [7] }).archivedSessions).toEqual([])
   })
 
   it('patches recentlyClosedTabs as a whole list: valid replaces, invalid keeps (ticket 31)', () => {
@@ -319,5 +341,18 @@ describe('toggleHiddenGroup', () => {
   it('removes a cwd and ignores cwds that were never hidden', () => {
     expect(toggleHiddenGroup(['/work/api', '/work/web'], '/work/api', false)).toEqual(['/work/web'])
     expect(toggleHiddenGroup([], '/work/api', false)).toEqual([])
+  })
+})
+
+describe('setSessionArchived — archive/restore over the preference list (ticket 35)', () => {
+  it('archives by appending at the end (most recently archived last), deduped', () => {
+    expect(setSessionArchived([], 's-a', true)).toEqual(['s-a'])
+    expect(setSessionArchived(['s-a', 's-b'], 's-a', true)).toEqual(['s-b', 's-a'])
+    expect(setSessionArchived(['s-a'], 's-a', true)).toEqual(['s-a'])
+  })
+
+  it('restores by dropping the id, ignoring ids that were never archived', () => {
+    expect(setSessionArchived(['s-a', 's-b'], 's-a', false)).toEqual(['s-b'])
+    expect(setSessionArchived([], 's-a', false)).toEqual([])
   })
 })

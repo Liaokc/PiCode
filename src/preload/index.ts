@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { HostToParent, ImageAttachment, ParentToHost } from '../shared/contract'
 import type { FollowUpdate, SessionSummary, TranscriptItem } from '../shared/sessions/types'
+import type { SessionContextAction } from '../shared/sessions/context-actions'
 import type { UsageSnapshot } from '../shared/usage/aggregate'
 import type { ReviewResult } from '../shared/review/types'
 import type { PreviewResult } from '../shared/preview/types'
@@ -69,7 +70,13 @@ contextBridge.exposeInMainWorld('picode', {
       return () => {
         ipcRenderer.removeListener('sessions:follow-update', wrapped)
       }
-    }
+    },
+    /** Read-only context-menu actions (ticket 35): reveal the session file
+     * in Finder, or copy task path / session file path / session id to the
+     * clipboard. Main validates the payload (parseSessionContextAction)
+     * before touching shell/clipboard; resolves false for junk. */
+    contextAction: (action: SessionContextAction): Promise<boolean> =>
+      ipcRenderer.invoke('sessions:context-action', action)
   },
   usage: {
     snapshot: (): Promise<UsageSnapshot> => ipcRenderer.invoke('usage:snapshot')

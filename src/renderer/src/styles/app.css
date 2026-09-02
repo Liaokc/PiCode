@@ -494,8 +494,10 @@ kbd {
 
 /* Fixed dot slot (ticket 20): every Task row reserves the slot so all
    title left edges align regardless of state (fixes the conditional-render
-   9px misalignment of the old conditional .sb-live-dot). */
+   9px misalignment of the old conditional .sb-live-dot). position:relative
+   anchors the hover archive button (ticket 35) to the slot box. */
 .sb-dot-slot {
+  position: relative;
   width: 7px;
   flex-shrink: 0;
   display: inline-flex;
@@ -561,6 +563,175 @@ kbd {
   background: var(--bg-card);
   font-size: 12.5px;
   padding: 2px 6px;
+  color: var(--text-primary);
+}
+
+/* ---------- sidebar: row context menu + archive (ticket 35) ---------- */
+
+/* The hover archive button temporarily takes the DOT SLOT (grilling Q6①-i):
+   the slot keeps its 7px box, the dot fades out and the button fades in
+   centered on the slot — a pure content swap, so nothing overlaps and
+   nothing in the row grid ever shifts. Same 150ms fades as the pin/time
+   (ticket 34's calm-transition rule). */
+.sb-arch-btn {
+  position: absolute;
+  top: 50%;
+  left: -4.5px; /* 16px button centered on the 7px slot */
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 150ms ease, visibility 150ms ease;
+  z-index: 1;
+}
+
+.sb-task:hover .sb-arch-btn {
+  visibility: visible;
+  opacity: 1;
+}
+
+.sb-arch-btn:hover {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+/* The dot yields its slot while the row is hovered (fade, never pop).
+   animation:none beats the run-dot's keyframes so the opacity fade runs. */
+.sb-dot-slot .sb-run-dot,
+.sb-dot-slot .sb-live-dot,
+.sb-dot-slot .sb-await-dot,
+.sb-dot-slot .sb-unread-dot {
+  transition: opacity 150ms ease, visibility 150ms ease;
+}
+
+.sb-task:hover .sb-dot-slot .sb-run-dot,
+.sb-task:hover .sb-dot-slot .sb-live-dot,
+.sb-task:hover .sb-dot-slot .sb-await-dot,
+.sb-task:hover .sb-dot-slot .sb-unread-dot {
+  opacity: 0;
+  visibility: hidden;
+  animation: none;
+}
+
+/* The nine-item context menu (z-context-menu.png): text-only entries in
+   three groups with a hairline between groups. Fixed at the clamped cursor
+   point; rendered at the sidebar root so row scrolls never move it. */
+.sb-context-menu {
+  position: fixed;
+  z-index: 80;
+  min-width: 200px;
+  padding: 5px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 36px rgba(30, 30, 25, 0.14);
+}
+
+.sb-context-group + .sb-context-group {
+  border-top: 1px solid var(--border);
+  margin-top: 5px;
+  padding-top: 5px;
+}
+
+.sb-context-item {
+  width: 100%;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.sb-context-item:hover {
+  background: var(--bg-hover);
+}
+
+/* The archive button's view (ticket 35) — the same whole-sidebar
+   swap the file browser uses (ticket 26 mode precedent). */
+.sb-archived {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sb-archived-bar {
+  padding: 10px 12px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sb-archived-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.sb-archived-count {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.sb-archived-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 36px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.sb-archived-row:hover {
+  background: var(--bg-hover);
+}
+
+.sb-archived-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.sb-archived-title-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-primary);
+}
+
+.sb-archived-project {
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sb-restore-btn {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.sb-restore-btn:hover {
+  background: var(--bg-active);
   color: var(--text-primary);
 }
 

@@ -152,6 +152,8 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
   if (process.env['PICODE_VISUAL_ROW_GEOMETRY'] === '1') return
   // And for the filter-dropdown harness (ticket 33).
   if (process.env['PICODE_VISUAL_FILTER'] === '1') return
+  // And for the context-menu/archive harness (ticket 35).
+  if (process.env['PICODE_VISUAL_CONTEXT_MENU'] === '1') return
 
   // Deterministic sidebar content for the shots (ticket 20): the empty-state
   // frame must show a status dot (a session written by ANOTHER end — fresh

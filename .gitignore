@@ -10,3 +10,4 @@ release/
 .worktrees/
 release/
 picode-stage*
+.scratch/visual-cm/

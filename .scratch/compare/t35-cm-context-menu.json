@@ -1,0 +1,47 @@
+{
+  "rest": {
+    "titleLeft": 46,
+    "dot": {
+      "centerX": 33.5,
+      "visible": false,
+      "opacity": "1"
+    },
+    "arch": {
+      "left": 25.5,
+      "right": 41.5,
+      "centerX": 33.5,
+      "visible": false,
+      "opacity": "0"
+    }
+  },
+  "hovered": {
+    "titleLeft": 46,
+    "dot": {
+      "centerX": 33.5,
+      "visible": false,
+      "opacity": "1"
+    },
+    "arch": {
+      "left": 25.5,
+      "right": 41.5,
+      "centerX": 33.5,
+      "visible": true,
+      "opacity": "1"
+    }
+  },
+  "menu": {
+    "groups": 3,
+    "items": [
+      "Pin task",
+      "Rename task",
+      "Archive task",
+      "Mark as Unread",
+      "Reveal in Finder",
+      "Copy task path",
+      "Copy session file path",
+      "Copy session ID",
+      "View call trace"
+    ]
+  },
+  "archivedRemainingRows": 2
+}

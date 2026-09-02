@@ -158,6 +158,16 @@ export function TrashIcon({ size, className }: IconProps): JSX.Element {
   )
 }
 
+/** Archive box (ticket 35): the row hover archive action — a lidded box,
+ * deliberately NOT the trash glyph (archive ≠ delete, CONTEXT.md). */
+export function ArchiveBoxIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v2A1.5 1.5 0 0 1 18.5 9h-13A1.5 1.5 0 0 1 4 7.5Z M5.5 9v8.5A2.5 2.5 0 0 0 8 20h8a2.5 2.5 0 0 0 2.5-2.5V9 M10 13.5h4" />
+    </svg>
+  )
+}
+
 export function GripDotsIcon({ size, className }: IconProps): JSX.Element {
   const dots: Array<[number, number]> = [
     [9, 7],

@@ -21,10 +21,12 @@ import { isSessionLive, decideFollowTakeover, FOLLOW_TAKEOVER_REJECTED_TOAST } f
 import {
   baselineReadStates,
   markSessionRead,
+  setManualUnread,
   unreadSessionIds,
   type ReadStates
 } from '../../shared/sessions/unread'
-import { sessionDefaultsFromPreferences, DEFAULT_PREFERENCES, toggleHiddenGroup, type AppPreferences } from '../../shared/preferences'
+import type { SessionRowAction } from '../../shared/sessions/context-menu'
+import { sessionDefaultsFromPreferences, DEFAULT_PREFERENCES, setSessionArchived, toggleHiddenGroup, type AppPreferences } from '../../shared/preferences'
 import { recentProjects, resolveNewTaskProject } from '../../shared/new-task'
 import { toastReducer, type ToastLevel, type ToastList } from '../../shared/toast'
 import type { AccessMode, ImageAttachment, ThinkingLevel } from '../../shared/contract'
@@ -679,10 +681,16 @@ export default function App(): JSX.Element {
   const onViewId = followActive ? null : focusedId
   const onViewFile = followedFile
 
-  /** Unread projection for the sidebar (ticket 28): the indigo dot set. */
+  /** Unread projection for the sidebar (ticket 28): the indigo dot set.
+   * Archived sessions never show unread (ticket 35 consumes the filter
+   * slot ticket 28 reserved). */
+  const archivedIds = useMemo(
+    () => new Set(settings.preferences.archivedSessions),
+    [settings.preferences.archivedSessions]
+  )
   const unreadIds = useMemo(
-    () => unreadSessionIds(sessions, settings.preferences.readStates, onViewId, onViewFile),
-    [sessions, settings.preferences.readStates, onViewId, onViewFile]
+    () => unreadSessionIds(sessions, settings.preferences.readStates, onViewId, onViewFile, archivedIds),
+    [sessions, settings.preferences.readStates, onViewId, onViewFile, archivedIds]
   )
 
   /** Read-state persistence (ticket 28): first sightings are baselined at
@@ -812,11 +820,12 @@ export default function App(): JSX.Element {
     }
   }
 
-  function handleTogglePin(summary: SessionSummary): void {
+  function setPinnedId(id: string, pinned: boolean): void {
     setPinnedIds((prev) => {
+      if (prev.has(id) === pinned) return prev
       const next = new Set(prev)
-      if (next.has(summary.id)) next.delete(summary.id)
-      else next.add(summary.id)
+      if (pinned) next.add(id)
+      else next.delete(id)
       try {
         window.localStorage.setItem(PIN_STORAGE_KEY, JSON.stringify([...next]))
       } catch {
@@ -824,6 +833,78 @@ export default function App(): JSX.Element {
       }
       return next
     })
+  }
+
+  function handleTogglePin(summary: SessionSummary): void {
+    setPinnedId(summary.id, !pinnedIds.has(summary.id))
+  }
+
+  /** Archive one session (ticket 35): a local-preference projection only —
+   * the session file is untouched, the row leaves both sidebar views, and
+   * ⌘K still reaches it. Archiving a pinned task implicitly unpins it
+   * (pinned and archived never conflict). */
+  function handleArchiveSession(summary: SessionSummary): void {
+    handleSetPreferences({
+      archivedSessions: setSessionArchived(settings.preferences.archivedSessions, summary.id, true)
+    })
+    if (pinnedIds.has(summary.id)) setPinnedId(summary.id, false)
+    notify('Task archived. Restore it from the Archived view.', 'info')
+  }
+
+  /** One-click restore from the archive view (ticket 35): the row returns
+   * to both sidebar lists on the next projection pass. */
+  function handleRestoreSession(summary: SessionSummary): void {
+    handleSetPreferences({
+      archivedSessions: setSessionArchived(settings.preferences.archivedSessions, summary.id, false)
+    })
+  }
+
+  /** The context menu's manual unread toggle (ticket 35 on ticket 28's
+   * model bit): Mark as Unread pins the flag; Mark as Read advances the
+   * watermark. The per-session patch upserts through mergePreferences, so
+   * the read-chaser's writes never lose this entry (and focusing the
+   * session still clears the flag — reading is the only way to make it
+   * read). */
+  function handleToggleUnread(summary: SessionSummary): void {
+    const unread = unreadIds.has(summary.id)
+    const { next, changed } = setManualUnread(settings.preferences.readStates, summary.id, !unread, summary.modifiedAt)
+    if (!changed) return
+    const entry = next[summary.id]
+    if (entry === undefined) return
+    handleSetPreferences({ readStates: { [summary.id]: entry } })
+  }
+
+  /** Everything the row context menu dispatches past the sidebar (ticket
+   * 35). Reveal/copy ride the read-only context-action IPC; view-trace
+   * seats the entry here — its consumption (the call-trace tab) lands with
+   * ticket 36. */
+  function handleSessionAction(session: SessionSummary, action: SessionRowAction): void {
+    switch (action) {
+      case 'archive':
+        handleArchiveSession(session)
+        break
+      case 'restore':
+        handleRestoreSession(session)
+        break
+      case 'toggle-unread':
+        handleToggleUnread(session)
+        break
+      case 'reveal-in-finder':
+        void window.picode.sessions.contextAction({ kind: 'reveal', file: session.file })
+        break
+      case 'copy-task-path':
+        void window.picode.sessions.contextAction({ kind: 'copy', text: session.cwd })
+        break
+      case 'copy-session-file':
+        void window.picode.sessions.contextAction({ kind: 'copy', text: session.file })
+        break
+      case 'copy-session-id':
+        void window.picode.sessions.contextAction({ kind: 'copy', text: session.id })
+        break
+      case 'view-trace':
+        // Entry seated in ticket 35; the trace tab consumes it in ticket 36.
+        break
+    }
   }
 
   function handleRenameSession(summary: SessionSummary, name: string): void {
@@ -999,9 +1080,11 @@ export default function App(): JSX.Element {
         runningIds={runningIds}
         awaitingIds={awaitingIds}
         unreadIds={unreadIds}
+        archivedIds={archivedIds}
         onTogglePin={handleTogglePin}
         onOpenSession={handleOpenSession}
         onRenameSession={handleRenameSession}
+        onSessionAction={handleSessionAction}
         onNewTask={(presetCwd) => void handleNewTask(presetCwd)}
         hiddenCwds={hiddenCwds}
         onHideGroup={handleHideGroup}

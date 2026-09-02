@@ -48,6 +48,7 @@ describe('SettingsService', () => {
       newTaskDirectory: 'last-used',
       newTaskFixedProject: null,
       hiddenGroups: [],
+      archivedSessions: [],
       readStates: {},
       recentlyClosedTabs: [],
       // Pre-ticket-33 documents have no dropdown choice — the defaults apply.
