@@ -152,6 +152,12 @@ function TaskItem({
       ) : (
         <span className="sb-task-title">{session.title}</span>
       )}
+      {/* Fixed-width time slot (ticket 34): hover fades ONLY the text —
+          the slot itself never resizes, so nothing in the row shifts. */}
+      <span className="sb-task-time">{relativeTime(session.modifiedAt, now)}</span>
+      {/* Reserved row-end slot (ticket 34, grilling Q5 decision a): the pin
+          is the LAST child in every row — pinned rows keep it visible
+          (orange), unpinned rows fade it in on hover at the same x. */}
       <Tooltip label={pinned ? 'Unpin' : 'Pin'}>
         <button
           type="button"
@@ -165,7 +171,6 @@ function TaskItem({
           <PinIcon size={13} />
         </button>
       </Tooltip>
-      <span className="sb-task-time">{relativeTime(session.modifiedAt, now)}</span>
     </div>
   )
 }

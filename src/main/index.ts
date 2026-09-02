@@ -21,6 +21,7 @@ import { startDensityVisualIfEnabled } from './visual-density'
 import { startSettingsVisualIfEnabled } from './visual-settings'
 import { startTerminalVisualIfEnabled } from './visual-terminal'
 import { startMultiSessionVisualIfEnabled, isolateVisualUserData } from './visual-multisession'
+import { startRowGeometryVisualIfEnabled, isolateRowGeometryUserData } from './visual-row-geometry'
 import { startApprovalVisualIfEnabled } from './visual-approval'
 import { startUsageVisualIfEnabled } from './visual-usage'
 import { startPerfIfEnabled } from './visual-perf'
@@ -37,6 +38,10 @@ let terminalService: TerminalService | null = null
 // settings service, so the multi-session visual run gets throwaway userData
 // (no-op unless PICODE_VISUAL_MULTI=1). Must run before app.whenReady.
 isolateVisualUserData()
+// Ticket-34 row-geometry harness pins through the REAL pin button (writes
+// the pin preference) — throwaway userData for it too (no-op unless
+// PICODE_VISUAL_ROW_GEOMETRY=1).
+isolateRowGeometryUserData()
 
 function createMainWindow(): BrowserWindow {
   const win = new BrowserWindow(createWindowOptions(path.join(__dirname, '../preload/index.js')))
@@ -126,6 +131,9 @@ app.whenReady().then(() => {
   startMultiSessionVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-25 badge/parked-pill harness — same seeding constraint.
   startApprovalVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  // Ticket-34 row-geometry harness — same seeding constraint (it also pins
+  // through the real button, which needs the seeded rows).
+  startRowGeometryVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
 
   // Renderer → host relay (Seam-1: the only chat channel the renderer has).
   ipcMain.on('chat:to-host', (_event, message: ParentToHost) => {

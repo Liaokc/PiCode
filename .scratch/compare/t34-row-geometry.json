@@ -1,0 +1,271 @@
+{
+  "rest": {
+    "pinTarget": {
+      "row": {
+        "left": 12,
+        "right": 308,
+        "top": 479,
+        "bottom": 511,
+        "width": 296
+      },
+      "dot": {
+        "left": 30,
+        "right": 37,
+        "top": 495,
+        "bottom": 495,
+        "width": 7
+      },
+      "title": {
+        "left": 46,
+        "right": 216,
+        "top": 487,
+        "bottom": 503,
+        "width": 170
+      },
+      "time": {
+        "left": 225,
+        "right": 269,
+        "top": 488.5,
+        "bottom": 501.5,
+        "width": 44,
+        "clientWidth": 44,
+        "scrollWidth": 44
+      },
+      "pin": {
+        "left": 278,
+        "right": 298,
+        "top": 485,
+        "bottom": 505,
+        "width": 20
+      },
+      "timeStyle": {
+        "visibility": "visible",
+        "opacity": "1",
+        "transitionDuration": "0.15s, 0.15s",
+        "textAlign": "right"
+      },
+      "pinStyle": {
+        "visibility": "hidden",
+        "opacity": "0",
+        "transitionDuration": "0.15s, 0.15s",
+        "color": "rgb(142, 142, 136)"
+      }
+    },
+    "groupRow": {
+      "row": {
+        "left": 12,
+        "right": 308,
+        "top": 249,
+        "bottom": 281,
+        "width": 296
+      },
+      "dot": {
+        "left": 30,
+        "right": 37,
+        "top": 265,
+        "bottom": 265,
+        "width": 7
+      },
+      "title": {
+        "left": 46,
+        "right": 216,
+        "top": 257,
+        "bottom": 273,
+        "width": 170
+      },
+      "time": {
+        "left": 225,
+        "right": 269,
+        "top": 258.5,
+        "bottom": 271.5,
+        "width": 44,
+        "clientWidth": 44,
+        "scrollWidth": 44
+      },
+      "pin": {
+        "left": 278,
+        "right": 298,
+        "top": 255,
+        "bottom": 275,
+        "width": 20
+      },
+      "timeStyle": {
+        "visibility": "visible",
+        "opacity": "1",
+        "transitionDuration": "0.15s, 0.15s",
+        "textAlign": "right"
+      },
+      "pinStyle": {
+        "visibility": "hidden",
+        "opacity": "0",
+        "transitionDuration": "0.15s, 0.15s",
+        "color": "rgb(142, 142, 136)"
+      }
+    }
+  },
+  "unpinnedHover": {
+    "row": {
+      "left": 12,
+      "right": 308,
+      "top": 479,
+      "bottom": 511,
+      "width": 296
+    },
+    "dot": {
+      "left": 30,
+      "right": 37,
+      "top": 495,
+      "bottom": 495,
+      "width": 7
+    },
+    "title": {
+      "left": 46,
+      "right": 216,
+      "top": 487,
+      "bottom": 503,
+      "width": 170
+    },
+    "time": {
+      "left": 225,
+      "right": 269,
+      "top": 488.5,
+      "bottom": 501.5,
+      "width": 44,
+      "clientWidth": 44,
+      "scrollWidth": 44
+    },
+    "pin": {
+      "left": 278,
+      "right": 298,
+      "top": 485,
+      "bottom": 505,
+      "width": 20
+    },
+    "timeStyle": {
+      "visibility": "hidden",
+      "opacity": "0",
+      "transitionDuration": "0.15s, 0.15s",
+      "textAlign": "right"
+    },
+    "pinStyle": {
+      "visibility": "visible",
+      "opacity": "1",
+      "transitionDuration": "0.15s, 0.15s",
+      "color": "rgb(142, 142, 136)"
+    }
+  },
+  "pinnedRest": {
+    "row": {
+      "left": 12,
+      "right": 308,
+      "top": 208,
+      "bottom": 240,
+      "width": 296
+    },
+    "dot": {
+      "left": 22,
+      "right": 29,
+      "top": 224,
+      "bottom": 224,
+      "width": 7
+    },
+    "title": {
+      "left": 38,
+      "right": 216,
+      "top": 216,
+      "bottom": 232,
+      "width": 178
+    },
+    "time": {
+      "left": 225,
+      "right": 269,
+      "top": 217.5,
+      "bottom": 230.5,
+      "width": 44,
+      "clientWidth": 44,
+      "scrollWidth": 44
+    },
+    "pin": {
+      "left": 278,
+      "right": 298,
+      "top": 214,
+      "bottom": 234,
+      "width": 20
+    },
+    "timeStyle": {
+      "visibility": "visible",
+      "opacity": "1",
+      "transitionDuration": "0.15s, 0.15s",
+      "textAlign": "right"
+    },
+    "pinStyle": {
+      "visibility": "visible",
+      "opacity": "1",
+      "transitionDuration": "0.15s, 0.15s",
+      "color": "rgb(236, 121, 49)"
+    }
+  },
+  "pinnedHover": {
+    "row": {
+      "left": 12,
+      "right": 308,
+      "top": 208,
+      "bottom": 240,
+      "width": 296
+    },
+    "dot": {
+      "left": 22,
+      "right": 29,
+      "top": 224,
+      "bottom": 224,
+      "width": 7
+    },
+    "title": {
+      "left": 38,
+      "right": 216,
+      "top": 216,
+      "bottom": 232,
+      "width": 178
+    },
+    "time": {
+      "left": 225,
+      "right": 269,
+      "top": 217.5,
+      "bottom": 230.5,
+      "width": 44,
+      "clientWidth": 44,
+      "scrollWidth": 44
+    },
+    "pin": {
+      "left": 278,
+      "right": 298,
+      "top": 214,
+      "bottom": 234,
+      "width": 20
+    },
+    "timeStyle": {
+      "visibility": "hidden",
+      "opacity": "0",
+      "transitionDuration": "0.15s, 0.15s",
+      "textAlign": "right"
+    },
+    "pinStyle": {
+      "visibility": "visible",
+      "opacity": "1",
+      "transitionDuration": "0.15s, 0.15s",
+      "color": "rgb(236, 121, 49)"
+    }
+  },
+  "showMoreCollapsed": {
+    "label": "Show more",
+    "moreTextLeft": 46,
+    "titleTextLeft": 46,
+    "rowLeft": 12
+  },
+  "showMoreExpanded": {
+    "label": "Show less",
+    "moreTextLeft": 46,
+    "titleTextLeft": 46,
+    "rowLeft": 12
+  }
+}
