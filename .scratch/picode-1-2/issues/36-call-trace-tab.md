@@ -6,7 +6,7 @@
 
 **Blocked by:** 30（性能 memo 基建）、31（tab 身份框架）、35（菜单入口槽位）。
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] 右键 View call trace 打开 Trace tab（任何会话，含 TUI 会话——只读读文件）
 - [x] host 纯函数载荷构建（六类块、usage 列、缺席降级）+ 契约纯增量往返
@@ -17,6 +17,7 @@
 
 ## Comments
 
+- 2026-09-02 (merge session): 操作者明示已验收 → merged as **9b3e3ef** (merge --no-ff onto main @ 簿记 sync；feat `599c885` + code-review `d523682` 重放，tracker `3f192e5` 去重丢弃)。唯一冲突 = 票文件对撞（code-review 评论 HEAD 侧已有、feat 中间态空）——例行取 HEAD 侧。main 终态审计：typecheck 绿，vitest **855/855**（67 files，+15 为 sessions-trace 表驱动用例），接缝幸存——TraceTab + trace.ts 载荷构建器 + index-service/preload/SidePanel 三层接线 + smoke 四 stage（trace_tab_open/entries/refresh/close）+ perf 预算脚本 trace-budget.mjs；27–35 全部既有 seam 完好，无冲突标记残留。**36 合入即解锁收官票 37**。
 - 2026-09-02 (requirements intake): 建票。原判「调用轨迹无语义」已被操作者实拍纠正（Q7），全票为全新需求。36/37 拆分 = 单上下文窗口体量限制（骨架 / 工具面）。波次：W4。
 - 2026-09-02 (implementation, t36-call-trace-tab): 全部交付。架构：`shared/sessions/trace.ts` 纯函数构建器（复用 parseSessionLines 容错；entry=一条 assistant 消息；输入节累积自上一 assistant 的 user/bashExecution(按 SDK convertToLlm 投影为 user 块)/toolResult 块，输出节 thinking/assistant/toolCall；duration=entry.timestamp−message.timestamp（Pi 自己落盘的请求起止）；usage 按 ADR-0002 自 assistant 消息 usage 推导、缺席→null 只显时间戳；compaction/branch_summary 视为上下文边界清空累积输入；system-prompt 块型在契约中但 Pi 不落盘故从不发射）。契约纯增量：新 `sessions:trace` invoke（同 sessions:follow 文件级家族，任何会话含 TUI 只读；chat contract 零改动）+ `modelId` 加进 RawSessionEntry（可选字段）。UI：TraceTab 默认全展开 + 长块 400 字截断/Show more（memo 行，块内局部 state）；头部=标题+统计行（调用数·总 tok·模型，缺席段隐藏）+ 打开所在目录（复用 reveal context-action）/刷新/关闭；entry 头=序号+模型 chip+stopReason 状态 chip（Completed/Tool use/Length limit/Aborted/Error）+IN·OUT·时长·时间。37 范围未越界（无搜索/块开关/展开收起切换/活跟随）。
 - 2026-09-02 (performance budget, ticket gate): `scripts/perf/trace-budget.mjs`（可复现驱动，CDP 驱真实 UI）实测：75 calls/0.19MB → 构建+IPC 2–4ms、开到首染 60ms、零 long task、DOM 3.7k 元素；250 calls/1.45MB → 8–15ms / 110ms / 1×68ms / 12.7k；500 calls/2.8MB → 15–26ms / 80ms / 1×54ms / 25.5k；1000 calls/5.6MB → 26–54ms / 385ms / 1×81ms / 51k。真实最大会话（253 calls/5.6MB）构建 10.3ms。结论：预算内，**未启用窗口化/懒展开**（ZCode 常规 75-call 规模 60ms 全展开直渲染；1000 calls 仍 <0.4s、单 long task <100ms；行 memo 化后 Show more 只重渲染单块）。实现中发现并修复：滚动 flex 容器内条目默认 flex-shrink 压扁（flex-shrink:0 修复）。
