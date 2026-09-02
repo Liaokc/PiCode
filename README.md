@@ -61,6 +61,9 @@ Standalone smoke entry points (`npm run smoke:host` / `smoke:interop` /
 `smoke:electron`) self-isolate the same way. `PICODE_SESSION_DIR` is also
 honored by `npm run package:verify`. Auth, models and settings always come
 from the real `~/.pi/agent` — only session writes are redirected.
+`npm run smoke:layout` (ticket 29) boots the built app on throwaway
+**userData** and drives real pointer drags: sidebar width clamp + reset,
+both pane widths persisted across a restart.
 
 Model usage aggregation folds model ids case-insensitively (a gateway echoing
 `glm-5.3-flash` for the configured `GLM-5.3-flash` counts as ONE model; the

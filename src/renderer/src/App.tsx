@@ -10,9 +10,10 @@ import {
 import { initialChatState } from '../../shared/chat-reducer'
 import type { SessionCommand } from '../../shared/contract'
 import { resolvePreviewPath } from '../../shared/preview/policy'
-import { initialShellUiState, shellUiReducer } from '../../shared/layout-model'
+import type { PreviewSelection } from '../../shared/preview/view-model'
+import { initialShellUiState, shellUiReducer, SIDEBAR_WIDTH_PX, clampSidebarWidth, type ShellUiAction } from '../../shared/layout-model'
 import { resolveKeybinding } from '../../shared/keymap'
-import { initialPanelState, normalizeRecentlyClosed, panelReducer } from '../../shared/panel-model'
+import { initialPanelState, normalizeRecentlyClosed, panelReducer, PANEL_DEFAULT_WIDTH_PX, clampPanelWidth, type PanelAction } from '../../shared/panel-model'
 import { initialDockState, dockReducer } from '../../shared/dock-model'
 import { initialBridgeFeedState, projectBridgeFeed } from '../../shared/bridge/feed'
 import { terminalFontStack } from '../../shared/terminal/font'
@@ -190,6 +191,10 @@ export default function App(): JSX.Element {
           auth: null,
           authScanning: false
         })
+        // Ticket 29: restore the persisted pane widths exactly once at boot,
+        // through the RAW dispatches — seeding must not re-persist.
+        dispatch({ type: 'set-sidebar-width', width: snapshot.preferences.sidebarWidth })
+        panelDispatch({ type: 'set-width', width: snapshot.preferences.panelWidth })
         setSettingsLoaded(true)
         const closed = normalizeRecentlyClosed(snapshot.preferences.recentlyClosedTabs)
         panelDispatch({ type: 'hydrate-recently-closed', entries: closed })
@@ -578,6 +583,42 @@ export default function App(): JSX.Element {
       .catch(() => undefined)
   }, [])
 
+  // ---- pane width persistence (ticket 29): both draggable panes behave
+  // alike. Components dispatch width actions only; THESE wrappers persist
+  // each real change to preferences (the reducer remains the clamp
+  // authority, so a no-op drag never touches disk). The boot seed bypasses
+  // them on purpose — restoring persisted widths must not re-persist.
+  const sidebarWidthRef = useRef(ui.sidebarWidth)
+  sidebarWidthRef.current = ui.sidebarWidth
+  const panelWidthRef = useRef(panel.width)
+  panelWidthRef.current = panel.width
+
+  const dispatchShellPersisting = useCallback(
+    (action: ShellUiAction): void => {
+      dispatch(action)
+      if (action.type === 'set-sidebar-width') {
+        const width = clampSidebarWidth(action.width)
+        if (width !== sidebarWidthRef.current) void handleSetPreferences({ sidebarWidth: width })
+      } else if (action.type === 'reset-sidebar-width') {
+        if (sidebarWidthRef.current !== SIDEBAR_WIDTH_PX) void handleSetPreferences({ sidebarWidth: SIDEBAR_WIDTH_PX })
+      }
+    },
+    [handleSetPreferences]
+  )
+
+  const dispatchPanelPersisting = useCallback(
+    (action: PanelAction): void => {
+      panelDispatch(action)
+      if (action.type === 'set-width') {
+        const width = clampPanelWidth(action.width)
+        if (width !== panelWidthRef.current) void handleSetPreferences({ panelWidth: width })
+      } else if (action.type === 'reset-width') {
+        if (panelWidthRef.current !== PANEL_DEFAULT_WIDTH_PX) void handleSetPreferences({ panelWidth: PANEL_DEFAULT_WIDTH_PX })
+      }
+    },
+    [handleSetPreferences]
+  )
+
   const handleRefreshAuth = useCallback((): void => {
     setSettings((prev) => ({ ...prev, authScanning: true }))
     void window.picode.settings
@@ -914,6 +955,8 @@ export default function App(): JSX.Element {
       <TitleBar ui={ui} dispatch={dispatch} dispatchDock={dockDispatch} />
       <Sidebar
         open={ui.sidebarOpen}
+        width={ui.sidebarWidth}
+        dispatch={dispatchShellPersisting}
         sessions={sessions}
         activeSessionId={focusedId}
         followedFile={followedFile}
@@ -993,7 +1036,7 @@ export default function App(): JSX.Element {
           <SidePanel
             open={ui.sidePanelOpen}
             panel={panel}
-            dispatch={panelDispatch}
+            dispatch={dispatchPanelPersisting}
             workspaceCwd={chat.session?.cwd ?? null}
             onPreviewNavigate={handlePreviewNavigate}
           />

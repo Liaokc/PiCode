@@ -18,6 +18,7 @@
     "smoke:usage": "node scripts/smoke/usage-smoke.ts",
     "smoke:interop": "npm run build && node scripts/smoke/interop-smoke.ts",
     "smoke:electron": "npm run build && node scripts/smoke/electron-smoke.mjs",
+    "smoke:layout": "npm run build && node scripts/smoke/layout-persist-smoke.mjs",
     "smoke": "bash scripts/smoke/run-all.sh",
     "package": "node scripts/package.mjs",
     "package:verify": "node scripts/package.mjs --verify",

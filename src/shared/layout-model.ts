@@ -7,6 +7,20 @@
 /** Left navigation rail width (screenshot baseline ~318px). */
 export const SIDEBAR_WIDTH_PX = 320
 
+/** Sidebar width drag range (ticket 29): narrow enough to keep the app
+ * usable, wide enough for long task titles. */
+export const SIDEBAR_MIN_WIDTH_PX = 240
+export const SIDEBAR_MAX_WIDTH_PX = 520
+
+/** Shared with the sidebar drag path (ticket 29): the rAF write and the
+ * reducer commit must clamp identically or the sidebar jumps on commit —
+ * the same rule clampPanelWidth has enforced for the side panel since
+ * ticket 30. */
+export function clampSidebarWidth(width: number): number {
+  if (Number.isNaN(width)) return SIDEBAR_WIDTH_PX
+  return Math.min(SIDEBAR_MAX_WIDTH_PX, Math.max(SIDEBAR_MIN_WIDTH_PX, Math.round(width)))
+}
+
 /** Collapsed side panel width for tab views in screenshot 03 composition. */
 export const SIDE_PANEL_WIDTH_PX = 420
 
@@ -23,17 +37,23 @@ export type AppView = 'workspace' | 'settings'
 
 export interface ShellUiState {
   sidebarOpen: boolean
+  /** Sidebar width in px (ticket 29): dragged at the aside's right edge,
+   * clamped by clampSidebarWidth, seeded from preferences at boot and
+   * committed back to preferences on pointerup. */
+  sidebarWidth: number
   sidePanelOpen: boolean
   view: AppView
 }
 
 /** Launch state must match reference screenshot 02: sidebar visible, panel collapsed. */
 export function initialShellUiState(): ShellUiState {
-  return { sidebarOpen: true, sidePanelOpen: false, view: 'workspace' }
+  return { sidebarOpen: true, sidebarWidth: SIDEBAR_WIDTH_PX, sidePanelOpen: false, view: 'workspace' }
 }
 
 export type ShellUiAction =
   | { type: 'toggle-sidebar' }
+  | { type: 'set-sidebar-width'; width: number }
+  | { type: 'reset-sidebar-width' }
   | { type: 'toggle-side-panel' }
   | { type: 'open-side-panel' }
   | { type: 'close-side-panel' }
@@ -44,6 +64,12 @@ export function shellUiReducer(state: ShellUiState, action: ShellUiAction): Shel
   switch (action.type) {
     case 'toggle-sidebar':
       return { ...state, sidebarOpen: !state.sidebarOpen }
+    case 'set-sidebar-width': {
+      const width = clampSidebarWidth(action.width)
+      return state.sidebarWidth === width ? state : { ...state, sidebarWidth: width }
+    }
+    case 'reset-sidebar-width':
+      return state.sidebarWidth === SIDEBAR_WIDTH_PX ? state : { ...state, sidebarWidth: SIDEBAR_WIDTH_PX }
     case 'toggle-side-panel':
       return { ...state, sidePanelOpen: !state.sidePanelOpen }
     case 'open-side-panel':
