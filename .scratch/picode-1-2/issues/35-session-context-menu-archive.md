@@ -6,7 +6,7 @@
 
 **Blocked by:** 28（未读模型 + 点槽语义）、34（TaskItem 行几何先行）、33（Trash 钮与工具区序列化）。
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 - [ ] 右键菜单九项就位（trace 项入座）；Mark as Unread/Read 接票 28 手动覆盖位
 - [ ] 归档：悬停钮临时替换点槽；两视图列表消失、⌘K 可达、置顶归档隐含取消置顶、会话文件零改动
@@ -18,3 +18,14 @@
 ## Comments
 
 - 2026-09-02 (requirements intake): 建票。grilling Q6（①-i ②③按推荐）+ Q7（九项子集 + 未读转正 + 轨迹转正）定稿。归类：全新需求。波次：W3（TaskItem 唯一写者）。
+- 2026-09-02 (implement session, t35-context-menu-archive): 全项落地，feat sha `1ee6c6a`。
+  - 九项菜单：`sessionMenuGroups` 纯模型（Seam-1 表驱动），Pin/Rename/Archive/Mark as Unread↔Read │ Reveal/Copy×3 │ View call trace 入座（trace 点击为 no-op，消费随票 36）；electron smoke 断言 9 项 / 3 组 / ZCode 顺序。
+  - 归档：`archivedSessions` 偏好 + `filterArchived` 纯投影（两视图 + Pinned 均消费，⌘K 喂未过滤索引，「隐藏永不使会话不可达」不变式测试在案）；置顶归档隐含取消置顶（visual 断言）；Mark as Unread/Read 接 `setManualUnread`（逐会话 upsert，与读追赶者互不覆盖）。
+  - 悬停钮临时替换点槽：同槽锚点（visual 实测 button centerX == dot slot centerX 33.5）、零位移（titleLeft 46→46）、无重叠（right 41.5 < 46）；真输入 hover 驱动。
+  - Trash 钮 → Archived 列表视图（整栏换装）+ 一键恢复；空态文案与「全部归档」提示就位。
+  - host 只读 IPC `sessions:context-action`（reveal / copy，payload 主进程防御性解析，限容日志）；smoke 断言 copy-session-id / copy-task-path IPC 触发（reveal 不进 smoke——避免弹 Finder）。
+  - 验证：typecheck / lint / vitest 824 绿；`visual:context-menu` 五帧全绿（.scratch/compare/t35-*）；electron smoke 全阶段绿（含 ticket-35 stage）。
+  - 备注：① 归档行点槽替换的 CSS 对「有状态点的行」同样生效（run/unread 点 hover 隐去），visual 种子全为静默行（无点），点隐去未单独立帧——机制与空槽同一条选择器路径；② merge-ticket.sh 的 ticket Status 门槛只查 picode-1-0/1-1 目录，1-2 工单不经过该检查（脚本待更新，本票已按惯例把 ready-for-human 同步进分支）。
+  - 不自行 merge —— 操作者执行：`bash scripts/merge-ticket.sh 35`
+- 2026-09-02 (operator feedback round 1): 归档悬停钮弃用垃圾桶图形（与「删除」语义撞车），改用新增的归档盒描边图标 ArchiveBoxIcon（12px）。帧已重拍，不变量全部重验。sha `4d694f4`。
+- 2026-09-02 (operator feedback round 1 cont.): 工具区「Archived tasks」入口钮同步换成归档盒——归档链路上不再有垃圾桶图形；归档 toast 与「全部归档」空态文案从 'trash button' 改为 'Archived view'。帧重拍重验。sha `3591fce`。
