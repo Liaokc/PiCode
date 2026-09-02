@@ -77,6 +77,58 @@ export default function EmptyState({
   )
   const idleChat = initialChatState()
 
+  // Round-2 feedback (ticket 29): the empty state degrades with the main
+  // zone instead of overflowing it. The quick-start chips hide (visibility
+  // — no reflow jump) once they would run wider than the composer card,
+  // and the greeting shrinks to stay on ONE line no wider than the composer
+  // (ZCode behavior). One ResizeObserver drives both off the card's width.
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const greetingRef = useRef<HTMLHeadingElement | null>(null)
+  const chipsRef = useRef<HTMLDivElement | null>(null)
+  const [chipsVisible, setChipsVisible] = useState(true)
+  const [greetingFont, setGreetingFont] = useState<number | null>(null)
+
+  useEffect(() => {
+    const root = rootRef.current
+    if (!root || typeof ResizeObserver === 'undefined') return
+    const GREETING_BASE_PX = 33
+    const measure = (): void => {
+      const composer = root.querySelector('.composer')
+      if (!(composer instanceof HTMLElement)) return
+      const target = composer.clientWidth
+      const greeting = greetingRef.current
+      if (greeting !== null && target > 0) {
+        // Measure on an OFF-SCREEN CLONE — the live node is React-owned:
+        // direct style writes fight the reconciler (a skipped commit leaves
+        // them stranded on the DOM, state and element disagreeing). The fit
+        // is verified on the clone (font scaling is sub-linear), stepping
+        // down until the line is within the target.
+        const probe = greeting.cloneNode(true) as HTMLElement
+        probe.style.position = 'absolute'
+        probe.style.visibility = 'hidden'
+        root.appendChild(probe)
+        let size = GREETING_BASE_PX
+        const widthAt = (px: number): number => {
+          probe.style.fontSize = `${px}px`
+          return probe.getBoundingClientRect().width
+        }
+        if (widthAt(size) > target) {
+          size = Math.max(13, Math.ceil((size * (target - 2)) / widthAt(size)))
+          while (size > 13 && widthAt(size) > target) size -= 1
+        }
+        probe.remove()
+        // Base size fits as-is → null (React leaves the CSS default).
+        setGreetingFont(size === GREETING_BASE_PX ? null : size)
+      }
+      const chips = chipsRef.current
+      if (chips !== null) setChipsVisible(chips.scrollWidth <= target + 1)
+    }
+    const observer = new ResizeObserver(measure)
+    observer.observe(root)
+    measure()
+    return () => observer.disconnect()
+  }, [greeting])
+
   /** undefined = follow the live default; otherwise the user's explicit pick. */
   const [override, setOverride] = useState<string | undefined>(undefined)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -112,9 +164,15 @@ export default function EmptyState({
   }
 
   return (
-    <div className="empty-state">
+    <div className="empty-state" ref={rootRef}>
       <WatermarkPi />
-      <h1 className="empty-greeting">{greeting}</h1>
+      <h1
+        className="empty-greeting"
+        ref={greetingRef}
+        style={greetingFont !== null ? { fontSize: `${greetingFont}px` } : undefined}
+      >
+        {greeting}
+      </h1>
 
       <div className="newtask-card">
         <div className="newtask-chipbar" ref={chipbarRef}>
@@ -191,7 +249,13 @@ export default function EmptyState({
         />
       </div>
 
-      <div className="quick-chips" role="list" aria-label="Quick starts">
+      <div
+        className="quick-chips"
+        ref={chipsRef}
+        role="list"
+        aria-label="Quick starts"
+        style={{ visibility: chipsVisible ? 'visible' : 'hidden' }}
+      >
         {QUICK_START_CHIPS.map(({ label, icon: Icon }) => (
           <button key={label} type="button" className="quick-chip" role="listitem">
             <Icon size={14} />

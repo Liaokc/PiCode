@@ -153,12 +153,18 @@ kbd {
 /* ---------- sidebar (nav rail + task list skeleton) ---------- */
 
 /* Width (ticket 29): the shell state's inline width owns the geometry —
-   var(--sidebar-w) is only the pre-hydration fallback. flex-shrink: 0
-   replaces the old min-width lock so the 240–520px drag range governs. */
+   var(--sidebar-w) is only the pre-hydration fallback. Round-2 floor: the
+   pane yields before the session view does — max-width = window − other
+   pane − 420px main floor (the CSS mirror of the commit clamp in App;
+   --panel-w is 0 while the panel is closed), floored at the pane min.
+   z-index keeps the panes ABOVE the empty-state watermark: ZCode covers
+   the logo, never the reverse. */
 .sidebar {
   position: relative;
   flex-shrink: 0;
   width: var(--sidebar-w);
+  max-width: max(240px, calc(100% - var(--panel-w, 0px) - 420px));
+  z-index: 1;
   background: var(--bg-sidebar);
   padding-top: var(--titlebar-h);
   display: flex;
@@ -823,7 +829,10 @@ kbd {
 
 .main-zone {
   flex: 1;
-  min-width: 0;
+  /* Round-2 floor (ticket 29): however wide the panes get, the session view
+     keeps 420px — one-line placeholder + compact chip row. The panes'
+     max-widths guarantee it; this is the belt to their braces. */
+  min-width: 420px;
   min-height: 0;
   background: var(--bg-main);
   position: relative;
@@ -846,6 +855,11 @@ kbd {
 }
 
 .empty-greeting {
+  /* Round-2 feedback: one line, never wider than the composer — the Empty
+     State shrinks the font to fit (width: fit-content makes scrollWidth
+     report the text width for the measurement). */
+  width: fit-content;
+  white-space: nowrap;
   margin: 0 0 42px;
   font-size: 33px;
   font-weight: 500;
@@ -2327,12 +2341,14 @@ button.heat:hover {
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  /* ZCode drag rule (ticket-29 feedback): a dragged pane HOLDS its width —
-     the main zone absorbs all compression, panes never squeeze each other.
-     max-width: 100% is the overflow guard for a persisted width beyond the
-     window (caps at the row width instead of clipping off-screen). */
+  /* ZCode drag rule (ticket 29 + round-2 floor): the pane holds its width
+     until it would steal the main zone's 420px floor — max-width = this row
+     (window − sidebar) − floor (the CSS mirror of the commit clamp in App;
+     --sidebar-w is only the pre-hydration fallback here), floored at the
+     pane min. */
   flex-shrink: 0;
-  max-width: 100%;
+  max-width: max(280px, calc(100% - 420px));
+  z-index: 1;
 }
 
 .panel-resizer {

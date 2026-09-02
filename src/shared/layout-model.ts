@@ -12,6 +12,12 @@ export const SIDEBAR_WIDTH_PX = 320
 export const SIDEBAR_MIN_WIDTH_PX = 240
 export const SIDEBAR_MAX_WIDTH_PX = 520
 
+/** Main-zone floor (ticket-29 feedback round 2): however wide the panes get,
+ * the session view keeps at least this much — enough for a one-line composer
+ * placeholder and the compact chip row. Both pane max-widths are
+ * `window − other pane − this`, so the panes never steal the last of it. */
+export const MAIN_ZONE_MIN_WIDTH_PX = 420
+
 /** Shared with the sidebar drag path (ticket 29): the rAF write and the
  * reducer commit must clamp identically or the sidebar jumps on commit —
  * the same rule clampPanelWidth has enforced for the side panel since

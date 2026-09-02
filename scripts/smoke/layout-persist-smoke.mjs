@@ -7,9 +7,9 @@
  *   boot 1  sidebar width starts at the 320px default
  *           → drag the sidebar resizer (+80 → 400, then past both clamps)
  *           → double-click resets to 320
- *           → final drag to 400; open the side panel, drag it to 620
- *           → picode-settings.json carries sidebarWidth 400 + panelWidth 620
- *   boot 2  sidebar comes back at 400; the reopened panel at 620
+ *           → final drag to 400; open the side panel, drag it to 560
+ *           → picode-settings.json carries sidebarWidth 400 + panelWidth 560
+ *   boot 2  sidebar comes back at 400; the reopened panel at 560
  *           → double-click resets the sidebar to 320 again
  *
  * Any missed step exits non-zero. Not part of `npm test`; run standalone:
@@ -28,11 +28,11 @@ const CDP_PORT = 9344
 const ROOT = path.resolve(new URL('..', import.meta.url).pathname, '..')
 const SIDEBAR_DEFAULT = 320
 const SIDEBAR_COMPACT = 400
-const SIDEBAR_FINAL = 520
+let SIDEBAR_FINAL = 400 // overwritten at runtime: the floor-clamped bound at panel 560
 const SIDEBAR_MIN = 240
 const SIDEBAR_MAX = 520
 const PANEL_DEFAULT = 420
-const PANEL_FINAL = 620
+const PANEL_FINAL = 560 // comfortably inside the floor bound at every window width
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -142,12 +142,25 @@ async function widthOf(cdp, selector) {
 }
 
 async function waitForWidth(cdp, selector, expected, label) {
-  await waitForProbe(
-    cdp,
-    `document.querySelector(${JSON.stringify(selector)})?.offsetWidth === ${expected}`,
-    8_000,
-    label
-  )
+  try {
+    await waitForProbe(
+      cdp,
+      `document.querySelector(${JSON.stringify(selector)})?.offsetWidth === ${expected}`,
+      8_000,
+      label
+    )
+  } catch {
+    const diag = (await cdp.evaluate(
+      `JSON.stringify({
+        width: document.querySelector(${JSON.stringify(selector)})?.offsetWidth,
+        inline: document.querySelector(${JSON.stringify(selector)})?.style.width,
+        computed: getComputedStyle(document.querySelector(${JSON.stringify(selector)})).width,
+        maxWidth: getComputedStyle(document.querySelector(${JSON.stringify(selector)})).maxWidth,
+        minWidth: getComputedStyle(document.querySelector(${JSON.stringify(selector)})).minWidth
+      })`
+    ).catch(() => 'unavailable'))
+    throw new Error(`${label} timed out; state: ${diag}`)
+  }
 }
 
 async function rectCenter(cdp, selector) {
@@ -273,22 +286,22 @@ try {
   console.log('SMOKE sidebar_dblclick_reset_ok', String(SIDEBAR_DEFAULT))
 
   // Commit the width the restart assertion will look for, then squeeze the
-  // main zone: sidebar 400 + panel 620 → the composer enters the compact
+  // main zone: sidebar 400 + panel 560 → the composer enters the compact
   // stage (text label on the model chip, fewer carets).
   await drag(cdp, '.sidebar-resizer', SIDEBAR_COMPACT - SIDEBAR_DEFAULT, 0)
   await waitForWidth(cdp, '.sidebar', SIDEBAR_COMPACT, 'final sidebar drag never landed on 400')
   console.log('SMOKE sidebar_compact_width_ok', String(SIDEBAR_COMPACT))
 
-  // The side panel: open it, drag its resizer -200 → 620 (same commit path).
+  // The side panel: open it, drag its resizer -140 → 560 (same commit path).
   await pressAltCmdB(cdp)
   await waitForProbe(cdp, `document.querySelector('.side-panel') !== null`, 8_000, 'side panel never opened')
   await waitForWidth(cdp, '.side-panel', PANEL_DEFAULT, 'side panel never opened at its 420px default')
-  await drag(cdp, '.panel-resizer', -200, 0)
-  await waitForWidth(cdp, '.side-panel', PANEL_FINAL, 'panel drag never landed on 620')
+  await drag(cdp, '.panel-resizer', -140, 0)
+  await waitForWidth(cdp, '.side-panel', PANEL_FINAL, 'panel drag never landed on 560')
   console.log('SMOKE panel_drag_ok', `${PANEL_DEFAULT}→${PANEL_FINAL}`)
 
   // ZCode drag rule: BOTH panes hold their widths — the main zone absorbs.
-  // With sidebar 400 + panel 620 the composer (~356px) is in the compact
+  // With sidebar 400 + panel 560 the composer (~356px) is in the compact
   // stage: the access chip sheds its text, the model chip keeps a label.
   const compactState = await cdp.evaluate(
     `JSON.stringify({
@@ -312,37 +325,37 @@ try {
   console.log('SMOKE panes_hold_ok', `sidebar=${compact.sidebar} panel=${compact.panel}`)
   console.log('SMOKE composer_compact_ok', compactState)
 
-  // Push further: sidebar 520 (its max) with the panel at 620 → the composer
-  // (~236px) goes minimal — icon-only model chip, no carets. Both panes
-  // still hold (observation 5/8: the other pane never moves).
-  await drag(cdp, '.sidebar-resizer', SIDEBAR_FINAL - SIDEBAR_COMPACT, 0)
-  await waitForWidth(cdp, '.sidebar', SIDEBAR_FINAL, 'sidebar never reached its 520px max')
-  const minimalOk = await waitForProbe(
-    cdp,
-    `(${MODEL_CHIP_TEXT}).length === 0 && ${CARET_COUNT} === 0 && document.querySelector('.composer .cmp-chip.cmp-muted svg') !== null`,
-    8_000,
-    'composer never reached the minimal (icon-only) stage'
+  // Round-2 floor: push the sidebar toward its 520 ceiling with the panel at
+  // 560 — the commit clamps at window − panel − 420 (computed live: the
+  // viewport can differ a few px from the nominal window size), the panel
+  // must not move (ZCode rule), the main zone holds its floor, and the
+  // empty state degrades (chips hidden, greeting still one line) instead of
+  // overflowing.
+  const floorBound = await cdp.evaluate(
+    `Math.max(240, window.innerWidth - document.querySelector('.side-panel').offsetWidth - 420)`
   )
-  if (!minimalOk) {
-    const diag = (await cdp.evaluate(
-      `JSON.stringify({
-        sidebar: document.querySelector('.sidebar')?.offsetWidth,
-        panel: document.querySelector('.side-panel')?.offsetWidth,
-        main: document.querySelector('.main-zone')?.offsetWidth,
-        emptyState: document.querySelector('.empty-state')?.offsetWidth,
-        composer: document.querySelector('.composer')?.offsetWidth,
-        composerRect: document.querySelector('.composer')?.getBoundingClientRect().width,
-        accessText: document.querySelector('.composer .cmp-chip.cmp-access')?.textContent?.trim() ?? '',
-        modelText: (${MODEL_CHIP_TEXT}),
-        carets: ${CARET_COUNT},
-        svgPresent: document.querySelector('.composer .cmp-chip.cmp-muted svg') !== null,
-        modelChipTag: document.querySelector('.composer .cmp-chip.cmp-muted')?.firstElementChild?.tagName ?? null,
-        viewport: window.innerWidth
-      })`
-    ).catch(() => 'unavailable'))
-    fail(`composer never reached the minimal (icon-only) stage; layout: ${diag}`)
-  }
-  console.log('SMOKE composer_minimal_ok')
+  SIDEBAR_FINAL = floorBound
+  await drag(cdp, '.sidebar-resizer', SIDEBAR_MAX - SIDEBAR_COMPACT, 0)
+  await waitForWidth(cdp, '.sidebar', floorBound, 'sidebar never clamped at the main-zone floor bound')
+  const floorState = await cdp.evaluate(
+    `JSON.stringify({
+      sidebar: document.querySelector('.sidebar')?.offsetWidth,
+      panel: document.querySelector('.side-panel')?.offsetWidth,
+      main: document.querySelector('.main-zone')?.offsetWidth,
+      chipsHidden: getComputedStyle(document.querySelector('.quick-chips')).visibility === 'hidden',
+      greetingOneLine: (document.querySelector('.empty-greeting')?.getBoundingClientRect().height ?? 999) < 50,
+      greetingWidth: document.querySelector('.empty-greeting')?.getBoundingClientRect().width ?? -1,
+      greetingFontPx: document.querySelector('.empty-greeting')?.style.fontSize ?? '',
+      composerInner: document.querySelector('.composer')?.clientWidth ?? -1,
+      greetingFits: (document.querySelector('.empty-greeting')?.getBoundingClientRect().width ?? 9999) <= (document.querySelector('.composer')?.clientWidth ?? 0)
+    })`
+  )
+  const floor = JSON.parse(floorState)
+  if (floor.panel !== PANEL_FINAL) fail(`the panel moved while the sidebar was being dragged: ${floorState}`)
+  if (floor.main < 420) fail(`main-zone floor (420px) violated: ${floorState}`)
+  if (!floor.chipsHidden) fail(`quick-start chips never hid at the floor: ${floorState}`)
+  if (!floor.greetingOneLine || !floor.greetingFits) fail(`greeting never fit one line within the composer: ${floorState}`)
+  console.log('SMOKE main_floor_ok', floorState)
 
   // The preferences document on disk must carry BOTH widths (persistence).
   await waitForPersistedWidths(userDataDir, SIDEBAR_FINAL, PANEL_FINAL)
@@ -361,7 +374,7 @@ try {
 
   await pressAltCmdB(cdp2)
   await waitForProbe(cdp2, `document.querySelector('.side-panel') !== null`, 8_000, 'side panel never opened (boot 2)')
-  await waitForWidth(cdp2, '.side-panel', PANEL_FINAL, 'side panel did not restore its persisted 620px width after restart')
+  await waitForWidth(cdp2, '.side-panel', PANEL_FINAL, 'side panel did not restore its persisted 560px width after restart')
   console.log('SMOKE panel_persisted_after_restart_ok', String(PANEL_FINAL))
 
   await doubleClick(cdp2, '.sidebar-resizer')

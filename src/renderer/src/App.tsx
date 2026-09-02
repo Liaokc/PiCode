@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type JSX } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type JSX } from 'react'
 import {
   awaitingApprovalSessionIds,
   focusedSession,
@@ -11,9 +11,9 @@ import { initialChatState } from '../../shared/chat-reducer'
 import type { SessionCommand } from '../../shared/contract'
 import { resolvePreviewPath } from '../../shared/preview/policy'
 import type { PreviewSelection } from '../../shared/preview/view-model'
-import { initialShellUiState, shellUiReducer, SIDEBAR_WIDTH_PX, clampSidebarWidth, type ShellUiAction } from '../../shared/layout-model'
+import { initialShellUiState, shellUiReducer, SIDEBAR_WIDTH_PX, SIDEBAR_MIN_WIDTH_PX, MAIN_ZONE_MIN_WIDTH_PX, clampSidebarWidth, type ShellUiAction } from '../../shared/layout-model'
 import { resolveKeybinding } from '../../shared/keymap'
-import { initialPanelState, normalizeRecentlyClosed, panelReducer, PANEL_DEFAULT_WIDTH_PX, clampPanelWidth, type PanelAction } from '../../shared/panel-model'
+import { initialPanelState, normalizeRecentlyClosed, panelReducer, PANEL_DEFAULT_WIDTH_PX, PANEL_MIN_WIDTH_PX, clampPanelWidth, type PanelAction } from '../../shared/panel-model'
 import { initialDockState, dockReducer } from '../../shared/dock-model'
 import { initialBridgeFeedState, projectBridgeFeed } from '../../shared/bridge/feed'
 import { terminalFontStack } from '../../shared/terminal/font'
@@ -583,38 +583,62 @@ export default function App(): JSX.Element {
       .catch(() => undefined)
   }, [])
 
-  // ---- pane width persistence (ticket 29): both draggable panes behave
-  // alike. Components dispatch width actions only; THESE wrappers persist
-  // each real change to preferences (the reducer remains the clamp
-  // authority, so a no-op drag never touches disk). The boot seed bypasses
-  // them on purpose — restoring persisted widths must not re-persist.
+  // ---- pane width persistence + main-zone floor (ticket 29 + round-2
+  // feedback): components dispatch width actions only; THESE wrappers clamp
+  // each commit to `window − other pane − MAIN_ZONE_MIN_WIDTH_PX` — the
+  // exact bound the CSS max-widths render with, so committed state always
+  // equals the rendered layout — then persist real changes (a no-op drag
+  // never touches disk). The boot seed bypasses them on purpose —
+  // restoring persisted widths must not re-persist.
   const sidebarWidthRef = useRef(ui.sidebarWidth)
   sidebarWidthRef.current = ui.sidebarWidth
   const panelWidthRef = useRef(panel.width)
   panelWidthRef.current = panel.width
+  const sidebarOpenRef = useRef(ui.sidebarOpen)
+  sidebarOpenRef.current = ui.sidebarOpen
+  const panelOpenRef = useRef(ui.sidePanelOpen)
+  panelOpenRef.current = ui.sidePanelOpen
 
   const dispatchShellPersisting = useCallback(
     (action: ShellUiAction): void => {
-      dispatch(action)
       if (action.type === 'set-sidebar-width') {
-        const width = clampSidebarWidth(action.width)
+        const bound = Math.max(
+          SIDEBAR_MIN_WIDTH_PX,
+          window.innerWidth - (panelOpenRef.current ? panelWidthRef.current : 0) - MAIN_ZONE_MIN_WIDTH_PX
+        )
+        const width = Math.min(clampSidebarWidth(action.width), bound)
+        dispatch({ type: 'set-sidebar-width', width })
         if (width !== sidebarWidthRef.current) void handleSetPreferences({ sidebarWidth: width })
-      } else if (action.type === 'reset-sidebar-width') {
-        if (sidebarWidthRef.current !== SIDEBAR_WIDTH_PX) void handleSetPreferences({ sidebarWidth: SIDEBAR_WIDTH_PX })
+        return
       }
+      if (action.type === 'reset-sidebar-width') {
+        dispatch(action)
+        if (sidebarWidthRef.current !== SIDEBAR_WIDTH_PX) void handleSetPreferences({ sidebarWidth: SIDEBAR_WIDTH_PX })
+        return
+      }
+      dispatch(action)
     },
     [handleSetPreferences]
   )
 
   const dispatchPanelPersisting = useCallback(
     (action: PanelAction): void => {
-      panelDispatch(action)
       if (action.type === 'set-width') {
-        const width = clampPanelWidth(action.width)
+        const bound = Math.max(
+          PANEL_MIN_WIDTH_PX,
+          window.innerWidth - (sidebarOpenRef.current ? sidebarWidthRef.current : 0) - MAIN_ZONE_MIN_WIDTH_PX
+        )
+        const width = Math.min(clampPanelWidth(action.width), bound)
+        panelDispatch({ type: 'set-width', width })
         if (width !== panelWidthRef.current) void handleSetPreferences({ panelWidth: width })
-      } else if (action.type === 'reset-width') {
-        if (panelWidthRef.current !== PANEL_DEFAULT_WIDTH_PX) void handleSetPreferences({ panelWidth: PANEL_DEFAULT_WIDTH_PX })
+        return
       }
+      if (action.type === 'reset-width') {
+        panelDispatch(action)
+        if (panelWidthRef.current !== PANEL_DEFAULT_WIDTH_PX) void handleSetPreferences({ panelWidth: PANEL_DEFAULT_WIDTH_PX })
+        return
+      }
+      panelDispatch(action)
     },
     [handleSetPreferences]
   )
@@ -951,7 +975,18 @@ export default function App(): JSX.Element {
   const sessionLabel = focused?.name ?? chat.session?.cwd.split('/').pop() ?? null
 
   return (
-    <div className="app-shell">
+    <div
+      className="app-shell"
+      style={
+        {
+          // Pane bounds for the CSS max-widths (round-2 feedback): each pane
+          // yields before the main zone's floor does. 0 while a pane is
+          // closed.
+          '--sidebar-w': ui.sidebarOpen ? `${ui.sidebarWidth}px` : '0px',
+          '--panel-w': ui.sidePanelOpen ? `${panel.width}px` : '0px'
+        } as CSSProperties
+      }
+    >
       <TitleBar ui={ui} dispatch={dispatch} dispatchDock={dockDispatch} />
       <Sidebar
         open={ui.sidebarOpen}

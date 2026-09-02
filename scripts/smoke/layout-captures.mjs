@@ -4,10 +4,11 @@
  * userData (PICODE_LAYOUT_SMOKE_USER_DATA) and photographs the acceptance
  * states the assertions in layout-persist-smoke.mjs verify —
  *
- *   1-default.png                  sidebar 320 (screenshot-02 baseline)
- *   2-sidebar-max-520.png          sidebar at its 520px ceiling
- *   3-compact-sidebar400-panel620  panes crowd the main zone → compact composer
- *   4-minimal-sidebar520-panel620  tightest layout → icon-only composer
+ *   1-default-sidebar-320.png          launch baseline
+ *   2-sidebar-max-520.png              sidebar at its 520px ceiling
+ *   3-floor-sidebar400-panel560.png    the 420px main-zone floor: compact composer,
+ *                                      their bounds, compact composer,
+ *                                      quick-start chips hidden
  *
  * Usage: npm run build && npm run visual:layout
  * Dev-app serialization: fixed CDP port 9346; one instance at a time.
@@ -181,27 +182,19 @@ try {
   await sleep(300)
   await capture(cdp, OUT_DIR, '2-sidebar-max-520.png')
 
-  // 3 — ZCode observation 5/7 shape: sidebar 400 + panel 620, the composer
-  //     in the compact stage (access icon, model name, strength bar).
+  // 3 — the round-2 main-zone floor: sidebar 400 + panel 560 (the tightest
+  //     layout a 1440 window allows) — panes at their bounds, compact
+  //     composer, quick-start chips hidden.
   await drag(cdp, '.sidebar-resizer', -120)
   await waitForWidth(cdp, '.sidebar', 400, 'sidebar 400')
   await pressAltCmdB(cdp)
   await waitForProbe(cdp, `document.querySelector('.side-panel') !== null`, 8_000, 'side panel never opened')
   await waitForWidth(cdp, '.side-panel', 420, 'side panel default width')
-  await drag(cdp, '.panel-resizer', -200)
-  await waitForWidth(cdp, '.side-panel', 620, 'panel 620')
+  await drag(cdp, '.panel-resizer', -140)
+  await waitForWidth(cdp, '.side-panel', 560, 'panel 560')
   await waitForProbe(cdp, `document.querySelector('.composer .cmp-think-bar') !== null`, 8_000, 'think bar never appeared')
   await sleep(500)
-  await capture(cdp, OUT_DIR, '3-compact-sidebar400-panel620.png')
-
-  // 4 — ZCode observation 8 shape: sidebar 520 + panel 620, both panes hold,
-  //     the composer in the minimal (icon-only) stage.
-  await drag(cdp, '.sidebar-resizer', 120)
-  await waitForWidth(cdp, '.sidebar', 520, 'sidebar max again')
-  await waitForWidth(cdp, '.side-panel', 620, 'panel held its width (ZCode drag rule)')
-  await waitForProbe(cdp, `document.querySelectorAll('.composer .cmp-caret').length === 0`, 8_000, 'minimal stage never reached')
-  await sleep(500)
-  await capture(cdp, OUT_DIR, '4-minimal-sidebar520-panel620.png')
+  await capture(cdp, OUT_DIR, '3-floor-sidebar400-panel560.png')
 
   console.log('CAPTURES done')
 } catch (err) {

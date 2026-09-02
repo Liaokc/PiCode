@@ -4,12 +4,14 @@ import {
   SIDEBAR_MAX_WIDTH_PX,
   SIDEBAR_MIN_WIDTH_PX,
   SIDEBAR_WIDTH_PX,
+  MAIN_ZONE_MIN_WIDTH_PX,
   clampSidebarWidth,
   initialShellUiState,
   shellUiReducer,
   type ShellUiAction,
   type ShellUiState
 } from '../../src/shared/layout-model'
+import { PANEL_MIN_WIDTH_PX as PANEL_MIN_WIDTH } from '../../src/shared/panel-model'
 
 describe('initial shell UI state', () => {
   it('opens on the workspace with the sidebar visible and the side panel collapsed', () => {
@@ -49,6 +51,14 @@ describe('clampSidebarWidth (ticket 29: drag range 240–520px, default 320)', (
   it('exposes the documented drag range', () => {
     expect(SIDEBAR_MIN_WIDTH_PX).toBe(240)
     expect(SIDEBAR_MAX_WIDTH_PX).toBe(520)
+  })
+
+  it('keeps a usable main zone at the tightest layout (ticket-29 feedback round 2)', () => {
+    // The operator's floor ask: at max-max the composer must keep enough
+    // width for a one-line placeholder + the compact chip row.
+    expect(MAIN_ZONE_MIN_WIDTH_PX).toBe(420)
+    // Worst case fits the smallest window: 240 + 280 + 420 ≤ 1040.
+    expect(SIDEBAR_MIN_WIDTH_PX + PANEL_MIN_WIDTH + MAIN_ZONE_MIN_WIDTH_PX).toBeLessThanOrEqual(1040)
   })
 })
 
