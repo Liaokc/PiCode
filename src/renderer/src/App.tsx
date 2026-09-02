@@ -1008,6 +1008,10 @@ export default function App(): JSX.Element {
         onOpenPreview={openPreview}
         onOpenSearch={() => setSearchOpen(true)}
         onOpenSettings={() => dispatch({ type: 'open-settings' })}
+        view={settings.preferences.sidebarView}
+        sort={settings.preferences.sidebarSort}
+        onViewChange={(view) => handleSetPreferences({ sidebarView: view })}
+        onSortChange={(sort) => handleSetPreferences({ sidebarSort: sort })}
       />
       <div className="workspace-column">
         <div className="workspace-row">

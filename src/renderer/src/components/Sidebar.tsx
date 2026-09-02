@@ -3,30 +3,33 @@ import type { SessionSummary } from '../../../shared/sessions/types'
 import { clampSidebarWidth, type ShellUiAction } from '../../../shared/layout-model'
 import {
   filterHiddenGroups,
-  filterSessions,
   groupSessions,
   isSessionLive,
-  relativeTime
+  relativeTime,
+  timelineSessions,
+  type SessionSort,
+  type SessionView
 } from '../../../shared/sessions/group'
 import { sidebarDotState, sidebarRowState, type SidebarDotState } from '../../../shared/session-registry'
 import { useNowTick } from './use-now'
 import Tooltip from './Tooltip'
 import FileBrowser from './FileBrowser'
 import {
+  CalendarIcon,
+  CheckIcon,
   ChevronDownIcon,
+  ClockIcon,
   CloseIcon,
   EllipsisIcon,
-  ExpandArrowsIcon,
   FilesListIcon,
   FilterIcon,
   FolderIcon,
   GearIcon,
   GripDotsIcon,
-  HashIcon,
+  HistoryIcon,
   MessagePlusIcon,
   PinIcon,
   PlusIcon,
-  ProjectsFolderIcon,
   SearchIcon,
   TrashIcon
 } from './icons'
@@ -70,10 +73,21 @@ interface SidebarProps {
   /** Open one path (workspace-relative) in the side panel's File Preview
    * tab — the file browser's file click rides the ticket-07 channel. */
   onOpenPreview: (cwd: string, path: string) => void
-  /** Open the ⌘K task-search palette (ticket 11). */
+  /** Open the ⌘K task-search palette (ticket 11) — the ONE search entry
+   * since the sidebar's text-filter row retired (ticket 33). */
   onOpenSearch: () => void
   /** Open the settings window (ticket 10). */
   onOpenSettings: () => void
+  /** The persisted filter-dropdown view (ticket 33): per-project groups or
+   * the flat timeline. Owned by the shell's preferences; the dropdown is
+   * only the picker. */
+  view: SessionView
+  /** The persisted filter-dropdown sort key (ticket 33): updated | created. */
+  sort: SessionSort
+  /** Persist a dropdown view choice (ticket 33). */
+  onViewChange: (view: SessionView) => void
+  /** Persist a dropdown sort choice (ticket 33). */
+  onSortChange: (sort: SessionSort) => void
   /** Current sidebar width in px (ticket 29): the shell state seeds it from
    * preferences; the drag path writes the DOM directly and commits once on
    * pointerup. */
@@ -203,13 +217,15 @@ export default function Sidebar({
   onOpenPreview,
   onOpenSearch,
   onOpenSettings,
+  view,
+  sort,
+  onViewChange,
+  onSortChange,
   width,
   dispatch
 }: SidebarProps): JSX.Element | null {
   const now = useNowTick(30_000)
-  const [filterOpen, setFilterOpen] = useState(false)
-  const [query, setQuery] = useState('')
-  const [view, setView] = useState<'projects' | 'groups'>('projects')
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false)
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
   /** The project group whose ⋯ menu is open (ticket 19); null = none. */
   const [groupMenuCwd, setGroupMenuCwd] = useState<string | null>(null)
@@ -217,7 +233,6 @@ export default function Sidebar({
    * the regular task list. Back unmounts the browser, so no tree state
    * survives the return (acceptance: the browser leaves no residue). */
   const [browserTarget, setBrowserTarget] = useState<{ cwd: string; project: string } | null>(null)
-  const filterRef = useRef<HTMLInputElement>(null)
 
   // Sidebar width drag (ticket 29): pointermove NEVER dispatches — the raw
   // width is rAF-coalesced and written straight to the aside's style (the
@@ -268,20 +283,15 @@ export default function Sidebar({
     }
   }
 
-  const filtered = useMemo(() => filterSessions(sessions, query), [sessions, query])
-  const grouped = useMemo(() => groupSessions(filtered, pinnedIds), [filtered, pinnedIds])
-  // Ticket 19: hiding is a group-level projection — pinned rows and the
-  // Groups all-tasks view below are untouched, so hidden sessions stay
-  // reachable from both.
+  // Ticket 33: the two dropdown pipelines share the persisted sort key. The
+  // projects view additionally projects away hidden groups; the timeline
+  // flattens the WHOLE index — hiding never makes a session unreachable.
+  const grouped = useMemo(() => groupSessions(sessions, pinnedIds, sort), [sessions, pinnedIds, sort])
+  const timeline = useMemo(() => timelineSessions(sessions, pinnedIds, sort), [sessions, pinnedIds, sort])
   const visibleProjectGroups = useMemo(
     () => filterHiddenGroups(grouped.groups, hiddenCwds),
     [grouped.groups, hiddenCwds]
   )
-  const filtering = query.trim() !== ''
-  const visibleGroups =
-    view === 'projects'
-      ? visibleProjectGroups
-      : [{ cwd: '', project: 'All tasks', sessions: filtered.filter((s) => !pinnedIds.has(s.id)) }]
   const activeSession = sessions.find((s) => s.id === activeSessionId) ?? null
 
   // Outside click / Escape closes the group menu.
@@ -301,6 +311,24 @@ export default function Sidebar({
       document.removeEventListener('keydown', onKeyDown)
     }
   }, [groupMenuCwd])
+
+  // Same dismissal contract for the filter dropdown (ticket 33).
+  useEffect(() => {
+    if (!filterMenuOpen) return
+    function onPointerDown(event: MouseEvent): void {
+      if (event.target instanceof Element && event.target.closest('.sb-tool-icons, .sb-filter-menu')) return
+      setFilterMenuOpen(false)
+    }
+    function onKeyDown(event: KeyboardEvent): void {
+      if (event.key === 'Escape') setFilterMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [filterMenuOpen])
 
   /** Fixed-slot dot state for one row (ticket 20 + 25 + 28): orange = parked
    * at the approval gate, animated = running in this app, green = written by
@@ -371,67 +399,22 @@ export default function Sidebar({
           <span>Search</span>
           <kbd>⌘K</kbd>
         </button>
-        {filterOpen && (
-          <div className="sb-filter-row">
-            <SearchIcon size={13} />
-            <input
-              ref={filterRef}
-              className="sb-filter-input"
-              placeholder="Filter tasks"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') {
-                  setQuery('')
-                  setFilterOpen(false)
-                }
-              }}
-            />
-            {query !== '' && (
-              <Tooltip label="Clear filter">
-                <button type="button" className="sb-icon-btn" aria-label="Clear filter" onClick={() => setQuery('')}>
-                  ×
-                </button>
-              </Tooltip>
-            )}
-          </div>
-        )}
       </nav>
 
+      {/* Tools row (ticket 33): the FilterIcon opens the ZCode-style
+          view/sort dropdown; the text-filter row retired (⌘K covers search)
+          and the dead Expand-all button is gone. The old Groups/Projects
+          pills folded into the dropdown's View section. */}
       <div className="sb-section-tools">
-        <button type="button" className="sb-icon-btn" aria-label="Expand all sections">
-          <ExpandArrowsIcon />
-        </button>
-        <div className="sb-view-pills">
-          <button
-            type="button"
-            className={view === 'groups' ? 'sb-pill-btn sb-pill-active' : 'sb-pill-btn'}
-            aria-label="Group view"
-            onClick={() => setView('groups')}
-          >
-            <HashIcon />
-            Groups
-          </button>
-          <button
-            type="button"
-            className={view === 'projects' ? 'sb-pill-btn sb-pill-active' : 'sb-pill-btn'}
-            aria-label="Projects view"
-            onClick={() => setView('projects')}
-          >
-            <ProjectsFolderIcon />
-            Projects
-          </button>
-        </div>
         <div className="sb-tool-icons">
           <Tooltip label="Filter tasks">
             <button
               type="button"
-              className={filterOpen ? 'sb-icon-btn sb-pill-active' : 'sb-icon-btn'}
+              className={filterMenuOpen ? 'sb-icon-btn sb-icon-btn-active' : 'sb-icon-btn'}
               aria-label="Filter tasks"
-              onClick={() => {
-                setFilterOpen((v) => !v)
-                requestAnimationFrame(() => filterRef.current?.focus())
-              }}
+              aria-haspopup="menu"
+              aria-expanded={filterMenuOpen}
+              onClick={() => setFilterMenuOpen((v) => !v)}
             >
               <FilterIcon />
             </button>
@@ -440,9 +423,74 @@ export default function Sidebar({
             <TrashIcon />
           </button>
         </div>
+        {filterMenuOpen && (
+          <div className="sb-filter-menu" role="menu" aria-label="View and sort">
+            <div className="sb-filter-menu-label">View</div>
+            <button
+              type="button"
+              role="menuitemradio"
+              aria-checked={view === 'projects'}
+              className="sb-filter-menu-item"
+              onClick={() => {
+                onViewChange('projects')
+                setFilterMenuOpen(false)
+              }}
+            >
+              <FolderIcon size={14} />
+              <span>By project</span>
+              {view === 'projects' && <CheckIcon size={14} className="sb-filter-check" />}
+            </button>
+            <button
+              type="button"
+              role="menuitemradio"
+              aria-checked={view === 'timeline'}
+              className="sb-filter-menu-item"
+              onClick={() => {
+                onViewChange('timeline')
+                setFilterMenuOpen(false)
+              }}
+            >
+              <ClockIcon size={14} />
+              <span>Timeline</span>
+              {view === 'timeline' && <CheckIcon size={14} className="sb-filter-check" />}
+            </button>
+            <div className="sb-filter-menu-sep" />
+            <div className="sb-filter-menu-label">Sort by</div>
+            <button
+              type="button"
+              role="menuitemradio"
+              aria-checked={sort === 'updated'}
+              className="sb-filter-menu-item"
+              onClick={() => {
+                onSortChange('updated')
+                setFilterMenuOpen(false)
+              }}
+            >
+              <HistoryIcon size={14} />
+              <span>Updated</span>
+              {sort === 'updated' && <CheckIcon size={14} className="sb-filter-check" />}
+            </button>
+            <button
+              type="button"
+              role="menuitemradio"
+              aria-checked={sort === 'created'}
+              className="sb-filter-menu-item"
+              onClick={() => {
+                onSortChange('created')
+                setFilterMenuOpen(false)
+              }}
+            >
+              <CalendarIcon size={14} />
+              <span>Created</span>
+              {sort === 'created' && <CheckIcon size={14} className="sb-filter-check" />}
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="sb-scroll">
+        {/* Pinned section (ticket 33): kept on top in BOTH views — the
+            timeline flattens the body below it, never the pins. */}
         {grouped.pinned.length > 0 && (
           <>
             <div className="sb-section-label">Pinned</div>
@@ -462,132 +510,145 @@ export default function Sidebar({
           </>
         )}
 
-        <div className="sb-section-label sb-section-label-projects">
-          <FolderIcon />
-          Projects
-          <span className="sb-section-spacer" />
-          <GripDotsIcon />
-        </div>
+        {view === 'projects' ? (
+          <>
+            <div className="sb-section-label sb-section-label-projects">
+              <FolderIcon />
+              Projects
+              <span className="sb-section-spacer" />
+              <GripDotsIcon />
+            </div>
 
-        {visibleGroups.map((group) => {
-          const isExpanded = filtering || expanded.has(group.cwd)
-          const shown = isExpanded ? group.sessions : group.sessions.slice(0, SHOW_FIRST)
-          // The Groups view's flattened "All tasks" pseudo-group has no cwd —
-          // hiding it is meaningless, so it gets no hover actions.
-          const isRealGroup = group.cwd !== ''
-          const menuOpen = isRealGroup && groupMenuCwd === group.cwd
-          return (
-            <section key={group.cwd || 'all'} className="sb-group">
-              <div className="sb-group-header" onClick={() => isRealGroup && toggleExpanded(group.cwd)}>
-                <FolderIcon />
-                <span>{group.project}</span>
-                <span className="sb-section-spacer" />
-                {group.sessions.length > SHOW_FIRST && (
-                  <ChevronDownIcon size={13} className={isExpanded ? 'sb-caret sb-caret-up' : 'sb-caret'} />
-                )}
-                {isRealGroup && (
-                  <span className="sb-group-actions">
-                    <Tooltip label="More actions">
+            {visibleProjectGroups.map((group) => {
+              const isExpanded = expanded.has(group.cwd)
+              const shown = isExpanded ? group.sessions : group.sessions.slice(0, SHOW_FIRST)
+              const menuOpen = groupMenuCwd === group.cwd
+              return (
+                <section key={group.cwd} className="sb-group">
+                  <div className="sb-group-header" onClick={() => toggleExpanded(group.cwd)}>
+                    <FolderIcon />
+                    <span>{group.project}</span>
+                    <span className="sb-section-spacer" />
+                    {group.sessions.length > SHOW_FIRST && (
+                      <ChevronDownIcon size={13} className={isExpanded ? 'sb-caret sb-caret-up' : 'sb-caret'} />
+                    )}
+                    <span className="sb-group-actions">
+                      <Tooltip label="More actions">
+                        <button
+                          type="button"
+                          className="sb-group-action"
+                          aria-label={`Group actions: ${group.project}`}
+                          aria-haspopup="menu"
+                          aria-expanded={menuOpen}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setGroupMenuCwd(menuOpen ? null : group.cwd)
+                          }}
+                        >
+                          <EllipsisIcon size={15} />
+                        </button>
+                      </Tooltip>
+                      {/* Middle slot (ticket 26): ZCode's three-button hover
+                          form — ⋯ / view files / new task. Swaps the whole
+                          sidebar to this project's file browser. */}
+                      <Tooltip label="View files">
+                        <button
+                          type="button"
+                          className="sb-group-action"
+                          aria-label={`View files in ${group.project}`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setGroupMenuCwd(null)
+                            setBrowserTarget({ cwd: group.cwd, project: group.project })
+                          }}
+                        >
+                          <FilesListIcon size={15} />
+                        </button>
+                      </Tooltip>
+                      <Tooltip label="New task">
+                        <button
+                          type="button"
+                          className="sb-group-action"
+                          aria-label={`New task in ${group.project}`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setGroupMenuCwd(null)
+                            onNewTask(group.cwd)
+                          }}
+                        >
+                          <MessagePlusIcon size={15} />
+                        </button>
+                      </Tooltip>
+                    </span>
+                    <GripDotsIcon className="sb-grip" />
+                  </div>
+                  {menuOpen && (
+                    <div className="sb-group-menu" role="menu" aria-label={`Group actions: ${group.project}`}>
                       <button
                         type="button"
-                        className="sb-group-action"
-                        aria-label={`Group actions: ${group.project}`}
-                        aria-haspopup="menu"
-                        aria-expanded={menuOpen}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setGroupMenuCwd(menuOpen ? null : group.cwd)
-                        }}
-                      >
-                        <EllipsisIcon size={15} />
-                      </button>
-                    </Tooltip>
-                    {/* Middle slot (ticket 26): ZCode's three-button hover
-                        form — ⋯ / view files / new task. Swaps the whole
-                        sidebar to this project's file browser. */}
-                    <Tooltip label="View files">
-                      <button
-                        type="button"
-                        className="sb-group-action"
-                        aria-label={`View files in ${group.project}`}
+                        role="menuitem"
+                        className="sb-group-menu-item"
                         onClick={(e) => {
                           e.stopPropagation()
                           setGroupMenuCwd(null)
-                          setBrowserTarget({ cwd: group.cwd, project: group.project })
+                          onHideGroup(group.cwd)
                         }}
                       >
-                        <FilesListIcon size={15} />
+                        <CloseIcon size={13} />
+                        <span>Remove from sidebar</span>
                       </button>
-                    </Tooltip>
-                    <Tooltip label="New task">
-                      <button
-                        type="button"
-                        className="sb-group-action"
-                        aria-label={`New task in ${group.project}`}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setGroupMenuCwd(null)
-                          onNewTask(group.cwd)
-                        }}
-                      >
-                        <MessagePlusIcon size={15} />
-                      </button>
-                    </Tooltip>
-                  </span>
-                )}
-                <GripDotsIcon className="sb-grip" />
-              </div>
-              {menuOpen && (
-                <div className="sb-group-menu" role="menu" aria-label={`Group actions: ${group.project}`}>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    className="sb-group-menu-item"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setGroupMenuCwd(null)
-                      onHideGroup(group.cwd)
-                    }}
-                  >
-                    <CloseIcon size={13} />
-                    <span>Remove from sidebar</span>
-                  </button>
-                </div>
-              )}
-              {group.sessions.length === 0 && filtering && (
-                <div className="sb-empty-hint">No matching tasks</div>
-              )}
-              {shown.map((s) => (
-                <TaskItem
-                  key={s.file}
-                  session={s}
-                  now={now}
-                  selected={sidebarRowState(activeSessionId, followedFile, s.id, s.file) === 'selected'}
-                  dot={dotFor(s)}
-                  pinned={false}
-                  onOpen={() => onOpenSession(s)}
-                  onTogglePin={() => onTogglePin(s)}
-                  onRename={(name) => onRenameSession(s, name)}
-                />
-              ))}
-              {!isExpanded && group.sessions.length > SHOW_FIRST && (
-                <div className="sb-show-more" onClick={() => toggleExpanded(group.cwd)}>
-                  Show more
-                </div>
-              )}
-              {isExpanded && !filtering && group.sessions.length > SHOW_FIRST && (
-                <div className="sb-show-more" onClick={() => toggleExpanded(group.cwd)}>
-                  Show less
-                </div>
-              )}
-            </section>
-          )
-        })}
+                    </div>
+                  )}
+                  {shown.map((s) => (
+                    <TaskItem
+                      key={s.file}
+                      session={s}
+                      now={now}
+                      selected={sidebarRowState(activeSessionId, followedFile, s.id, s.file) === 'selected'}
+                      dot={dotFor(s)}
+                      pinned={false}
+                      onOpen={() => onOpenSession(s)}
+                      onTogglePin={() => onTogglePin(s)}
+                      onRename={(name) => onRenameSession(s, name)}
+                    />
+                  ))}
+                  {!isExpanded && group.sessions.length > SHOW_FIRST && (
+                    <div className="sb-show-more" onClick={() => toggleExpanded(group.cwd)}>
+                      Show more
+                    </div>
+                  )}
+                  {isExpanded && group.sessions.length > SHOW_FIRST && (
+                    <div className="sb-show-more" onClick={() => toggleExpanded(group.cwd)}>
+                      Show less
+                    </div>
+                  )}
+                </section>
+              )
+            })}
+          </>
+        ) : (
+          // Timeline view (ticket 33): every non-pinned session in ONE flat
+          // list — no project headers, no per-group Show more — under the
+          // pinned section above.
+          <>
+            {timeline.sessions.map((s) => (
+              <TaskItem
+                key={s.file}
+                session={s}
+                now={now}
+                selected={sidebarRowState(activeSessionId, followedFile, s.id, s.file) === 'selected'}
+                dot={dotFor(s)}
+                pinned={false}
+                onOpen={() => onOpenSession(s)}
+                onTogglePin={() => onTogglePin(s)}
+                onRename={(name) => onRenameSession(s, name)}
+              />
+            ))}
+          </>
+        )}
 
-        {!filtering && sessions.length === 0 && (
-          <div className="sb-empty-hint">
-            No tasks yet — press ⌘N to start one.
-          </div>
+        {sessions.length === 0 && (
+          <div className="sb-empty-hint">No tasks yet — press ⌘N to start one.</div>
         )}
       </div>
       </>

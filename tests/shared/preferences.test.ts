@@ -32,6 +32,8 @@ describe('normalizePreferences', () => {
       hiddenGroups: [],
       readStates: {},
       recentlyClosedTabs: [],
+      sidebarView: 'projects',
+      sidebarSort: 'updated',
       sidebarWidth: SIDEBAR_WIDTH_PX,
       panelWidth: PANEL_DEFAULT_WIDTH_PX
     })
@@ -76,6 +78,8 @@ describe('mergePreferences', () => {
       hiddenGroups: [],
       readStates: {},
       recentlyClosedTabs: [],
+      sidebarView: 'projects',
+      sidebarSort: 'updated',
       sidebarWidth: SIDEBAR_WIDTH_PX,
       panelWidth: PANEL_DEFAULT_WIDTH_PX
     })
@@ -97,6 +101,27 @@ describe('mergePreferences', () => {
     const merged = mergePreferences(base, { defaultModel: null, defaultThinkingLevel: null })
     expect(merged.defaultModel).toBeNull()
     expect(merged.defaultThinkingLevel).toBeNull()
+  })
+
+  it('persists the sidebar filter dropdown choices, falling back on junk (ticket 33)', () => {
+    // Round-trip of both dropdown vocabularies.
+    const picked = normalizePreferences({ sidebarView: 'timeline', sidebarSort: 'created' })
+    expect(picked.sidebarView).toBe('timeline')
+    expect(picked.sidebarSort).toBe('created')
+    // Invalid values degrade to the ZCode defaults (By project ✓ / Updated ✓).
+    expect(normalizePreferences({ sidebarView: 'grid' }).sidebarView).toBe('projects')
+    expect(normalizePreferences({ sidebarSort: 'size' }).sidebarSort).toBe('updated')
+    expect(normalizePreferences({ sidebarView: 7, sidebarSort: null })).toEqual({
+      ...picked,
+      sidebarView: 'projects',
+      sidebarSort: 'updated'
+    })
+    // A patch switches one and keeps the other; junk keeps the previous value.
+    const merged = mergePreferences(picked, { sidebarSort: 'updated' })
+    expect(merged.sidebarView).toBe('timeline')
+    expect(merged.sidebarSort).toBe('updated')
+    expect(mergePreferences(merged, { sidebarView: 'matrix' })).toEqual(merged)
+    expect(mergePreferences(merged, { sidebarSort: undefined })).toEqual(merged)
   })
 
   it('rejects invalid patch values and keeps the previous ones', () => {

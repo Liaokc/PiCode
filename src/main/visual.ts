@@ -144,6 +144,8 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
   if (approvalVisualEnabled()) return
   // And for the row-geometry harness (ticket 34).
   if (process.env['PICODE_VISUAL_ROW_GEOMETRY'] === '1') return
+  // And for the filter-dropdown harness (ticket 33).
+  if (process.env['PICODE_VISUAL_FILTER'] === '1') return
 
   // Deterministic sidebar content for the shots (ticket 20): the empty-state
   // frame must show a status dot (a session written by ANOTHER end — fresh

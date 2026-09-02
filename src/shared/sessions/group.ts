@@ -5,6 +5,14 @@
  */
 import type { SessionSummary } from './types.ts'
 
+/** Sidebar view vocabulary (ticket 33, the filter dropdown): the list form —
+ * per-project groups or one flat timeline. */
+export type SessionView = 'projects' | 'timeline'
+
+/** Sidebar sort vocabulary (ticket 33, the filter dropdown): updated = file
+ * mtime, created = file birthtime (degrading to the header timestamp). */
+export type SessionSort = 'updated' | 'created'
+
 export interface SessionProjectGroup {
   cwd: string
   /** Directory basename — the group header text. */
@@ -17,11 +25,55 @@ export interface GroupedSessions {
   groups: SessionProjectGroup[]
 }
 
-const byRecency = (a: SessionSummary, b: SessionSummary): number => b.modifiedAt - a.modifiedAt
+/** The timeline view's flat payload (ticket 33): the pinned section stays a
+ * distinct top block, everything else is ONE recency-sorted list. */
+export interface TimelineSessions {
+  pinned: SessionSummary[]
+  sessions: SessionSummary[]
+}
 
-/** Group sessions for the sidebar: pinned section first, then project groups. */
-export function groupSessions(sessions: SessionSummary[], pinnedIds: ReadonlySet<string>): GroupedSessions {
-  const pinned = sessions.filter((s) => pinnedIds.has(s.id)).sort(byRecency)
+/** Creation clock of one session (ticket 33): the file birthtime when the
+ * host could read one, else the session header timestamp, else 0 — the
+ * created sort never sees NaN, and missing birthtimes degrade gracefully. */
+export function sessionCreatedMs(session: SessionSummary): number {
+  if (typeof session.createdAt === 'number' && Number.isFinite(session.createdAt) && session.createdAt > 0) {
+    return session.createdAt
+  }
+  const parsed = Date.parse(session.startedAt)
+  return Number.isNaN(parsed) ? 0 : parsed
+}
+
+const sortKey = (session: SessionSummary, sort: SessionSort): number =>
+  sort === 'created' ? sessionCreatedMs(session) : session.modifiedAt
+
+const tieKey = (session: SessionSummary, sort: SessionSort): number =>
+  sort === 'created' ? session.modifiedAt : sessionCreatedMs(session)
+
+/** Newest-first comparator for the dropdown's sort key; ties fall to the
+ * other clock so equal mtimes (bulk copies) still age-order. */
+function bySortOrder(sort: SessionSort): (a: SessionSummary, b: SessionSummary) => number {
+  return (a, b) => sortKey(b, sort) - sortKey(a, sort) || tieKey(b, sort) - tieKey(a, sort)
+}
+
+/** The Pinned section under one sort key — shared by both views. */
+function pinnedSorted(
+  sessions: SessionSummary[],
+  pinnedIds: ReadonlySet<string>,
+  sort: SessionSort
+): SessionSummary[] {
+  return sessions.filter((s) => pinnedIds.has(s.id)).sort(bySortOrder(sort))
+}
+
+/** Group sessions for the sidebar: pinned section first, then project groups.
+ * `sort` (ticket 33) is the dropdown's sort key — it orders the pinned
+ * section, every group's rows, and the groups themselves. */
+export function groupSessions(
+  sessions: SessionSummary[],
+  pinnedIds: ReadonlySet<string>,
+  sort: SessionSort = 'updated'
+): GroupedSessions {
+  const order = bySortOrder(sort)
+  const pinned = pinnedSorted(sessions, pinnedIds, sort)
 
   const byCwd = new Map<string, SessionSummary[]>()
   for (const session of sessions) {
@@ -32,20 +84,27 @@ export function groupSessions(sessions: SessionSummary[], pinnedIds: ReadonlySet
   }
 
   const groups: SessionProjectGroup[] = [...byCwd.entries()]
-    .map(([cwd, list]) => ({ cwd, project: projectLabel(cwd), sessions: list.sort(byRecency) }))
-    // Newest group first, judged by its most recent session.
-    .sort((a, b) => (b.sessions[0]?.modifiedAt ?? 0) - (a.sessions[0]?.modifiedAt ?? 0))
+    .map(([cwd, list]) => ({ cwd, project: projectLabel(cwd), sessions: list.sort(order) }))
+    // Newest group first, judged by its most recent session under the SAME
+    // sort key (group order legitimately flips between Updated and Created).
+    .sort((a, b) => sortKey(b.sessions[0] ?? a.sessions[0], sort) - sortKey(a.sessions[0] ?? b.sessions[0], sort))
 
   return { pinned, groups }
 }
 
-/** Case-insensitive title/project filter; blank query keeps everything. */
-export function filterSessions(sessions: SessionSummary[], query: string): SessionSummary[] {
-  const needle = query.trim().toLowerCase()
-  if (needle === '') return sessions
-  return sessions.filter(
-    (s) => s.title.toLowerCase().includes(needle) || projectLabel(s.cwd).toLowerCase().includes(needle)
-  )
+/** Timeline view (ticket 33): ALL sessions flattened into one sorted list —
+ * no project headers — with the pinned section kept as its own top block.
+ * Like the Groups all-tasks view it succeeds, it is fed no hidden-projects
+ * filter: decluttering must never make a session unreachable. */
+export function timelineSessions(
+  sessions: SessionSummary[],
+  pinnedIds: ReadonlySet<string>,
+  sort: SessionSort = 'updated'
+): TimelineSessions {
+  return {
+    pinned: pinnedSorted(sessions, pinnedIds, sort),
+    sessions: sessions.filter((s) => !pinnedIds.has(s.id)).sort(bySortOrder(sort))
+  }
 }
 
 /**

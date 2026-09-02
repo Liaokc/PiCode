@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { mkdir, mkdtemp, rm, writeFile, utimes, appendFile, readFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, stat, writeFile, utimes, appendFile, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { SessionIndexService } from '../../src/main/sessions/index-service'
@@ -89,6 +89,33 @@ describe('SessionIndexService.list', () => {
   it('renameSession returns null for unreadable files', async () => {
     const service = new SessionIndexService({ sessionsDir: dir, onIndexChanged: () => {} })
     expect(await service.renameSession(path.join(dir, 'missing.jsonl'), 'x')).toBeNull()
+  })
+
+  it('derives createdAt from the file birthtime and keeps it across cached rescans (ticket 33)', async () => {
+    const file = await writeSession(
+      'projF',
+      's6.jsonl',
+      sessionText('/f', 'id-6', [userLine('e1', null, 'birthtime task')]),
+      1_756_300_000_000
+    )
+    const service = new SessionIndexService({ sessionsDir: dir, onIndexChanged: () => {} })
+    const first = await service.list()
+    const summary = first.find((s) => s.file === file)
+    expect(summary).toBeDefined()
+    // The test fixture's utimes() backdating touches ONLY mtime — createdAt
+    // must come from the real birthtime, not the forced mtime.
+    const stats = await stat(file)
+    if (stats.birthtimeMs > 0) {
+      // The contract: createdAt IS stat().birthtimeMs (which on macOS clamps
+      // to a backdated mtime — whatever the platform reports is the truth).
+      expect(summary?.createdAt).toBe(Math.round(stats.birthtimeMs))
+    } else {
+      // Platform without birthtime support: graceful degrade to null.
+      expect(summary?.createdAt).toBeNull()
+    }
+    // The cache-served rescan (mtime unchanged) keeps the same field.
+    const second = await service.list()
+    expect(second.find((s) => s.file === file)?.createdAt).toBe(summary?.createdAt)
   })
 })
 

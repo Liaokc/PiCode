@@ -20,6 +20,10 @@ export interface SessionSummary {
   startedAt: string
   /** File mtime in epoch ms — drives recency sort and liveness. */
   modifiedAt: number
+  /** File birthtime in epoch ms (ticket 33) — drives the Created sort. Null
+   * when the platform reports no birthtime; consumers degrade to the header
+   * timestamp (sessionCreatedMs). Purely additive contract field. */
+  createdAt: number | null
   /** Number of message entries (any role). */
   messageCount: number
 }

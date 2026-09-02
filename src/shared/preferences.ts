@@ -11,6 +11,7 @@
 import type { ThinkingLevel } from './contract.ts'
 import { normalizeRecentlyClosed, type RecentlyClosedTab } from './panel-model.ts'
 import type { ReadStates } from './sessions/unread.ts'
+import type { SessionSort, SessionView } from './sessions/group.ts'
 import { SIDEBAR_WIDTH_PX, clampSidebarWidth } from './layout-model.ts'
 import { PANEL_DEFAULT_WIDTH_PX, clampPanelWidth } from './panel-model.ts'
 
@@ -52,6 +53,13 @@ export interface AppPreferences {
    * identities with their close times, newest first. The tab-management
    * dropdown lists them for one-click reopening; capacity 10. */
   recentlyClosedTabs: RecentlyClosedTab[]
+  /** Sidebar filter dropdown (ticket 33): which view the task list uses —
+   * per-project groups or the flat timeline. Persisted so the choice
+   * survives restarts; defaults to ZCode's pre-checked By project. */
+  sidebarView: SessionView
+  /** Sidebar filter dropdown (ticket 33): the task-list sort key — file
+   * mtime (Updated) or birthtime (Created). Defaults to Updated. */
+  sidebarSort: SessionSort
   /** Workspace sidebar width in px (ticket 29): clamped 240–520, default
    * 320. Both draggable panes persist through preferences so a restart
    * restores the layout exactly as left. */
@@ -70,6 +78,8 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   hiddenGroups: [],
   readStates: {},
   recentlyClosedTabs: [],
+  sidebarView: 'projects',
+  sidebarSort: 'updated',
   sidebarWidth: SIDEBAR_WIDTH_PX,
   panelWidth: PANEL_DEFAULT_WIDTH_PX
 }
@@ -196,6 +206,26 @@ function normalizedPaneWidth(value: unknown, fallback: number, clamp: (width: nu
   return typeof value === 'number' && Number.isFinite(value) ? clamp(value) : fallback
 }
 
+/** Sidebar filter dropdown choices (ticket 33): closed vocabularies — junk
+ * degrades to the ZCode defaults (By project ✓ / Updated ✓). */
+function normalizedSidebarView(value: unknown): SessionView {
+  return value === 'timeline' ? 'timeline' : 'projects'
+}
+
+function normalizedSidebarSort(value: unknown): SessionSort {
+  return value === 'created' ? 'created' : 'updated'
+}
+
+function normalizedSidebarViewOr(prev: SessionView, value: unknown): SessionView {
+  if (value === undefined) return prev
+  return value === 'projects' || value === 'timeline' ? value : prev
+}
+
+function normalizedSidebarSortOr(prev: SessionSort, value: unknown): SessionSort {
+  if (value === undefined) return prev
+  return value === 'updated' || value === 'created' ? value : prev
+}
+
 function normalizedPaneWidthOr(prev: number, value: unknown, clamp: (width: number) => number): number {
   if (value === undefined) return prev
   return normalizedPaneWidth(value, prev, clamp)
@@ -213,6 +243,8 @@ export function normalizePreferences(raw: unknown): AppPreferences {
     hiddenGroups: normalizedHiddenGroups(record['hiddenGroups']),
     readStates: normalizedReadStates(record['readStates']),
     recentlyClosedTabs: normalizeRecentlyClosed(record['recentlyClosedTabs']),
+    sidebarView: normalizedSidebarView(record['sidebarView']),
+    sidebarSort: normalizedSidebarSort(record['sidebarSort']),
     sidebarWidth: normalizedPaneWidth(record['sidebarWidth'], SIDEBAR_WIDTH_PX, clampSidebarWidth),
     panelWidth: normalizedPaneWidth(record['panelWidth'], PANEL_DEFAULT_WIDTH_PX, clampPanelWidth)
   }
@@ -231,6 +263,8 @@ export function mergePreferences(prev: AppPreferences, patch: unknown): AppPrefe
     hiddenGroups: normalizedHiddenGroupsOr(prev.hiddenGroups, record['hiddenGroups']),
     readStates: normalizedReadStatesOr(prev.readStates, record['readStates']),
     recentlyClosedTabs: normalizedRecentlyClosedOr(prev.recentlyClosedTabs, record['recentlyClosedTabs']),
+    sidebarView: normalizedSidebarViewOr(prev.sidebarView, record['sidebarView']),
+    sidebarSort: normalizedSidebarSortOr(prev.sidebarSort, record['sidebarSort']),
     sidebarWidth: normalizedPaneWidthOr(prev.sidebarWidth, record['sidebarWidth'], clampSidebarWidth),
     panelWidth: normalizedPaneWidthOr(prev.panelWidth, record['panelWidth'], clampPanelWidth)
   }

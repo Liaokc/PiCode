@@ -50,6 +50,9 @@ describe('SettingsService', () => {
       hiddenGroups: [],
       readStates: {},
       recentlyClosedTabs: [],
+      // Pre-ticket-33 documents have no dropdown choice — the defaults apply.
+      sidebarView: 'projects',
+      sidebarSort: 'updated',
       // Pre-ticket-29 documents have no pane widths — the defaults apply.
       sidebarWidth: 320,
       panelWidth: 420

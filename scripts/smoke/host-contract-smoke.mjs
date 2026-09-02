@@ -29,10 +29,10 @@
  * — the real session library is never written.
  */
 
-import { mkdtemp } from 'node:fs/promises'
+import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { rmSync } from 'node:fs'
+import { rmSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { fork } from 'node:child_process'
 
@@ -128,7 +128,7 @@ function fail(message) {
   process.exit(1)
 }
 
-function onHostExit(exited, code) {
+async function onHostExit(exited, code) {
   if (exited !== child) return // stale exit from a replaced host
   clearTimeout(timeout)
   if (step === 'A shutdown') {
@@ -141,6 +141,11 @@ function onHostExit(exited, code) {
   }
   if (step === 'clean exit') {
     if (code !== 0) fail(`expected clean exit 0, got ${code}`)
+    // Ticket 33: the SessionSummary contract against a REAL SDK-written file
+    // — birthtime-derived createdAt rides along as a PURE ADDITION (every
+    // legacy field keeps its shape and meaning), and degrades to null when
+    // the platform reports no birthtime.
+    await verifySessionSummaryContract()
     console.log('SMOKE PASS host contract smoke complete (chat loop + tool round + resume/rename/tree/fork)')
     process.exit(0)
   }
@@ -584,3 +589,34 @@ function onEvent(event) {
 }
 
 child = forkHost([cwd], onEvent)
+
+/** Summarize the smoke's real session file through the index pipeline and
+ * assert the (additive) SessionSummary contract. Runs in the 'clean exit'
+ * handler, after both rounds produced settled session files. */
+async function verifySessionSummaryContract() {
+  const { summarizeSession } = await import('../../src/shared/sessions/parse.ts')
+  const stats = statSync(sessionFile)
+  const text = await readFile(sessionFile, 'utf8')
+  const summary = summarizeSession(text, sessionFile, Math.round(stats.mtimeMs), stats.birthtimeMs > 0 ? Math.round(stats.birthtimeMs) : null)
+  if (summary === null) fail('the real session file must summarize')
+  // Pure-additive assertion: every legacy field is still present and sane.
+  for (const field of ['file', 'id', 'cwd', 'title', 'startedAt', 'modifiedAt', 'createdAt', 'messageCount']) {
+    if (!(field in summary)) fail(`SessionSummary lost the field '${field}' — contract additions must be additive`)
+  }
+  if (summary.cwd !== cwd) fail(`summary cwd should be the smoke workspace, got ${summary.cwd}`)
+  if (summary.name !== SMOKE_LABEL) fail(`summary name should be the smoke rename label, got ${summary.name}`)
+  if (summary.messageCount < 1) fail('the smoke session must count at least one message')
+  if (!Number.isFinite(summary.modifiedAt) || summary.modifiedAt <= 0) fail('modifiedAt must be a positive epoch ms')
+  // The new field: birthtime-derived, null-degrading.
+  if (stats.birthtimeMs > 0) {
+    if (summary.createdAt !== Math.round(stats.birthtimeMs)) {
+      fail(`createdAt must be the file birthtime (${Math.round(stats.birthtimeMs)}), got ${summary.createdAt}`)
+    }
+    console.log(`SMOKE createdAt contract ok — birthtime-derived (${summary.createdAt})`)
+  } else {
+    if (summary.createdAt !== null) fail(`createdAt must degrade to null without birthtime, got ${summary.createdAt}`)
+    console.log('SMOKE createdAt contract ok — platform without birthtime degrades to null')
+  }
+  if (typeof summary.title !== 'string' || summary.title === '') fail('title must stay a non-empty string')
+  console.log('SMOKE SessionSummary contract ok — purely additive (legacy fields intact)')
+}
