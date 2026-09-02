@@ -32,7 +32,10 @@ export function costToMicros(usd: unknown): number {
   return Math.round(usd * COST_MICROS_PER_USD)
 }
 
-function normalizeTokens(usage: Record<string, unknown>): UsageTokens {
+/** Normalized token accounting for one usage object (same projection the
+ * usage page consumes — one accounting for both ADR-0002 consumers).
+ * Exported for the call-trace builder (ticket 36). */
+export function normalizeTokens(usage: Record<string, unknown>): UsageTokens {
   const num = (key: string): number => {
     const v = usage[key]
     return typeof v === 'number' && Number.isFinite(v) ? v : 0

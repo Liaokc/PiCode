@@ -6,7 +6,8 @@ import {
   traceStats,
   type TraceBlock,
   type TraceCall,
-  type TracePayload
+  type TracePayload,
+  type TraceStats
 } from '../../../shared/sessions/trace'
 import Tooltip from './Tooltip'
 import { CloseIcon, FolderIcon, HistoryIcon, RefreshIcon } from './icons'
@@ -138,15 +139,9 @@ export default function TraceTab({ sessionFile, onClose }: TraceTabProps): JSX.E
 
 // ---- header -----------------------------------------------------------------
 
-interface TraceHeaderStats {
-  calls: number
-  totalTokens: number | null
-  model: string | null
-}
-
 function TraceHeader(props: {
   title: string
-  stats: TraceHeaderStats | null
+  stats: TraceStats | null
   onRefresh: () => void
   onClose: () => void
   sessionFile?: string

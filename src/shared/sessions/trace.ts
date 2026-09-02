@@ -30,7 +30,8 @@
  */
 
 import type { UsageTokens } from '../usage/types.ts'
-import { parseSessionLines, truncateTitle } from './parse.ts'
+import { normalizeTokens } from '../usage/parse.ts'
+import { messageText, parseSessionLines, toolCalls, truncateTitle } from './parse.ts'
 import { toolResultText } from '../tool-format.ts'
 
 // ---- payload contract -------------------------------------------------------
@@ -91,43 +92,6 @@ export interface TracePayload {
 
 interface PendingInput {
   blocks: TraceBlock[]
-  /** First user text seen in this window (title fallback). */
-  firstUserText: string | null
-}
-
-/** Text of a message content value (string or content-part array). */
-function messageText(content: unknown): string {
-  if (typeof content === 'string') return content
-  if (!Array.isArray(content)) return ''
-  let out = ''
-  for (const part of content) {
-    if (typeof part === 'object' && part !== null && (part as Record<string, unknown>)['type'] === 'text') {
-      const text = (part as Record<string, unknown>)['text']
-      if (typeof text === 'string') out += text
-    }
-  }
-  return out
-}
-
-/** toolCall parts of an assistant message content value, defensively typed. */
-function toolCallParts(content: unknown): { id: string; name: string; args: Record<string, unknown> }[] {
-  if (!Array.isArray(content)) return []
-  const calls: { id: string; name: string; args: Record<string, unknown> }[] = []
-  for (const part of content) {
-    if (typeof part !== 'object' || part === null) continue
-    const record = part as Record<string, unknown>
-    if (record['type'] !== 'toolCall') continue
-    const id = typeof record['id'] === 'string' ? record['id'] : ''
-    const name = typeof record['name'] === 'string' ? record['name'] : ''
-    if (id === '' || name === '') continue
-    const args = record['arguments']
-    calls.push({
-      id,
-      name,
-      args: typeof args === 'object' && args !== null && !Array.isArray(args) ? (args as Record<string, unknown>) : {}
-    })
-  }
-  return calls
 }
 
 /** thinking / text parts of an assistant message content value, in order. */
@@ -163,18 +127,8 @@ function bashExecutionText(message: Record<string, unknown>): string {
 
 function usageOf(value: unknown): TraceUsage | null {
   if (typeof value !== 'object' || value === null) return null
-  const usage = value as Record<string, unknown>
-  const num = (key: string): number => {
-    const v = usage[key]
-    return typeof v === 'number' && Number.isFinite(v) ? v : 0
-  }
-  const input = num('input')
-  const output = num('output')
-  const cacheRead = num('cacheRead')
-  const cacheWrite = num('cacheWrite')
-  const cacheWrite1h = num('cacheWrite1h')
-  const total = num('totalTokens') || input + output + cacheRead + cacheWrite + cacheWrite1h
-  return { input, output, cacheRead, cacheWrite, total }
+  // Same token accounting the usage page consumes (ADR-0002, one projection).
+  return normalizeTokens(value as Record<string, unknown>)
 }
 
 function durationOf(entryTimestamp: string, message: Record<string, unknown> | undefined): number | null {
@@ -196,9 +150,12 @@ export function buildTracePayload(fileText: string, file: string): TracePayload 
   if (!header) return null
 
   const calls: TraceCall[] = []
-  const pending: PendingInput = { blocks: [], firstUserText: null }
+  const pending: PendingInput = { blocks: [] }
   let model: string | null = null
   let name: string | null = null
+  /** First user text of the whole file (title fallback — survives the
+   * accumulator's resets; mirrors the sidebar summary's title rule). */
+  let firstUserText: string | null = null
 
   const consume = (): TraceBlock[] => {
     const blocks = pending.blocks
@@ -223,7 +180,7 @@ export function buildTracePayload(fileText: string, file: string): TracePayload 
         if (message?.role === 'user') {
           const text = messageText(message.content)
           if (text.trim() === '') break
-          if (pending.firstUserText === null) pending.firstUserText = text
+          if (firstUserText === null) firstUserText = text
           pending.blocks.push({ kind: 'user', text })
         } else if (message?.role === 'bashExecution') {
           pending.blocks.push({ kind: 'user', text: bashExecutionText(message) })
@@ -241,7 +198,7 @@ export function buildTracePayload(fileText: string, file: string): TracePayload 
           const outputBlocks: TraceBlock[] = outputTextParts(message.content).map((part) =>
             part.kind === 'thinking' ? { kind: 'thinking', text: part.text } : { kind: 'assistant', text: part.text }
           )
-          for (const call of toolCallParts(message.content)) {
+          for (const call of toolCalls(message.content)) {
             let args: string
             try {
               args = JSON.stringify(call.args) ?? '{}'
@@ -282,7 +239,7 @@ export function buildTracePayload(fileText: string, file: string): TracePayload 
     }
   }
 
-  const firstUser = pending.firstUserText
+  const firstUser = firstUserText
   return {
     file,
     title: name ?? (firstUser !== null ? truncateTitle(firstUser) : 'New Task'),

@@ -100,8 +100,10 @@ function firstUserText(content: unknown): string | null {
   return null
 }
 
-/** Concatenated text parts of a message content value ('' when none). */
-function messageText(content: unknown): string {
+/** Concatenated text parts of a message content value ('' when none).
+ * Exported for the call-trace builder (ticket 36), which needs the same
+ * projection of user-message content. */
+export function messageText(content: unknown): string {
   if (typeof content === 'string') return content
   if (!Array.isArray(content)) return ''
   let out = ''
@@ -165,14 +167,15 @@ export function sniffSkillName(text: string): string | null {
   return SKILL_INJECTION.exec(text)?.[1] ?? null
 }
 
-interface ToolCallPart {
+export interface ToolCallPart {
   id: string
   name: string
   args: Record<string, unknown>
 }
 
-/** toolCall parts of an assistant message content value, defensively typed. */
-function toolCalls(content: unknown): ToolCallPart[] {
+/** toolCall parts of an assistant message content value, defensively typed.
+ * Exported for the call-trace builder (ticket 36) — same projection. */
+export function toolCalls(content: unknown): ToolCallPart[] {
   if (!Array.isArray(content)) return []
   const calls: ToolCallPart[] = []
   for (const part of content) {
