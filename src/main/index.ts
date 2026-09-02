@@ -7,6 +7,8 @@ import type { ReviewResult } from '../shared/review/types'
 import type { PreviewResult } from '../shared/preview/types'
 import type { AuthProbeReport } from '../shared/auth-status'
 import type { AppPreferences } from '../shared/preferences'
+import { SIDEBAR_WIDTH_PX } from '../shared/layout-model'
+import { PANEL_DEFAULT_WIDTH_PX } from '../shared/panel-model'
 import { createWindowOptions } from './window-options'
 import { HostSupervisor, defaultHostEntryPath } from './host-supervisor'
 import { createApprovalNotifier, parseApprovalNotice } from './notifications'
@@ -49,6 +51,14 @@ isolateRowGeometryUserData()
 // touched by a smoke run. No-op unless PICODE_SMOKE=1.
 if (smokeEnabled()) {
   app.setPath('userData', path.join(tmpdir(), `picode-smoke-userdata-${process.pid}`))
+}
+
+// Ticket-29 layout smoke: the drag + restart persistence assertions run
+// against throwaway userData so a real profile is never touched (no-op
+// unless the smoke driver sets the env). Must run before app.whenReady.
+const layoutSmokeUserData = process.env['PICODE_LAYOUT_SMOKE_USER_DATA']
+if (typeof layoutSmokeUserData === 'string' && layoutSmokeUserData !== '') {
+  app.setPath('userData', layoutSmokeUserData)
 }
 
 function createMainWindow(): BrowserWindow {
@@ -295,7 +305,9 @@ function fakePreferences(): AppPreferences {
     newTaskFixedProject: '/Users/demo/Projects/picode',
     hiddenGroups: ['/Users/demo/Projects/archive'],
     readStates: {},
-    recentlyClosedTabs: []
+    recentlyClosedTabs: [],
+    sidebarWidth: SIDEBAR_WIDTH_PX,
+    panelWidth: PANEL_DEFAULT_WIDTH_PX
   }
 }
 

@@ -11,6 +11,8 @@
 import type { ThinkingLevel } from './contract.ts'
 import { normalizeRecentlyClosed, type RecentlyClosedTab } from './panel-model.ts'
 import type { ReadStates } from './sessions/unread.ts'
+import { SIDEBAR_WIDTH_PX, clampSidebarWidth } from './layout-model.ts'
+import { PANEL_DEFAULT_WIDTH_PX, clampPanelWidth } from './panel-model.ts'
 
 /** Model/thinking defaults handed to a NEW session (all fields optional). */
 export interface SessionDefaults {
@@ -50,6 +52,14 @@ export interface AppPreferences {
    * identities with their close times, newest first. The tab-management
    * dropdown lists them for one-click reopening; capacity 10. */
   recentlyClosedTabs: RecentlyClosedTab[]
+  /** Workspace sidebar width in px (ticket 29): clamped 240–520, default
+   * 320. Both draggable panes persist through preferences so a restart
+   * restores the layout exactly as left. */
+  sidebarWidth: number
+  /** Side panel width in px (ticket 29): clamped per clampPanelWidth,
+   * default 420 — the same persistence contract as sidebarWidth so both
+   * draggable panes behave alike. */
+  panelWidth: number
 }
 
 export const DEFAULT_PREFERENCES: AppPreferences = {
@@ -59,7 +69,9 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   newTaskFixedProject: null,
   hiddenGroups: [],
   readStates: {},
-  recentlyClosedTabs: []
+  recentlyClosedTabs: [],
+  sidebarWidth: SIDEBAR_WIDTH_PX,
+  panelWidth: PANEL_DEFAULT_WIDTH_PX
 }
 
 const THINKING_LEVELS: ReadonlySet<string> = new Set([
@@ -175,6 +187,20 @@ function normalizedRecentlyClosedOr(prev: RecentlyClosedTab[], value: unknown): 
   return Array.isArray(value) ? normalizeRecentlyClosed(value) : prev
 }
 
+/** Draggable pane widths (ticket 29): numbers only, clamped into the
+ * pane's drag range (sidebar 240–520 per clampSidebarWidth, side panel per
+ * clampPanelWidth) so the persisted value can never disagree with what the
+ * drag path and the reducers enforce. Widths have no clearing semantics —
+ * null/junk falls back to the pane default. */
+function normalizedPaneWidth(value: unknown, fallback: number, clamp: (width: number) => number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? clamp(value) : fallback
+}
+
+function normalizedPaneWidthOr(prev: number, value: unknown, clamp: (width: number) => number): number {
+  if (value === undefined) return prev
+  return normalizedPaneWidth(value, prev, clamp)
+}
+
 /** Defensive read of a preferences JSON document — invalid fields fall back. */
 export function normalizePreferences(raw: unknown): AppPreferences {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return { ...DEFAULT_PREFERENCES }
@@ -186,7 +212,9 @@ export function normalizePreferences(raw: unknown): AppPreferences {
     newTaskFixedProject: normalizedFixedProject(record['newTaskFixedProject']),
     hiddenGroups: normalizedHiddenGroups(record['hiddenGroups']),
     readStates: normalizedReadStates(record['readStates']),
-    recentlyClosedTabs: normalizeRecentlyClosed(record['recentlyClosedTabs'])
+    recentlyClosedTabs: normalizeRecentlyClosed(record['recentlyClosedTabs']),
+    sidebarWidth: normalizedPaneWidth(record['sidebarWidth'], SIDEBAR_WIDTH_PX, clampSidebarWidth),
+    panelWidth: normalizedPaneWidth(record['panelWidth'], PANEL_DEFAULT_WIDTH_PX, clampPanelWidth)
   }
 }
 
@@ -202,7 +230,9 @@ export function mergePreferences(prev: AppPreferences, patch: unknown): AppPrefe
     newTaskFixedProject: normalizedFixedProjectOr(prev.newTaskFixedProject, record['newTaskFixedProject']),
     hiddenGroups: normalizedHiddenGroupsOr(prev.hiddenGroups, record['hiddenGroups']),
     readStates: normalizedReadStatesOr(prev.readStates, record['readStates']),
-    recentlyClosedTabs: normalizedRecentlyClosedOr(prev.recentlyClosedTabs, record['recentlyClosedTabs'])
+    recentlyClosedTabs: normalizedRecentlyClosedOr(prev.recentlyClosedTabs, record['recentlyClosedTabs']),
+    sidebarWidth: normalizedPaneWidthOr(prev.sidebarWidth, record['sidebarWidth'], clampSidebarWidth),
+    panelWidth: normalizedPaneWidthOr(prev.panelWidth, record['panelWidth'], clampPanelWidth)
   }
 }
 

@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
+import { useEffect, useMemo, useRef, useState, type Dispatch, type JSX, type PointerEvent } from 'react'
 import type { SessionSummary } from '../../../shared/sessions/types'
+import { clampSidebarWidth, type ShellUiAction } from '../../../shared/layout-model'
 import {
   filterHiddenGroups,
   filterSessions,
@@ -73,6 +74,14 @@ interface SidebarProps {
   onOpenSearch: () => void
   /** Open the settings window (ticket 10). */
   onOpenSettings: () => void
+  /** Current sidebar width in px (ticket 29): the shell state seeds it from
+   * preferences; the drag path writes the DOM directly and commits once on
+   * pointerup. */
+  width: number
+  /** Shell dispatch for the width commits (ticket 29): set-sidebar-width on
+   * pointerup, reset-sidebar-width on double-click. The App-level dispatch
+   * persists each real change to preferences. */
+  dispatch: Dispatch<ShellUiAction>
 }
 
 function TaskItem({
@@ -193,7 +202,9 @@ export default function Sidebar({
   onHideGroup,
   onOpenPreview,
   onOpenSearch,
-  onOpenSettings
+  onOpenSettings,
+  width,
+  dispatch
 }: SidebarProps): JSX.Element | null {
   const now = useNowTick(30_000)
   const [filterOpen, setFilterOpen] = useState(false)
@@ -207,6 +218,55 @@ export default function Sidebar({
    * survives the return (acceptance: the browser leaves no residue). */
   const [browserTarget, setBrowserTarget] = useState<{ cwd: string; project: string } | null>(null)
   const filterRef = useRef<HTMLInputElement>(null)
+
+  // Sidebar width drag (ticket 29): pointermove NEVER dispatches — the raw
+  // width is rAF-coalesced and written straight to the aside's style (the
+  // ticket-30 side-panel pattern, mirrored for the left pane), so a full
+  // task list never re-renders mid-drag. The reducer commit happens once,
+  // on pointerup; clampSidebarWidth is shared with the reducer so the live
+  // write and the commit can never disagree.
+  const drag = useRef<{ startX: number; startWidth: number; width: number; raf: number } | null>(null)
+  const frameRef = useRef<HTMLElement | null>(null)
+
+  function startResize(event: PointerEvent<HTMLDivElement>): void {
+    event.preventDefault()
+    drag.current = { startX: event.clientX, startWidth: width, width, raf: 0 }
+    // A vanished pointer (canceled mouse, synthetic event) must not kill the drag.
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {
+      // Moves still land while the button is held over the edge.
+    }
+  }
+
+  function moveResize(event: PointerEvent<HTMLDivElement>): void {
+    const d = drag.current
+    if (!d) return
+    // The LEFT pane's right edge: dragging right widens the sidebar.
+    d.width = clampSidebarWidth(d.startWidth + (event.clientX - d.startX))
+    if (d.raf !== 0) return
+    d.raf = requestAnimationFrame(() => {
+      d.raf = 0
+      // Drag ended before this frame ran: the pointerup commit owns the DOM.
+      if (drag.current !== d) return
+      if (frameRef.current) frameRef.current.style.width = `${d.width}px`
+    })
+  }
+
+  function endResize(event: PointerEvent<HTMLDivElement>): void {
+    const d = drag.current
+    drag.current = null
+    if (d) {
+      if (d.raf !== 0) cancelAnimationFrame(d.raf)
+      // Single state commit per drag; the reducer clamps with the same
+      // clampSidebarWidth the DOM writes used, so nothing jumps. The
+      // dispatch persists the change to preferences (App-level wrapper).
+      dispatch({ type: 'set-sidebar-width', width: d.width })
+    }
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }
 
   const filtered = useMemo(() => filterSessions(sessions, query), [sessions, query])
   const grouped = useMemo(() => groupSessions(filtered, pinnedIds), [filtered, pinnedIds])
@@ -268,7 +328,18 @@ export default function Sidebar({
   if (!open) return null
 
   return (
-    <aside className="sidebar">
+    <aside ref={frameRef} className="sidebar" style={{ width }}>
+      <div
+        className="sidebar-resizer"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize sidebar"
+        onPointerDown={startResize}
+        onPointerMove={moveResize}
+        onPointerUp={endResize}
+        onPointerCancel={endResize}
+        onDoubleClick={() => dispatch({ type: 'reset-sidebar-width' })}
+      />
       {browserTarget !== null ? (
         <FileBrowser
           key={browserTarget.cwd}

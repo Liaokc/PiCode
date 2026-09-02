@@ -152,13 +152,59 @@ kbd {
 
 /* ---------- sidebar (nav rail + task list skeleton) ---------- */
 
+/* Width (ticket 29): the shell state's inline width owns the geometry —
+   var(--sidebar-w) is only the pre-hydration fallback. Round-2 floor: the
+   pane yields before the session view does — max-width = window − other
+   pane − 420px main floor (the CSS mirror of the commit clamp in App;
+   --panel-w is 0 while the panel is closed), floored at the pane min.
+   z-index keeps the panes ABOVE the empty-state watermark: ZCode covers
+   the logo, never the reverse. */
 .sidebar {
+  position: relative;
+  flex-shrink: 0;
   width: var(--sidebar-w);
-  min-width: var(--sidebar-w);
+  max-width: max(240px, calc(100% - var(--panel-w, 0px) - 420px));
+  z-index: 1;
   background: var(--bg-sidebar);
   padding-top: var(--titlebar-h);
   display: flex;
   flex-direction: column;
+}
+
+/* Right-edge drag handle (ticket 29) — mirror of the side panel's
+   .panel-resizer, protruding into the main zone so the grab strip is
+   centered on the boundary. */
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -5px;
+  width: 11px;
+  cursor: col-resize;
+  z-index: 45;
+}
+
+.sidebar-resizer:hover,
+.sidebar-resizer:active {
+  background: color-mix(in srgb, var(--accent-orange) 28%, transparent);
+}
+
+/* Always-visible grip line on the boundary so the drag affordance is
+   discoverable — same form as the side panel's left edge. */
+.sidebar::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 2px;
+  background: transparent;
+  z-index: 44;
+  cursor: col-resize;
+}
+
+.sidebar:hover::after {
+  background: var(--border-strong);
 }
 
 .sb-actions {
@@ -783,7 +829,10 @@ kbd {
 
 .main-zone {
   flex: 1;
-  min-width: 0;
+  /* Round-2 floor (ticket 29): however wide the panes get, the session view
+     keeps 420px — one-line placeholder + compact chip row. The panes'
+     max-widths guarantee it; this is the belt to their braces. */
+  min-width: 420px;
   min-height: 0;
   background: var(--bg-main);
   position: relative;
@@ -806,6 +855,11 @@ kbd {
 }
 
 .empty-greeting {
+  /* Round-2 feedback: one line, never wider than the composer — the Empty
+     State shrinks the font to fit (width: fit-content makes scrollWidth
+     report the text width for the measurement). */
+  width: fit-content;
+  white-space: nowrap;
   margin: 0 0 42px;
   font-size: 33px;
   font-weight: 500;
@@ -877,6 +931,63 @@ kbd {
   border-radius: 15px;
   font-size: 13px;
   color: var(--text-primary);
+}
+
+/* Chip labels never wrap (the overflow bug at squeezed widths) — the
+   density stages shed labels instead (ticket-29 feedback). */
+.cmp-chip span {
+  white-space: nowrap;
+}
+
+/* The green thinking-strength bar (ZCode parity): bar length = the level's
+   position in the model's own level list; empty = thinking off. Same green
+   as the liveness dot. */
+.cmp-think-bar {
+  display: inline-block;
+  width: 4px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--bg-active);
+  position: relative;
+  overflow: hidden;
+}
+
+.cmp-think-bar-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #34a853;
+  border-radius: 2px;
+}
+
+/* 'max' = beyond full: a gloss band sweeps down the bar forever
+   (operator-approved design, ticket-29 feedback). */
+.cmp-think-shimmer::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 45%;
+  background: linear-gradient(to bottom, transparent, rgba(255, 255, 255, 0.95), transparent);
+  transform: translateY(-150%);
+  animation: cmp-think-shimmer 1.8s linear infinite;
+}
+
+@keyframes cmp-think-shimmer {
+  from {
+    transform: translateY(-150%);
+  }
+  to {
+    transform: translateY(350%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cmp-think-shimmer::after {
+    animation: none;
+  }
 }
 
 .cmp-chip:hover {
@@ -2230,7 +2341,14 @@ button.heat:hover {
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  min-width: 0;
+  /* ZCode drag rule (ticket 29 + round-2 floor): the pane holds its width
+     until it would steal the main zone's 420px floor — max-width = this row
+     (window − sidebar) − floor (the CSS mirror of the commit clamp in App;
+     --sidebar-w is only the pre-hydration fallback here), floored at the
+     pane min. */
+  flex-shrink: 0;
+  max-width: max(280px, calc(100% - 420px));
+  z-index: 1;
 }
 
 .panel-resizer {

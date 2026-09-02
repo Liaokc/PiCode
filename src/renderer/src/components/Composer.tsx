@@ -3,9 +3,10 @@ import type { AccessMode, ImageAttachment, ModelRef, ProviderModels, SlashComman
 import type { ChatQueue } from '../../../shared/chat-reducer'
 import { applyMention, mentionQueryAt } from '../../../shared/composer/mention'
 import { accessModeLabel } from '../../../shared/composer/access'
+import { composerDensity, thinkingBarFraction, thinkingBarShimmers, type ComposerDensity } from '../../../shared/composer/density'
 import { AccessMenu, ModelMenu, ThinkingMenu, thinkingLabel } from './composer/menus'
 import { FileMenu, SlashMenu } from './composer/list-menus'
-import { ArrowUpIcon, CloseIcon, GaugeIcon, PlusIcon, ShieldCheckIcon, StopIcon } from './icons'
+import { ArrowUpIcon, CloseIcon, CubeIcon, GaugeIcon, PlusIcon, ShieldCheckIcon, StopIcon } from './icons'
 import QueuePanel from './QueuePanel'
 import Tooltip from './Tooltip'
 
@@ -94,9 +95,26 @@ export default function Composer({
   const [menuIndex, setMenuIndex] = useState(0)
   const [fileOptions, setFileOptions] = useState<string[]>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const sectionRef = useRef<HTMLElement | null>(null)
   const fileSeq = useRef(0)
   const fileListRequest = useRef<string | null>(null)
   const fileDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Staged label degradation (ZCode parity, ticket-29 feedback): the footer
+  // sheds text as the panes crowd the main zone. Measured on the composer
+  // card itself; setDensity bails out on unchanged values, so a drag only
+  // re-renders at stage boundaries (≤ 2 per drag), never per frame.
+  const [density, setDensity] = useState<ComposerDensity>('full')
+  useEffect(() => {
+    const section = sectionRef.current
+    if (!section || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width
+      if (width !== undefined) setDensity(composerDensity(width))
+    })
+    observer.observe(section)
+    return () => observer.disconnect()
+  }, [])
 
   const mention = mentionQueryAt(value, caret)
   const slashQuery = value.startsWith('/') ? value.slice(1) : null
@@ -273,12 +291,17 @@ export default function Composer({
     ])
   }
 
-  const modelLabel = chat.model
-    ? `${chat.providers.find((p) => p.providerId === chat.model?.providerId)?.name ?? chat.model.providerId}/${modelShortId(chat.model)}`
-    : 'Select Model'
+  const modelName = chat.model ? modelShortId(chat.model) : null
+  const modelProviderName = chat.model
+    ? chat.providers.find((p) => p.providerId === chat.model?.providerId)?.name ?? chat.model.providerId
+    : null
+  const modelFullLabel = modelName !== null ? `${modelProviderName}/${modelName}` : 'Select Model'
+  const modelTooltip = chat.model ? modelFullLabel : 'Select model'
+  const accessTooltip = accessModeLabel(chat.accessMode)
+  const thinkingTooltip = chat.thinkingLevel ? thinkingLabel(chat.thinkingLevel) : 'Thinking'
 
   return (
-    <section className="composer" aria-label="Composer">
+    <section ref={sectionRef} className="composer" aria-label="Composer">
       {menu === 'slash' && (
         <SlashMenu
           commands={chat.slashCommands}
@@ -376,36 +399,66 @@ export default function Composer({
             <PlusIcon />
           </button>
         </Tooltip>
-        <button
-          type="button"
-          className={chat.accessMode === 'full-access' ? 'cmp-chip cmp-access' : 'cmp-chip cmp-access cmp-access-soft'}
-          disabled={disabled}
-          onClick={() => setMenu(menu === 'access' ? null : 'access')}
-        >
-          <ShieldCheckIcon />
-          <span>{accessModeLabel(chat.accessMode)}</span>
-          <span className="cmp-caret">⌄</span>
-        </button>
+        {/* Staged degradation (ZCode parity, ticket-29 feedback): labels
+            shed as the composer narrows — icon-only access, name-only model,
+            and the green strength bar replacing the thinking label. The
+            hidden label stays reachable via tooltip + aria-label; the full
+            stage renders the exact pre-density DOM (no tooltip trigger). */}
+        <Tooltip label={density === 'full' ? undefined : accessTooltip}>
+          <button
+            type="button"
+            className={chat.accessMode === 'full-access' ? 'cmp-chip cmp-access' : 'cmp-chip cmp-access cmp-access-soft'}
+            aria-label={`Access mode: ${accessTooltip}`}
+            disabled={disabled}
+            onClick={() => setMenu(menu === 'access' ? null : 'access')}
+          >
+            <ShieldCheckIcon />
+            {density === 'full' && <span>{accessModeLabel(chat.accessMode)}</span>}
+            {density !== 'minimal' && <span className="cmp-caret">⌄</span>}
+          </button>
+        </Tooltip>
         <span className="composer-spring" />
-        <button
-          type="button"
-          className="cmp-chip cmp-muted"
-          disabled={disabled}
-          onClick={() => setMenu(menu === 'model' ? null : 'model')}
-        >
-          <span>{modelLabel}</span>
-          <span className="cmp-caret">⌄</span>
-        </button>
-        <button
-          type="button"
-          className="cmp-chip cmp-muted"
-          disabled={disabled || chat.availableLevels.length === 0}
-          onClick={() => setMenu(menu === 'thinking' ? null : 'thinking')}
-        >
-          <GaugeIcon />
-          <span>{chat.thinkingLevel ? thinkingLabel(chat.thinkingLevel) : 'Thinking'}</span>
-          <span className="cmp-caret">⌄</span>
-        </button>
+        <Tooltip label={density === 'minimal' ? modelTooltip : undefined}>
+          <button
+            type="button"
+            className="cmp-chip cmp-muted"
+            aria-label={modelName !== null ? `Model: ${modelName}` : 'Select model'}
+            disabled={disabled}
+            onClick={() => setMenu(menu === 'model' ? null : 'model')}
+          >
+            {density === 'minimal' ? (
+              <CubeIcon />
+            ) : (
+              <span>{density === 'compact' ? modelName ?? modelFullLabel : modelFullLabel}</span>
+            )}
+            {density !== 'minimal' && <span className="cmp-caret">⌄</span>}
+          </button>
+        </Tooltip>
+        <Tooltip label={density === 'full' ? undefined : thinkingTooltip}>
+          <button
+            type="button"
+            className="cmp-chip cmp-muted"
+            aria-label={`Thinking: ${thinkingTooltip}`}
+            disabled={disabled || chat.availableLevels.length === 0}
+            onClick={() => setMenu(menu === 'thinking' ? null : 'thinking')}
+          >
+            <GaugeIcon />
+            {density === 'full' && <span>{chat.thinkingLevel ? thinkingLabel(chat.thinkingLevel) : 'Thinking'}</span>}
+            {density === 'compact' && (
+              <span
+                className={thinkingBarShimmers(chat.thinkingLevel) ? 'cmp-think-bar cmp-think-shimmer' : 'cmp-think-bar'}
+                role="img"
+                aria-label={`Thinking strength ${thinkingTooltip}`}
+              >
+                <span
+                  className="cmp-think-bar-fill"
+                  style={{ height: `${Math.round(thinkingBarFraction(chat.thinkingLevel) * 100)}%` }}
+                />
+              </span>
+            )}
+            {density === 'full' && <span className="cmp-caret">⌄</span>}
+          </button>
+        </Tooltip>
         {busy ? (
           <>
             <div className="cmp-queued-toggle" role="radiogroup" aria-label="While the agent runs">

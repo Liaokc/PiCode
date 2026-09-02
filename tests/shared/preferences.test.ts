@@ -6,6 +6,8 @@ import {
   sessionDefaultsFromPreferences,
   toggleHiddenGroup
 } from '../../src/shared/preferences.ts'
+import { SIDEBAR_WIDTH_PX } from '../../src/shared/layout-model.ts'
+import { PANEL_DEFAULT_WIDTH_PX } from '../../src/shared/panel-model.ts'
 
 describe('normalizePreferences', () => {
   it('falls back to the defaults for missing, corrupt, or non-object input', () => {
@@ -29,7 +31,9 @@ describe('normalizePreferences', () => {
       newTaskFixedProject: '/Users/dev/repos/api',
       hiddenGroups: [],
       readStates: {},
-      recentlyClosedTabs: []
+      recentlyClosedTabs: [],
+      sidebarWidth: SIDEBAR_WIDTH_PX,
+      panelWidth: PANEL_DEFAULT_WIDTH_PX
     })
     expect(
       normalizePreferences({
@@ -71,8 +75,18 @@ describe('mergePreferences', () => {
       newTaskFixedProject: null,
       hiddenGroups: [],
       readStates: {},
-      recentlyClosedTabs: []
+      recentlyClosedTabs: [],
+      sidebarWidth: SIDEBAR_WIDTH_PX,
+      panelWidth: PANEL_DEFAULT_WIDTH_PX
     })
+
+    // The pane widths (ticket 29) ride the same patch channel as everything
+    // else and must survive unrelated patches (readStates upserts).
+    const widened = mergePreferences(DEFAULT_PREFERENCES, { sidebarWidth: 480, panelWidth: 640 })
+    expect(widened.sidebarWidth).toBe(480)
+    expect(widened.panelWidth).toBe(640)
+    expect(mergePreferences(widened, { readStates: {} }).sidebarWidth).toBe(480)
+    expect(mergePreferences(widened, { readStates: {} }).panelWidth).toBe(640)
   })
 
   it('lets a patch clear the default model and thinking level with null', () => {
@@ -108,6 +122,48 @@ describe('mergePreferences', () => {
     ).toEqual(['/work/api', '/work/web'])
     expect(normalizePreferences({ hiddenGroups: 'nope' }).hiddenGroups).toEqual([])
     expect(normalizePreferences({ hiddenGroups: [1337] }).hiddenGroups).toEqual([])
+  })
+
+  it('normalizes the pane widths table-driven: clamp into the drag ranges, defaults on junk (ticket 29)', () => {
+    // Sidebar: 240–520, default 320. Panel: clampPanelWidth's range, default 420.
+    expect(DEFAULT_PREFERENCES.sidebarWidth).toBe(SIDEBAR_WIDTH_PX)
+    expect(DEFAULT_PREFERENCES.panelWidth).toBe(PANEL_DEFAULT_WIDTH_PX)
+    expect(normalizePreferences(undefined).sidebarWidth).toBe(320)
+    expect(normalizePreferences(undefined).panelWidth).toBe(420)
+    const widths: Array<[unknown, unknown, number, number, string]> = [
+      [200, 100, 240, 280, 'below both floors clamps to the mins'],
+      [240, 280, 240, 280, 'exact mins pass'],
+      [399.6, 640.4, 400, 640, 'fractions round'],
+      [520, 1200, 520, 1200, 'exact maxes pass'],
+      [900, 5000, 520, 1200, 'above both ceilings clamps to the maxes'],
+      ['400', 420, 320, 420, 'a string width is junk → default'],
+      [Number.NaN, Number.POSITIVE_INFINITY, 320, 420, 'non-finite numbers are junk → default'],
+      [null, null, 320, 420, 'null is junk → default (widths have no clearing semantics)']
+    ]
+    for (const [sidebar, panel, wantSidebar, wantPanel, label] of widths) {
+      const prefs = normalizePreferences({ sidebarWidth: sidebar, panelWidth: panel })
+      expect(prefs.sidebarWidth, label).toBe(wantSidebar)
+      expect(prefs.panelWidth, label).toBe(wantPanel)
+    }
+  })
+
+  it('patches the pane widths: missing or invalid patches keep the previous value (ticket 29)', () => {
+    const base = normalizePreferences({ sidebarWidth: 400, panelWidth: 700 })
+    expect(base.sidebarWidth).toBe(400)
+    expect(base.panelWidth).toBe(700)
+    expect(mergePreferences(base, {}).sidebarWidth).toBe(400)
+    expect(mergePreferences(base, {}).panelWidth).toBe(700)
+    expect(mergePreferences(base, { sidebarWidth: 460 }).sidebarWidth).toBe(460)
+    expect(mergePreferences(base, { sidebarWidth: 9999 }).sidebarWidth).toBe(520)
+    expect(mergePreferences(base, { sidebarWidth: 'wide' }).sidebarWidth).toBe(400)
+    expect(mergePreferences(base, { panelWidth: 200 }).panelWidth).toBe(280)
+    expect(mergePreferences(base, { panelWidth: 1337 }).panelWidth).toBe(1200)
+    expect(mergePreferences(base, { panelWidth: Number.NaN }).panelWidth).toBe(700)
+    // Out-of-range persisted documents (older builds, hand-edited files)
+    // re-clamp on read instead of surfacing broken geometry.
+    const reread = normalizePreferences({ sidebarWidth: 9999, panelWidth: 1 })
+    expect(reread.sidebarWidth).toBe(520)
+    expect(reread.panelWidth).toBe(280)
   })
 
   it('normalizes readStates: valid per-session entries only (ticket 28)', () => {

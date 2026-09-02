@@ -49,7 +49,10 @@ describe('SettingsService', () => {
       newTaskFixedProject: null,
       hiddenGroups: [],
       readStates: {},
-      recentlyClosedTabs: []
+      recentlyClosedTabs: [],
+      // Pre-ticket-29 documents have no pane widths — the defaults apply.
+      sidebarWidth: 320,
+      panelWidth: 420
     })
     expect(snapshot.lastUsedDirectory).toBe('/Users/dev/projects/api-server')
   })
