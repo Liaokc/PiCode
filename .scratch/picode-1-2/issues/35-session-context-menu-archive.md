@@ -6,7 +6,7 @@
 
 **Blocked by:** 28（未读模型 + 点槽语义）、34（TaskItem 行几何先行）、33（Trash 钮与工具区序列化）。
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [ ] 右键菜单九项就位（trace 项入座）；Mark as Unread/Read 接票 28 手动覆盖位
 - [ ] 归档：悬停钮临时替换点槽；两视图列表消失、⌘K 可达、置顶归档隐含取消置顶、会话文件零改动
@@ -30,3 +30,4 @@
 - 2026-09-02 (operator feedback round 1): 归档悬停钮弃用垃圾桶图形（与「删除」语义撞车），改用新增的归档盒描边图标 ArchiveBoxIcon（12px）。帧已重拍，不变量全部重验。sha `4d694f4`。
 - 2026-09-02 (operator feedback round 1 cont.): 工具区「Archived tasks」入口钮同步换成归档盒——归档链路上不再有垃圾桶图形；归档 toast 与「全部归档」空态文案从 'trash button' 改为 'Archived view'。帧重拍重验。sha `3591fce`。
 - 2026-09-02 (integration round, rebase onto t33): 票 33 合入后 rebase 整合完成，落位按操作者配方。要点：① 派生管线合成为唯一正确形——`listed = filterArchived(sessions, archivedIds)` 最上游，`groupSessions(listed, pinnedIds, sort)` 与 `timelineSessions(listed, pinnedIds, sort)` 并行消费；文本筛选（query/filtering/filterRef/filterSessions）随 33 退役；⌘K 仍喂未过滤 sessions。② 渲染取 33 双视图结构，35 的 TaskItem 七个新 props 补齐三处调用点（Pinned 区 git 自动接好，Projects shown.map 与 timeline 两处手工补）；空态提示保留两条件且去掉已退役的 `!filtering` 条件。③ dismissal effects 双留（33 下拉 + 35 右键菜单）；"View files" 入口补回 `setShowArchived(false)`。④ 三个记账提交因 main 上 merge session 已同步同内容而 drop（d7363c8/57edc9c/008d4f4 的票 Comments 均已在 main）。⑤ CONTEXT.md 归档条目措辞随 33 更新（视图名 Projects / Timeline；"Trash 钮"→"归档盒钮"）。验证门全绿：typecheck / lint / vitest 840（含 33 的 createdAt 契约用例）/ electron smoke（ticket-35 阶段全过）/ visual:context-menu 五帧 / visual:filter 三帧（dropdown/timeline/created sort/persistence）。Timeline 视图消费同一 `listed` 投影——归档过滤对两视图结构性生效（纯函数表驱动 + 管线单点取数可证）。分支现状：113af4e / b0bbef8 / 512faf4（rebase 后新 sha）。
+- 2026-09-02 (merge session, 2nd round): 二次验收通过 → merged as **64b1d36** (merge --no-ff onto main @ 9e7bc91；整合轮后分支四提交纯重放，**零冲突**——整合配方全部落位，票文件整合评论末尾追加干净重放）。main 终态审计：typecheck 绿，vitest **840/840**（66 files，+36 为 context-menu/context-actions/archive 用例），接缝幸存——管线合成形逐字在位（listed→grouped(sort)+timeline(sort)，L362-364）、timeline 分支 TaskItem 已带 35 props、filterSessions/filterRef 零残留、模型三件套（context-menu/context-actions/archive.ts）+ smoke 六新 stage（context_menu_items/copy_cwd/copy_id、archive_hidden/restore/view）；27–34 全部既有 seam 完好，无冲突标记残留。首回合冲突（33 重写 Sidebar vs 35 叠加旧结构，8 hunks 中管线+渲染块属语义级）按纪律退回本会话整合——先例模式完整走通：退回 → 整合 → 验证门重跑 → 二次验收 → 重合。
