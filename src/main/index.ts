@@ -293,6 +293,14 @@ app.whenReady().then(() => {
     return sessionIndex?.followSnapshot(file)
   })
   ipcMain.on('sessions:unfollow', () => sessionIndex?.stopFollowing())
+  // Call-trace payload (ticket 36): one-shot read-only build over any session
+  // file — TUI sessions included; the additive contract member is the same
+  // file-scoped family as `sessions:follow`. Validation guards the channel;
+  // an unreadable file resolves null (the tab shows its error state).
+  ipcMain.handle('sessions:trace', (_event, file: unknown) => {
+    if (typeof file !== 'string' || file.length === 0) return Promise.resolve(null)
+    return sessionIndex?.trace(file) ?? Promise.resolve(null)
+  })
   sessionIndex.start()
 
   startSettingsVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))

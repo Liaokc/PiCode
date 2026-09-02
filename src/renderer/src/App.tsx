@@ -902,7 +902,11 @@ export default function App(): JSX.Element {
         void window.picode.sessions.contextAction({ kind: 'copy', text: session.id })
         break
       case 'view-trace':
-        // Entry seated in ticket 35; the trace tab consumes it in ticket 36.
+        // Ticket 36: the trace tab's identity is the session file; opening
+        // it follows the same deep-link semantics as file previews (open
+        // new tab / focus existing, panel unfurled).
+        panelDispatch({ type: 'open-tab', tab: { kind: 'trace', sessionFile: session.file } })
+        dispatch({ type: 'open-side-panel' })
         break
     }
   }
