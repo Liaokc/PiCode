@@ -36,6 +36,11 @@
  * the foreground — Approve & Remember sticks (no second ask), and deny
  * terminates the round, round-trips the reason, and updates the transcript.
  *
+ * Ticket 27 adds the keymap-remap stage: the four titlebar tooltips carry
+ * R1 keycaps (⌘B / ⌥⌘B / ⌘J / ⌥⌘J) and the four chords — dispatched as
+ * physical-key events (code + modifiers only) — toggle sidebar, side
+ * panel, terminal dock and bridge dock.
+ *
  * Any missed step times out and exits non-zero. Progress logs as
  * `SMOKE <step>` lines on stdout. Not part of `npm test`.
  */
@@ -472,9 +477,11 @@ export function startSmokeIfEnabled(
       'newtask first prompt delivered'
     )
     await withWindow(getWindow, async (win) => {
-      // ⌘N → the chip empty state replaces the open session view.
+      // ⌘N → the chip empty state replaces the open session view. The
+      // event carries the PHYSICAL code (ticket 27): the resolver reads
+      // code + modifiers, never the derived character.
       await win.webContents.executeJavaScript(
-        `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', metaKey: true, bubbles: true }))`
+        `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', code: 'KeyN', metaKey: true, bubbles: true }))`
       )
       const chipShown = await waitForProbe(
         win,
@@ -897,6 +904,96 @@ export function startSmokeIfEnabled(
       log('bg_deny_ok')
     })
     log('bg_approval_done')
+
+    // ---- ticket 27: keymap remap — ⌘B sidebar / ⌥⌘B side panel / ⌘J
+    // terminal / ⌥⌘J bridge (physical event.code judgment) ----
+    log('keymap_start')
+    await withWindow(getWindow, async (win) => {
+      // R1 keycap tooltips: the four titlebar toggles advertise chords only.
+      const tipsRaw = (await win.webContents.executeJavaScript(
+        `JSON.stringify({
+          sidebar: document.querySelector('button[aria-label="Show sidebar"], button[aria-label="Hide sidebar"]')?.dataset.tipShortcut ?? null,
+          sidePanel: document.querySelector('button[aria-label="Open side panel"], button[aria-label="Close side panel"]')?.dataset.tipShortcut ?? null,
+          terminal: document.querySelector('button[aria-label="Toggle terminal"]')?.dataset.tipShortcut ?? null,
+          bridge: document.querySelector('button[aria-label="Toggle agent bridge"]')?.dataset.tipShortcut ?? null
+        })`
+      ).catch(() => 'unavailable')) as string
+      const tips = JSON.parse(tipsRaw) as Record<string, string | null>
+      if (tips.sidebar !== '⌘B' || tips.sidePanel !== '⌥⌘B' || tips.terminal !== '⌘J' || tips.bridge !== '⌥⌘J') {
+        fail(`titlebar keycap tooltips wrong: ${JSON.stringify(tips)}`)
+      }
+      log('keymap_tooltips_ok')
+
+      // Physical-key judgment: the synthetic events carry ONLY code +
+      // modifiers — exactly the fields the resolver reads (⌥⌘ rewrites the
+      // derived character on macOS, so key-based events would never match).
+      const press = (code: string, alt: boolean): Promise<unknown> =>
+        win.webContents.executeJavaScript(
+          `window.dispatchEvent(new KeyboardEvent('keydown', { code: '${code}', altKey: ${alt}, metaKey: true, bubbles: true }))`
+        )
+      /** Sidebar / side-panel presence. */
+      const present = (selector: string): string =>
+        `document.querySelector('${selector}') !== null`
+      /** Dock state string: closed | terminal | bridge | unknown. */
+      const DOCK_STATE = `(() => {
+        const dock = document.querySelector('.terminal-dock')
+        if (!dock || dock.style.display === 'none') return 'closed'
+        const panels = Array.from(document.querySelectorAll('.dock-panel'))
+        if (panels[0]?.style.display !== 'none') return 'terminal'
+        if (panels[1]?.style.display !== 'none') return 'bridge'
+        return 'unknown'
+      })()`
+
+      // ⌘B flips the sidebar (open↔closed) from whatever state earlier
+      // stages left it in.
+      const sidebarBefore = (await win.webContents.executeJavaScript(present('.sidebar'))) as boolean
+      await press('KeyB', false)
+      const sidebarFlipped = await waitForProbe(
+        win,
+        `(${sidebarBefore} ? !(${present('.sidebar')}) : ${present('.sidebar')})`,
+        5_000
+      )
+      if (!sidebarFlipped) fail(`⌘B never toggled the sidebar (was open: ${sidebarBefore})`)
+      log('keymap_cmd_b_sidebar_ok')
+
+      // ⌥⌘B flips the side panel the same way.
+      const panelBefore = (await win.webContents.executeJavaScript(present('.side-panel'))) as boolean
+      await press('KeyB', true)
+      const panelFlipped = await waitForProbe(
+        win,
+        `(${panelBefore} ? !(${present('.side-panel')}) : ${present('.side-panel')})`,
+        5_000
+      )
+      if (!panelFlipped) fail(`⌥⌘B never toggled the side panel (was open: ${panelBefore})`)
+      log('keymap_alt_cmd_b_panel_ok')
+
+      // ⌘J opens the dock showing the terminal / closes it when showing.
+      const dockBefore = (await win.webContents.executeJavaScript(DOCK_STATE)) as string
+      await press('KeyJ', false)
+      const dockAfterJ = await waitForProbe(
+        win,
+        `${DOCK_STATE} === '${dockBefore === 'terminal' ? 'closed' : 'terminal'}'`,
+        5_000
+      )
+      if (!dockAfterJ) fail(`⌘J dock state went ${dockBefore} → unexpected (expected the toggle)`)
+      log('keymap_cmd_j_terminal_ok')
+
+      // ⌥⌘J shows the bridge (from terminal/closed), second press closes.
+      await press('KeyJ', true)
+      const dockBridge = await waitForProbe(win, `${DOCK_STATE} === 'bridge'`, 5_000)
+      if (!dockBridge) fail('⌥⌘J never showed the bridge panel')
+      log('keymap_alt_cmd_j_bridge_ok')
+      await press('KeyJ', true)
+      const dockClosed = await waitForProbe(win, `${DOCK_STATE} === 'closed'`, 5_000)
+      if (!dockClosed) fail('second ⌥⌘J never closed the dock')
+      log('keymap_bridge_toggle_off_ok')
+      // Leave the dock as found: reopen if this stage found it open.
+      if (dockBefore !== 'closed') {
+        await press('KeyJ', dockBefore === 'bridge')
+        await waitForProbe(win, `${DOCK_STATE} === '${dockBefore}'`, 5_000)
+      }
+    })
+    log('keymap_done')
 
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
     const livePids = supervisor.hostPids

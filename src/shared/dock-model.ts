@@ -1,14 +1,14 @@
 /**
  * Bottom dock model (ticket 18, sibling-panel revision): ONE full-width dock
  * frame under the chat with two SIBLING panels — the user shell (⌘J) and
- * the Agent Bridge feed (⌘B). The panels share the same position: pressing
- * the other panel's key swaps the content in place; pressing the same key
- * again closes the dock. Both panels stay mounted while the dock lives, so
- * a live shell survives panel switches and Bridge history survives them
- * too (the feed itself folds at the App level).
+ * the Agent Bridge feed (⌥⌘J since ticket 27). The panels share the same
+ * position: pressing the other panel's key swaps the content in place;
+ * pressing the same key again closes the dock. Both panels stay mounted
+ * while the dock lives, so a live shell survives panel switches and Bridge
+ * history survives them too (the feed itself folds at the App level).
  *
  * Lifecycle split:
- *   - `open`   — frame visibility (⌘J/⌘B, titlebar toggles, panel ×).
+ *   - `open`   — frame visibility (⌘J/⌥⌘J, titlebar toggles, panel ×).
  *   - `panel`  — which sibling fills the frame.
  *   - `tabOpen` — whether a terminal tab exists at all; closing the tab
  *     (chip ×) kills the shell and collapses the dock. Showing the terminal
@@ -40,7 +40,8 @@ export interface DockState {
 export type DockAction =
   /** ⌘J: open showing the terminal / swap from bridge / close if showing. */
   | { type: 'toggle-terminal-panel' }
-  /** ⌘B: open showing the bridge / swap from terminal / close if showing. */
+  /** ⌥⌘J (ticket 27): open showing the bridge / swap from terminal / close
+   * if showing. */
   | { type: 'toggle-bridge-panel' }
   /** Deep link (tool card chip): always show the bridge, never toggle off. */
   | { type: 'open-bridge-panel' }

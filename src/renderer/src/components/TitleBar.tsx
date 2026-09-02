@@ -16,7 +16,7 @@ import { APP_NAME } from '../../../shared/brand'
 interface TitleBarProps {
   ui: ShellUiState
   dispatch: Dispatch<ShellUiAction>
-  /** Bottom dock dispatch (ticket 18): ⌘J terminal + ⌘B bridge panels. */
+  /** Bottom dock dispatch (ticket 18): ⌘J terminal + ⌥⌘J bridge panels. */
   dispatchDock: Dispatch<DockAction>
 }
 
@@ -28,6 +28,9 @@ interface TitleBarProps {
  * The two dock buttons are sibling-panel toggles: each opens its panel in
  * the shared bottom dock, swaps it in while the other shows, or closes the
  * dock when its own panel is already showing.
+ * Tooltips follow the R1 rule (ticket 22): a control with a shortcut shows
+ * ONLY its keycaps — ticket 27 chords: ⌘B sidebar / ⌥⌘B side panel /
+ * ⌘J terminal / ⌥⌘J bridge.
  */
 export default function TitleBar({ ui, dispatch, dispatchDock }: TitleBarProps): JSX.Element {
   const settings = ui.view === 'settings'
@@ -35,7 +38,9 @@ export default function TitleBar({ ui, dispatch, dispatchDock }: TitleBarProps):
     <header className="titlebar">
       {!settings && (
         <div className="titlebar-cluster titlebar-cluster-left">
-          <Tooltip label={ui.sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}>
+          {/* R1: chord control → keycap-only tooltip (aria-label keeps the
+              stateful description for assistive tech). */}
+          <Tooltip shortcut="⌘B">
             <button
               type="button"
               className="tb-btn"
@@ -63,7 +68,7 @@ export default function TitleBar({ ui, dispatch, dispatchDock }: TitleBarProps):
           </button>
         </Tooltip>
         {!settings && (
-          <Tooltip shortcut="⌘B">
+          <Tooltip shortcut="⌥⌘J">
             <button
               type="button"
               className="tb-btn"
@@ -87,7 +92,7 @@ export default function TitleBar({ ui, dispatch, dispatchDock }: TitleBarProps):
           </Tooltip>
         )}
         {!settings && (
-          <Tooltip label={ui.sidePanelOpen ? 'Close side panel' : 'Open side panel'}>
+          <Tooltip shortcut="⌥⌘B">
             <button
               type="button"
               className="tb-btn"

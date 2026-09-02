@@ -2,9 +2,10 @@
  * Terminal + Bridge dock visual-QA harness (tickets 08/18 + feedback
  * rounds). Enabled with PICODE_VISUAL=1 plus PICODE_VISUAL_TERMINAL=1.
  * Both panels live in ONE bottom dock frame: the harness opens the terminal
- * (⌘J entry), then swaps the bridge panel in at the SAME position (⌘B
- * entry), injects a bash sequence into the contract stream, and exercises
- * the tool-card deep link. Captures PNGs for the human visual pass:
+ * (⌘J entry), then swaps the bridge panel in at the SAME position (⌥⌘J
+ * entry since ticket 27), injects a bash sequence into the contract stream,
+ * and exercises the tool-card deep link. Captures PNGs for the human
+ * visual pass:
  *
  *   terminal-1 — dock showing the terminal: shell prompt, ZCode tab strip
  *   bridge-1   — same dock, bridge panel swapped in, command mid-run
@@ -103,7 +104,7 @@ export function startTerminalVisualIfEnabled(getWindow: () => BrowserWindow | nu
       console.log(`VISUAL terminal probe ${JSON.stringify(mounted)}`)
       await capture(win, 'terminal-1')
 
-      // ---- bridge panel: swap in at the SAME position (⌘B entry) ----
+      // ---- bridge panel: swap in at the SAME position (⌥⌘J entry) ----
       if (!(await clickToggle(win, 'Toggle agent bridge'))) throw new Error('bridge dock toggle not found')
       await sleep(300)
 

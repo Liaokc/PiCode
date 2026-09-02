@@ -7,9 +7,10 @@ import TerminalDock from './TerminalDock'
 /**
  * Bottom dock frame (ticket 18, sibling-panel revision): ONE full-width
  * dock under the chat hosting two SIBLING panels — the user shell (⌘J) and
- * the Agent Bridge feed (⌘B). The frame owns the shared geometry (height,
- * top-edge drag handle, visibility); `dock.panel` decides which sibling is
- * visible — pressing the other key swaps the content IN PLACE. Both panels
+ * the Agent Bridge feed (⌥⌘J since ticket 27). The frame owns the shared
+ * geometry (height, top-edge drag handle, visibility); `dock.panel` decides
+ * which sibling is visible — pressing the other key swaps the content IN
+ * PLACE. Both panels
  * stay mounted, so a live shell survives switching and the Bridge feed
  * never loses history (it folds at the App level regardless).
  */
