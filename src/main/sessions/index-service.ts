@@ -223,7 +223,15 @@ export class SessionIndexService {
       this.cache.delete(file)
       return
     }
-    const summary = summarizeSession(text, file, mtimeMs)
+    const summary = summarizeSession(
+      text,
+      file,
+      mtimeMs,
+      // Ticket 33: creation sort source — file birthtime when the platform
+      // reports one (0 = no birthtime support → the summary degrades to null
+      // and the sort falls back to the header timestamp).
+      stats.birthtimeMs > 0 ? Math.round(stats.birthtimeMs) : null
+    )
     if (!summary) return // not a session file (e.g. leftover temp)
     this.cache.set(file, { mtimeMs, size: stats.size, summary })
   }

@@ -109,8 +109,15 @@ function messageText(content: unknown): string {
   return out
 }
 
-/** Derive the sidebar summary of one session file. Null when not a session. */
-export function summarizeSession(fileText: string, file: string, modifiedAt: number): SessionSummary | null {
+/** Derive the sidebar summary of one session file. Null when not a session.
+ * `createdAt` (ticket 33) is the file birthtime in epoch ms, or null when the
+ * platform reports none — a purely additive contract field. */
+export function summarizeSession(
+  fileText: string,
+  file: string,
+  modifiedAt: number,
+  createdAt: number | null = null
+): SessionSummary | null {
   const { header, entries } = parseSessionLines(fileText)
   if (!header) return null
 
@@ -136,6 +143,7 @@ export function summarizeSession(fileText: string, file: string, modifiedAt: num
     title: trimmedName ?? (firstUser !== null ? truncateTitle(firstUser) : 'New Task'),
     startedAt: header.timestamp,
     modifiedAt,
+    createdAt: typeof createdAt === 'number' && Number.isFinite(createdAt) && createdAt > 0 ? createdAt : null,
     messageCount
   }
 }

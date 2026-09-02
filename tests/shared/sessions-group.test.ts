@@ -2,16 +2,34 @@ import { describe, expect, it } from 'vitest'
 import {
   decideFollowTakeover,
   filterHiddenGroups,
-  filterSessions,
   groupSessions,
   isSessionLive,
   projectLabel,
-  relativeTime
+  relativeTime,
+  sessionCreatedMs,
+  timelineSessions,
+  type SessionSort
 } from '../../src/shared/sessions/group.ts'
 import type { SessionSummary } from '../../src/shared/sessions/types.ts'
 
-function session(file: string, cwd: string, modifiedAt: number, title = `Task ${file}`): SessionSummary {
-  return { file, id: file, cwd, name: null, title, startedAt: '', modifiedAt, messageCount: 1 }
+function session(
+  file: string,
+  cwd: string,
+  modifiedAt: number,
+  title = `Task ${file}`,
+  opts: { createdAt?: number | null; startedAt?: string } = {}
+): SessionSummary {
+  return {
+    file,
+    id: file,
+    cwd,
+    name: null,
+    title,
+    startedAt: opts.startedAt ?? '',
+    modifiedAt,
+    createdAt: opts.createdAt ?? null,
+    messageCount: 1
+  }
 }
 
 const NOW = 1_756_300_000_000
@@ -55,23 +73,11 @@ describe('groupSessions', () => {
   })
 })
 
-describe('filterSessions', () => {
-  const sessions = [
-    session('a', '/w', 1, 'Fix redirect loop'),
-    session('b', '/w', 2, 'Upload pipeline smoke'),
-    session('c', '/w', 3, 'rename session label write-back')
-  ]
-
-  it('matches titles case-insensitively', () => {
-    expect(filterSessions(sessions, 'REDIRECT').map((s) => s.id)).toEqual(['a'])
-  })
-
-  it('matches project directory names too', () => {
-    expect(filterSessions([{ ...session('d', '/home/picode', 4) }], 'picode')).toHaveLength(1)
-  })
-
-  it('returns everything for a blank query', () => {
-    expect(filterSessions(sessions, '  ')).toHaveLength(3)
+describe('filterSessions — retired with the sidebar text filter (ticket 33)', () => {
+  it('is gone — ⌘K (task-search) is the one search entry', async () => {
+    // The module must not export the retired row's helper anymore.
+    const group = await import('../../src/shared/sessions/group.ts')
+    expect('filterSessions' in group).toBe(false)
   })
 })
 
@@ -116,7 +122,7 @@ describe('filterHiddenGroups', () => {
     expect(grouped.pinned.map((s) => s.id)).toEqual(['pinned-in-hidden'])
   })
 
-  it('is a sidebar projection only — ⌘K search and the all-tasks view still see hidden groups\' sessions', () => {
+  it('is a sidebar projection only — the timeline view still sees hidden groups\' sessions', () => {
     const sessions = [
       session('hidden-one', '/work/api', NOW, 'Deploy the api'),
       session('kept', '/work/web', NOW - HOUR)
@@ -124,14 +130,142 @@ describe('filterHiddenGroups', () => {
     const hidden = new Set(['/work/api'])
     const visibleGroups = filterHiddenGroups(groupSessions(sessions, new Set()).groups, hidden)
     expect(visibleGroups.map((g) => g.cwd)).toEqual(['/work/web'])
-    // Title search (sidebar filter input and ⌘K palette share it) is NOT fed
-    // the hidden set — decluttering must never make sessions unreachable.
-    expect(filterSessions(sessions, 'deploy').map((s) => s.id)).toEqual(['hidden-one'])
-    // The Groups all-tasks view flattens the same unfiltered session list.
-    expect(groupSessions(sessions, new Set()).groups.flatMap((g) => g.sessions.map((s) => s.id))).toEqual([
+    // The timeline view (ticket 33, the Groups all-tasks successor) flattens
+    // the same unfiltered session list — decluttering must never make a
+    // session unreachable, and ⌘K search (task-search) is fed no hidden set.
+    expect(timelineSessions(sessions, new Set(), 'updated').sessions.map((s) => s.id)).toEqual([
       'hidden-one',
       'kept'
     ])
+  })
+})
+
+// ---- ticket 33: view/sort vocabulary (ZCode filter dropdown) -------------
+
+describe('sessionCreatedMs — creation clock with graceful degrade', () => {
+  const ISO = '2026-08-27T13:00:00.000Z'
+
+  it('uses the file birthtime when the host read one', () => {
+    expect(sessionCreatedMs(session('a', '/w', NOW, 'x', { createdAt: 1_756_000_000_000 }))).toBe(1_756_000_000_000)
+  })
+
+  it('falls back to the session header timestamp when birthtime is missing', () => {
+    expect(sessionCreatedMs(session('b', '/w', NOW, 'x', { createdAt: null, startedAt: ISO }))).toBe(Date.parse(ISO))
+  })
+
+  it('degrades to 0 when neither birthtime nor a parseable header timestamp exist', () => {
+    expect(sessionCreatedMs(session('c', '/w', NOW, 'x', { createdAt: null, startedAt: '' }))).toBe(0)
+    expect(sessionCreatedMs(session('d', '/w', NOW, 'x', { createdAt: null, startedAt: 'garbage' }))).toBe(0)
+  })
+
+  it('treats a zero birthtime as missing', () => {
+    expect(sessionCreatedMs(session('e', '/w', NOW, 'x', { createdAt: 0, startedAt: ISO }))).toBe(Date.parse(ISO))
+  })
+})
+
+describe('groupSessions — sort key (ticket 33)', () => {
+  // A matrix where the updated and created orders DISAGREE: api-1 was created
+  // long ago but edited just now; api-2 is young but idle. Session ids are
+  // the expected rows; every case spells out the full expected order.
+  const sessions = [
+    session('api-1', '/w/api', NOW, 'edited today', { createdAt: NOW - 10 * DAY }),
+    session('api-2', '/w/api', NOW - HOUR, 'young idle', { createdAt: NOW - DAY }),
+    session('api-3', '/w/api', NOW - 2 * DAY, 'middle', { createdAt: NOW - 2 * DAY }),
+    session('web-0', '/w/web', NOW - 6 * HOUR, 'web fresh-created', { createdAt: NOW - 30 * MIN }),
+    session('web-1', '/w/web', NOW - 4 * HOUR, 'web idle', { createdAt: NOW - 3 * DAY })
+  ]
+
+  const rows = (sort: SessionSort): string[] | undefined =>
+    groupSessions(sessions, new Set(), sort).groups.find((g) => g.project === 'api')?.sessions.map((s) => s.id)
+
+  it('updated: newest mtime first within every group', () => {
+    expect(rows('updated')).toEqual(['api-1', 'api-2', 'api-3'])
+  })
+
+  it('created: birthtime desc within every group — order differs from updated', () => {
+    expect(rows('created')).toEqual(['api-2', 'api-3', 'api-1'])
+  })
+
+  it('newest group first under BOTH sorts (group order can flip with the key)', () => {
+    const groupOrder = (sort: SessionSort): string[] =>
+      groupSessions(sessions, new Set(), sort).groups.map((g) => g.project)
+    expect(groupOrder('updated')).toEqual(['api', 'web'])
+    expect(groupOrder('created')).toEqual(['web', 'api'])
+  })
+
+  it('sorts the pinned section by the same key', () => {
+    const pins = [
+      session('old-pin', '/w', NOW - MIN, 'touched just now', { createdAt: NOW - 5 * DAY }),
+      session('new-pin', '/w', NOW - 2 * HOUR, 'young pin', { createdAt: NOW - HOUR })
+    ]
+    expect(groupSessions(pins, new Set(['old-pin', 'new-pin']), 'updated').pinned.map((s) => s.id)).toEqual([
+      'old-pin',
+      'new-pin'
+    ])
+    expect(groupSessions(pins, new Set(['old-pin', 'new-pin']), 'created').pinned.map((s) => s.id)).toEqual([
+      'new-pin',
+      'old-pin'
+    ])
+  })
+
+  it('defaults to the updated sort (the ZCode pre-checked row)', () => {
+    const withDefault = groupSessions(sessions, new Set())
+    const explicit = groupSessions(sessions, new Set(), 'updated')
+    expect(withDefault.groups).toEqual(explicit.groups)
+  })
+
+  it('breaks updated-sort ties by creation time, newest first', () => {
+    const tied = [
+      session('old-soul', '/w', NOW, 'same mtime', { createdAt: NOW - 10 * DAY }),
+      session('young-soul', '/w', NOW, 'same mtime', { createdAt: NOW - DAY })
+    ]
+    expect(groupSessions(tied, new Set(), 'updated').groups[0]?.sessions.map((s) => s.id)).toEqual([
+      'young-soul',
+      'old-soul'
+    ])
+  })
+})
+
+describe('timelineSessions — flat view, pinned kept on top (ticket 33)', () => {
+  const sessions = [
+    session('api-1', '/w/api', NOW, 'edited today', { createdAt: NOW - 10 * DAY }),
+    session('api-2', '/w/api', NOW - HOUR, 'young idle', { createdAt: NOW - DAY }),
+    session('web-0', '/w/web', NOW - 6 * HOUR, 'web fresh-created', { createdAt: NOW - 30 * MIN }),
+    session('web-1', '/w/web', NOW - 4 * HOUR, 'web idle', { createdAt: NOW - 3 * DAY })
+  ]
+  const pins = new Set(['api-2'])
+
+  it('flattens every non-pinned session into ONE recency-sorted list — no groups', () => {
+    const timeline = timelineSessions(sessions, pins, 'updated')
+    expect(timeline.sessions.map((s) => s.id)).toEqual(['api-1', 'web-1', 'web-0'])
+    expect(timeline.pinned.map((s) => s.id)).toEqual(['api-2'])
+  })
+
+  it('created sort reorders the flat list by birthtime', () => {
+    const timeline = timelineSessions(sessions, pins, 'created')
+    // api-2 stays pinned out of the flat list in both sorts.
+    expect(timeline.sessions.map((s) => s.id)).toEqual(['web-0', 'web-1', 'api-1'])
+  })
+
+  it('sorts the pinned section with the same key', () => {
+    const pinnedSessions = [
+      session('old-pin', '/w', NOW - MIN, 'fresh pin', { createdAt: NOW - 5 * DAY }),
+      session('new-pin', '/w', NOW - 2 * HOUR, 'young pin', { createdAt: NOW - HOUR })
+    ]
+    expect(timelineSessions(pinnedSessions, new Set(['old-pin', 'new-pin']), 'created').pinned.map((s) => s.id)).toEqual(
+      ['new-pin', 'old-pin']
+    )
+  })
+
+  it('sees every session regardless of hidden projects — the timeline flattens the whole index', () => {
+    // Hiding is a Projects-list projection (ticket 19); the timeline view is
+    // the Groups all-tasks successor and must stay unfiltered.
+    const hidden = [session('hid', '/hidden/proj', NOW), session('kept', '/w', NOW - HOUR)]
+    expect(timelineSessions(hidden, new Set(), 'updated').sessions.map((s) => s.id)).toEqual(['hid', 'kept'])
+  })
+
+  it('is empty for an empty index', () => {
+    expect(timelineSessions([], new Set(), 'updated')).toEqual({ pinned: [], sessions: [] })
   })
 })
 

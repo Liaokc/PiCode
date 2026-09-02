@@ -12,6 +12,7 @@ function session(cwd: string, modifiedAt: number, id = cwd): SessionSummary {
     title: `t-${id}`,
     startedAt: new Date(modifiedAt).toISOString(),
     modifiedAt,
+    createdAt: null,
     messageCount: 1
   }
 }

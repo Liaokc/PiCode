@@ -24,6 +24,7 @@ import { startSettingsVisualIfEnabled } from './visual-settings'
 import { startTerminalVisualIfEnabled } from './visual-terminal'
 import { startMultiSessionVisualIfEnabled, isolateVisualUserData } from './visual-multisession'
 import { startRowGeometryVisualIfEnabled, isolateRowGeometryUserData } from './visual-row-geometry'
+import { startFilterVisualIfEnabled, isolateFilterUserData } from './visual-filter'
 import { startApprovalVisualIfEnabled } from './visual-approval'
 import { startUsageVisualIfEnabled } from './visual-usage'
 import { startPerfIfEnabled } from './visual-perf'
@@ -44,6 +45,10 @@ isolateVisualUserData()
 // the pin preference) — throwaway userData for it too (no-op unless
 // PICODE_VISUAL_ROW_GEOMETRY=1).
 isolateRowGeometryUserData()
+// Ticket-33 filter-dropdown harness drives the REAL preferences (dropdown
+// choices + pin) — throwaway userData for it too (no-op unless
+// PICODE_VISUAL_FILTER=1).
+isolateFilterUserData()
 
 // Ticket-13 hygiene, extended by ticket 31: the smoke drives the REAL
 // settings service too (panel recently closed round-trip), so it gets the
@@ -152,6 +157,9 @@ app.whenReady().then(() => {
   // Ticket-34 row-geometry harness — same seeding constraint (it also pins
   // through the real button, which needs the seeded rows).
   startRowGeometryVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  // Ticket-33 filter-dropdown harness — same seeding constraint (it also
+  // pins and persists dropdown choices through the real UI).
+  startFilterVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
 
   // Renderer → host relay (Seam-1: the only chat channel the renderer has).
   ipcMain.on('chat:to-host', (_event, message: ParentToHost) => {
@@ -306,6 +314,8 @@ function fakePreferences(): AppPreferences {
     hiddenGroups: ['/Users/demo/Projects/archive'],
     readStates: {},
     recentlyClosedTabs: [],
+    sidebarView: 'projects',
+    sidebarSort: 'updated',
     sidebarWidth: SIDEBAR_WIDTH_PX,
     panelWidth: PANEL_DEFAULT_WIDTH_PX
   }

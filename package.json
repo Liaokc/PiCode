@@ -29,6 +29,7 @@
     "visual:multi": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_MULTI=1 electron .",
     "visual:approval": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_APPROVAL=1 electron .",
     "visual:row-geometry": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_ROW_GEOMETRY=1 electron .",
+    "visual:filter": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_FILTER=1 electron .",
     "visual:layout": "npm run build && node scripts/smoke/layout-captures.mjs",
     "perf:flame": "PICODE_PERF=1 npm run build && node scripts/perf/flame.mjs"
   },

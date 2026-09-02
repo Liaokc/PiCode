@@ -112,6 +112,16 @@ describe('summarizeSession', () => {
     })
   })
 
+  it('carries the file birthtime through as createdAt, degrading to null (ticket 33)', () => {
+    const raw = [headerLine(), messageLine('e1', null, 'user', text('hello'))].join('\n')
+    // Purely additive: callers unaware of the field get a null createdAt.
+    expect(summarizeSession(raw, '/s/f.jsonl', 5)?.createdAt).toBeNull()
+    // The index service passes the stat() birthtime when the platform has one.
+    expect(summarizeSession(raw, '/s/f.jsonl', 5, 1_756_000_000_000)?.createdAt).toBe(1_756_000_000_000)
+    // A zero birthtime means "platform has none" — null, never 0.
+    expect(summarizeSession(raw, '/s/f.jsonl', 5, 0)?.createdAt).toBeNull()
+  })
+
   it('is null for files without a session header', () => {
     expect(summarizeSession('{"type":"message","id":"x","parentId":null,"timestamp":"","message":{"role":"user","content":"hi"}}\n', '/s/f.jsonl', 1)).toBeNull()
   })
