@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type Context, type Dispatch, type JSX, type ReactNode, type RefObject, type SetStateAction } from 'react'
+import { createContext, memo, useCallback, useContext, useEffect, useRef, useState, type Context, type Dispatch, type JSX, type ReactNode, type RefObject, type SetStateAction } from 'react'
 import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
@@ -268,7 +268,7 @@ const components: Components = {
   table: TableCard
 }
 
-export default function Markdown({
+function MarkdownImpl({
   text,
   streaming = false,
   chrome = true
@@ -290,3 +290,14 @@ export default function Markdown({
     </BlockUiContext.Provider>
   )
 }
+
+/**
+ * Memo gate (ticket 30): every prop is a primitive, so the default shallow
+ * compare skips the whole remark + rehype-highlight re-parse whenever the
+ * text did not change. App-level re-renders unrelated to this message (drag
+ * commits, sidebar ticks, terminal events) used to re-parse the full file;
+ * now they bail out at this boundary. Streaming deltas still re-parse —
+ * that's the one case where `text` actually changes.
+ */
+const Markdown = memo(MarkdownImpl)
+export default Markdown

@@ -19,6 +19,13 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()]
   },
   renderer: {
-    plugins: [react()]
+    plugins: [react()],
+    build: {
+      // Ticket-30 perf harness: keep function names intact so `.cpuprofile`
+      // flamegraphs attribute script time to real functions (markdown parse
+      // vs React commit) instead of minified mangles. Undefined keeps the
+      // electron-vite default for every other build.
+      minify: process.env['PICODE_PERF'] === '1' ? false : undefined
+    }
   }
 })

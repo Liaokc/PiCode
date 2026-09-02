@@ -1,0 +1,79 @@
+{
+  "scenario": "drag-dock",
+  "label": "after",
+  "sections": 80,
+  "wallMs": 2934,
+  "frames": 179,
+  "expectedFrames": 179,
+  "longTaskCount": 0,
+  "longTaskMaxMs": 0,
+  "longTaskTotalMs": 0,
+  "durationMs": 2976,
+  "scriptSelfMs": 2976,
+  "mdSelfMs": 0,
+  "reactSelfMs": 1,
+  "otherSelfMs": 2975,
+  "topFunctions": [
+    {
+      "name": "(idle)",
+      "selfMs": 2775
+    },
+    {
+      "name": "(program)",
+      "selfMs": 189.1
+    },
+    {
+      "name": "requestAnimationFrame",
+      "selfMs": 1.3
+    },
+    {
+      "name": "(anonymous)",
+      "selfMs": 1.3
+    },
+    {
+      "name": "(anonymous)",
+      "selfMs": 1.3
+    },
+    {
+      "name": "batchedUpdates$1",
+      "selfMs": 1.3
+    },
+    {
+      "name": "SyntheticBaseEvent",
+      "selfMs": 0.7
+    },
+    {
+      "name": "startResize",
+      "selfMs": 0.6
+    },
+    {
+      "name": "querySelector",
+      "selfMs": 0.6
+    },
+    {
+      "name": "updateEffectImpl",
+      "selfMs": 0.6
+    },
+    {
+      "name": "propagateParentContextChanges",
+      "selfMs": 0.6
+    },
+    {
+      "name": "loop",
+      "selfMs": 0.6
+    },
+    {
+      "name": "getNearestMountedFiber",
+      "selfMs": 0.6
+    },
+    {
+      "name": "reconcileChildrenArray",
+      "selfMs": 0.6
+    }
+  ],
+  "scenarioInfo": {
+    "startHeight": 320,
+    "endHeight": 800,
+    "moves": 80
+  }
+}

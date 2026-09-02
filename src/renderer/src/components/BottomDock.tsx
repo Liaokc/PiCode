@@ -1,5 +1,5 @@
 import { useRef, type Dispatch, type JSX, type PointerEvent } from 'react'
-import type { DockAction, DockState } from '../../../shared/dock-model'
+import { clampDockHeight, type DockAction, type DockState } from '../../../shared/dock-model'
 import type { BridgeFeedState } from '../../../shared/bridge/feed'
 import BridgeDock from './BridgeDock'
 import TerminalDock from './TerminalDock'
@@ -13,6 +13,11 @@ import TerminalDock from './TerminalDock'
  * PLACE. Both panels
  * stay mounted, so a live shell survives switching and the Bridge feed
  * never loses history (it folds at the App level regardless).
+ *
+ * Drag height (ticket 30): same pattern as the SidePanel — pointermove
+ * never dispatches; the raw height is rAF-coalesced and written straight to
+ * the section's style, and the reducer commits once on pointerup through the
+ * shared `clampDockHeight`, so live write and commit always agree.
  */
 
 interface BottomDockProps {
@@ -44,22 +49,43 @@ export default function BottomDock({
   onBridgeHighlightDone,
   dispatch
 }: BottomDockProps): JSX.Element {
-  const drag = useRef<{ startY: number; startHeight: number } | null>(null)
+  const drag = useRef<{ startY: number; startHeight: number; height: number; raf: number } | null>(null)
+  const frameRef = useRef<HTMLElement | null>(null)
 
   function startResize(event: PointerEvent<HTMLDivElement>): void {
     event.preventDefault()
-    drag.current = { startY: event.clientY, startHeight: dock.height }
-    event.currentTarget.setPointerCapture(event.pointerId)
+    drag.current = { startY: event.clientY, startHeight: dock.height, height: dock.height, raf: 0 }
+    // A vanished pointer (canceled mouse, synthetic event) must not kill the drag.
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {
+      // Moves still land while the button is held over the strip.
+    }
   }
 
   function moveResize(event: PointerEvent<HTMLDivElement>): void {
-    if (!drag.current) return
+    const d = drag.current
+    if (!d) return
     // Dragging up grows the panel (dock hangs from the bottom edge).
-    dispatch({ type: 'set-height', height: drag.current.startHeight + (drag.current.startY - event.clientY) })
+    d.height = clampDockHeight(d.startHeight + (d.startY - event.clientY))
+    if (d.raf !== 0) return
+    d.raf = requestAnimationFrame(() => {
+      d.raf = 0
+      // Drag ended before this frame ran: the pointerup commit owns the DOM.
+      if (drag.current !== d) return
+      if (frameRef.current) frameRef.current.style.height = `${d.height}px`
+    })
   }
 
   function endResize(event: PointerEvent<HTMLDivElement>): void {
+    const d = drag.current
     drag.current = null
+    if (d) {
+      if (d.raf !== 0) cancelAnimationFrame(d.raf)
+      // Single state commit per drag; the reducer clamps with the same
+      // clampDockHeight the DOM writes used, so nothing jumps.
+      dispatch({ type: 'set-height', height: d.height })
+    }
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId)
     }
@@ -72,6 +98,7 @@ export default function BottomDock({
 
   return (
     <section
+      ref={frameRef}
       className="terminal-dock"
       aria-label={dock.panel === 'terminal' ? 'Terminal' : 'Agent Bridge'}
       style={{ height: dock.height, display: dock.open ? undefined : 'none' }}
@@ -84,6 +111,7 @@ export default function BottomDock({
         onPointerDown={startResize}
         onPointerMove={moveResize}
         onPointerUp={endResize}
+        onPointerCancel={endResize}
         onDoubleClick={() => dispatch({ type: 'reset-height' })}
       />
 

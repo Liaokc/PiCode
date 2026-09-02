@@ -3,6 +3,7 @@ import {
   PANEL_DEFAULT_WIDTH_PX,
   PANEL_MAX_WIDTH_PX,
   PANEL_MIN_WIDTH_PX,
+  clampPanelWidth,
   initialPanelState,
   panelReducer,
   type PanelAction
@@ -113,5 +114,26 @@ describe('panelReducer — purity', () => {
     expect(next).not.toBe(state)
     expect(state.openTabs).toEqual([])
     expect(panelReducer(state, { type: 'nonsense' } as unknown as PanelAction)).toBe(state)
+  })
+})
+
+describe('clampPanelWidth (ticket 30: drag-path/reducer parity)', () => {
+  it('matches the reducer commit for every raw drag width', () => {
+    // The rAF drag path writes clampPanelWidth straight to the DOM; the
+    // pointerup commit dispatches set-width. Both paths must agree exactly,
+    // or the panel would visibly jump when the drag commits.
+    for (let raw = -500; raw <= 1600; raw += 37) {
+      const committed = panelReducer(initialPanelState(), { type: 'set-width', width: raw }).width
+      expect(clampPanelWidth(raw)).toBe(committed)
+    }
+  })
+
+  it('clamps to the documented bounds and rounds to whole px', () => {
+    expect(clampPanelWidth(Number.NaN)).toBe(PANEL_DEFAULT_WIDTH_PX)
+    expect(clampPanelWidth(PANEL_MIN_WIDTH_PX - 1)).toBe(PANEL_MIN_WIDTH_PX)
+    expect(clampPanelWidth(PANEL_MIN_WIDTH_PX)).toBe(PANEL_MIN_WIDTH_PX)
+    expect(clampPanelWidth(PANEL_MAX_WIDTH_PX)).toBe(PANEL_MAX_WIDTH_PX)
+    expect(clampPanelWidth(PANEL_MAX_WIDTH_PX + 1)).toBe(PANEL_MAX_WIDTH_PX)
+    expect(clampPanelWidth(420.6)).toBe(421)
   })
 })
