@@ -7,7 +7,8 @@ import Tooltip from './Tooltip'
 /**
  * Bridge panel (ticket 18 feedback): the Agent Bridge's card feed inside
  * the shared bottom dock frame (BottomDock.tsx) — a SIBLING of the terminal
- * panel, shown in the same position (⌘B swaps it in; the tool-card chip in
+ * panel, shown in the same position (⌥⌘J swaps it in since ticket 27; the
+ * tool-card chip in
  * the transcript deep-links here). Renders the agent's bash commands as
  * cards: status mark, sanitized command, live output beneath. WRITE-ONLY by
  * construction — every byte on screen is a pure projection of Seam-1

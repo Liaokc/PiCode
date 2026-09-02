@@ -12,6 +12,7 @@ import type { SessionCommand } from '../../shared/contract'
 import { resolvePreviewPath } from '../../shared/preview/policy'
 import type { PreviewSelection } from '../../shared/preview/view-model'
 import { initialShellUiState, shellUiReducer } from '../../shared/layout-model'
+import { resolveKeybinding } from '../../shared/keymap'
 import { initialPanelState, panelReducer } from '../../shared/panel-model'
 import { initialDockState, dockReducer } from '../../shared/dock-model'
 import { initialBridgeFeedState, projectBridgeFeed } from '../../shared/bridge/feed'
@@ -69,8 +70,9 @@ function loadPinnedIds(): Set<string> {
 
 /**
  * Window shell — matching reference screenshots 02/03 plus the ticket-18
- * bottom docks: [nav sidebar | (main zone | collapsible side panel) above
- * an optionally docked Agent Bridge (⌘B) and terminal (⌘J)], launched with
+ * bottom docks: [nav sidebar (⌘B) | (main zone | collapsible side panel
+ * (⌥⌘B)) above an optionally docked Agent Bridge (⌥⌘J) and terminal (⌘J)],
+ * launched with
  * both docks collapsed and the sidebar visible. The settings window shell
  * (screenshot 09) replaces the workspace zones while open.
  * `VITE_PICODE_PANEL_OPEN=1` expands the side panel at startup and
@@ -95,7 +97,7 @@ export default function App(): JSX.Element {
   /** Panel tab framework state (tabs, picker, dragged width) — ticket 06. */
   const [panel, panelDispatch] = useReducer(panelReducer, undefined, initialPanelState)
   /** Bottom dock (ticket 18, sibling-panel revision): ONE frame hosting the
-   * terminal (⌘J) and Agent Bridge (⌘B) panels; launches collapsed (18f). */
+   * terminal (⌘J) and Agent Bridge (⌥⌘J) panels; launches collapsed (18f). */
   const [dock, dockDispatch] = useReducer(dockReducer, undefined, initialDockState)
   /** Deep-link highlight: a bash tool card's Bridge chip opens the panel
    * AND flashes the matching feed entry; cleared after the flash. */
@@ -334,24 +336,36 @@ export default function App(): JSX.Element {
     setNewTaskOpen(true)
   }, [])
 
-  // ---- global keybindings: ⌘N new task, ⌘K task search, ⌘J terminal dock, ⌘B bridge dock ----
+  // ---- global keybindings (ticket 27, shared/keymap.ts): ⌘N new task,
+  // ⌘K task search, ⌘B left sidebar, ⌥⌘B side panel, ⌘J terminal dock,
+  // ⌥⌘J bridge dock — resolved table-driven by PHYSICAL event.code, so the
+  // ⌥⌘ chords survive macOS Option rewriting the character (⌥B → "∫").
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
-      if (!event.metaKey || event.shiftKey || event.altKey || event.ctrlKey) return
-      if (event.key === 'n' || event.key === 'N') {
-        event.preventDefault()
-        void handleNewTask()
-      } else if (event.key === 'k' || event.key === 'K') {
-        event.preventDefault()
-        setSearchOpen((open) => !open)
-      } else if (event.key === 'j' || event.key === 'J') {
-        // Toggling a dock panel must never leak into the composer/editor —
-        // preventDefault keeps the keystroke ours (ticket 18b).
-        event.preventDefault()
-        dockDispatch({ type: 'toggle-terminal-panel' })
-      } else if (event.key === 'b' || event.key === 'B') {
-        event.preventDefault()
-        dockDispatch({ type: 'toggle-bridge-panel' })
+      const action = resolveKeybinding(event)
+      if (action === null) return
+      // Toggling chrome must never leak into the composer/editor —
+      // preventDefault keeps the keystroke ours (tickets 18b/27).
+      event.preventDefault()
+      switch (action.type) {
+        case 'new-task':
+          void handleNewTask()
+          break
+        case 'task-search':
+          setSearchOpen((open) => !open)
+          break
+        case 'toggle-sidebar':
+          dispatch({ type: 'toggle-sidebar' })
+          break
+        case 'toggle-side-panel':
+          dispatch({ type: 'toggle-side-panel' })
+          break
+        case 'toggle-terminal-panel':
+          dockDispatch({ type: 'toggle-terminal-panel' })
+          break
+        case 'toggle-bridge-panel':
+          dockDispatch({ type: 'toggle-bridge-panel' })
+          break
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -905,7 +919,7 @@ export default function App(): JSX.Element {
           />
         </div>
         {/* Bottom dock: ONE frame, sibling panels — terminal (⌘J) and the
-            Agent Bridge feed (⌘B / tool-card deep link) swap in place. */}
+            Agent Bridge feed (⌥⌘J / tool-card deep link) swap in place. */}
         <BottomDock
           dock={dock}
           workspaceCwd={chat.session?.cwd ?? null}
