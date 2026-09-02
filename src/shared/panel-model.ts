@@ -53,6 +53,11 @@ export type PanelAction =
   | { type: 'open-tab'; tab: PanelTabId }
   | { type: 'close-tab'; tab: PanelTabId; at: number }
   | { type: 'activate-tab'; tab: PanelTabId }
+  /** In-tab navigation (ticket 31 feedback): crumbs/directory rows move the
+   * CURRENT tab to the destination in place — no new tab. If the destination
+   * already has its own tab, that tab is focused and the navigating tab is
+   * retired (identities never duplicate). */
+  | { type: 'retarget-tab'; from: PanelTabId; to: PanelTabId }
   | { type: 'show-picker' }
   | { type: 'hydrate-recently-closed'; entries: RecentlyClosedTab[] }
   | { type: 'set-width'; width: number }
@@ -193,6 +198,28 @@ export function panelReducer(state: PanelState, action: PanelAction): PanelState
       return state.activeTab !== null && samePanelTab(state.activeTab, action.tab) && !state.pickerOpen
         ? state
         : { ...state, activeTab: action.tab, pickerOpen: false }
+    case 'retarget-tab': {
+      const index = state.openTabs.findIndex((tab) => samePanelTab(tab, action.from))
+      if (index === -1 || samePanelTab(action.from, action.to)) return state
+      const wasActive = state.activeTab !== null && samePanelTab(state.activeTab, action.from)
+      const existingIndex = state.openTabs.findIndex((tab) => samePanelTab(tab, action.to))
+      if (existingIndex !== -1 && existingIndex !== index) {
+        // The destination already has its own tab: focus it and retire the
+        // navigating tab — identities never duplicate.
+        const openTabs = state.openTabs.filter((_, i) => i !== index)
+        return { ...state, openTabs, activeTab: wasActive ? action.to : state.activeTab, pickerOpen: wasActive ? false : state.pickerOpen }
+      }
+      const openTabs = state.openTabs.map((tab, i) => (i === index ? action.to : tab))
+      // Invariant: an open tab never appears in the recently closed history.
+      const recentlyClosed = state.recentlyClosed.filter((entry) => !samePanelTab(entry.tab, action.to))
+      return {
+        ...state,
+        openTabs,
+        activeTab: wasActive ? action.to : state.activeTab,
+        pickerOpen: wasActive ? false : state.pickerOpen,
+        recentlyClosed
+      }
+    }
     case 'show-picker':
       return state.pickerOpen ? state : { ...state, pickerOpen: true }
     case 'hydrate-recently-closed': {

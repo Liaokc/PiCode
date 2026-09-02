@@ -795,10 +795,13 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       )
       await sleep(200)
 
-      // Breadcrumb fallback: click the workspace-root crumb → listing.
+      // Breadcrumb fallback: click the workspace-root crumb → listing. The
+      // crumb must come from the ACTIVE tab — in-tab navigation retargets
+      // that tab in place (ticket 31 feedback), so a hidden tab's crumb
+      // would navigate off-screen and the frame would show nothing new.
       await win.webContents.executeJavaScript(
         `(() => {
-          const crumb = document.querySelector('button.preview-crumb')
+          const crumb = document.querySelector('.panel-tab-body:not(.panel-tab-body-hidden) button.preview-crumb')
           if (crumb instanceof HTMLElement) crumb.click()
           return crumb !== null
         })()`

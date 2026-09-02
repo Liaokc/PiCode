@@ -1226,6 +1226,22 @@ export function startSmokeIfEnabled(
         if (!(await waitForProbe(win, `(${TAB_COUNT}) === 2`, 5_000))) fail('the first deep link never opened its own file tab')
         log('panel_file_tab_one_ok')
 
+        // In-tab navigation (operator feedback): clicking a crumb INSIDE the
+        // preview moves THIS tab to the destination in place — the strip
+        // never grows; only sidebar deep links open tabs.
+        const dirLabel = path.basename(panelSeed)
+        // The crumb lives in the ACTIVE tab's BODY (the strip tab carries no
+        // content) — select via the body that is not hidden.
+        await js(
+          `(() => { const crumb = document.querySelector('.panel-tab-body:not(.panel-tab-body-hidden) button.preview-crumb'); if (crumb instanceof HTMLElement) { crumb.click(); return true } return false })()`
+        )
+        await waitForProbe(
+          win,
+          `( (${TAB_COUNT}) === 2 && document.querySelector('.panel-tab-active .panel-tab-label span')?.textContent === '${dirLabel}' )`,
+          8_000
+        )
+        log('panel_retarget_in_place_ok', dirLabel)
+
         // Deep-link 2: a second file opens a SECOND tab — no replacement.
         if (!(await waitForProbe(win, clickChip(1), 5_000))) fail('the second review deep-link chip never rendered')
         if (!(await waitForProbe(win, `(${TAB_COUNT}) === 3`, 5_000))) fail('the second deep link did not open a second file tab')

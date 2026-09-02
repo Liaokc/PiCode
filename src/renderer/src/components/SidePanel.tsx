@@ -106,7 +106,16 @@ export default function SidePanel({
           />
         )
       case 'file':
-        return <PreviewTab cwd={tab.cwd} path={tab.path} onNavigate={onPreviewNavigate} />
+        return (
+          <PreviewTab
+            cwd={tab.cwd}
+            path={tab.path}
+            // In-tab navigation (crumbs, directory rows) moves THIS tab to the
+            // destination in place; only sidebar deep links open new tabs
+            // (ticket 31 operator feedback).
+            onNavigate={(cwd, path) => dispatch({ type: 'retarget-tab', from: tab, to: { kind: 'file', cwd, path } })}
+          />
+        )
       case 'trace':
         // The call-trace slot rides the tab framework now; its inspector
         // consumption lands with ticket 36.

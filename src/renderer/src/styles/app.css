@@ -2271,9 +2271,12 @@ button.heat:hover {
 .panel-tab {
   display: inline-flex;
   align-items: center;
-  flex: 0 1 170px;
-  min-width: 72px;
-  max-width: 170px;
+  /* Hug the label (ZCode-like); shrink only when the strip crowds, never
+   * stretching to a fixed box — wide empty tabs read as broken (ticket 31
+   * operator feedback). */
+  flex: 0 1 auto;
+  min-width: 56px;
+  max-width: 150px;
   height: 28px;
   border-radius: 7px;
   padding: 0 4px 0 8px;

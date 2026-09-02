@@ -285,6 +285,62 @@ describe('normalizeRecentlyClosed (ticket 31 persistence)', () => {
   })
 })
 
+describe('panelReducer — retarget-tab (ticket 31 feedback: in-tab navigation)', () => {
+  it('replaces the tab in place and keeps its strip position + active state', () => {
+    let state = panelReducer(initialPanelState(), { type: 'open-tab', tab: review() })
+    state = panelReducer(state, { type: 'open-tab', tab: file('README.md') })
+    state = panelReducer(state, { type: 'open-tab', tab: file('docs') })
+    state = panelReducer(state, { type: 'retarget-tab', from: file('docs'), to: file('docs/spec.md') })
+    expect(state.openTabs).toEqual([review(), file('README.md'), file('docs/spec.md')])
+    expect(state.activeTab).toEqual(file('docs/spec.md'))
+  })
+
+  it('does not touch the recently closed history (nothing was closed)', () => {
+    let state = panelReducer(initialPanelState(), { type: 'open-tab', tab: file('a.md') })
+    state = panelReducer(state, { type: 'open-tab', tab: file('b.md') })
+    state = panelReducer(state, { type: 'close-tab', tab: file('b.md'), at: 1000 })
+    state = panelReducer(state, { type: 'retarget-tab', from: file('a.md'), to: file('c.md') })
+    expect(state.recentlyClosed).toEqual([{ tab: file('b.md'), closedAt: 1000 }])
+  })
+
+  it('keeps the open-tabs ∩ recently-closed = ∅ invariant when navigating to a closed path', () => {
+    let state = panelReducer(initialPanelState(), { type: 'open-tab', tab: file('a.md') })
+    state = panelReducer(state, { type: 'open-tab', tab: file('b.md') })
+    state = panelReducer(state, { type: 'close-tab', tab: file('b.md'), at: 1000 })
+    // The open tab navigates to the path that sits in the closed history.
+    state = panelReducer(state, { type: 'retarget-tab', from: file('a.md'), to: file('b.md') })
+    expect(state.openTabs).toEqual([file('b.md')])
+    expect(state.activeTab).toEqual(file('b.md'))
+    expect(state.recentlyClosed).toEqual([])
+  })
+
+  it('navigating to an already-open path focuses it and retires the navigating tab (no duplicates)', () => {
+    let state = panelReducer(initialPanelState(), { type: 'open-tab', tab: review() })
+    state = panelReducer(state, { type: 'open-tab', tab: file('docs') })
+    state = panelReducer(state, { type: 'open-tab', tab: file('spec.md') })
+    state = panelReducer(state, { type: 'activate-tab', tab: file('docs') })
+    state = panelReducer(state, { type: 'retarget-tab', from: file('docs'), to: file('spec.md') })
+    expect(state.openTabs).toEqual([review(), file('spec.md')])
+    expect(state.activeTab).toEqual(file('spec.md'))
+  })
+
+  it('is a no-op when the navigating tab is not open', () => {
+    const state = panelReducer(initialPanelState(), { type: 'open-tab', tab: review() })
+    expect(panelReducer(state, { type: 'retarget-tab', from: file('ghost.md'), to: file('a.md') })).toBe(state)
+  })
+
+  it('keeps the picker behaviour untouched when retargeting an inactive tab', () => {
+    let state = panelReducer(initialPanelState(), { type: 'open-tab', tab: review() })
+    state = panelReducer(state, { type: 'open-tab', tab: file('docs') })
+    state = panelReducer(state, { type: 'activate-tab', tab: review() })
+    state = panelReducer(state, { type: 'show-picker' })
+    state = panelReducer(state, { type: 'retarget-tab', from: file('docs'), to: file('spec.md') })
+    expect(state.openTabs).toEqual([review(), file('spec.md')])
+    expect(state.activeTab).toEqual(review())
+    expect(state.pickerOpen).toBe(true)
+  })
+})
+
 describe('panelReducer — width drag', () => {
   it('clamps widths into the allowed range', () => {
     const tooSmall = panelReducer(initialPanelState(), { type: 'set-width', width: 100 })
