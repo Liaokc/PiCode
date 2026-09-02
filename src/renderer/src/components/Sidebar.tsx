@@ -18,6 +18,7 @@ import { useNowTick } from './use-now'
 import Tooltip from './Tooltip'
 import FileBrowser from './FileBrowser'
 import {
+  ArchiveBoxIcon,
   ArrowUpIcon,
   CalendarIcon,
   CheckIcon,
@@ -209,7 +210,7 @@ function TaskItem({
               onArchive()
             }}
           >
-            <TrashIcon size={11} />
+            <ArchiveBoxIcon size={12} />
           </button>
         </Tooltip>
       </span>
