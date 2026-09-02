@@ -91,20 +91,47 @@ export function awaitingApprovalSessionIds(state: SessionRegistryState): Readonl
   return ids
 }
 
-export type SidebarDotState = 'run-here' | 'awaiting-approval' | 'tui-live' | 'idle'
+export type SidebarDotState = 'run-here' | 'awaiting-approval' | 'tui-live' | 'unread' | 'idle'
 
-/** Fixed-slot sidebar dot (ticket 20 + 25): orange = parked at the approval
- * gate (wins over everything — the run is suspended, not visibly working),
- * animated = running in THIS app, green = written by another end (120s
- * rule), empty slot = idle. An in-app session never shows the TUI dot — its
- * mtime freshness is our own doing; concurrent two-end writes stay
+/** Fixed-slot sidebar dot (ticket 20 + 25 + 28): orange = parked at the
+ * approval gate (wins over everything — the run is suspended, not visibly
+ * working), animated = running in THIS app, green = written by another end
+ * (120s rule), indigo = unread (grew unseen or manually flagged), empty slot
+ * = idle. Priority: orange > animated > green > indigo > empty — a
+ * higher-priority dot temporarily masks unread until the session goes
+ * quiet. An in-app session never shows the TUI dot — its mtime freshness is
+ * our own doing — but it DOES show unread once settled (a background turn
+ * finished while the view was elsewhere). Concurrent two-end writes stay
  * un-arbitrated (spec, out of scope). */
-export function sidebarDotState(awaitingApproval: boolean, runningHere: boolean, inAppIdle: boolean, liveElsewhere: boolean): SidebarDotState {
+export function sidebarDotState(
+  awaitingApproval: boolean,
+  runningHere: boolean,
+  inApp: boolean,
+  liveElsewhere: boolean,
+  unread: boolean
+): SidebarDotState {
   if (awaitingApproval) return 'awaiting-approval'
   if (runningHere) return 'run-here'
-  if (inAppIdle) return 'idle'
-  if (liveElsewhere) return 'tui-live'
+  if (!inApp && liveElsewhere) return 'tui-live'
+  if (unread) return 'unread'
   return 'idle'
+}
+
+export type SidebarRowState = 'selected' | 'idle'
+
+/** Sidebar row selection follows the VIEW (ticket 28): the row whose view is
+ * on screen carries the selected styling. While Follow is active that is the
+ * followed row — the previously focused row reverts to plain; with Follow
+ * inactive it is the focused row again. Selection and running state are
+ * decoupled: liveness stays with the dot, never with the row background. */
+export function sidebarRowState(
+  focusedId: string | null,
+  followedFile: string | null,
+  sessionId: string,
+  sessionFile: string | null
+): SidebarRowState {
+  if (followedFile !== null) return sessionFile === followedFile ? 'selected' : 'idle'
+  return sessionId === focusedId ? 'selected' : 'idle'
 }
 
 // ---- folding ----

@@ -9,6 +9,7 @@
  * behavior is testable without Electron.
  */
 import type { ThinkingLevel } from './contract.ts'
+import type { ReadStates } from './sessions/unread.ts'
 
 /** Model/thinking defaults handed to a NEW session (all fields optional). */
 export interface SessionDefaults {
@@ -39,6 +40,11 @@ export interface AppPreferences {
    * hidden groups' tasks stay reachable via ⌘K search and the Groups
    * all-tasks view, and the settings page lists them for recovery. */
   hiddenGroups: string[]
+  /** Per-session read states (ticket 28): mtime watermarks + manual unread
+   * overrides. Purely local — session files are never touched. Patches
+   * upsert per session (see mergePreferences) so racing writers never lose
+   * each other's entries. */
+  readStates: ReadStates
 }
 
 export const DEFAULT_PREFERENCES: AppPreferences = {
@@ -46,7 +52,8 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   defaultThinkingLevel: null,
   newTaskDirectory: 'last-used',
   newTaskFixedProject: null,
-  hiddenGroups: []
+  hiddenGroups: [],
+  readStates: {}
 }
 
 const THINKING_LEVELS: ReadonlySet<string> = new Set([
@@ -95,6 +102,22 @@ function normalizedHiddenGroups(value: unknown): string[] {
   return [...seen]
 }
 
+/** Per-session read states (ticket 28): records keyed by session id, each
+ * with a numeric watermark and a boolean manual-override flag. Invalid
+ * entries are dropped whole. */
+function normalizedReadStates(value: unknown): ReadStates {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return {}
+  const states: ReadStates = {}
+  for (const [id, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (id === '' || typeof entry !== 'object' || entry === null || Array.isArray(entry)) continue
+    const record = entry as Record<string, unknown>
+    if (typeof record['watermarkMs'] !== 'number' || !Number.isFinite(record['watermarkMs'])) continue
+    if (typeof record['manualUnread'] !== 'boolean') continue
+    states[id] = { watermarkMs: record['watermarkMs'], manualUnread: record['manualUnread'] }
+  }
+  return states
+}
+
 function normalizedModelOr(prev: AppPreferences['defaultModel'], value: unknown): AppPreferences['defaultModel'] {
   if (value === undefined) return prev
   const normalized = normalizedModel(value)
@@ -122,6 +145,22 @@ function normalizedHiddenGroupsOr(prev: string[], value: unknown): string[] {
   return Array.isArray(value) ? normalizedHiddenGroups(value) : prev
 }
 
+/** readStates patches UPSERT per session over the previous record (the
+ * whole-record replace is reserved for normalizePreferences on document
+ * read). Racing writers — the read-chaser and a future Mark-as-Unread menu
+ * (ticket 35) — each send their own session, and neither loses the other's
+ * entry. Invalid entries are dropped, keeping the previous value. */
+function normalizedReadStatesOr(prev: ReadStates, value: unknown): ReadStates {
+  if (value === undefined) return prev
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return prev
+  const merged: ReadStates = { ...prev }
+  for (const [id, entry] of Object.entries(value as Record<string, unknown>)) {
+    const valid = normalizedReadStates({ [id]: entry })
+    if (valid[id] !== undefined) merged[id] = valid[id]
+  }
+  return merged
+}
+
 /** Defensive read of a preferences JSON document — invalid fields fall back. */
 export function normalizePreferences(raw: unknown): AppPreferences {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return { ...DEFAULT_PREFERENCES }
@@ -131,7 +170,8 @@ export function normalizePreferences(raw: unknown): AppPreferences {
     defaultThinkingLevel: normalizedThinkingLevel(record['defaultThinkingLevel']),
     newTaskDirectory: normalizedDirectoryMode(record['newTaskDirectory']),
     newTaskFixedProject: normalizedFixedProject(record['newTaskFixedProject']),
-    hiddenGroups: normalizedHiddenGroups(record['hiddenGroups'])
+    hiddenGroups: normalizedHiddenGroups(record['hiddenGroups']),
+    readStates: normalizedReadStates(record['readStates'])
   }
 }
 
@@ -145,7 +185,8 @@ export function mergePreferences(prev: AppPreferences, patch: unknown): AppPrefe
     defaultThinkingLevel: normalizedThinkingOr(prev.defaultThinkingLevel, record['defaultThinkingLevel']),
     newTaskDirectory: normalizedDirectoryOr(prev.newTaskDirectory, record['newTaskDirectory']),
     newTaskFixedProject: normalizedFixedProjectOr(prev.newTaskFixedProject, record['newTaskFixedProject']),
-    hiddenGroups: normalizedHiddenGroupsOr(prev.hiddenGroups, record['hiddenGroups'])
+    hiddenGroups: normalizedHiddenGroupsOr(prev.hiddenGroups, record['hiddenGroups']),
+    readStates: normalizedReadStatesOr(prev.readStates, record['readStates'])
   }
 }
 

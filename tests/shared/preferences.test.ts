@@ -27,7 +27,8 @@ describe('normalizePreferences', () => {
       defaultThinkingLevel: 'high',
       newTaskDirectory: 'fixed',
       newTaskFixedProject: '/Users/dev/repos/api',
-      hiddenGroups: []
+      hiddenGroups: [],
+      readStates: {}
     })
     expect(
       normalizePreferences({
@@ -67,7 +68,8 @@ describe('mergePreferences', () => {
       defaultThinkingLevel: null,
       newTaskDirectory: 'last-used',
       newTaskFixedProject: null,
-      hiddenGroups: []
+      hiddenGroups: [],
+      readStates: {}
     })
   })
 
@@ -106,6 +108,27 @@ describe('mergePreferences', () => {
     expect(normalizePreferences({ hiddenGroups: [1337] }).hiddenGroups).toEqual([])
   })
 
+  it('normalizes readStates: valid per-session entries only (ticket 28)', () => {
+    expect(normalizePreferences(undefined).readStates).toEqual({})
+    expect(normalizePreferences({ readStates: 'nope' }).readStates).toEqual({})
+    expect(
+      normalizePreferences({
+        readStates: {
+          's-a': { watermarkMs: 1000, manualUnread: false },
+          's-b': { watermarkMs: 2000, manualUnread: true },
+          's-bad-watermark': { watermarkMs: 'soon', manualUnread: false },
+          's-bad-flag': { watermarkMs: 3000, manualUnread: 'yes' },
+          's-partial': { watermarkMs: 4000 },
+          's-not-object': 42,
+          nullish: null
+        }
+      }).readStates
+    ).toEqual({
+      's-a': { watermarkMs: 1000, manualUnread: false },
+      's-b': { watermarkMs: 2000, manualUnread: true }
+    })
+  })
+
   it('patches hiddenGroups as a whole array; non-array and missing patches keep the previous value', () => {
     const base = normalizePreferences({ hiddenGroups: ['/work/api'] })
     expect(mergePreferences(base, { hiddenGroups: [] }).hiddenGroups).toEqual([])
@@ -115,6 +138,37 @@ describe('mergePreferences', () => {
     // Arrays replace as a whole (sanitized like on read); only non-array
     // patches keep the previous value.
     expect(mergePreferences(base, { hiddenGroups: [7] }).hiddenGroups).toEqual([])
+  })
+
+  it('patches readStates per session: upserts merge over the previous record (ticket 28)', () => {
+    const base = normalizePreferences({
+      readStates: {
+        's-a': { watermarkMs: 1000, manualUnread: false },
+        's-b': { watermarkMs: 2000, manualUnread: false }
+      }
+    })
+    // Two racing writers each send their own session upsert — per-session
+    // merging never loses the other writer's entry.
+    const first = mergePreferences(base, { readStates: { 's-a': { watermarkMs: 5000, manualUnread: false } } })
+    expect(first.readStates['s-a']).toEqual({ watermarkMs: 5000, manualUnread: false })
+    expect(first.readStates['s-b']).toEqual({ watermarkMs: 2000, manualUnread: false })
+    const second = mergePreferences(base, { readStates: { 's-b': { watermarkMs: 2000, manualUnread: true } } })
+    expect(second.readStates['s-a']).toEqual({ watermarkMs: 1000, manualUnread: false })
+    expect(second.readStates['s-b']).toEqual({ watermarkMs: 2000, manualUnread: true })
+  })
+
+  it('drops invalid readStates patch entries and keeps the previous ones; non-object patches keep everything', () => {
+    const base = normalizePreferences({ readStates: { 's-a': { watermarkMs: 1000, manualUnread: false } } })
+    const merged = mergePreferences(base, {
+      readStates: {
+        's-a': { watermarkMs: 5000, manualUnread: false },
+        's-bad': { watermarkMs: 'soon', manualUnread: false },
+        's-worse': 7
+      }
+    })
+    expect(merged.readStates).toEqual({ 's-a': { watermarkMs: 5000, manualUnread: false } })
+    expect(mergePreferences(base, { readStates: 'nope' }).readStates).toEqual(base.readStates)
+    expect(mergePreferences(base, {}).readStates).toEqual(base.readStates)
   })
 
   it('leaves session defaults untouched by hiddenGroups', () => {

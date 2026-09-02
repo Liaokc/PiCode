@@ -6,6 +6,7 @@ import {
   registryReducer,
   runningSessionIds,
   sidebarDotState,
+  sidebarRowState,
   liveSessionIds,
   type SessionRegistryState
 } from '../../src/shared/session-registry'
@@ -100,24 +101,53 @@ describe('registryReducer — session registration + focus routing', () => {
   })
 })
 
-describe('sidebarDotState — fixed-slot dot derivation (ticket 20 + 25)', () => {
+describe('sidebarDotState — fixed-slot dot derivation (ticket 20 + 25 + 28)', () => {
   it.each([
-    // awaitingApproval | runningHere | inAppIdle | liveElsewhere | expected
-    [false, true, false, false, 'run-here'],
-    [false, true, false, true, 'run-here'],
-    [false, false, true, true, 'idle'], // an in-app session never shows the TUI green dot
-    [false, false, true, false, 'idle'],
-    [false, false, false, true, 'tui-live'],
-    [false, false, false, false, 'idle'],
+    // awaitingApproval | runningHere | inApp | liveElsewhere | unread | expected
+    [false, true, false, false, false, 'run-here'],
+    [false, true, false, true, false, 'run-here'],
+    [false, false, true, true, false, 'idle'], // an in-app session never shows the TUI green dot
+    [false, false, true, false, false, 'idle'],
+    [false, false, false, true, false, 'tui-live'],
+    [false, false, false, false, false, 'idle'],
     // Ticket 25: the gate parked a pill — the orange badge wins over every
     // other state (the run is suspended at the gate, not visibly working).
-    [true, true, false, false, 'awaiting-approval'],
-    [true, true, false, true, 'awaiting-approval'],
-    [true, false, true, false, 'awaiting-approval'],
-    [true, false, false, true, 'awaiting-approval'],
-    [true, false, false, false, 'awaiting-approval']
-  ])('awaiting=%p running=%p inAppIdle=%p liveElsewhere=%p → %p', (awaiting, runningHere, inAppIdle, liveElsewhere, expected) => {
-    expect(sidebarDotState(awaiting as boolean, runningHere as boolean, inAppIdle as boolean, liveElsewhere as boolean)).toBe(expected)
+    [true, true, false, false, false, 'awaiting-approval'],
+    [true, true, false, true, false, 'awaiting-approval'],
+    [true, false, true, false, false, 'awaiting-approval'],
+    [true, false, false, true, false, 'awaiting-approval'],
+    [true, false, false, false, false, 'awaiting-approval'],
+    // Ticket 28: unread (indigo) sits BELOW the green TUI dot and above the
+    // empty slot — higher-priority states mask it only while they apply.
+    [false, false, false, false, true, 'unread'],
+    [false, false, true, false, true, 'unread'], // an in-app idle session that grew shows unread, not the empty slot
+    [false, false, true, true, true, 'unread'], // in-app suppresses green; unread shows
+    [false, false, false, true, true, 'tui-live'], // green masks unread until the other end goes quiet
+    [false, true, false, false, true, 'run-here'], // the animated dot masks unread while running here
+    [false, true, false, true, true, 'run-here'],
+    [true, false, false, false, true, 'awaiting-approval'], // orange beats unread
+    [true, true, false, true, true, 'awaiting-approval']
+  ])('awaiting=%p running=%p inApp=%p liveElsewhere=%p unread=%p → %p', (awaiting, runningHere, inApp, liveElsewhere, unread, expected) => {
+    expect(
+      sidebarDotState(awaiting as boolean, runningHere as boolean, inApp as boolean, liveElsewhere as boolean, unread as boolean)
+    ).toBe(expected)
+  })
+})
+
+describe('sidebarRowState — selection follows the view (ticket 28)', () => {
+  it.each([
+    // focusedId | followedFile | sessionId | sessionFile | expected
+    ['s-a', '/b.jsonl', 's-b', '/b.jsonl', 'selected'], // Follow active: the followed row is selected
+    ['s-a', '/b.jsonl', 's-a', '/a.jsonl', 'idle'], // Follow active: the previously focused row reverts
+    ['s-a', '/b.jsonl', 's-c', '/c.jsonl', 'idle'], // Follow active: every other row stays plain
+    ['s-a', null, 's-a', '/a.jsonl', 'selected'], // Follow inactive: the focused row is selected
+    ['s-a', null, 's-b', '/b.jsonl', 'idle'],
+    [null, null, 's-a', '/a.jsonl', 'idle'], // nothing focused, nothing followed
+    [null, '/b.jsonl', 's-b', '/b.jsonl', 'selected'] // Follow with no focused session
+  ])('focused=%p followed=%p row=%p/%p → %p', (focusedId, followedFile, sessionId, sessionFile, expected) => {
+    expect(
+      sidebarRowState(focusedId as string | null, followedFile as string | null, sessionId as string, sessionFile as string)
+    ).toBe(expected)
   })
 })
 

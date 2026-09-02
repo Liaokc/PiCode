@@ -19,6 +19,12 @@ import { initialBridgeFeedState, projectBridgeFeed } from '../../shared/bridge/f
 import { terminalFontStack } from '../../shared/terminal/font'
 import { detectNerdFont } from './terminal/probe-font'
 import { isSessionLive, decideFollowTakeover, FOLLOW_TAKEOVER_REJECTED_TOAST } from '../../shared/sessions/group'
+import {
+  baselineReadStates,
+  markSessionRead,
+  unreadSessionIds,
+  type ReadStates
+} from '../../shared/sessions/unread'
 import { sessionDefaultsFromPreferences, DEFAULT_PREFERENCES, toggleHiddenGroup, type AppPreferences } from '../../shared/preferences'
 import { recentProjects, resolveNewTaskProject } from '../../shared/new-task'
 import { toastReducer, type ToastLevel, type ToastList } from '../../shared/toast'
@@ -152,6 +158,11 @@ export default function App(): JSX.Element {
   const [searchOpen, setSearchOpen] = useState(false)
   /** Settings snapshot: preferences + last used directory + auth report. */
   const [settings, setSettings] = useState<SettingsSnapshotState>(INITIAL_SETTINGS_STATE)
+  /** True once the boot settings snapshot has landed (ticket 28): the
+   * read-state persistence effect must not baseline against the empty
+   * defaults — that could overwrite watermarks persisted by a previous run
+   * and lose unread state for sessions that grew while the app was closed. */
+  const [settingsLoaded, setSettingsLoaded] = useState(false)
   const followedFileRef = useRef<string | null>(null)
   followedFileRef.current = followedFile
 
@@ -178,6 +189,7 @@ export default function App(): JSX.Element {
           auth: null,
           authScanning: false
         })
+        setSettingsLoaded(true)
       })
       .catch(() => {
         if (!cancelled) notify('Settings could not be loaded — using defaults.', 'error')
@@ -590,6 +602,56 @@ export default function App(): JSX.Element {
   const runningIds = runningSessionIds(registry)
   const awaitingIds = awaitingApprovalSessionIds(registry)
 
+  /** The view on screen (ticket 28): the followed session while Follow is
+   * active, else the focused one. While following, the suspended focused
+   * session is NOT on screen — its background growth counts as unread. */
+  const followActive = followedFile !== null
+  const onViewId = followActive ? null : focusedId
+  const onViewFile = followedFile
+
+  /** Unread projection for the sidebar (ticket 28): the indigo dot set. */
+  const unreadIds = useMemo(
+    () => unreadSessionIds(sessions, settings.preferences.readStates, onViewId, onViewFile),
+    [sessions, settings.preferences.readStates, onViewId, onViewFile]
+  )
+
+  /** Read-state persistence (ticket 28): first sightings are baselined at
+   * their current mtime (upgrades never flood the sidebar with unread), and
+   * the view on screen chases its file's mtime while it grows — reading is
+   * the only way to make it read. One effect, one upsert patch per change;
+   * the content guard keeps degenerate preference stores (visual fixtures)
+   * from looping. Archiving ships in ticket 35; the filter slot is reserved
+   * in unreadSessionIds. */
+  const lastReadStatesPatchRef = useRef('')
+  useEffect(() => {
+    if (!settingsLoaded) return
+    const prev = settings.preferences.readStates
+    const { next, changed: baselined } = baselineReadStates(
+      prev,
+      sessions.map((s) => ({ id: s.id, modifiedAt: s.modifiedAt }))
+    )
+    const onView = followActive
+      ? sessions.find((s) => s.file === followedFile)
+      : sessions.find((s) => s.id === focusedId)
+    let merged = next
+    let chased = false
+    if (onView) {
+      const read = markSessionRead(merged, onView.id, onView.modifiedAt)
+      merged = read.next
+      chased = read.changed
+    }
+    if (!baselined && !chased) return
+    const patch: Partial<AppPreferences> = {
+      readStates: Object.fromEntries(
+        Object.entries(merged).filter(([id, entry]) => prev[id] !== entry)
+      ) as ReadStates
+    }
+    const key = JSON.stringify(patch.readStates)
+    if (key === lastReadStatesPatchRef.current) return
+    lastReadStatesPatchRef.current = key
+    handleSetPreferences(patch)
+  }, [sessions, focusedId, followedFile, settings.preferences.readStates, handleSetPreferences, followActive, settingsLoaded])
+
   /** Hidden project groups (ticket 19) — a read-only Set projection of the
    * persisted preference; the pure filter consumes it in the Sidebar. */
   const hiddenCwds = useMemo(
@@ -840,6 +902,7 @@ export default function App(): JSX.Element {
         inAppIds={inAppIds}
         runningIds={runningIds}
         awaitingIds={awaitingIds}
+        unreadIds={unreadIds}
         onTogglePin={handleTogglePin}
         onOpenSession={handleOpenSession}
         onRenameSession={handleRenameSession}
