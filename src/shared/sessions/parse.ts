@@ -22,6 +22,10 @@ export interface RawSessionEntry {
   label?: unknown
   targetId?: unknown
   summary?: unknown
+  /** model_change entries only (ticket 36): the model id that came into
+   * effect — the trace builder's fallback when an assistant message omits
+   * its model field. Purely additive. */
+  modelId?: unknown
 }
 
 export interface ParsedSessionLines {
@@ -72,7 +76,8 @@ export function parseSessionLines(text: string): ParsedSessionLines {
       name: entry['name'],
       label: entry['label'],
       targetId: entry['targetId'],
-      summary: entry['summary']
+      summary: entry['summary'],
+      modelId: entry['modelId']
     })
   }
   return result

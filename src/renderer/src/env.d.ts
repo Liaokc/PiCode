@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import type { HostToParent, ImageAttachment, ParentToHost } from '../shared/contract'
 import type { FollowUpdate, SessionSummary, TranscriptItem } from '../../shared/sessions/types'
+import type { TracePayload } from '../../shared/sessions/trace'
 import type { SessionContextAction } from '../shared/sessions/context-actions'
 import type { ReviewResult } from '../shared/review/types'
 import type { PreviewResult } from '../shared/preview/types'
@@ -33,6 +34,9 @@ interface PicodeSessionsBridge {
   rename(file: string, name: string): Promise<SessionSummary | null>
   /** Begin Live Follow tailing; resolves with the full transcript snapshot. */
   follow(file: string): Promise<{ file: string; items: TranscriptItem[] } | null>
+  /** Call-trace payload for one session file (ticket 36): read-only build
+   * over the jsonl, any session (TUI included). Null = unreadable file. */
+  trace(file: string): Promise<TracePayload | null>
   unfollow(): void
   onIndexChanged(listener: () => void): () => void
   onFollowUpdate(listener: (update: FollowUpdate) => void): () => void

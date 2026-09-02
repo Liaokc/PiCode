@@ -19,6 +19,7 @@ import {
   parseSessionLines,
   summarizeSession
 } from '../../shared/sessions/parse.ts'
+import { buildTracePayload, type TracePayload } from '../../shared/sessions/trace.ts'
 import type { FollowUpdate, SessionSummary, TranscriptItem } from '../../shared/sessions/types'
 
 export type { FollowUpdate }
@@ -127,6 +128,20 @@ export class SessionIndexService {
       this.follow.consumedBytes = Buffer.byteLength(text)
     }
     return { file: target, items: extractTranscriptItems(entries) }
+  }
+
+  /** One-shot call-trace read for a file (ticket 36): read-only, works for
+   * ANY session — TUI sessions included, no host process involved. The
+   * payload build is the shared pure builder; unreadable files return null
+   * and the tab shows its error state. */
+  async trace(file: string): Promise<TracePayload | null> {
+    let text: string
+    try {
+      text = await readFileText(file)
+    } catch {
+      return null
+    }
+    return buildTracePayload(text, file)
   }
 
   start(intervalMs?: number): void {

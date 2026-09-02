@@ -11,9 +11,10 @@ import {
 } from '../../../shared/panel-model'
 import ReviewTab from './ReviewTab'
 import PreviewTab from './PreviewTab'
+import TraceTab from './TraceTab'
 import PanelTabMenu, { panelTabGlyph } from './PanelTabMenu'
 import Tooltip from './Tooltip'
-import { ChevronDownIcon, CloseIcon, FileTextIcon, HistoryIcon, PlusIcon } from './icons'
+import { ChevronDownIcon, CloseIcon, FileTextIcon, PlusIcon } from './icons'
 
 interface SidePanelProps {
   /** Rendered only when the shell's panel zone is open (titlebar toggle). */
@@ -117,15 +118,9 @@ export default function SidePanel({
           />
         )
       case 'trace':
-        // The call-trace slot rides the tab framework now; its inspector
-        // consumption lands with ticket 36.
-        return (
-          <div className="review-empty">
-            <HistoryIcon size={28} />
-            <p className="review-empty-title">Call trace</p>
-            <p className="review-empty-hint">The call trace for this session will open here.</p>
-          </div>
-        )
+        // The call-trace inspector (ticket 36): tab identity = session file;
+        // closing rides the framework's recently-closed tracking.
+        return <TraceTab sessionFile={tab.sessionFile} onClose={() => dispatch({ type: 'close-tab', tab, at: Date.now() })} />
     }
   }
 

@@ -1534,6 +1534,102 @@ export function startSmokeIfEnabled(
     })
     log('context_menu_done')
 
+    // ---- ticket 36: call-trace tab ----
+    // Right-click the RICHEST session's row (ms1: warm turn + counting run
+    // + the ticket-25 bash approval round + simulated TUI turns) and choose
+    // View call trace. The tab opens in the side panel (identity = session
+    // file), renders entries fully expanded with usage columns read from the
+    // REAL file, refresh keeps them, close removes the tab. Read-only: the
+    // host process is never involved.
+    log('trace_start')
+    if (!ms1.sessionFile) fail('ticket-36 stage: ms1 did not report its file')
+    const traceRowSel = `[data-file="${ms1.sessionFile}"]`
+    await withWindow(getWindow, async (win) => {
+      const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+      const openMenu = `(() => {
+        const row = document.querySelector('${traceRowSel}')
+        if (!(row instanceof Element)) return false
+        const r = row.getBoundingClientRect()
+        row.dispatchEvent(new MouseEvent('contextmenu', {
+          bubbles: true, cancelable: true,
+          clientX: Math.round(r.left + 60), clientY: Math.round(r.top + r.height / 2)
+        }))
+        return true
+      })(); true`
+      if (!(await waitForProbe(win, openMenu + ` && document.querySelector('.sb-context-menu') !== null`, 10_000))) {
+        fail('ticket-36 stage: the context menu never opened for View call trace')
+      }
+      await js(
+        `[...document.querySelectorAll('.sb-context-item')].find((el) => el.textContent === 'View call trace')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
+      )
+      // The trace tab is open AND active inside the panel framework.
+      const traceTabProbe = `(() => {
+        const tabs = [...document.querySelectorAll('[data-panel-tab]')]
+        return tabs.some((el) => (el.getAttribute('data-panel-tab') ?? '').startsWith('["trace"') && el.classList.contains('panel-tab-active'))
+          && document.querySelector('.side-panel .trace-view') !== null
+      })()`
+      if (!(await waitForProbe(win, traceTabProbe, 10_000))) {
+        fail('View call trace never opened an active Trace tab in the side panel (ticket 36)')
+      }
+      log('trace_tab_open_ok')
+
+      // Entries: at least two model calls from ms1's real traffic, fully
+      // expanded — both an Input and an Output section on screen, a usage
+      // column (the SDK records usage on every settled call), and the bash
+      // round's tool-call block with its tool-name chip.
+      if (!(await waitForProbe(win, `document.querySelectorAll('.trace-call').length >= 2`, 10_000))) {
+        fail('the trace list never rendered the model calls of the session (ticket 36)')
+      }
+      const shape = (await js(`(() => {
+        const entries = [...document.querySelectorAll('.trace-call')]
+        return {
+          entries: entries.length,
+          expanded: entries.filter((el) => el.querySelector('.trace-section') !== null).length,
+          inputSections: document.querySelectorAll('.trace-section-label')?.length ?? 0,
+          usageColumns: entries.filter((el) => el.querySelector('.trace-call-usage .trace-num') !== null).length,
+          toolChips: [...document.querySelectorAll('.trace-kind-tool-call')].length,
+          userBlocks: [...document.querySelectorAll('.trace-kind-user')].length,
+          assistantBlocks: [...document.querySelectorAll('.trace-kind-assistant')].length,
+          stats: document.querySelector('.trace-stats')?.textContent ?? '',
+          title: document.querySelector('.trace-title')?.textContent ?? ''
+        }
+      })()`)) as {
+        entries: number
+        expanded: number
+        inputSections: number
+        usageColumns: number
+        toolChips: number
+        userBlocks: number
+        assistantBlocks: number
+        stats: string
+        title: string
+      } | null
+      if (!shape) fail('the trace shape probe failed')
+      if (shape.expanded !== shape.entries) fail(`trace entries must render expanded by default (${shape.expanded}/${shape.entries})`)
+      if (shape.usageColumns < 1) fail('no entry shows a usage column — the IN/OUT derivation is missing (ticket 36)')
+      if (shape.toolChips < 1) fail('the bash approval round is missing its tool-call block')
+      if (shape.userBlocks < 1) fail('no user block in any input section')
+      if (shape.assistantBlocks < 1) fail('no assistant block in any output section')
+      if (!/^\d+ calls/.test(shape.stats)) fail(`header stats line wrong: "${shape.stats}"`)
+      if (shape.title === '') fail('header title is empty')
+      log('trace_entries_ok', `${shape.entries} entries, stats "${shape.stats.trim()}"`)
+
+      // Refresh: the header's refresh button re-reads the file; entries stay.
+      await js(`document.querySelector('button[aria-label="Refresh trace"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
+      await new Promise((r) => setTimeout(r, 300))
+      const afterRefresh = (await js(`document.querySelectorAll('.trace-call').length`)) as number
+      if (afterRefresh !== shape.entries) fail(`refresh changed the entry count (${shape.entries} → ${afterRefresh})`)
+      log('trace_refresh_ok')
+
+      // Close: the tab leaves the panel framework (recently closed tracks it).
+      await js(`document.querySelector('.trace-view')?.closest('.side-panel')?.querySelector('button[aria-label="Close trace"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
+      if (!(await waitForProbe(win, `document.querySelector('.side-panel .trace-view') === null`, 5_000))) {
+        fail('the trace close button never removed the tab (ticket 36)')
+      }
+      log('trace_close_ok')
+    })
+    log('trace_done')
+
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
     const livePids = supervisor.hostPids
     if (livePids.length < 2) fail(`expected at least 2 live hosts before quit, saw ${livePids.length}`)

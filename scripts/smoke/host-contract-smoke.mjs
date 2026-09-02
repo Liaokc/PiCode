@@ -146,6 +146,10 @@ async function onHostExit(exited, code) {
     // legacy field keeps its shape and meaning), and degrades to null when
     // the platform reports no birthtime.
     await verifySessionSummaryContract()
+    // Ticket 36: the call-trace payload contract against the SAME real file
+    // — the pure builder turns the jsonl the SDK actually wrote into
+    // per-call payloads (entry = one model call, usage columns per ADR-0002).
+    await verifySessionTraceContract()
     console.log('SMOKE PASS host contract smoke complete (chat loop + tool round + resume/rename/tree/fork)')
     process.exit(0)
   }
@@ -619,4 +623,33 @@ async function verifySessionSummaryContract() {
   }
   if (typeof summary.title !== 'string' || summary.title === '') fail('title must stay a non-empty string')
   console.log('SMOKE SessionSummary contract ok — purely additive (legacy fields intact)')
+}
+
+/** Ticket 36: the call-trace contract against the smoke's REAL session file.
+ * The builder must see the round-A/B traffic as per-call payloads: at least
+ * one call, usage columns present (the SDK records them per ADR-0002), the
+ * bash tool round visible as a tool-call output block whose tool-result
+ * feeds the next call's input section, and the title derivation. */
+async function verifySessionTraceContract() {
+  const { buildTracePayload, traceStats } = await import('../../src/shared/sessions/trace.ts')
+  const text = await readFile(sessionFile, 'utf8')
+  const payload = buildTracePayload(text, sessionFile)
+  if (payload === null) fail('the real session file must build a trace payload')
+  if (payload.calls.length < 1) fail('the smoke session must record at least one model call')
+  const first = payload.calls[0]
+  if (!first.inputBlocks.some((b) => b.kind === 'user')) fail('the first call must carry the opening user message in its input section')
+  const withUsage = payload.calls.find((c) => c.usage !== null && c.usage.input > 0)
+  if (!withUsage) fail('the SDK-recorded usage must surface as the IN column on some call')
+  const bashCall = payload.calls.find((c) => c.outputBlocks.some((b) => b.kind === 'tool-call' && b.toolName === 'bash'))
+  if (!bashCall) fail('the smoke bash round must appear as a tool-call output block')
+  const callIndex = payload.calls.indexOf(bashCall)
+  const next = payload.calls[callIndex + 1]
+  if (!next || !next.inputBlocks.some((b) => b.kind === 'tool-result' && b.callId === bashCall.outputBlocks.find((b) => b.kind === 'tool-call' && b.toolName === 'bash')?.callId)) {
+    fail('the bash tool result must feed the NEXT call input section (ticket 36)')
+  }
+  if (typeof payload.title !== 'string' || payload.title === '') fail('trace title must stay a non-empty string')
+  const stats = traceStats(payload)
+  if (stats.calls !== payload.calls.length) fail('trace stats must agree with the payload')
+  if (stats.totalTokens === null) fail('usage-bearing calls must sum into the stats total')
+  console.log(`SMOKE trace contract ok — ${payload.calls.length} call(s), ${stats.totalTokens} total tok, title "${payload.title}"`)
 }

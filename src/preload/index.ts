@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { HostToParent, ImageAttachment, ParentToHost } from '../shared/contract'
 import type { FollowUpdate, SessionSummary, TranscriptItem } from '../shared/sessions/types'
+import type { TracePayload } from '../shared/sessions/trace'
 import type { SessionContextAction } from '../shared/sessions/context-actions'
 import type { UsageSnapshot } from '../shared/usage/aggregate'
 import type { ReviewResult } from '../shared/review/types'
@@ -54,6 +55,9 @@ contextBridge.exposeInMainWorld('picode', {
       ipcRenderer.invoke('sessions:rename', file, name),
     follow: (file: string): Promise<{ file: string; items: TranscriptItem[] } | null> =>
       ipcRenderer.invoke('sessions:follow', file),
+    /** Call-trace payload for one session file (ticket 36): read-only build
+     * over the jsonl, any session (TUI included). Null = unreadable file. */
+    trace: (file: string): Promise<TracePayload | null> => ipcRenderer.invoke('sessions:trace', file),
     unfollow: (): void => {
       ipcRenderer.send('sessions:unfollow')
     },
