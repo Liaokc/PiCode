@@ -13,11 +13,10 @@ export const SIDE_PANEL_WIDTH_PX = 420
 /** Tabs offered by the side panel's empty picker. Since ticket 18 the
  * terminal lives in the bottom dock (⌘J / titlebar toggle), leaving Review
  * as the only picker card. Browser tabs are out of scope for PiCode 1.0.
- * 'preview' is NOT in the picker (ticket 07): the File Preview tab opens via
- * deep-links from transcript file cards and the Review file tree, and then
- * behaves like any other tab (activate/close). */
+ * File and call-trace tabs are NOT in the picker (tickets 07/31): they open
+ * via deep-links (transcript cards, Review tree, ⌘K-adjacent surfaces) and
+ * then behave like any other tab (activate/close). */
 export const PANEL_EMPTY_TABS = ['review'] as const
-export type SidePanelTab = (typeof PANEL_EMPTY_TABS)[number] | 'preview'
 
 /** Top-level view: the workspace shell or the settings window shell. */
 export type AppView = 'workspace' | 'settings'

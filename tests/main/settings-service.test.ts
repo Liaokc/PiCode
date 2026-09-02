@@ -48,7 +48,8 @@ describe('SettingsService', () => {
       newTaskDirectory: 'last-used',
       newTaskFixedProject: null,
       hiddenGroups: [],
-      readStates: {}
+      readStates: {},
+      recentlyClosedTabs: []
     })
     expect(snapshot.lastUsedDirectory).toBe('/Users/dev/projects/api-server')
   })

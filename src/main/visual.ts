@@ -795,10 +795,13 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       )
       await sleep(200)
 
-      // Breadcrumb fallback: click the workspace-root crumb → listing.
+      // Breadcrumb fallback: click the workspace-root crumb → listing. The
+      // crumb must come from the ACTIVE tab — in-tab navigation retargets
+      // that tab in place (ticket 31 feedback), so a hidden tab's crumb
+      // would navigate off-screen and the frame would show nothing new.
       await win.webContents.executeJavaScript(
         `(() => {
-          const crumb = document.querySelector('button.preview-crumb')
+          const crumb = document.querySelector('.panel-tab-body:not(.panel-tab-body-hidden) button.preview-crumb')
           if (crumb instanceof HTMLElement) crumb.click()
           return crumb !== null
         })()`
@@ -853,6 +856,46 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       await sleep(700)
       await capture(win, '7-review-deeplink')
       rmSync(reviewProbe, { force: true })
+
+      // ---- ticket 31: multi-file tabs + the tab management dropdown ----
+      // Close one file tab (it must land under Recently Closed Tabs), then
+      // open the ⌄ dropdown: search box, both sections, relative time.
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const probe = '.review-probe.txt'
+          for (const tabEl of document.querySelectorAll('.panel-tab')) {
+            if (tabEl.querySelector('.panel-tab-label span')?.textContent !== probe) continue
+            const closeBtn = tabEl.querySelector('.panel-tab-close')
+            if (closeBtn instanceof HTMLElement) { closeBtn.click(); return true }
+          }
+          return false
+        })()`
+      )
+      await sleep(300)
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const trigger = document.querySelector('button[aria-label="Manage tabs"]')
+          if (trigger instanceof HTMLElement) trigger.click()
+          return trigger !== null
+        })()`
+      )
+      await sleep(400)
+      await captureMenu(win, '9-tab-dropdown', {
+        menu: '.panel-tab-menu',
+        menuRows: '.panel-menu-row',
+        menuSections: '.panel-tab-menu-section'
+      })
+      // Leave the dropdown closed and the persisted history clean (the
+      // visual run writes the REAL preference store otherwise).
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const trigger = document.querySelector('button[aria-label="Manage tabs"]')
+          if (trigger instanceof HTMLElement) trigger.click()
+          return true
+        })()`
+      )
+      await win.webContents.executeJavaScript(`window.picode.settings.set({ recentlyClosedTabs: [] }); true`)
+      await sleep(200)
 
       // ---- ticket 22: unified tooltip on the sidebar filter button ----
       // The tooltip host listens to delegated mouseover; dispatch a bubbling

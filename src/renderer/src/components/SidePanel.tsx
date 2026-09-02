@@ -1,42 +1,39 @@
-import { useRef, type Dispatch, type JSX, type PointerEvent } from 'react'
-import { PANEL_EMPTY_TABS, type SidePanelTab } from '../../../shared/layout-model'
-import { clampPanelWidth, type PanelAction, type PanelState } from '../../../shared/panel-model'
-import type { PreviewSelection } from '../../../shared/preview/view-model'
+import { useRef, useState, type Dispatch, type JSX, type PointerEvent } from 'react'
+import { PANEL_EMPTY_TABS } from '../../../shared/layout-model'
+import {
+  clampPanelWidth,
+  panelTabKey,
+  panelTabLabel,
+  samePanelTab,
+  type PanelAction,
+  type PanelState,
+  type PanelTabId
+} from '../../../shared/panel-model'
 import ReviewTab from './ReviewTab'
 import PreviewTab from './PreviewTab'
+import PanelTabMenu, { panelTabGlyph } from './PanelTabMenu'
 import Tooltip from './Tooltip'
-import { ChevronDownIcon, CloseIcon, CodeIcon, FileTextIcon, PlusIcon } from './icons'
-
-const TAB_ICONS: Record<SidePanelTab, JSX.Element> = {
-  review: <FileTextIcon />,
-  preview: <CodeIcon />
-}
-
-const TAB_LABELS: Record<SidePanelTab, string> = {
-  review: 'Review',
-  preview: 'Preview'
-}
+import { ChevronDownIcon, CloseIcon, FileTextIcon, HistoryIcon, PlusIcon } from './icons'
 
 interface SidePanelProps {
   /** Rendered only when the shell's panel zone is open (titlebar toggle). */
   open: boolean
   panel: PanelState
   dispatch: Dispatch<PanelAction>
-  /** Collapse the whole panel (chevron in the strip, per screenshot 08). */
-  onCollapse: () => void
   /** Working directory of the active task, feeding Review, Preview + Terminal. */
   workspaceCwd: string | null
-  /** Deep-link target for the File Preview tab (ticket 07); null = empty state. */
-  previewTarget: PreviewSelection | null
-  /** In-tab navigation (breadcrumbs, directory rows) retargets via the App shell. */
+  /** Open a path as its own deep link (open new tab / focus existing). */
   onPreviewNavigate: (cwd: string, path: string) => void
 }
 
 /**
- * Side panel container (ticket 06–08): draggable width, a multi-tab strip, and
- * the screenshot-03 "Open a Tab" picker whenever no tab content is showing.
- * Open tabs stay mounted (hidden with display:none) while another tab is
- * active — switching tabs must not kill a live shell or Preview state.
+ * Side panel container (tickets 06–08, multi-tab revision ticket 31): a
+ * draggable width, a per-file tab strip (every deep-linked file gets its own
+ * tab; the call-trace slot rides the same framework), the ⌄ tab-management
+ * dropdown, and the screenshot-03 "Open a Tab" picker whenever no tab
+ * content is showing. Open tabs stay mounted (hidden with display:none)
+ * while another tab is active — switching tabs must not kill Preview state.
+ * Collapsing the panel lives in the titlebar toggle + ⌥⌘B (ticket 27).
  *
  * Drag width (ticket 30): pointermove NEVER dispatches. The raw drag width is
  * rAF-coalesced and written straight to the aside's style — zero React renders
@@ -48,13 +45,14 @@ export default function SidePanel({
   open,
   panel,
   dispatch,
-  onCollapse,
   workspaceCwd,
-  previewTarget,
   onPreviewNavigate
 }: SidePanelProps): JSX.Element | null {
   const drag = useRef<{ startX: number; startWidth: number; width: number; raf: number } | null>(null)
   const frameRef = useRef<HTMLElement | null>(null)
+  /** The ⌄ tab-management dropdown (search + open + recently closed). */
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuAnchorRef = useRef<HTMLDivElement | null>(null)
 
   if (!open) return null
 
@@ -98,9 +96,37 @@ export default function SidePanel({
 
   const showPicker = panel.pickerOpen || panel.openTabs.length === 0
 
-  function tabBody(tab: SidePanelTab): JSX.Element {
-    if (tab === 'review') return <ReviewTab cwd={workspaceCwd} onOpenFile={workspaceCwd !== null ? (path) => onPreviewNavigate(workspaceCwd, path) : undefined} />
-    return <PreviewTab target={previewTarget} onNavigate={onPreviewNavigate} />
+  function tabBody(tab: PanelTabId): JSX.Element {
+    switch (tab.kind) {
+      case 'review':
+        return (
+          <ReviewTab
+            cwd={workspaceCwd}
+            onOpenFile={workspaceCwd !== null ? (path) => onPreviewNavigate(workspaceCwd, path) : undefined}
+          />
+        )
+      case 'file':
+        return (
+          <PreviewTab
+            cwd={tab.cwd}
+            path={tab.path}
+            // In-tab navigation (crumbs, directory rows) moves THIS tab to the
+            // destination in place; only sidebar deep links open new tabs
+            // (ticket 31 operator feedback).
+            onNavigate={(cwd, path) => dispatch({ type: 'retarget-tab', from: tab, to: { kind: 'file', cwd, path } })}
+          />
+        )
+      case 'trace':
+        // The call-trace slot rides the tab framework now; its inspector
+        // consumption lands with ticket 36.
+        return (
+          <div className="review-empty">
+            <HistoryIcon size={28} />
+            <p className="review-empty-title">Call trace</p>
+            <p className="review-empty-hint">The call trace for this session will open here.</p>
+          </div>
+        )
+    }
   }
 
   return (
@@ -118,16 +144,28 @@ export default function SidePanel({
       />
 
       <div className="panel-header">
-        <Tooltip label="Collapse side panel">
-          <button type="button" className="tb-btn" aria-label="Collapse side panel" onClick={onCollapse}>
-            <ChevronDownIcon />
-          </button>
-        </Tooltip>
+        <div ref={menuAnchorRef} className="panel-menu-anchor">
+          <Tooltip label="Manage tabs">
+            <button
+              type="button"
+              className="tb-btn"
+              aria-label="Manage tabs"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((v) => !v)}
+            >
+              <ChevronDownIcon />
+            </button>
+          </Tooltip>
+          {menuOpen && (
+            <PanelTabMenu panel={panel} dispatch={dispatch} onClose={() => setMenuOpen(false)} anchorRef={menuAnchorRef} />
+          )}
+        </div>
         <div className="panel-tabs" role="tablist" aria-label="Side panel tabs">
           {panel.openTabs.map((tab) => {
-            const active = tab === panel.activeTab && !showPicker
+            const active = panel.activeTab !== null && samePanelTab(tab, panel.activeTab) && !showPicker
+            const label = panelTabLabel(tab)
             return (
-              <div key={tab} className={`panel-tab${active ? ' panel-tab-active' : ''}`}>
+              <div key={panelTabKey(tab)} className={`panel-tab${active ? ' panel-tab-active' : ''}`} data-panel-tab={panelTabKey(tab)}>
                 <button
                   type="button"
                   role="tab"
@@ -135,15 +173,15 @@ export default function SidePanel({
                   className="panel-tab-label"
                   onClick={() => dispatch({ type: 'activate-tab', tab })}
                 >
-                  {TAB_ICONS[tab]}
-                  <span>{TAB_LABELS[tab]}</span>
+                  {panelTabGlyph(tab)}
+                  <span>{label}</span>
                 </button>
-                <Tooltip label={`Close ${TAB_LABELS[tab]} tab`}>
+                <Tooltip label={`Close ${label} tab`}>
                   <button
                     type="button"
                     className="panel-tab-close"
-                    aria-label={`Close ${TAB_LABELS[tab]} tab`}
-                    onClick={() => dispatch({ type: 'close-tab', tab })}
+                    aria-label={`Close ${label} tab`}
+                    onClick={() => dispatch({ type: 'close-tab', tab, at: Date.now() })}
                   >
                     <CloseIcon size={11} />
                   </button>
@@ -166,11 +204,11 @@ export default function SidePanel({
 
       <div className="panel-content" role="tabpanel">
         {/* Open tab bodies stay mounted; the picker overlays them instead of
-            replacing them — opening the picker must not kill a live shell. */}
+            replacing them — opening the picker must not kill Preview state. */}
         {panel.openTabs.map((tab) => (
           <div
-            key={tab}
-            className={`panel-tab-body${panel.activeTab === tab ? '' : ' panel-tab-body-hidden'}`}
+            key={panelTabKey(tab)}
+            className={`panel-tab-body${panel.activeTab !== null && samePanelTab(tab, panel.activeTab) ? '' : ' panel-tab-body-hidden'}`}
           >
             {tabBody(tab)}
           </div>
@@ -185,11 +223,11 @@ export default function SidePanel({
                   key={tab}
                   type="button"
                   className="panel-tab-card"
-                  aria-label={`Open ${TAB_LABELS[tab]} tab`}
-                  onClick={() => dispatch({ type: 'open-tab', tab })}
+                  aria-label={`Open Review tab`}
+                  onClick={() => dispatch({ type: 'open-tab', tab: { kind: 'review' } })}
                 >
-                  {TAB_ICONS[tab]}
-                  <span>{TAB_LABELS[tab]}</span>
+                  <FileTextIcon />
+                  <span>Review</span>
                 </button>
               ))}
             </div>

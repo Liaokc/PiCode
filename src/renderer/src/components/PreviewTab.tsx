@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef, type JSX } from 'react'
+import { useEffect, useReducer, useMemo, useRef, type JSX } from 'react'
 import { PREVIEW_SOURCE_WINDOW_LINES, displayModeFor, previewCrumbs } from '../../../shared/preview/policy'
 import type { PreviewDirectoryListing, PreviewResult } from '../../../shared/preview/types'
 import type { PreviewSelection } from '../../../shared/preview/view-model'
@@ -10,26 +10,32 @@ import Tooltip from './Tooltip'
 import { ChevronRightIcon, CodeIcon, EyeIcon, FileTextIcon, FolderIcon, WrapTextIcon } from './icons'
 
 /**
- * File Preview tab (ticket 07): markdown rendering + code highlighting with
- * breadcrumb path navigation (screenshots 04/08 right panel). The target is
- * owned by the App shell so transcript cards and the Review file tree can
- * deep-link into it; navigation inside the tab (crumbs, directory rows) asks
- * the App to retarget, keeping a single source of truth.
+ * One file tab's preview (ticket 07, multi-tab revision ticket 31): markdown
+ * rendering + code highlighting with breadcrumb path navigation (screenshots
+ * 04/08 right panel). Each side panel file tab owns exactly one target for
+ * its whole lifetime — deep links to another path open/focus a different
+ * tab, so the target is stable and the load effect fires once per mount.
+ * Navigation inside the tab (crumbs, directory rows) asks the App to open
+ * the destination as its own deep link, keeping a single source of truth.
  */
 
 interface PreviewTabProps {
-  /** Current deep-link target; null shows the empty state. */
-  target: PreviewSelection | null
-  /** Retarget the tab (breadcrumb/directory navigation) — token-driven. */
+  /** The workspace this tab is anchored to. */
+  cwd: string
+  /** The path this tab shows for its whole lifetime (file or folder). */
+  path: string
+  /** Open the destination as its own deep link (open-tab semantics). */
   onNavigate: (cwd: string, path: string) => void
 }
 
-export default function PreviewTab({ target, onNavigate }: PreviewTabProps): JSX.Element {
+export default function PreviewTab({ cwd, path, onNavigate }: PreviewTabProps): JSX.Element {
   const [state, dispatch] = useReducer(previewTabReducer, undefined, initialPreviewTabState)
   const crumbsRef = useRef<HTMLDivElement>(null)
+  // Stable identity for the tab's fixed lifetime: the memo (not a fresh
+  // literal) keeps the load effect from re-firing on unrelated re-renders.
+  const target = useMemo<PreviewSelection>(() => ({ cwd, path, token: 0 }), [cwd, path])
 
   useEffect(() => {
-    if (target === null) return
     let cancelled = false
     dispatch({ type: 'load-start', sel: target })
     void window.picode.preview
@@ -53,16 +59,6 @@ export default function PreviewTab({ target, onNavigate }: PreviewTabProps): JSX
     const el = crumbsRef.current
     if (el) el.scrollLeft = el.scrollWidth
   }, [state.result, state.status])
-
-  if (target === null) {
-    return (
-      <div className="review-empty">
-        <FileTextIcon size={28} />
-        <p className="review-empty-title">No file selected</p>
-        <p className="review-empty-hint">Open a file from the transcript or the Review tab to preview it here.</p>
-      </div>
-    )
-  }
 
   const location = currentLocation(state.result, state.sel, target.path)
   const isFile = state.status === 'ready' && state.result !== null && state.result.ok && state.result.kind === 'file'

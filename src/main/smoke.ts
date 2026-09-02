@@ -54,7 +54,8 @@
 
 import os from 'node:os'
 import path from 'node:path'
-import { existsSync, statSync, utimesSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { app, type BrowserWindow } from 'electron'
 import type { HostSupervisor } from './host-supervisor'
 import { focusSessionFromNotification, type ApprovalNotice } from './notifications'
@@ -1053,6 +1054,11 @@ export function startSmokeIfEnabled(
     if (bgDeniedReason !== BG_DENY_REASON) fail('deny ack never reached the stream')
     if (existsSync(path.join(cwd, 'picode-deny-probe.txt'))) fail('the denied write tool executed anyway')
     await withWindow(getWindow, async (win) => {
+      // The settled turn auto-folds (ticket 23) and a folded container
+      // unmounts its inner rows — the denied pill only exists while the turn
+      // streams or the container is open, so open the folds before probing
+      // (otherwise this assertion is a first-poll race against the fold).
+      await openAllTurnContainers(win)
       const shown = await waitForProbe(
         win,
         `(() => {
@@ -1156,6 +1162,205 @@ export function startSmokeIfEnabled(
     })
     log('keymap_done')
 
+    // ---- ticket 31: preview multi-tab — per-file tabs, the management
+    // dropdown, and recently closed persistence across a renderer restart ----
+    log('panel_tabs_start')
+    const panelSeed = seedPanelWorkspace()
+    try {
+      await withWindow(getWindow, async (win) => {
+        // A focused session anchored at the seeded git workspace gives the
+        // Review tab real deep-linkable rows.
+        supervisor.createSession(panelSeed)
+        const seeded = (await waitFor(
+          (e) => e.type === 'session_created' && e.cwd === panelSeed,
+          'panel session_created'
+        )) as Extract<Scoped, { type: 'session_created' }>
+        log('panel_session_ok', `sessionId=${seeded.sessionId}`)
+
+        const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+        /** Panel presence; open with ⌥⌘B when needed. */
+        const panelPresent = `(document.querySelector('.side-panel') !== null)`
+        if (!((await js(panelPresent)) as boolean)) {
+          await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', altKey: true, metaKey: true, bubbles: true }))`)
+          await waitForProbe(win, panelPresent, 5_000)
+        }
+
+        // Open the Review tab through the picker when it is not open.
+        const reviewInStrip = `( !!Array.from(document.querySelectorAll('.panel-tab-label span')).find((el) => el.textContent === 'Review') )`
+        if (!((await js(reviewInStrip)) as boolean)) {
+          await js(`document.querySelector('.panel-add-tab')?.click(); true`)
+          for (let waited = 0; waited < 5_000; waited += 100) {
+            const picked = (await js(
+              `(() => { const card = document.querySelector('.panel-tab-card[aria-label="Open Review tab"]'); if (card instanceof HTMLElement) { card.click(); return true } return false })()`
+            )) as boolean
+            if (picked) break
+            await new Promise((r) => setTimeout(r, 100))
+          }
+        }
+        await waitForProbe(win, `(document.querySelector('.review-tree-file') !== null)`, 15_000)
+        log('panel_review_tree_ok')
+
+        /** Click the deep-link chip of the nth changed file row. */
+        const clickChip = (row: number): string =>
+          `(() => { const rows = document.querySelectorAll('.review-tree-file'); const chip = rows[${row}]?.querySelector('.review-tree-open'); if (chip instanceof HTMLElement) { chip.click(); return true } return false })()`
+        /** Number of tabs in the strip. */
+        const TAB_COUNT = `document.querySelectorAll('.panel-tab-label span').length`
+        const tabLabels = async (): Promise<string[]> =>
+          JSON.parse((await js(
+            `JSON.stringify(Array.from(document.querySelectorAll('.panel-tab-label span')).map((el) => el.textContent))`
+          )) as string) as string[]
+        /** Click the strip tab whose label matches, or its close button. */
+        const tabWithLabel = (label: string, action: 'activate' | 'close'): string =>
+          `(() => {
+            for (const tabEl of document.querySelectorAll('.panel-tab')) {
+              if (tabEl.querySelector('.panel-tab-label span')?.textContent !== '${label}') continue
+              const target = tabEl.querySelector('${action === 'activate' ? '.panel-tab-label' : '.panel-tab-close'}')
+              if (target instanceof HTMLElement) { target.click(); return true }
+            }
+            return false
+          })()`
+
+        // Deep-link 1: the first changed file becomes its own tab
+        // (strip was [Review] → [Review, file]).
+        if (!(await waitForProbe(win, clickChip(0), 5_000))) fail('the first review deep-link chip never rendered')
+        if (!(await waitForProbe(win, `(${TAB_COUNT}) === 2`, 5_000))) fail('the first deep link never opened its own file tab')
+        log('panel_file_tab_one_ok')
+
+        // In-tab navigation (operator feedback): clicking a crumb INSIDE the
+        // preview moves THIS tab to the destination in place — the strip
+        // never grows; only sidebar deep links open tabs.
+        const dirLabel = path.basename(panelSeed)
+        // The crumb lives in the ACTIVE tab's BODY (the strip tab carries no
+        // content) — select via the body that is not hidden.
+        await js(
+          `(() => { const crumb = document.querySelector('.panel-tab-body:not(.panel-tab-body-hidden) button.preview-crumb'); if (crumb instanceof HTMLElement) { crumb.click(); return true } return false })()`
+        )
+        await waitForProbe(
+          win,
+          `( (${TAB_COUNT}) === 2 && document.querySelector('.panel-tab-active .panel-tab-label span')?.textContent === '${dirLabel}' )`,
+          8_000
+        )
+        log('panel_retarget_in_place_ok', dirLabel)
+
+        // Deep-link 2: a second file opens a SECOND tab — no replacement.
+        if (!(await waitForProbe(win, clickChip(1), 5_000))) fail('the second review deep-link chip never rendered')
+        if (!(await waitForProbe(win, `(${TAB_COUNT}) === 3`, 5_000))) fail('the second deep link did not open a second file tab')
+        const labels = await tabLabels()
+        const fileLabels = labels.slice(1)
+        if (fileLabels.length !== 2 || new Set(fileLabels).size !== 2) {
+          fail(`expected Review + two distinct file tabs, saw ${labels.join(',')}`)
+        }
+        log('panel_file_tab_two_ok', labels.join(','))
+
+        // The second deep link left its tab active; switching must not
+        // disturb the other file tab.
+        await waitForProbe(win, tabWithLabel(fileLabels[0]!, 'activate'), 5_000)
+        const switched = (await js(
+          `document.querySelector('.panel-tab-active .panel-tab-label span')?.textContent`
+        )) as string
+        if (switched !== fileLabels[0]) fail(`activation went to '${switched}', expected '${fileLabels[0]}'`)
+
+        // Closing one file tab leaves the other untouched
+        // ([Review, alpha, beta] → close alpha → [Review, beta]).
+        if (!(await waitForProbe(win, tabWithLabel(fileLabels[0]!, 'close'), 5_000))) fail('the file tab to close never rendered')
+        if (!(await waitForProbe(win, `(${TAB_COUNT}) === 2`, 5_000))) fail('closing a file tab did not remove it from the strip')
+        if (!((await tabLabels()).includes(fileLabels[1]!))) fail('closing one file tab killed the other')
+        log('panel_close_independent_ok')
+
+        // The management dropdown: sections + the closed file under Recently
+        // Closed Tabs.
+        await js(`document.querySelector('button[aria-label="Manage tabs"]')?.click(); true`)
+        await waitForProbe(win, `(document.querySelector('.panel-tab-menu') !== null)`, 5_000)
+        const menuHasRecent = `( !!Array.from(document.querySelectorAll('.panel-menu-row .panel-menu-row-label')).find((el) => el.textContent === '${fileLabels[0]}') )`
+        if (!((await js(`( document.querySelector('.panel-tab-menu-section')?.textContent === 'Open Tabs' && ${menuHasRecent} )`)) as boolean)) {
+          fail('tab dropdown does not show Open Tabs + the recently closed entry')
+        }
+        log('panel_dropdown_ok')
+
+        // Search: query the closed file's name, then Enter reopens it.
+        const typeQuery = (q: string): string =>
+          `(() => {
+            const input = document.querySelector('.panel-tab-menu-search input')
+            if (!(input instanceof HTMLInputElement)) return false
+            const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+            setter.call(input, '${q}')
+            input.dispatchEvent(new Event('input', { bubbles: true }))
+            return true
+          })()`
+        await waitForProbe(win, typeQuery(fileLabels[0]!), 5_000)
+        await waitForProbe(win, `(document.querySelector('.panel-tab-menu-count') !== null)`, 5_000)
+        const countShown = (await js(
+          `document.querySelector('.panel-tab-menu-count')?.textContent ?? ''`
+        )) as string
+        if (!/^1\/1$/.test(countShown)) fail(`search match counter read '${countShown}', expected 1/1`)
+        await js(
+          `document.querySelector('.panel-tab-menu-search input')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })); true`
+        )
+        await js(
+          `document.querySelector('.panel-tab-menu-search input')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); true`
+        )
+        if (!(await waitForProbe(win, `(${TAB_COUNT}) === 3`, 5_000))) fail('search+Enter never reopened the recently closed tab')
+        log('panel_search_reopen_ok')
+
+        // Close it again, then prove the preference round-trip: the closed
+        // entry must reach the persisted preferences document.
+        await waitForProbe(win, tabWithLabel(fileLabels[0]!, 'close'), 5_000)
+        let closedJson = ''
+        for (let waited = 0; waited < 10_000 && !closedJson.includes(fileLabels[0]!); waited += 200) {
+          closedJson = (await js(
+            `window.picode.settings.get().then((s) => JSON.stringify(s.preferences.recentlyClosedTabs)).catch(() => 'err')`
+          )) as string
+          if (closedJson.includes(fileLabels[0]!)) break
+          await new Promise((r) => setTimeout(r, 200))
+        }
+        if (!closedJson.includes(fileLabels[0]!)) fail(`recently closed never reached preferences: ${closedJson}`)
+        log('panel_preferences_ok')
+
+        // RESTART: a renderer reload re-hydrates the persisted history —
+        // the recently closed entry must survive and reopen from scratch.
+        await win.webContents.reload()
+        await waitForProbe(win, `document.documentElement.dataset['chatSubscribed'] === 'true'`, 15_000)
+        await new Promise((r) => setTimeout(r, 500))
+        // Press-until-present: the fresh renderer's keymap listener may not
+        // be attached when the marker first flips.
+        await waitForProbe(
+          win,
+          `(() => {
+            window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', altKey: true, metaKey: true, bubbles: true }))
+            return document.querySelector('.side-panel') !== null
+          })()`,
+          5_000
+        )
+        await js(`document.querySelector('button[aria-label="Manage tabs"]')?.click(); true`)
+        await waitForProbe(win, `(document.querySelector('.panel-tab-menu') !== null)`, 5_000)
+        await waitForProbe(win, menuHasRecent, 10_000)
+        log('panel_restart_keep_ok')
+
+        // Click the persisted entry: it returns as a live tab.
+        const clickRecent = `(() => {
+          for (const rowEl of document.querySelectorAll('.panel-menu-row')) {
+            if (rowEl.querySelector('.panel-menu-row-label')?.textContent !== '${fileLabels[0]}') continue
+            const main = rowEl.querySelector('.panel-menu-row-main')
+            if (main instanceof HTMLElement) { main.click(); return true }
+          }
+          return false
+        })()`
+        await waitForProbe(win, clickRecent, 5_000)
+        await waitForProbe(
+          win,
+          `( !!Array.from(document.querySelectorAll('.panel-tab-label span')).find((el) => el.textContent === '${fileLabels[0]}') )`,
+          5_000
+        )
+        log('panel_reopen_after_restart_ok')
+
+        // Leave a clean preference store behind (the stage's own entries).
+        await js(`window.picode.settings.set({ recentlyClosedTabs: [] }); true`)
+      })
+    } finally {
+      rmSync(panelSeed, { recursive: true, force: true })
+    }
+    log('panel_tabs_done')
+
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
     const livePids = supervisor.hostPids
     if (livePids.length < 2) fail(`expected at least 2 live hosts before quit, saw ${livePids.length}`)
@@ -1256,6 +1461,26 @@ function lastEntryId(text: string): string | null {
     }
   }
   return null
+}
+
+/**
+ * Seed the ticket-31 panel stage's disposable git workspace: one committed
+ * + modified file and one untracked file, so the Review tab lists two
+ * deep-linkable rows. Removed by the stage's finally block.
+ */
+function seedPanelWorkspace(): string {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-panel-'))
+  const git = (args: string[]): string => execFileSync('git', args, { cwd: dir, stdio: 'pipe' }).toString()
+  const gitOpt = (args: string[]): string[] => [
+    '-c', 'user.email=smoke@picode.local', '-c', 'user.name=PiCode Smoke', '-c', 'commit.gpgsign=false', ...args
+  ]
+  git(gitOpt(['init', '-q']))
+  writeFileSync(path.join(dir, 'panel_alpha.md'), '# alpha\n\nseeded smoke content\n')
+  git(gitOpt(['add', '.']))
+  git(gitOpt(['commit', '-q', '-m', 'seed']))
+  writeFileSync(path.join(dir, 'panel_alpha.md'), '# alpha\n\nmodified by the panel smoke\n')
+  writeFileSync(path.join(dir, 'panel_beta.md'), '# beta\n\nuntracked addition\n')
+  return dir
 }
 
 /**
