@@ -23,6 +23,7 @@ import { startTerminalVisualIfEnabled } from './visual-terminal'
 import { startMultiSessionVisualIfEnabled, isolateVisualUserData } from './visual-multisession'
 import { startApprovalVisualIfEnabled } from './visual-approval'
 import { startUsageVisualIfEnabled } from './visual-usage'
+import { startPerfIfEnabled } from './visual-perf'
 import { fakeUsageSnapshot } from '../shared/usage/fixture'
 import { TerminalService, type TerminalDataMessage, type TerminalExitMessage } from './terminal/service'
 import { nodePtyFactory } from './terminal/node-pty-factory'
@@ -245,6 +246,9 @@ app.whenReady().then(() => {
 
   startSettingsVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   startUsageVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  // Ticket-30 perf harness: seeds a heavy markdown transcript + open panel/
+  // dock resizers, then parks the window for the CDP flamegraph driver.
+  startPerfIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
 
   mainWindow = createMainWindow()
 

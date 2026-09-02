@@ -26,7 +26,8 @@
     "visual:settings": "npm run build && PICODE_VISUAL_SETTINGS=1 PICODE_FAKE_SETTINGS=1 electron .",
     "visual:usage": "npm run build && PICODE_VISUAL_USAGE=1 PICODE_FAKE_USAGE=1 electron .",
     "visual:multi": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_MULTI=1 electron .",
-    "visual:approval": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_APPROVAL=1 electron ."
+    "visual:approval": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_APPROVAL=1 electron .",
+    "perf:flame": "PICODE_PERF=1 npm run build && node scripts/perf/flame.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.84.3",
