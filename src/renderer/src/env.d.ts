@@ -37,9 +37,17 @@ interface PicodeSessionsBridge {
   /** Call-trace payload for one session file (ticket 36): read-only build
    * over the jsonl, any session (TUI included). Null = unreadable file. */
   trace(file: string): Promise<TracePayload | null>
+  /** Begin the trace tab's live-follow tail (ticket 37): snapshot + tail
+   * registration in one request. */
+  traceFollow(file: string): Promise<TracePayload | null>
+  /** End one trace tab's growth tail. */
+  untraceFollow(file: string): void
   unfollow(): void
   onIndexChanged(listener: () => void): () => void
   onFollowUpdate(listener: (update: FollowUpdate) => void): () => void
+  /** Trace-tab live-follow push (ticket 37): the rebuilt payload after the
+   * traced file changed size. */
+  onTraceUpdate(listener: (payload: TracePayload) => void): () => void
   /** Read-only context-menu actions (ticket 35): reveal the session file
    * in Finder or copy task path / session file path / session id; main
    * validates the payload before touching shell/clipboard. */

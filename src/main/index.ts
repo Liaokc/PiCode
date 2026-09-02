@@ -15,6 +15,7 @@ import { createApprovalNotifier, parseApprovalNotice } from './notifications'
 import { collectReview } from './review/collect'
 import { readPreview } from './preview/read'
 import { SessionIndexService, type FollowUpdate } from './sessions/index-service'
+import type { TracePayload } from '../shared/sessions/trace'
 import { SessionContextActionService } from './sessions/context-actions'
 import { SettingsService, type SettingsSnapshot } from './settings/service'
 import { runAuthProbeHost } from './settings/probe-runner'
@@ -27,6 +28,7 @@ import { startMultiSessionVisualIfEnabled, isolateVisualUserData } from './visua
 import { startRowGeometryVisualIfEnabled, isolateRowGeometryUserData } from './visual-row-geometry'
 import { startFilterVisualIfEnabled, isolateFilterUserData } from './visual-filter'
 import { startContextMenuVisualIfEnabled, isolateContextMenuUserData } from './visual-context-menu'
+import { startTraceVisualIfEnabled, isolateTraceUserData } from './visual-trace'
 import { startApprovalVisualIfEnabled } from './visual-approval'
 import { startUsageVisualIfEnabled } from './visual-usage'
 import { startPerfIfEnabled } from './visual-perf'
@@ -55,6 +57,9 @@ isolateFilterUserData()
 // preferences channel — same throwaway-userData rule (no-op unless
 // PICODE_VISUAL_CONTEXT_MENU=1).
 isolateContextMenuUserData()
+// Ticket-37 trace tool-surfaces harness — same throwaway-userData rule
+// (no-op unless PICODE_VISUAL_TRACE=1).
+isolateTraceUserData()
 
 // Ticket-13 hygiene, extended by ticket 31: the smoke drives the REAL
 // settings service too (panel recently closed round-trip), so it gets the
@@ -177,6 +182,8 @@ app.whenReady().then(() => {
   startFilterVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-35 context-menu/archive harness — same seeding constraint.
   startContextMenuVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  // Ticket-37 trace tool-surfaces harness — same seeding constraint.
+  startTraceVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
 
   // Renderer → host relay (Seam-1: the only chat channel the renderer has).
   ipcMain.on('chat:to-host', (_event, message: ParentToHost) => {
@@ -280,7 +287,10 @@ app.whenReady().then(() => {
   sessionIndex = new SessionIndexService({
     sessionsDir: process.env['PICODE_SESSION_DIR'] || path.join(homedir(), '.pi', 'agent', 'sessions'),
     onIndexChanged: () => broadcastChannel('sessions:index-changed', null),
-    onFollowUpdate: (update: FollowUpdate) => broadcastChannel('sessions:follow-update', update)
+    onFollowUpdate: (update: FollowUpdate) => broadcastChannel('sessions:follow-update', update),
+    // Trace-tab live follow (ticket 37): the rebuilt payload after the
+    // traced file changed size — same push semantics as the transcript tail.
+    onTraceUpdate: (payload: TracePayload) => broadcastChannel('sessions:trace-update', payload)
   })
   ipcMain.handle('sessions:list', () => sessionIndex?.list())
   ipcMain.handle('sessions:rename', (_event, file: string, name: string) => {
@@ -300,6 +310,17 @@ app.whenReady().then(() => {
   ipcMain.handle('sessions:trace', (_event, file: unknown) => {
     if (typeof file !== 'string' || file.length === 0) return Promise.resolve(null)
     return sessionIndex?.trace(file) ?? Promise.resolve(null)
+  })
+  // Trace-tab live follow (ticket 37): snapshot + tail registration in one
+  // request, then size-driven payload pushes — the same semantics as
+  // `sessions:follow`, scoped to its own per-file slots (several trace tabs
+  // can tail at once). Additive members of the sessions family.
+  ipcMain.handle('sessions:trace-follow', (_event, file: unknown) => {
+    if (typeof file !== 'string' || file.length === 0) return Promise.resolve(null)
+    return sessionIndex?.startTraceFollowing(file) ?? Promise.resolve(null)
+  })
+  ipcMain.on('sessions:untrace-follow', (_event, file: unknown) => {
+    if (typeof file === 'string' && file.length > 0) sessionIndex?.stopTraceFollowing(file)
   })
   sessionIndex.start()
 

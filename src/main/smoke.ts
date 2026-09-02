@@ -1543,6 +1543,7 @@ export function startSmokeIfEnabled(
     // host process is never involved.
     log('trace_start')
     if (!ms1.sessionFile) fail('ticket-36 stage: ms1 did not report its file')
+    const traceFile: string = ms1.sessionFile
     const traceRowSel = `[data-file="${ms1.sessionFile}"]`
     await withWindow(getWindow, async (win) => {
       const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
@@ -1620,6 +1621,127 @@ export function startSmokeIfEnabled(
       const afterRefresh = (await js(`document.querySelectorAll('.trace-call').length`)) as number
       if (afterRefresh !== shape.entries) fail(`refresh changed the entry count (${shape.entries} → ${afterRefresh})`)
       log('trace_refresh_ok')
+
+      // ---- ticket 37: live follow — growth refreshes WITHOUT refresh ----
+      // Append one settled call (user + assistant, both carrying a unique
+      // marker) to ms1's file, exactly like an other-end TUI write. The
+      // trace tab must gain the entry through the follow push alone (host
+      // re-derives on size change), with NO re-request.
+      if (!(await appendTraceGrowthTurn(traceFile))) fail('ticket-37 stage: could not append the growth turn')
+      const grown = await waitForProbe(
+        win,
+        `document.querySelectorAll('.trace-call').length === ${shape.entries + 1}`,
+        10_000
+      )
+      if (!grown) fail(`trace live follow never delivered the appended call (${shape.entries} → ?)`) // poll cadence ~2s
+      log('trace_growth_ok')
+
+      // ---- ticket 37: search — count + ↑↓ navigation + hit highlight ----
+      await js(
+        `document.querySelector('button[aria-label="Search trace"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
+      )
+      if (!(await waitForProbe(win, `document.querySelector('.trace-search-input') !== null`, 5_000))) {
+        fail('the search button never opened the trace search bar (ticket 37)')
+      }
+      // The count reads 0/0 before typing (ZCode reference frame).
+      if ((await js(`document.querySelector('.trace-search-count')?.textContent`)) !== '0/0') {
+        fail('the empty search count must read 0/0')
+      }
+      const typeQuery = `(() => {
+        const input = document.querySelector('.trace-search-input')
+        if (!(input instanceof HTMLInputElement)) return false
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+        setter.call(input, 'PICODE_TRACE_GROWTH_37')
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        return true
+      })(); true`
+      if (!(await waitForProbe(
+        win,
+        typeQuery + ` && document.querySelector('.trace-search-count')?.textContent === '1/2'`,
+        5_000
+      ))) {
+        fail('typing the growth marker never matched exactly 2 blocks with the count reading 1/2')
+      }
+      // ↓ navigation wraps to the second match; the hit block highlights.
+      await js(`document.querySelector('button[aria-label="Next match"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
+      if (!(await waitForProbe(
+        win,
+        `document.querySelector('.trace-search-count')?.textContent === '2/2' && document.querySelectorAll('.trace-block-active').length === 1`,
+        5_000
+      ))) {
+        fail('Next match never moved to 2/2 with a highlighted hit block (ticket 37)')
+      }
+      // ↑ wraps back around to the first match.
+      await js(`document.querySelector('button[aria-label="Previous match"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
+      if (!(await waitForProbe(win, `document.querySelector('.trace-search-count')?.textContent === '1/2'`, 5_000))) {
+        fail('Previous match never wrapped back to 1/2 (ticket 37)')
+      }
+      // × closes the bar and clears the highlight.
+      await js(`document.querySelector('button[aria-label="Close search"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
+      if (!(await waitForProbe(
+        win,
+        `document.querySelector('.trace-search-input') === null && document.querySelectorAll('.trace-block-active').length === 0`,
+        5_000
+      ))) {
+        fail('closing the search never removed the bar and the hit highlight (ticket 37)')
+      }
+      log('trace_search_ok')
+
+      // ---- ticket 37: block-kind toggles (six switches, default all on) ----
+      await js(`document.querySelector('button[aria-label="Block types"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
+      if (!(await waitForProbe(win, `document.querySelectorAll('.trace-kind-row').length === 6`, 5_000))) {
+        fail('the Block types button never opened the six-kind toggle panel (ticket 37)')
+      }
+      const userBlocksBefore = (await js(`document.querySelectorAll('.trace-list .trace-kind-user').length`)) as number
+      if (userBlocksBefore < 1) fail('expected at least one user block before the toggle round')
+      await js(
+        `[...document.querySelectorAll('.trace-kind-row')].find((el) => el.textContent === 'User message')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
+      )
+      if (!(await waitForProbe(win, `document.querySelectorAll('.trace-list .trace-kind-user').length === 0`, 5_000))) {
+        fail('toggling User message off never removed the user blocks (ticket 37)')
+      }
+      await js(
+        `[...document.querySelectorAll('.trace-kind-row')].find((el) => el.textContent === 'User message')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
+      )
+      if (!(await waitForProbe(win, `document.querySelectorAll('.trace-list .trace-kind-user').length === ${userBlocksBefore}`, 5_000))) {
+        fail('toggling User message back on never restored the user blocks (ticket 37)')
+      }
+      // Escape closes the panel.
+      await js(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); true`)
+      if (!(await waitForProbe(win, `document.querySelector('.trace-kind-menu') === null`, 5_000))) {
+        fail('Escape never closed the block-type panel (ticket 37)')
+      }
+      log('trace_kind_toggles_ok')
+
+      // ---- ticket 37: expand-all ↔ collapse-all ----
+      // Collapse all: every block folds to its one-line row.
+      await js(`document.querySelector('button[aria-label="Collapse all blocks"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
+      if (!(await waitForProbe(
+        win,
+        `(() => { const all = document.querySelectorAll('.trace-block').length; const c = document.querySelectorAll('.trace-block-collapsed').length; return all > 0 && all === c })()`,
+        5_000
+      ))) {
+        fail('Collapse all never folded every block (ticket 37)')
+      }
+      // Expand all (the button flips its label with the state).
+      await js(`document.querySelector('button[aria-label="Expand all blocks"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
+      if (!(await waitForProbe(win, `document.querySelectorAll('.trace-block-collapsed').length === 0`, 5_000))) {
+        fail('Expand all never unfolded every block (ticket 37)')
+      }
+      // A single block's chevron folds just that block.
+      await js(
+        `document.querySelector('.trace-block .trace-block-head')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
+      )
+      if (!(await waitForProbe(win, `document.querySelectorAll('.trace-block-collapsed').length === 1`, 5_000))) {
+        fail('a block head click never folded just that block (ticket 37)')
+      }
+      await js(
+        `document.querySelector('.trace-block-collapsed .trace-block-head')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
+      )
+      if (!(await waitForProbe(win, `document.querySelectorAll('.trace-block-collapsed').length === 0`, 5_000))) {
+        fail('clicking the folded block head never re-expanded it (ticket 37)')
+      }
+      log('trace_expand_collapse_ok')
 
       // Close: the tab leaves the panel framework (recently closed tracks it).
       await js(`document.querySelector('.trace-view')?.closest('.side-panel')?.querySelector('button[aria-label="Close trace"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
@@ -1700,6 +1822,44 @@ const STRUCTURED_MARKER = 'PICODE_REPLAY_STRUCTURED_TURN'
  * The entry id is unique per call — this helper may append several times to
  * the same file (follow stream, wake-for-reject, poke turns), and a session
  * jsonl with duplicate entry ids is rejected by the resume host. */
+/** Append one settled call (user + assistant, both carrying the ticket-37
+ * growth marker) to a session file, chained to its leaf. This is the live-
+ * follow assertion's append: the open trace tab must pick it up without
+ * any re-request. */
+const TRACE_GROWTH_MARKER = 'PICODE_TRACE_GROWTH_37'
+
+async function appendTraceGrowthTurn(file: string): Promise<boolean> {
+  const { appendFile, readFile } = await import('node:fs/promises')
+  const text = await readFile(file, 'utf8')
+  const leafId = lastEntryId(text)
+  if (leafId === null) return false
+  const t = new Date().toISOString()
+  const entries = [
+    {
+      type: 'message',
+      id: `t37u-${Date.now()}`,
+      parentId: leafId,
+      timestamp: t,
+      message: { role: 'user', content: [{ type: 'text', text: `${TRACE_GROWTH_MARKER}: watch this call appear` }] }
+    },
+    {
+      type: 'message',
+      id: `t37a-${Date.now()}`,
+      parentId: `t37u-${Date.now()}`,
+      timestamp: t,
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: `${TRACE_GROWTH_MARKER}: the live-followed call` }],
+        usage: { input: 101, output: 23 },
+        timestamp: Date.parse(t)
+      }
+    }
+  ]
+  const separator = text.endsWith('\n') || text === '' ? '' : '\n'
+  await appendFile(file, separator + entries.map((e) => JSON.stringify(e)).join('\n') + '\n')
+  return true
+}
+
 async function appendSimulatedTuiTurn(file: string): Promise<boolean> {
   const { appendFile, readFile } = await import('node:fs/promises')
   const { randomUUID } = await import('node:crypto')

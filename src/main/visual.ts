@@ -36,6 +36,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { app, BrowserWindow } from 'electron'
 import { terminalVisualEnabled } from './visual-terminal'
+import { traceVisualEnabled } from './visual-trace'
 import { ensureVisualStore, writeVisualSession } from './visual-store'
 import type { HostToParent } from '../shared/contract'
 
@@ -154,6 +155,8 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
   if (process.env['PICODE_VISUAL_FILTER'] === '1') return
   // And for the context-menu/archive harness (ticket 35).
   if (process.env['PICODE_VISUAL_CONTEXT_MENU'] === '1') return
+  // And for the trace tool-surfaces harness (ticket 37).
+  if (traceVisualEnabled()) return
 
   // Deterministic sidebar content for the shots (ticket 20): the empty-state
   // frame must show a status dot (a session written by ANOTHER end — fresh

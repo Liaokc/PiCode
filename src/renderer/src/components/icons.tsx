@@ -221,6 +221,34 @@ export function ArrowUpIcon({ size, className }: IconProps): JSX.Element {
   )
 }
 
+export function ArrowDownIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M12 5v13.5M5.5 12 12 18.5 18.5 12" />
+    </svg>
+  )
+}
+
+/** Expand-all (ticket 37): chevrons pointing apart, ZCode's unfold glyph. */
+export function UnfoldIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M12 3.5 6.5 9M12 3.5 17.5 9" />
+      <path d="M12 20.5 6.5 15M12 20.5 17.5 15" />
+    </svg>
+  )
+}
+
+/** Collapse-all (ticket 37): chevrons pointing together, ZCode's fold glyph. */
+export function FoldIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M6.5 5 12 10.5 17.5 5" />
+      <path d="M6.5 19 12 13.5 17.5 19" />
+    </svg>
+  )
+}
+
 export function FileTextIcon({ size, className }: IconProps): JSX.Element {
   return (
     <svg {...svgProps(size, className)}>

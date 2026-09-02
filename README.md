@@ -87,6 +87,7 @@ npm run visual:multi        # sidebar dots (ticket 20) + group hover actions (ti
                             #   + sidebar file browser (ticket 26, m9 captures)
 npm run visual:row-geometry # pinned-row grid probe (ticket 34; asserts its measurements)
 npm run visual:filter       # filter dropdown: view/sort, timeline, created order (ticket 33; asserts its probes)
+npm run visual:trace        # call-trace tool surfaces: expanded/collapsed/search frames (ticket 37; asserts its probes)
 # terminal bottom-dock capture (opens the dock via the titlebar toggle):
 PICODE_VISUAL=1 PICODE_VISUAL_TERMINAL=1 npx electron .
 ```
