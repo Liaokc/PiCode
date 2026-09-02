@@ -299,6 +299,15 @@ kbd {
   font-size: 11px;
   color: var(--text-faint);
   white-space: nowrap;
+  /* Fixed-width slot (ticket 34): right-aligned time in a reserved cell —
+     identical in every row; hover fades only the TEXT, the slot never
+     resizes, so no row content ever shifts. */
+  width: 44px;
+  text-align: right;
+  flex-shrink: 0;
+  /* opacity+visibility (not display): visibility holds 'visible' until the
+     fade-out completes, so the text fades instead of popping. */
+  transition: opacity 150ms ease, visibility 150ms ease;
 }
 
 .sb-group-header {
@@ -322,6 +331,10 @@ kbd {
   color: var(--text-secondary);
   font-size: 12.5px;
   cursor: pointer;
+  /* Ticket 34: the label's left edge sits on the session-title TEXT grid —
+     the group row's 18px indent + 7px dot slot + 9px gap = 34px — not on
+     the status dot. */
+  padding-left: 34px;
 }
 
 .sb-show-more:hover {
@@ -388,14 +401,12 @@ kbd {
   color: var(--text-faint);
 }
 
-.sb-task-time {
-  font-size: 11px;
-  color: var(--text-faint);
-  white-space: nowrap;
-}
-
+/* Reserved row-end pin slot (ticket 34): EVERY row lays the pin out at the
+   row end; unpinned rows keep it invisible until hover. Fades (opacity +
+   visibility) replace the old display flipping — the pin never pops and
+   never moves. */
 .sb-pin-btn {
-  display: none;
+  display: inline-flex;
   width: 20px;
   height: 20px;
   align-items: center;
@@ -403,14 +414,20 @@ kbd {
   border-radius: 5px;
   color: var(--text-secondary);
   flex-shrink: 0;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 150ms ease, visibility 150ms ease;
 }
 
-.sb-task:hover .sb-pin-btn {
-  display: inline-flex;
+.sb-task:hover .sb-pin-btn,
+.sb-pin-btn.sb-pin-on {
+  visibility: visible;
+  opacity: 1;
 }
 
 .sb-task:hover .sb-task-time {
-  display: none;
+  opacity: 0;
+  visibility: hidden;
 }
 
 .sb-pin-btn:hover {
@@ -419,7 +436,6 @@ kbd {
 }
 
 .sb-pin-on {
-  display: inline-flex;
   color: var(--accent-orange);
 }
 
