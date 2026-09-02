@@ -848,7 +848,7 @@ export default function App(): JSX.Element {
       archivedSessions: setSessionArchived(settings.preferences.archivedSessions, summary.id, true)
     })
     if (pinnedIds.has(summary.id)) setPinnedId(summary.id, false)
-    notify('Task archived. Restore it from the trash button.', 'info')
+    notify('Task archived. Restore it from the Archived view.', 'info')
   }
 
   /** One-click restore from the archive view (ticket 35): the row returns

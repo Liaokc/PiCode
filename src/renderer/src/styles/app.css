@@ -655,7 +655,7 @@ kbd {
   background: var(--bg-hover);
 }
 
-/* The trash button's archive view (ticket 35) — the same whole-sidebar
+/* The archive button's view (ticket 35) — the same whole-sidebar
    swap the file browser uses (ticket 26 mode precedent). */
 .sb-archived {
   flex: 1;

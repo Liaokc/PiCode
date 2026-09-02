@@ -37,7 +37,6 @@ import {
   PinIcon,
   PlusIcon,
   SearchIcon,
-  TrashIcon
 } from './icons'
 
 /** Rows shown per project group before "Show more". */
@@ -165,7 +164,7 @@ function TaskItem({
   onRenameStart: () => void
   onRenameEnd: () => void
   onDraftChange: (name: string) => void
-  /** Archive from the row hover (ticket 35): the trash button that
+  /** Archive from the row hover (ticket 35): the archive-box button that
    * temporarily takes the dot slot. */
   onArchive: () => void
   onContextMenu: (x: number, y: number) => void
@@ -368,7 +367,7 @@ export default function Sidebar({
     [grouped.groups, hiddenCwds]
   )
   const activeSession = sessions.find((s) => s.id === activeSessionId) ?? null
-  /** The trash button's archive view rows (ticket 35): exactly the archived
+  /** The archive button's view rows (ticket 35): exactly the archived
    * sessions, newest first, one click from restore. */
   const archived = useMemo(() => archivedList(sessions, archivedIds), [sessions, archivedIds])
 
@@ -559,7 +558,7 @@ export default function Sidebar({
                 setShowArchived(true)
               }}
             >
-              <TrashIcon />
+              <ArchiveBoxIcon />
             </button>
           </Tooltip>
         </div>
@@ -813,7 +812,7 @@ export default function Sidebar({
           <div className="sb-empty-hint">No tasks yet — press ⌘N to start one.</div>
         )}
         {listed.length === 0 && sessions.length > 0 && (
-          <div className="sb-empty-hint">All tasks are archived — restore from the trash button.</div>
+          <div className="sb-empty-hint">All tasks are archived — restore from the Archived view.</div>
         )}
       </div>
       </>
@@ -865,7 +864,7 @@ export default function Sidebar({
 }
 
 /**
- * The trash button's archive view (ticket 35): the whole sidebar swaps into
+ * The archive button's view (ticket 35): the whole sidebar swaps into
  * it — the same mode switch the file browser uses. Exactly the archived
  * sessions, newest first; each row one click from restore. Rows are
  * display-only (opening an archived task goes through ⌘K, the reachability
