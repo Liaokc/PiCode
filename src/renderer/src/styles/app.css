@@ -919,6 +919,63 @@ kbd {
   color: var(--text-primary);
 }
 
+/* Chip labels never wrap (the overflow bug at squeezed widths) — the
+   density stages shed labels instead (ticket-29 feedback). */
+.cmp-chip span {
+  white-space: nowrap;
+}
+
+/* The green thinking-strength bar (ZCode parity): bar length = the level's
+   position in the model's own level list; empty = thinking off. Same green
+   as the liveness dot. */
+.cmp-think-bar {
+  display: inline-block;
+  width: 4px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--bg-active);
+  position: relative;
+  overflow: hidden;
+}
+
+.cmp-think-bar-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #34a853;
+  border-radius: 2px;
+}
+
+/* 'max' = beyond full: a gloss band sweeps down the bar forever
+   (operator-approved design, ticket-29 feedback). */
+.cmp-think-shimmer::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 45%;
+  background: linear-gradient(to bottom, transparent, rgba(255, 255, 255, 0.95), transparent);
+  transform: translateY(-150%);
+  animation: cmp-think-shimmer 1.8s linear infinite;
+}
+
+@keyframes cmp-think-shimmer {
+  from {
+    transform: translateY(-150%);
+  }
+  to {
+    transform: translateY(350%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cmp-think-shimmer::after {
+    animation: none;
+  }
+}
+
 .cmp-chip:hover {
   background: var(--bg-inset);
 }
@@ -2270,7 +2327,12 @@ button.heat:hover {
   border-left: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  min-width: 0;
+  /* ZCode drag rule (ticket-29 feedback): a dragged pane HOLDS its width —
+     the main zone absorbs all compression, panes never squeeze each other.
+     max-width: 100% is the overflow guard for a persisted width beyond the
+     window (caps at the row width instead of clipping off-screen). */
+  flex-shrink: 0;
+  max-width: 100%;
 }
 
 .panel-resizer {

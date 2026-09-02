@@ -27,13 +27,18 @@ import process from 'node:process'
 const CDP_PORT = 9344
 const ROOT = path.resolve(new URL('..', import.meta.url).pathname, '..')
 const SIDEBAR_DEFAULT = 320
-const SIDEBAR_FINAL = 400
+const SIDEBAR_COMPACT = 400
+const SIDEBAR_FINAL = 520
 const SIDEBAR_MIN = 240
 const SIDEBAR_MAX = 520
 const PANEL_DEFAULT = 420
 const PANEL_FINAL = 620
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+function fail(message) {
+  throw new Error(message)
+}
 
 // ---- CDP session over one WebSocket ---------------------------------------
 
@@ -123,7 +128,7 @@ async function stopElectron(child) {
 async function waitForProbe(cdp, probe, budgetMs, label) {
   for (let waited = 0; waited < budgetMs; waited += 100) {
     try {
-      if ((await cdp.evaluate(probe)) === true) return
+      if ((await cdp.evaluate(probe)) === true) return true
     } catch {
       // renderer not up yet
     }
@@ -197,6 +202,12 @@ async function pressAltCmdB(cdp) {
   )
 }
 
+/** Composer density probes (ZCode staged label degradation). The model chip
+ * is the cleanest marker: compact keeps its text label, minimal replaces it
+ * with the cube icon. */
+const MODEL_CHIP_TEXT = `document.querySelector('.composer .cmp-chip.cmp-muted')?.textContent?.trim() ?? ''`
+const CARET_COUNT = `document.querySelectorAll('.composer .cmp-caret').length`
+
 // ---- persisted-document assertions -----------------------------------------
 
 function readWidths(userDataDir) {
@@ -261,10 +272,12 @@ try {
   await waitForWidth(cdp, '.sidebar', SIDEBAR_DEFAULT, 'double-clicking the resizer never reset the width to 320')
   console.log('SMOKE sidebar_dblclick_reset_ok', String(SIDEBAR_DEFAULT))
 
-  // Commit the width the restart assertion will look for.
-  await drag(cdp, '.sidebar-resizer', SIDEBAR_FINAL - SIDEBAR_DEFAULT, 0)
-  await waitForWidth(cdp, '.sidebar', SIDEBAR_FINAL, 'final sidebar drag never landed on 400')
-  console.log('SMOKE sidebar_final_width_ok', String(SIDEBAR_FINAL))
+  // Commit the width the restart assertion will look for, then squeeze the
+  // main zone: sidebar 400 + panel 620 → the composer enters the compact
+  // stage (text label on the model chip, fewer carets).
+  await drag(cdp, '.sidebar-resizer', SIDEBAR_COMPACT - SIDEBAR_DEFAULT, 0)
+  await waitForWidth(cdp, '.sidebar', SIDEBAR_COMPACT, 'final sidebar drag never landed on 400')
+  console.log('SMOKE sidebar_compact_width_ok', String(SIDEBAR_COMPACT))
 
   // The side panel: open it, drag its resizer -200 → 620 (same commit path).
   await pressAltCmdB(cdp)
@@ -274,10 +287,66 @@ try {
   await waitForWidth(cdp, '.side-panel', PANEL_FINAL, 'panel drag never landed on 620')
   console.log('SMOKE panel_drag_ok', `${PANEL_DEFAULT}→${PANEL_FINAL}`)
 
+  // ZCode drag rule: BOTH panes hold their widths — the main zone absorbs.
+  // With sidebar 400 + panel 620 the composer (~356px) is in the compact
+  // stage: the access chip sheds its text, the model chip keeps a label.
+  const compactState = await cdp.evaluate(
+    `JSON.stringify({
+      sidebar: document.querySelector('.sidebar')?.offsetWidth,
+      panel: document.querySelector('.side-panel')?.offsetWidth,
+      accessText: document.querySelector('.composer .cmp-chip.cmp-access')?.textContent?.trim() ?? '',
+      modelText: (${MODEL_CHIP_TEXT}).length,
+      carets: ${CARET_COUNT}
+    })`
+  )
+  const compact = JSON.parse(compactState)
+  if (compact.sidebar !== SIDEBAR_COMPACT || compact.panel !== PANEL_FINAL) {
+    fail(`panes did not hold their widths under compression: ${compactState}`)
+  }
+  if (compact.accessText !== '⌄' || compact.modelText === 0 || compact.carets < 2) {
+    fail(`composer never reached the compact stage: ${compactState}`)
+  }
+  if (await waitForProbe(cdp, `document.querySelector('.composer .cmp-think-bar') !== null`, 5_000, 'think bar')) {
+    console.log('SMOKE composer_think_bar_ok')
+  }
+  console.log('SMOKE panes_hold_ok', `sidebar=${compact.sidebar} panel=${compact.panel}`)
+  console.log('SMOKE composer_compact_ok', compactState)
+
+  // Push further: sidebar 520 (its max) with the panel at 620 → the composer
+  // (~236px) goes minimal — icon-only model chip, no carets. Both panes
+  // still hold (observation 5/8: the other pane never moves).
+  await drag(cdp, '.sidebar-resizer', SIDEBAR_FINAL - SIDEBAR_COMPACT, 0)
+  await waitForWidth(cdp, '.sidebar', SIDEBAR_FINAL, 'sidebar never reached its 520px max')
+  const minimalOk = await waitForProbe(
+    cdp,
+    `(${MODEL_CHIP_TEXT}).length === 0 && ${CARET_COUNT} === 0 && document.querySelector('.composer .cmp-chip.cmp-muted svg') !== null`,
+    8_000,
+    'composer never reached the minimal (icon-only) stage'
+  )
+  if (!minimalOk) {
+    const diag = (await cdp.evaluate(
+      `JSON.stringify({
+        sidebar: document.querySelector('.sidebar')?.offsetWidth,
+        panel: document.querySelector('.side-panel')?.offsetWidth,
+        main: document.querySelector('.main-zone')?.offsetWidth,
+        emptyState: document.querySelector('.empty-state')?.offsetWidth,
+        composer: document.querySelector('.composer')?.offsetWidth,
+        composerRect: document.querySelector('.composer')?.getBoundingClientRect().width,
+        accessText: document.querySelector('.composer .cmp-chip.cmp-access')?.textContent?.trim() ?? '',
+        modelText: (${MODEL_CHIP_TEXT}),
+        carets: ${CARET_COUNT},
+        svgPresent: document.querySelector('.composer .cmp-chip.cmp-muted svg') !== null,
+        modelChipTag: document.querySelector('.composer .cmp-chip.cmp-muted')?.firstElementChild?.tagName ?? null,
+        viewport: window.innerWidth
+      })`
+    ).catch(() => 'unavailable'))
+    fail(`composer never reached the minimal (icon-only) stage; layout: ${diag}`)
+  }
+  console.log('SMOKE composer_minimal_ok')
+
   // The preferences document on disk must carry BOTH widths (persistence).
   await waitForPersistedWidths(userDataDir, SIDEBAR_FINAL, PANEL_FINAL)
   console.log('SMOKE preferences_persisted_ok', `sidebarWidth=${SIDEBAR_FINAL} panelWidth=${PANEL_FINAL}`)
-
   await stopElectron(child)
   child = null
 
