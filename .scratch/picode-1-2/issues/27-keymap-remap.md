@@ -6,7 +6,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [ ] ⌘B / ⌥⌘B / ⌘J / ⌥⌘J 四键按上述映射工作；⌥⌘J、⌥⌘B 原无占用，无冲突
 - [ ] 判定用物理键位（event.code）；快捷键不漏进 Composer/输入框
@@ -17,4 +17,5 @@
 ## Comments
 
 - 2026-09-02 (requirements intake): 建票。grilling Q5 定稿（操作者指定四条映射）。归类：全新需求（键位重映射）。波次：W1。
+- 2026-09-02 (merge session): 操作者明示已验收 → merged as **0d3cc8f** (merge --no-ff onto main @ 6846e3d)。rebase 零冲突：分支 tracker 终态经 main sync `6846e3d` 原样去重（60571f2 skipped）；无任何分级处置（无 package-lock / 契约 / 二进制 / 语义对撞）。main 终态审计：typecheck 绿，vitest **669/669**（61 files），接缝抽查全幸存——`src/shared/keymap.ts` 表驱动解析、App 全局 handler 经 `resolveKeybinding`、TitleBar 四钮 R1 键帽 tooltip（⌘B/⌥⌘B/⌘J/⌥⌘J）、electron smoke 四键 stage、无冲突标记残留。
 - 2026-09-02 (implement session): claimed → implemented → code-review (standards 0 findings / spec 0 findings) → committed on `t27-keymap-remap` as **9c71e85**. Seam-1 表驱动解析落在 `src/shared/keymap.ts`（12 vitest 用例：四键正向、⌥B→"∫"/⌥J→"∆" 物理键位回归、精确修饰符拒绝、表完整性）；App 全局 handler 改经 `resolveKeybinding`，处理过的键一律 preventDefault（不漏进 Composer/输入框）；标题栏四钮 tooltip 转 R1 键帽态（⌘B / ⌥⌘B / ⌘J / ⌥⌘J）；electron smoke 新增四键 stage（keymap_tooltips_ok / cmd_b_sidebar / alt_cmd_b_panel / cmd_j_terminal / alt_cmd_j_bridge / bridge_toggle_off）全过；smoke 的合成 ⌘N 事件补 `code: 'KeyN'`（物理键位判定的必然后果）。CONTEXT.md 桥接停靠词条绑定同步改 ⌥⌘J。typecheck / lint / vitest 669 全绿；electron smoke 0 FAIL。不自行 merge——请操作者执行 `bash scripts/merge-ticket.sh 27`。
