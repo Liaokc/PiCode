@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import fs from 'node:fs/promises'
@@ -15,6 +15,7 @@ import { createApprovalNotifier, parseApprovalNotice } from './notifications'
 import { collectReview } from './review/collect'
 import { readPreview } from './preview/read'
 import { SessionIndexService, type FollowUpdate } from './sessions/index-service'
+import { SessionContextActionService } from './sessions/context-actions'
 import { SettingsService, type SettingsSnapshot } from './settings/service'
 import { runAuthProbeHost } from './settings/probe-runner'
 import { startSmokeIfEnabled, smokeEnabled, type SmokeHooks } from './smoke'
@@ -25,6 +26,7 @@ import { startTerminalVisualIfEnabled } from './visual-terminal'
 import { startMultiSessionVisualIfEnabled, isolateVisualUserData } from './visual-multisession'
 import { startRowGeometryVisualIfEnabled, isolateRowGeometryUserData } from './visual-row-geometry'
 import { startFilterVisualIfEnabled, isolateFilterUserData } from './visual-filter'
+import { startContextMenuVisualIfEnabled, isolateContextMenuUserData } from './visual-context-menu'
 import { startApprovalVisualIfEnabled } from './visual-approval'
 import { startUsageVisualIfEnabled } from './visual-usage'
 import { startPerfIfEnabled } from './visual-perf'
@@ -49,6 +51,10 @@ isolateRowGeometryUserData()
 // choices + pin) — throwaway userData for it too (no-op unless
 // PICODE_VISUAL_FILTER=1).
 isolateFilterUserData()
+// Ticket-35 context-menu harness archives/restores through the REAL
+// preferences channel — same throwaway-userData rule (no-op unless
+// PICODE_VISUAL_CONTEXT_MENU=1).
+isolateContextMenuUserData()
 
 // Ticket-13 hygiene, extended by ticket 31: the smoke drives the REAL
 // settings service too (panel recently closed round-trip), so it gets the
@@ -126,6 +132,15 @@ app.whenReady().then(() => {
   let smokeHooks: SmokeHooks | null = null
   let mainWindow: BrowserWindow | null = null
   const smokeWindow = (): BrowserWindow | null => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null)
+  // Read-only context-menu actions (ticket 35): the session row menu's
+  // Reveal in Finder + copy actions. Main validates every payload and the
+  // performed actions land in a bounded log the electron smoke asserts
+  // against — the renderer has no direct shell/clipboard access.
+  const contextActions = new SessionContextActionService({
+    reveal: (file) => shell.showItemInFolder(file),
+    copy: (text) => clipboard.writeText(text)
+  })
+  ipcMain.handle('sessions:context-action', (_event, action: unknown) => contextActions.perform(action))
   supervisor = new HostSupervisor({
     hostEntryPath: defaultHostEntryPath(),
     onHostEvent: (event) => {
@@ -134,7 +149,7 @@ app.whenReady().then(() => {
     },
     onHostLog: (stream, chunk) => console.log(`[host ${stream}]`, chunk.trimEnd())
   })
-  smokeHooks = startSmokeIfEnabled(supervisor, smokeWindow)
+  smokeHooks = startSmokeIfEnabled(supervisor, smokeWindow, contextActions)
   // System notifications for background-session approval gates (ticket 25):
   // the renderer asks only for sessions whose pill is not on screen; the
   // click deep-links back to the waiting session and approves nothing.
@@ -160,6 +175,8 @@ app.whenReady().then(() => {
   // Ticket-33 filter-dropdown harness — same seeding constraint (it also
   // pins and persists dropdown choices through the real UI).
   startFilterVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  // Ticket-35 context-menu/archive harness — same seeding constraint.
+  startContextMenuVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
 
   // Renderer → host relay (Seam-1: the only chat channel the renderer has).
   ipcMain.on('chat:to-host', (_event, message: ParentToHost) => {
@@ -312,6 +329,7 @@ function fakePreferences(): AppPreferences {
     newTaskDirectory: 'fixed',
     newTaskFixedProject: '/Users/demo/Projects/picode',
     hiddenGroups: ['/Users/demo/Projects/archive'],
+    archivedSessions: [],
     readStates: {},
     recentlyClosedTabs: [],
     sidebarView: 'projects',

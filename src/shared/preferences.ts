@@ -44,6 +44,13 @@ export interface AppPreferences {
    * hidden groups' tasks stay reachable via ⌘K search and the Groups
    * all-tasks view, and the settings page lists them for recovery. */
   hiddenGroups: string[]
+  /** Session ids archived from the sidebar lists (ticket 35). The same
+   * class of local decluttering preference as hiddenGroups: session files
+   * are never touched, archived tasks stay reachable via ⌘K search, and
+   * the trash button's archive view lists them for one-click restore.
+   * Archiving a pinned task also unpins it (pinned and archived never
+   * conflict). */
+  archivedSessions: string[]
   /** Per-session read states (ticket 28): mtime watermarks + manual unread
    * overrides. Purely local — session files are never touched. Patches
    * upsert per session (see mergePreferences) so racing writers never lose
@@ -76,6 +83,7 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   newTaskDirectory: 'last-used',
   newTaskFixedProject: null,
   hiddenGroups: [],
+  archivedSessions: [],
   readStates: {},
   recentlyClosedTabs: [],
   sidebarView: 'projects',
@@ -130,6 +138,12 @@ function normalizedHiddenGroups(value: unknown): string[] {
   return [...seen]
 }
 
+/** Archived-session ids (ticket 35): same shape rules as hiddenGroups —
+ * strings only, trimmed, blank-free, deduped in order. */
+function normalizedArchivedSessions(value: unknown): string[] {
+  return normalizedHiddenGroups(value)
+}
+
 /** Per-session read states (ticket 28): records keyed by session id, each
  * with a numeric watermark and a boolean manual-override flag. Invalid
  * entries are dropped whole. */
@@ -171,6 +185,11 @@ function normalizedFixedProjectOr(prev: string | null, value: unknown): string |
 function normalizedHiddenGroupsOr(prev: string[], value: unknown): string[] {
   if (value === undefined) return prev
   return Array.isArray(value) ? normalizedHiddenGroups(value) : prev
+}
+
+function normalizedArchivedSessionsOr(prev: string[], value: unknown): string[] {
+  if (value === undefined) return prev
+  return Array.isArray(value) ? normalizedArchivedSessions(value) : prev
 }
 
 /** readStates patches UPSERT per session over the previous record (the
@@ -241,6 +260,7 @@ export function normalizePreferences(raw: unknown): AppPreferences {
     newTaskDirectory: normalizedDirectoryMode(record['newTaskDirectory']),
     newTaskFixedProject: normalizedFixedProject(record['newTaskFixedProject']),
     hiddenGroups: normalizedHiddenGroups(record['hiddenGroups']),
+    archivedSessions: normalizedArchivedSessions(record['archivedSessions']),
     readStates: normalizedReadStates(record['readStates']),
     recentlyClosedTabs: normalizeRecentlyClosed(record['recentlyClosedTabs']),
     sidebarView: normalizedSidebarView(record['sidebarView']),
@@ -261,6 +281,7 @@ export function mergePreferences(prev: AppPreferences, patch: unknown): AppPrefe
     newTaskDirectory: normalizedDirectoryOr(prev.newTaskDirectory, record['newTaskDirectory']),
     newTaskFixedProject: normalizedFixedProjectOr(prev.newTaskFixedProject, record['newTaskFixedProject']),
     hiddenGroups: normalizedHiddenGroupsOr(prev.hiddenGroups, record['hiddenGroups']),
+    archivedSessions: normalizedArchivedSessionsOr(prev.archivedSessions, record['archivedSessions']),
     readStates: normalizedReadStatesOr(prev.readStates, record['readStates']),
     recentlyClosedTabs: normalizedRecentlyClosedOr(prev.recentlyClosedTabs, record['recentlyClosedTabs']),
     sidebarView: normalizedSidebarViewOr(prev.sidebarView, record['sidebarView']),
@@ -276,6 +297,14 @@ export function mergePreferences(prev: AppPreferences, patch: unknown): AppPrefe
 export function toggleHiddenGroup(hidden: readonly string[], cwd: string, hide: boolean): string[] {
   const without = hidden.filter((entry) => entry !== cwd)
   return hide ? [...without, cwd] : without
+}
+
+/** Archive or restore one session (ticket 35). Same list discipline as
+ * toggleHiddenGroup: archiving appends the id at the end (most recently
+ * archived last), restoring just drops it; duplicates never accumulate. */
+export function setSessionArchived(archived: readonly string[], sessionId: string, isArchived: boolean): string[] {
+  const without = archived.filter((entry) => entry !== sessionId)
+  return isArchived ? [...without, sessionId] : without
 }
 
 /**

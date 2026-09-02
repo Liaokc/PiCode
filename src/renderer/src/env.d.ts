@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import type { HostToParent, ImageAttachment, ParentToHost } from '../shared/contract'
 import type { FollowUpdate, SessionSummary, TranscriptItem } from '../../shared/sessions/types'
+import type { SessionContextAction } from '../shared/sessions/context-actions'
 import type { ReviewResult } from '../shared/review/types'
 import type { PreviewResult } from '../shared/preview/types'
 import type { AuthProbeReport } from '../shared/auth-status'
@@ -35,6 +36,10 @@ interface PicodeSessionsBridge {
   unfollow(): void
   onIndexChanged(listener: () => void): () => void
   onFollowUpdate(listener: (update: FollowUpdate) => void): () => void
+  /** Read-only context-menu actions (ticket 35): reveal the session file
+   * in Finder or copy task path / session file path / session id; main
+   * validates the payload before touching shell/clipboard. */
+  contextAction(action: SessionContextAction): Promise<boolean>
 }
 
 interface PicodeReviewBridge {

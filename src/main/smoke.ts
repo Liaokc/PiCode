@@ -48,6 +48,14 @@
  * and a background turn lights the indigo unread dot once settled — masked
  * by the animated dot while in flight — until the session is focused again.
  *
+ * Ticket 35 adds the context-menu + archive stage: hovering a settled row
+ * reveals the archive button in the dot slot (real-input hover — the CSS
+ * gate follows real moves only), archiving hides the row from both sidebar
+ * views (toast confirms), the trash button swaps to the archive view where
+ * one click restores the row, the right-click menu shows the nine entries
+ * in ZCode order, and the copy actions fire the read-only context-action
+ * IPC (asserted against main's bounded action log).
+ *
  * Any missed step times out and exits non-zero. Progress logs as
  * `SMOKE <step>` lines on stdout. Not part of `npm test`.
  */
@@ -61,6 +69,7 @@ import type { HostSupervisor } from './host-supervisor'
 import { focusSessionFromNotification, type ApprovalNotice } from './notifications'
 import type { HostToParent, SessionScopedEvent } from '../shared/contract'
 import { FOLLOW_TAKEOVER_REJECTED_TOAST } from '../shared/sessions/group'
+import type { SessionContextActionService } from './sessions/context-actions'
 
 const STEP_TIMEOUT_MS = 90_000
 const ABORT_AFTER_DELTAS = 3
@@ -100,11 +109,14 @@ interface Waiter {
 /**
  * Drive the smoke sequence against `supervisor` and return hooks for host
  * events and approval notices (waiters only; the caller keeps forwarding
- * events to the renderer). Returns null when PICODE_SMOKE is unset.
+ * events to the renderer). `actions` is the ticket-35 context-action
+ * service: the smoke asserts the session-row menu's copy/reveal IPC
+ * actually fired. Returns null when PICODE_SMOKE is unset.
  */
 export function startSmokeIfEnabled(
   supervisor: HostSupervisor,
-  getWindow: () => BrowserWindow | null
+  getWindow: () => BrowserWindow | null,
+  actions?: SessionContextActionService | null
 ): SmokeHooks | null {
   if (!smokeEnabled()) return null
   const cwd = process.env['PICODE_SMOKE_CWD'] || os.tmpdir()
@@ -1360,6 +1372,167 @@ export function startSmokeIfEnabled(
       rmSync(panelSeed, { recursive: true, force: true })
     }
     log('panel_tabs_done')
+
+    // ---- ticket 35: session-row context menu + archive ----
+    // The archive target is ms2: its host was SIGKILLed in the crash-isolation
+    // stage, so the row is settled (no host, no run, no gate) and nothing is
+    // lost by hiding it. The stage: hover reveals the archive button in the
+    // dot slot (REAL input — the CSS :hover gate follows real moves only),
+    // clicking it hides the row from both sidebar views, the trash button
+    // swaps to the archive view where one click restores the row, and the
+    // right-click menu shows the nine entries in ZCode order with the copy
+    // actions firing the read-only context-action IPC (main's bounded log is
+    // the assertion surface).
+    log('context_menu_start')
+    if (!ms2.sessionFile) fail('ticket-35 stage: multi session 2 did not report its file')
+    const archiveRowSel = `[data-file="${ms2.sessionFile}"]`
+    await withWindow(getWindow, async (win) => {
+      const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+      if (!(await waitForProbe(win, `document.querySelector('${archiveRowSel}') !== null`, 10_000))) {
+        fail('ticket-35 stage: the archive target row never reached the sidebar')
+      }
+
+      // Hover the row: the archive button must fade into the dot slot.
+      const rowPoint = (await js(`(() => {
+        const row = document.querySelector('${archiveRowSel}')
+        if (!(row instanceof Element)) return null
+        const r = row.getBoundingClientRect()
+        return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
+      })()`)) as { x: number; y: number } | null
+      if (!rowPoint) fail('ticket-35 stage: could not locate the archive target row')
+      win.webContents.sendInputEvent({ type: 'mouseMove', x: rowPoint.x, y: rowPoint.y })
+      await new Promise((r) => setTimeout(r, 150))
+      win.webContents.sendInputEvent({ type: 'mouseMove', x: rowPoint.x, y: rowPoint.y })
+      const hoverOk = await waitForProbe(
+        win,
+        `(() => {
+          const btn = document.querySelector('${archiveRowSel} .sb-arch-btn')
+          if (!btn) return false
+          const s = getComputedStyle(btn)
+          return s.visibility === 'visible' && Number(s.opacity) > 0.9
+        })()`,
+        5_000
+      )
+      if (!hoverOk) fail('hover never revealed the archive button in the dot slot (ticket 35)')
+
+      // Archive through the hover button: the row leaves both sidebar views
+      // and the toast confirms where to undo it.
+      await js(
+        `document.querySelector('${archiveRowSel} .sb-arch-btn')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
+      )
+      const gone = await waitForProbe(win, `document.querySelector('${archiveRowSel}') === null`, 10_000)
+      if (!gone) fail('archiving never removed the row from the sidebar lists (ticket 35)')
+      if (!(await waitForProbe(win, `document.body.textContent.includes('Task archived')`, 3_000))) {
+        fail('archiving never confirmed with a toast (ticket 35)')
+      }
+      log('archive_hidden_ok')
+
+      // The trash button swaps the sidebar into the archive view; the
+      // archived row is listed there with a one-click restore.
+      if (!(await waitForProbe(win, `document.querySelector('button[aria-label="Archived tasks"]') !== null`, 5_000))) {
+        fail('ticket-35 stage: the trash button is missing')
+      }
+      await js(
+        `document.querySelector('button[aria-label="Archived tasks"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
+      )
+      if (!(await waitForProbe(win, `document.querySelector('.sb-archived') !== null`, 5_000))) {
+        fail('the trash button never opened the archive view (ticket 35)')
+      }
+      if (!(await waitForProbe(win, `document.querySelector('.sb-archived ${archiveRowSel}') !== null`, 5_000))) {
+        fail('the archived row is not listed in the archive view')
+      }
+      log('archive_view_ok')
+
+      // One-click restore: the row leaves the archive list; back on the task
+      // list it is present again.
+      await js(
+        `document.querySelector('.sb-archived ${archiveRowSel} .sb-restore-btn')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
+      )
+      if (!(await waitForProbe(win, `document.querySelector('.sb-archived ${archiveRowSel}') === null`, 10_000))) {
+        fail('restore never removed the row from the archive view (ticket 35)')
+      }
+      await js(
+        `document.querySelector('button[aria-label="Back to tasks"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
+      )
+      if (!(await waitForProbe(win, `document.querySelector('.sb-task${archiveRowSel}') !== null`, 10_000))) {
+        fail('the restored row never returned to the task list (ticket 35)')
+      }
+      log('archive_restore_ok')
+
+      // Right-click the row: the nine-item menu, three groups, ZCode order.
+      await js(`(() => {
+        const row = document.querySelector('${archiveRowSel}')
+        if (!(row instanceof Element)) return
+        const r = row.getBoundingClientRect()
+        row.dispatchEvent(new MouseEvent('contextmenu', {
+          bubbles: true, cancelable: true,
+          clientX: Math.round(r.left + 60), clientY: Math.round(r.top + r.height / 2)
+        }))
+      })(); true`)
+      if (!(await waitForProbe(win, `document.querySelector('.sb-context-menu') !== null`, 5_000))) {
+        fail('right-click never opened the session context menu (ticket 35)')
+      }
+      const menuShape = (await js(`(() => {
+        const menu = document.querySelector('.sb-context-menu')
+        if (!menu) return null
+        return {
+          groups: menu.querySelectorAll('.sb-context-group').length,
+          items: [...menu.querySelectorAll('.sb-context-item')].map((el) => el.textContent)
+        }
+      })()`)) as { groups: number; items: string[] } | null
+      if (!menuShape) fail('the context menu vanished before it could be inspected')
+      if (menuShape.groups !== 3) fail(`context menu should have three groups, saw ${menuShape.groups}`)
+      const expectedItems = [
+        'Pin task', 'Rename task', 'Archive task', 'Mark as Unread',
+        'Reveal in Finder', 'Copy task path', 'Copy session file path', 'Copy session ID',
+        'View call trace'
+      ]
+      if (JSON.stringify(menuShape.items) !== JSON.stringify(expectedItems)) {
+        fail(`context menu items/order wrong: ${menuShape.items.join(' | ')}`)
+      }
+      log('context_menu_items_ok')
+
+      // Copy session ID → the read-only context-action IPC must fire (the
+      // main-side bounded action log is the assertion surface).
+      await js(
+        `[...document.querySelectorAll('.sb-context-item')].find((el) => el.textContent === 'Copy session ID')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
+      )
+      let copyIdFired = false
+      for (let waited = 0; waited < 5_000 && !copyIdFired; waited += 100) {
+        copyIdFired = (actions?.log ?? []).some((a) => a.kind === 'copy' && a.text === ms2.sessionId)
+        if (!copyIdFired) await new Promise((r) => setTimeout(r, 100))
+      }
+      if (!copyIdFired) fail('Copy session ID never fired the context-action IPC (ticket 35)')
+      if (!(await waitForProbe(win, `document.querySelector('.sb-context-menu') === null`, 3_000))) {
+        fail('the context menu stayed open after running an action')
+      }
+      log('context_menu_copy_id_ok')
+
+      // Copy task path → the cwd payload round-trips through the same IPC.
+      await js(`(() => {
+        const row = document.querySelector('${archiveRowSel}')
+        if (!(row instanceof Element)) return
+        const r = row.getBoundingClientRect()
+        row.dispatchEvent(new MouseEvent('contextmenu', {
+          bubbles: true, cancelable: true,
+          clientX: Math.round(r.left + 60), clientY: Math.round(r.top + r.height / 2)
+        }))
+      })(); true`)
+      if (!(await waitForProbe(win, `document.querySelector('.sb-context-menu') !== null`, 5_000))) {
+        fail('the context menu never re-opened for the task-path copy')
+      }
+      await js(
+        `[...document.querySelectorAll('.sb-context-item')].find((el) => el.textContent === 'Copy task path')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
+      )
+      let copyCwdFired = false
+      for (let waited = 0; waited < 5_000 && !copyCwdFired; waited += 100) {
+        copyCwdFired = (actions?.log ?? []).some((a) => a.kind === 'copy' && a.text === cwd)
+        if (!copyCwdFired) await new Promise((r) => setTimeout(r, 100))
+      }
+      if (!copyCwdFired) fail('Copy task path never fired the context-action IPC with the cwd (ticket 35)')
+      log('context_menu_copy_cwd_ok')
+    })
+    log('context_menu_done')
 
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
     const livePids = supervisor.hostPids
