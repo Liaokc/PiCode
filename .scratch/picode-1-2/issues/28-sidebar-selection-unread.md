@@ -6,7 +6,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] Follow 激活：followed 行选中样式、focused 行还原；点回退出 Follow 高亮跟回；运行中的 focused 行动画点不受影响
 - [x] 未读自动置位（非聚焦回合粒度）/ 聚焦自动清除；手动覆盖位模型就绪（UI 入口随票 35）
@@ -16,6 +16,7 @@
 
 ## Comments
 
+- 2026-09-02 (merge session): 操作者明示已验收 → merged as **f28f22c** (merge --no-ff onto main @ 10e0d8b)。rebase 冲突两处均例行级：① 票文件状态对撞（feat 中间态 vs main 终态）——取 main 侧，分支 tracker 终态提交 e4c4fd9 随之去重丢弃；② smoke.ts 文件头 doc 段相邻追加（27 段 vs 28 段）——只增不改，双段按序保留。App.tsx（27 keydown vs 28 effects）与 CONTEXT.md 自动合并成功，零语义级对撞。分支未重拍视觉帧（字节差纯分支点代差），main 保留 30 的 21 帧重拍——**待重拍注记**：现行捕获不含 28 选中/未读特性，建议下一张动视觉的票或 W2 收尾时全帧重拍。main 终态审计：typecheck 绿，vitest **719/719**（62 files，+46 为 unread/preferences/session-registry 新用例），接缝幸存——unread.ts 模型层、Sidebar/registry 未读投影、27 resolveKeybinding、30 memo+rAF 同仓共存，无冲突标记残留。
 - 2026-09-02 (requirements intake): 建票。grilling Q1（选中跟随视图）+ Q9（未读行为规则四项全按推荐）定稿。归类：交互缺陷（选中）+ 全新需求（未读）。波次：W1（Sidebar/App/preferences 唯一写者）。
 - 2026-09-02 (implementation): 分支 t28-sidebar-selection，commit 81f5535。实现：
   - 选中 = `sidebarRowState(focusedId, followedFile, sessionId, sessionFile)` 单一派生（session-registry.ts，纯投影表驱动）；`.sb-task-followed`（bg-inset，不可分辨根因）退役；选中与运行解耦（状态点承担运行）。
