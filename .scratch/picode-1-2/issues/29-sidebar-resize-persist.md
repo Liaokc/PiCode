@@ -6,7 +6,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] 侧栏右缘拖拽手柄工作；宽度 clamp 240–520、默认 320
 - [x] 双击手柄重置默认
@@ -16,6 +16,7 @@
 
 ## Comments
 
+- 2026-09-02 (merge session): 操作者明示已验收（三轮桌面反馈全部消化）→ merged as **6b2bd24** (merge --no-ff onto main @ `git merge-base` sync 链；feat `388b52d`→`e87c353`、round-2 `04810e8`、实拍帧 `27e529d`、round-3 `8ea78d1`→`c2401f8` 重放)。**本轮冲突面最大，全为例行级，零语义对撞**：① preferences.ts 5 hunks + index.ts + settings/preferences 两测试文件——31 与 29 往同一接口/默认值/normalizer/断言锚点各自追加字段（recentlyClosedTabs vs sidebarWidth/panelWidth），全部保双方（只增不改）；② App.tsx import ×2——union 去重保双方；③ SidePanel 接线 hunk：31 已重构删除 onCollapse/previewTarget（组件接口同步收紧），29 的 dispatch={dispatchPanelPersisting}（panelDispatch 薄包装 + 宽度持久化，31 动作透明）保留，onCollapse 按组件新接口丢弃；④ package.json scripts 同锚点（visual:row-geometry vs visual:layout）保双方；⑤ PNG ×28 二进制冲突——29 分支侧实为 base 旧版（30 帧），取 main（31 重拍版，含 28/31 特性）；票特有实拍帧 captures/ 不在冲突集，随分支入库。**待重拍注记**：main 现行 21 帧不含 29 的拖宽/密度特性，需下一张动视觉的票或收官前全帧重拍。另：合并后 typecheck 抓到 29 的 PreviewSelection 死导入（31 重构使原用例消失），已删（修正提交）。main 终态审计：typecheck 绿，vitest **788/788**（63 files，+42 为 composer-density/layout-model/preferences 用例），接缝幸存——layout-model 主区地板 MAIN_ZONE_MIN_WIDTH_PX、preferences 双栏宽度字段 ×9 处、composer density、visual:layout 脚本 + captures 三帧、27/28/30/31/34 五票 seam 同仓共存，无冲突标记残留。
 - 2026-09-02 (feedback round 3, commit **8ea78d1**): 操作者实拍 16.48.12（双栏拉满后的 PiCode）四点反馈，全部实现并验证：
   - **主区最小宽度 420px**（`MAIN_ZONE_MIN_WIDTH_PX`，layout-model）：每栏 max-width = 窗口 − 另一栏 − 420（shell 挂 CSS 变量 + max() 下限钳在栏最小宽），App 提交钳制用同一 bound——提交值恒等于渲染值；两栏仍保持拖后宽度（flex-shrink:0），只在地板处让位。240+280+420=940 ≤ 最小窗口 1040，地板永可达。
   - **快捷任务 chips**：行自然宽度超过 composer 时隐藏（visibility，无回流跳动），不再溢出主区。
