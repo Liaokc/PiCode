@@ -6,7 +6,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] 侧面板拖宽：拖拽路径零 React 重渲染（rAF 直写 DOM，pointerup commit）
 - [x] 底部 dock 拖高同模式
@@ -16,10 +16,7 @@
 
 ## Comments
 
-- 2026-09-02 (requirements intake): 建票。grilling Q3 定稿（实测守门口径，操作者接受）。归类：性能缺陷（已交付能力不达标）。波次：W1（SidePanel/Markdown/BottomDock 唯一写者）。
-
-## Comments
-
+- 2026-09-02 (merge session): 操作者明示已验收（含拖拽手感人工复验）→ merged as **70cf5f5** (merge --no-ff onto main @ 0909377)。rebase 冲突一处：票文件状态对撞（feat 中间态 claimed vs main 终态 ready-for-human）——例行取 main 侧，分支 tracker 终态提交 79a0845 随之去重丢弃；BottomDock / dock-model 两热点均 git 自动合并成功，零语义级对撞。main 终态审计：typecheck 绿，vitest **673/673**（61 files，+4 为 dock-model / panel-model 新用例），接缝幸存——Markdown memo(MarkdownImpl)、SidePanel/BottomDock rAF 直写 + pointerup 单次 commit、perf 工具链（scripts/perf/flame.mjs / src/main/visual-perf.ts / PICODE_PERF 门控）全在位、27 的 ⌥⌘J 注释与 30 的拖拽实现同文件共存、无冲突标记残留。flame 证据档案随 feat 入库（票特有新证据）。另：本票文件分支终态有一处重复的「## Comments + intake」段（实现会话簿记手误，随 sync 原样带入），本次 tracker 收尾一并去重。
 - 2026-09-02 (requirements intake): 建票。grilling Q3 定稿（实测守门口径，操作者接受）。归类：性能缺陷（已交付能力不达标）。波次：W1（SidePanel/Markdown/BottomDock 唯一写者）。
 - 2026-09-02 (实测取证，CDP Profiler 500µs，80 节 ×~1.8KB ≈150KB markdown、80 代码卡 + 80 表格；wheel 200×120px / drag 90×8px / dock 80×6px；档案 `flame/*.cpuprofile + *.summary.json` 本票目录):
 
