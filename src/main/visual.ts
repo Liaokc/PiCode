@@ -15,6 +15,10 @@
  *                 the container is opened first (ticket 23 choreography), then
  *                 wrap toggle, table expand, table preview overlay, and the
  *                 message-row fork toast
+ *   4b/4c/4d   — ticket 32: the preview reader's rendered state adopts the
+ *                 SAME block chrome (code cards + table containers); wrap and
+ *                 copy state stay isolated per block key, and the source
+ *                 state stays windowed bare text
  *   3b/3c      — ticket 14: a resumed session replayed from structured history
  *                items — collapsed turn containers by default (3b, ticket 23:
  *                replay always starts folded), opened for audit (3c) revealing
@@ -109,7 +113,9 @@ async function capture(win: BrowserWindow, name: string): Promise<string> {
       previewMd: document.querySelectorAll('.preview-md').length,
       previewCrumbs: document.querySelectorAll('.preview-crumb').length,
       previewCodeLines: document.querySelectorAll('.code-line').length,
-      previewListRows: document.querySelectorAll('.preview-list-row').length
+      previewListRows: document.querySelectorAll('.preview-list-row').length,
+      previewCodeCards: document.querySelectorAll('.preview-md .md-code-card').length,
+      previewTableWraps: document.querySelectorAll('.preview-md .md-table-wrap').length
     }))()`
   )
   console.log(`VISUAL captured ${file} ${JSON.stringify(sig)}`)
@@ -758,6 +764,193 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       await sleep(700)
       await capture(win, '4-preview-markdown')
 
+      // ---- ticket 32: preview rendered state adopts the transcript chrome ----
+      // Ticket 16 kept the preview reader bare; the operator overturned that
+      // scope (2026-09-02). Rendered markdown in the preview now renders the
+      // SAME code cards and table containers as the transcript; the source
+      // state stays windowed bare text. A deterministic fixture (two fenced
+      // blocks + one table) drives the probes and is removed afterwards.
+      const previewFixture = path.join(process.cwd(), '.scratch', 'visual', 'preview-chrome-fixture.md')
+      writeFileSync(
+        previewFixture,
+        [
+          '# Preview chrome fixture',
+          '',
+          'Two fenced blocks and a table for the preview chrome probes:',
+          '',
+          '```typescript',
+          'export function probe(value: number): number {',
+          '  return value * 2',
+          '}',
+          '```',
+          '',
+          '```json',
+          '{ "ok": true, "scope": "preview" }',
+          '```',
+          '',
+          '| Field | Rule |',
+          '| --- | --- |',
+          '| email | lowercased |',
+          '| password | breach-listed |',
+          ''
+        ].join('\n')
+      )
+      emit({
+        type: 'tool_start',
+        toolCallId: 'tc-visual-chrome',
+        name: 'write',
+        args: { path: '.scratch/visual/preview-chrome-fixture.md', content: '…' }
+      })
+      emit({ type: 'tool_end', toolCallId: 'tc-visual-chrome', output: 'Wrote .scratch/visual/preview-chrome-fixture.md', isError: false })
+      await sleep(300)
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const cards = [...document.querySelectorAll('.tool-card')]
+          const link = cards[cards.length - 1]?.querySelector('.tool-card-preview-link')
+          if (link instanceof HTMLElement) link.click()
+          return link !== undefined
+        })()`
+      )
+      await sleep(700)
+      // Probes run against the ACTIVE tab body only — hidden tabs stay
+      // mounted (ticket 31) and would double-count their own chrome.
+      const previewSig = (await win.webContents.executeJavaScript(
+        `(() => {
+          const $ = (sel) => document.querySelectorAll('.panel-tab-body:not(.panel-tab-body-hidden) ' + sel).length
+          return {
+            md: $('.preview-md'),
+            codeCards: $('.preview-md .md-code-card'),
+            codeBtns: $('.preview-md .md-code-card .md-block-btn'),
+            tableWraps: $('.preview-md .md-table-wrap'),
+            tableBtns: $('.preview-md .md-table-tools .md-block-btn'),
+            innerTables: $('.preview-md .md-table-scroll table'),
+            wrapped: $('.preview-md pre.md-code-pre-wrapped'),
+            tips: $('.preview-md .md-block-btn[data-tip-label]')
+          }
+        })()`
+      )) as {
+        md: number
+        codeCards: number
+        codeBtns: number
+        tableWraps: number
+        tableBtns: number
+        innerTables: number
+        wrapped: number
+        tips: number
+      }
+      if (
+        previewSig.md !== 1 ||
+        previewSig.codeCards !== 2 ||
+        previewSig.codeBtns !== 4 ||
+        previewSig.tableWraps !== 1 ||
+        previewSig.tableBtns !== 3 ||
+        previewSig.innerTables !== 1 ||
+        previewSig.wrapped !== 0 ||
+        previewSig.tips !== 7
+      ) {
+        throw new Error(`visual 4b: preview chrome signature ${JSON.stringify(previewSig)}`)
+      }
+      // Wrap ONE card: the other stays unwrapped — per-key state isolation.
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const btn = document.querySelector('.panel-tab-body:not(.panel-tab-body-hidden) .preview-md .md-code-card button[aria-label="Wrap lines"]')
+          if (btn instanceof HTMLElement) btn.click()
+          return btn !== null
+        })()`
+      )
+      await sleep(300)
+      const previewWrapSig = (await win.webContents.executeJavaScript(
+        `(() => ({
+          wrapped: document.querySelectorAll('.panel-tab-body:not(.panel-tab-body-hidden) .preview-md pre.md-code-pre-wrapped').length,
+          cards: document.querySelectorAll('.panel-tab-body:not(.panel-tab-body-hidden) .preview-md .md-code-card').length
+        }))()`
+      )) as { wrapped: number; cards: number }
+      if (previewWrapSig.wrapped !== 1 || previewWrapSig.cards !== 2) {
+        throw new Error(`visual 4b: preview wrap toggle ${JSON.stringify(previewWrapSig)}`)
+      }
+      // Copy ONE card: only its own ✓ shows (per-key feedback). The OS
+      // pasteboard is stubbed — clipboard.writeText rejects while the window
+      // is unfocused, and the harness only needs our handler + feedback path
+      // (payload recorded by the stub doubles as a copy-content check).
+      await win.webContents.executeJavaScript(
+        `(() => {
+          Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: { writeText: (text) => { window.__previewCopy = String(text); return Promise.resolve() } }
+          })
+          const btn = document.querySelector('.panel-tab-body:not(.panel-tab-body-hidden) .preview-md .md-code-card button[aria-label="Copy code"]')
+          if (btn instanceof HTMLElement) btn.click()
+          return btn !== null
+        })()`
+      )
+      await sleep(250)
+      const previewCopySig = (await win.webContents.executeJavaScript(
+        `(() => ({
+          copied: document.querySelectorAll('.panel-tab-body:not(.panel-tab-body-hidden) .preview-md .md-copy-copied').length,
+          payload: window.__previewCopy ?? ''
+        }))()`
+      )) as { copied: number; payload: string }
+      if (previewCopySig.copied !== 1 || !previewCopySig.payload.includes('export function probe')) {
+        throw new Error(`visual 4b: preview copy feedback ${JSON.stringify(previewCopySig)}`)
+      }
+      await capture(win, '4b-preview-chrome')
+      // Table preview overlay opens from inside the preview tab too.
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const btn = document.querySelector('.panel-tab-body:not(.panel-tab-body-hidden) .preview-md .md-table-tools button[aria-label="Preview table"]')
+          if (btn instanceof HTMLElement) btn.click()
+          return btn !== null
+        })()`
+      )
+      await sleep(400)
+      await captureMenu(win, '4c-preview-table-preview', {
+        dialog: '.panel-tab-body:not(.panel-tab-body-hidden) .preview-md .md-table-preview'
+      })
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const close = document.querySelector('.panel-tab-body:not(.panel-tab-body-hidden) .preview-md .md-table-preview button[aria-label="Close table preview"]')
+          if (close instanceof HTMLElement) close.click()
+          return close !== null
+        })()`
+      )
+      await sleep(200)
+      // Expand lifts the scroll cap — the same container the transcript uses.
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const btn = document.querySelector('.panel-tab-body:not(.panel-tab-body-hidden) .preview-md .md-table-tools button[aria-label="Expand table"]')
+          if (btn instanceof HTMLElement) btn.click()
+          return btn !== null
+        })()`
+      )
+      await sleep(200)
+      const previewExpandSig = (await win.webContents.executeJavaScript(
+        `document.querySelectorAll('.panel-tab-body:not(.panel-tab-body-hidden) .preview-md .md-table-scroll-expanded').length`
+      )) as number
+      if (previewExpandSig !== 1) {
+        throw new Error(`visual 4b: preview expand toggle ${previewExpandSig}`)
+      }
+      // Source state unchanged (ticket 16's surviving half): windowed
+      // CodeView, no chrome. Flip the fixture tab's segmented control.
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const btn = document.querySelector('.panel-tab-body:not(.panel-tab-body-hidden) .preview-toolbar .review-segmented button[aria-selected="false"]')
+          if (btn instanceof HTMLElement) btn.click()
+          return btn !== null
+        })()`
+      )
+      await sleep(400)
+      const previewSourceSig = (await win.webContents.executeJavaScript(
+        `(() => {
+          const $ = (sel) => document.querySelectorAll('.panel-tab-body:not(.panel-tab-body-hidden) ' + sel).length
+          return { md: $('.preview-md'), cards: $('.md-code-card'), codeLines: $('.code-line') }
+        })()`
+      )) as { md: number; cards: number; codeLines: number }
+      if (previewSourceSig.md !== 0 || previewSourceSig.cards !== 0 || previewSourceSig.codeLines === 0) {
+        throw new Error(`visual 4d: preview source state ${JSON.stringify(previewSourceSig)}`)
+      }
+      await capture(win, '4d-preview-source-window')
+      rmSync(previewFixture, { force: true })
+
       // Source file deep-link: highlighted code with the line-number gutter.
       emit({
         type: 'tool_start',
@@ -779,9 +972,12 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       await capture(win, '5-preview-source')
 
       // Wrap/truncate display toggle (ticket 07 feedback): flip to truncated.
+      // The toggle must come from the ACTIVE tab — the ticket-32 fixture tab
+      // stays open in source mode, and its hidden toolbar would otherwise
+      // win an unscoped selector (ticket 31 feedback, same shape as crumbs).
       await win.webContents.executeJavaScript(
         `(() => {
-          const toggle = document.querySelector('.preview-wrap-toggle')
+          const toggle = document.querySelector('.panel-tab-body:not(.panel-tab-body-hidden) .preview-wrap-toggle')
           if (toggle instanceof HTMLElement) toggle.click()
           return toggle !== null
         })()`
@@ -790,7 +986,7 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       await capture(win, '5b-preview-truncated')
       await win.webContents.executeJavaScript(
         `(() => {
-          const toggle = document.querySelector('.preview-wrap-toggle')
+          const toggle = document.querySelector('.panel-tab-body:not(.panel-tab-body-hidden) .preview-wrap-toggle')
           if (toggle instanceof HTMLElement) toggle.click()
           return true
         })()`

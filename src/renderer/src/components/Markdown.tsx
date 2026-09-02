@@ -18,7 +18,9 @@ import { blockKey, codeLanguage, hastText, tableToMarkdown } from '../../../shar
  * module-scope so streaming deltas never change component identity, and all
  * per-block button state (copied ✓, wrapped, expanded) is lifted into a
  * context keyed by the block's start position — a re-parse that remounts a
- * card cannot flicker the buttons (see `blockKey`).
+ * card cannot flicker the buttons (see `blockKey`). Every consumer shares the
+ * chrome (ticket 32: the preview reader adopted it too — one grammar of
+ * blocks, no bare-reader variant).
  */
 
 /** Feedback window after a successful copy, per ticket 16 (~1.5s). */
@@ -270,20 +272,16 @@ const components: Components = {
 
 function MarkdownImpl({
   text,
-  streaming = false,
-  chrome = true
+  streaming = false
 }: {
   text: string
   streaming?: boolean
-  /** Block chrome (code/table cards) — the transcript's default; the preview
-   * reader turns it off to keep its bare reader layout (ticket 16 scope). */
-  chrome?: boolean
 }): JSX.Element {
   const store = useBlockUiStore()
   return (
-    <BlockUiContext.Provider value={chrome ? store : null}>
+    <BlockUiContext.Provider value={store}>
       <div className={streaming ? 'md md-streaming' : 'md'}>
-        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={chrome ? components : undefined}>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={components}>
           {text}
         </ReactMarkdown>
       </div>
