@@ -3,6 +3,7 @@ import {
   DOCK_DEFAULT_HEIGHT_PX,
   DOCK_MAX_HEIGHT_PX,
   DOCK_MIN_HEIGHT_PX,
+  clampDockHeight,
   initialDockState,
   dockReducer,
   dockForNewTask,
@@ -198,5 +199,26 @@ describe('dockReducer — dock-for-new-task action (⌘N marker)', () => {
     expect(dockReducer(open, { type: 'dock-for-new-task' })).toBe(open)
     const pristine = initialDockState()
     expect(dockReducer(pristine, { type: 'dock-for-new-task' })).toBe(pristine)
+  })
+})
+
+describe('clampDockHeight (ticket 30: drag-path/reducer parity)', () => {
+  it('matches the reducer commit for every raw drag height', () => {
+    // The rAF drag path writes clampDockHeight straight to the DOM; the
+    // pointerup commit dispatches set-height. Both paths must agree exactly,
+    // or the dock would visibly jump when the drag commits.
+    for (let raw = -300; raw <= 1100; raw += 29) {
+      const committed = dockReducer(initialDockState(), { type: 'set-height', height: raw }).height
+      expect(clampDockHeight(raw)).toBe(committed)
+    }
+  })
+
+  it('clamps to the documented bounds and rounds to whole px', () => {
+    expect(clampDockHeight(Number.NaN)).toBe(DOCK_DEFAULT_HEIGHT_PX)
+    expect(clampDockHeight(DOCK_MIN_HEIGHT_PX - 1)).toBe(DOCK_MIN_HEIGHT_PX)
+    expect(clampDockHeight(DOCK_MIN_HEIGHT_PX)).toBe(DOCK_MIN_HEIGHT_PX)
+    expect(clampDockHeight(DOCK_MAX_HEIGHT_PX)).toBe(DOCK_MAX_HEIGHT_PX)
+    expect(clampDockHeight(DOCK_MAX_HEIGHT_PX + 1)).toBe(DOCK_MAX_HEIGHT_PX)
+    expect(clampDockHeight(320.4)).toBe(320)
   })
 })

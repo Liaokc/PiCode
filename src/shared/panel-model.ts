@@ -32,7 +32,9 @@ export function initialPanelState(): PanelState {
   return { openTabs: [], activeTab: null, pickerOpen: false, width: PANEL_DEFAULT_WIDTH_PX }
 }
 
-function clampWidth(width: number): number {
+/** Shared with the drag path (ticket 30): the rAF write and the reducer
+ * commit must clamp identically or the panel jumps on commit. */
+export function clampPanelWidth(width: number): number {
   if (Number.isNaN(width)) return PANEL_DEFAULT_WIDTH_PX
   return Math.min(PANEL_MAX_WIDTH_PX, Math.max(PANEL_MIN_WIDTH_PX, Math.round(width)))
 }
@@ -58,7 +60,7 @@ export function panelReducer(state: PanelState, action: PanelAction): PanelState
     case 'show-picker':
       return state.pickerOpen ? state : { ...state, pickerOpen: true }
     case 'set-width':
-      return clampWidth(action.width) === state.width ? state : { ...state, width: clampWidth(action.width) }
+      return clampPanelWidth(action.width) === state.width ? state : { ...state, width: clampPanelWidth(action.width) }
     case 'reset-width':
       return state.width === PANEL_DEFAULT_WIDTH_PX ? state : { ...state, width: PANEL_DEFAULT_WIDTH_PX }
     default:

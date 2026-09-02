@@ -1,6 +1,6 @@
 import { useRef, type Dispatch, type JSX, type PointerEvent } from 'react'
 import { PANEL_EMPTY_TABS, type SidePanelTab } from '../../../shared/layout-model'
-import type { PanelAction, PanelState } from '../../../shared/panel-model'
+import { clampPanelWidth, type PanelAction, type PanelState } from '../../../shared/panel-model'
 import type { PreviewSelection } from '../../../shared/preview/view-model'
 import ReviewTab from './ReviewTab'
 import PreviewTab from './PreviewTab'
@@ -37,6 +37,12 @@ interface SidePanelProps {
  * the screenshot-03 "Open a Tab" picker whenever no tab content is showing.
  * Open tabs stay mounted (hidden with display:none) while another tab is
  * active — switching tabs must not kill a live shell or Preview state.
+ *
+ * Drag width (ticket 30): pointermove NEVER dispatches. The raw drag width is
+ * rAF-coalesced and written straight to the aside's style — zero React renders
+ * during the drag, so a heavy transcript never re-renders mid-drag. The
+ * reducer commit happens once, on pointerup; `clampPanelWidth` is shared with
+ * the reducer so the live write and the commit can never disagree.
  */
 export default function SidePanel({
   open,
@@ -47,23 +53,44 @@ export default function SidePanel({
   previewTarget,
   onPreviewNavigate
 }: SidePanelProps): JSX.Element | null {
-  const drag = useRef<{ startX: number; startWidth: number } | null>(null)
+  const drag = useRef<{ startX: number; startWidth: number; width: number; raf: number } | null>(null)
+  const frameRef = useRef<HTMLElement | null>(null)
 
   if (!open) return null
 
   function startResize(event: PointerEvent<HTMLDivElement>): void {
     event.preventDefault()
-    drag.current = { startX: event.clientX, startWidth: panel.width }
-    event.currentTarget.setPointerCapture(event.pointerId)
+    drag.current = { startX: event.clientX, startWidth: panel.width, width: panel.width, raf: 0 }
+    // A vanished pointer (canceled mouse, synthetic event) must not kill the drag.
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    } catch {
+      // Moves still land while the button is held over the strip.
+    }
   }
 
   function moveResize(event: PointerEvent<HTMLDivElement>): void {
-    if (!drag.current) return
-    dispatch({ type: 'set-width', width: drag.current.startWidth + (drag.current.startX - event.clientX) })
+    const d = drag.current
+    if (!d) return
+    d.width = clampPanelWidth(d.startWidth + (d.startX - event.clientX))
+    if (d.raf !== 0) return
+    d.raf = requestAnimationFrame(() => {
+      d.raf = 0
+      // Drag ended before this frame ran: the pointerup commit owns the DOM.
+      if (drag.current !== d) return
+      if (frameRef.current) frameRef.current.style.width = `${d.width}px`
+    })
   }
 
   function endResize(event: PointerEvent<HTMLDivElement>): void {
+    const d = drag.current
     drag.current = null
+    if (d) {
+      if (d.raf !== 0) cancelAnimationFrame(d.raf)
+      // Single state commit per drag; the reducer clamps with the same
+      // clampPanelWidth the DOM writes used, so nothing jumps.
+      dispatch({ type: 'set-width', width: d.width })
+    }
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId)
     }
@@ -77,7 +104,7 @@ export default function SidePanel({
   }
 
   return (
-    <aside className="side-panel" style={{ width: panel.width }}>
+    <aside ref={frameRef} className="side-panel" style={{ width: panel.width }}>
       <div
         className="panel-resizer"
         role="separator"
@@ -86,6 +113,7 @@ export default function SidePanel({
         onPointerDown={startResize}
         onPointerMove={moveResize}
         onPointerUp={endResize}
+        onPointerCancel={endResize}
         onDoubleClick={() => dispatch({ type: 'reset-width' })}
       />
 

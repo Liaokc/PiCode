@@ -1,0 +1,79 @@
+{
+  "scenario": "drag-panel",
+  "label": "after",
+  "sections": 80,
+  "wallMs": 3347,
+  "frames": 200,
+  "expectedFrames": 203,
+  "longTaskCount": 0,
+  "longTaskMaxMs": 0,
+  "longTaskTotalMs": 0,
+  "durationMs": 3388,
+  "scriptSelfMs": 3387,
+  "mdSelfMs": 0,
+  "reactSelfMs": 1,
+  "otherSelfMs": 3387,
+  "topFunctions": [
+    {
+      "name": "(idle)",
+      "selfMs": 2496.6
+    },
+    {
+      "name": "(program)",
+      "selfMs": 867.9
+    },
+    {
+      "name": "(garbage collector)",
+      "selfMs": 10.5
+    },
+    {
+      "name": "SyntheticBaseEvent",
+      "selfMs": 2.4
+    },
+    {
+      "name": "(anonymous)",
+      "selfMs": 1.2
+    },
+    {
+      "name": "AnswerBlock",
+      "selfMs": 0.8
+    },
+    {
+      "name": "jsxProd",
+      "selfMs": 0.6
+    },
+    {
+      "name": "updateProperties",
+      "selfMs": 0.6
+    },
+    {
+      "name": "processDispatchQueue",
+      "selfMs": 0.6
+    },
+    {
+      "name": "batchedUpdates$1",
+      "selfMs": 0.6
+    },
+    {
+      "name": "dispatchSetStateInternal",
+      "selfMs": 0.6
+    },
+    {
+      "name": "isCustomElement",
+      "selfMs": 0.6
+    },
+    {
+      "name": "querySelector",
+      "selfMs": 0.6
+    },
+    {
+      "name": "hide",
+      "selfMs": 0.6
+    }
+  ],
+  "scenarioInfo": {
+    "startWidth": 420,
+    "endWidth": 1120,
+    "moves": 90
+  }
+}

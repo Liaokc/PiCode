@@ -1,0 +1,79 @@
+{
+  "scenario": "drag-dock",
+  "label": "before",
+  "sections": 80,
+  "wallMs": 9307,
+  "frames": 180,
+  "expectedFrames": 561,
+  "longTaskCount": 80,
+  "longTaskMaxMs": 155,
+  "longTaskTotalMs": 8795,
+  "durationMs": 9359,
+  "scriptSelfMs": 9358,
+  "mdSelfMs": 301,
+  "reactSelfMs": 176,
+  "otherSelfMs": 8881,
+  "topFunctions": [
+    {
+      "name": "visit2",
+      "selfMs": 744.7
+    },
+    {
+      "name": "exec",
+      "selfMs": 608.5
+    },
+    {
+      "name": "(garbage collector)",
+      "selfMs": 585.6
+    },
+    {
+      "name": "subtokenize",
+      "selfMs": 522.1
+    },
+    {
+      "name": "factory",
+      "selfMs": 459.7
+    },
+    {
+      "name": "set webkitSpeechRecognitionEvent",
+      "selfMs": 386.7
+    },
+    {
+      "name": "(program)",
+      "selfMs": 356.3
+    },
+    {
+      "name": "compile",
+      "selfMs": 353
+    },
+    {
+      "name": "(idle)",
+      "selfMs": 274.4
+    },
+    {
+      "name": "consume",
+      "selfMs": 247.5
+    },
+    {
+      "name": "subcontent",
+      "selfMs": 229.4
+    },
+    {
+      "name": "start",
+      "selfMs": 197.8
+    },
+    {
+      "name": "go2",
+      "selfMs": 197.6
+    },
+    {
+      "name": "main",
+      "selfMs": 164.4
+    }
+  ],
+  "scenarioInfo": {
+    "startHeight": 320,
+    "endHeight": 800,
+    "moves": 80
+  }
+}

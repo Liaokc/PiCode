@@ -59,7 +59,9 @@ export function initialDockState(): DockState {
   return { open: false, panel: 'terminal', height: DOCK_DEFAULT_HEIGHT_PX, tabOpen: false, gen: 0 }
 }
 
-function clampHeight(height: number): number {
+/** Shared with the drag path (ticket 30): the rAF write and the reducer
+ * commit must clamp identically or the dock jumps on commit. */
+export function clampDockHeight(height: number): number {
   if (Number.isNaN(height)) return DOCK_DEFAULT_HEIGHT_PX
   return Math.min(DOCK_MAX_HEIGHT_PX, Math.max(DOCK_MIN_HEIGHT_PX, Math.round(height)))
 }
@@ -87,7 +89,7 @@ export function dockReducer(state: DockState, action: DockAction): DockState {
     case 'dock-for-new-task':
       return dockForNewTask(state)
     case 'set-height':
-      return clampHeight(action.height) === state.height ? state : { ...state, height: clampHeight(action.height) }
+      return clampDockHeight(action.height) === state.height ? state : { ...state, height: clampDockHeight(action.height) }
     case 'reset-height':
       return state.height === DOCK_DEFAULT_HEIGHT_PX ? state : { ...state, height: DOCK_DEFAULT_HEIGHT_PX }
     default:
