@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useReducer, useRef, useState, type JSX } from 'react'
+import { memo, useCallback, useEffect, useMemo, useReducer, useRef, useState, type JSX } from 'react'
 import {
   formatCallDuration,
   formatTraceTimestamp,
@@ -143,18 +143,24 @@ export default function TraceTab({ sessionFile, onClose }: TraceTabProps): JSX.E
 
   // Search projection: document-order matches over the visible blocks, the
   // clamped current index, and the active block key that drives both the
-  // highlight and the scroll-into-view.
-  const matches = payload === null ? [] : traceMatches(payload.calls, view.visible, view.query)
+  // highlight and the scroll-into-view. Memoized: typing re-derives once
+  // per query change, not once per render.
+  const matches = useMemo(
+    () => (payload === null ? [] : traceMatches(payload.calls, view.visible, view.query)),
+    [payload, view.visible, view.query]
+  )
   const clampedIndex = matches.length === 0 ? 0 : Math.min(view.matchIndex, matches.length - 1)
   const activeKey = view.searchOpen && matches.length > 0 ? matches[clampedIndex]!.key : null
 
   // Hit location (命中滚动定位): when navigation moves the active match,
-  // bring its block into the center of the list viewport.
+  // jump its block to the center of the list viewport — INSTANT, never a
+  // smooth animation: ↑↓ must keep pace with the keys (a smooth scroll
+  // restarts from the current position on every press and reads as lag).
   useEffect(() => {
     if (activeKey === null) return
     document
       .querySelector(`[data-trace-block="${CSS.escape(activeKey)}"]`)
-      ?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      ?.scrollIntoView({ block: 'center' })
   }, [activeKey])
 
   const onToggleBlock = useCallback((key: string): void => {
