@@ -58,6 +58,14 @@ contextBridge.exposeInMainWorld('picode', {
     /** Call-trace payload for one session file (ticket 36): read-only build
      * over the jsonl, any session (TUI included). Null = unreadable file. */
     trace: (file: string): Promise<TracePayload | null> => ipcRenderer.invoke('sessions:trace', file),
+    /** Begin the trace tab's live-follow tail (ticket 37): resolves with the
+     * initial payload and registers the growth tail — the same snapshot+
+     * tail semantics as `follow`, scoped to per-file slots. */
+    traceFollow: (file: string): Promise<TracePayload | null> => ipcRenderer.invoke('sessions:trace-follow', file),
+    /** End one trace tab's tail (tab closed / file switched). */
+    untraceFollow: (file: string): void => {
+      ipcRenderer.send('sessions:untrace-follow', file)
+    },
     unfollow: (): void => {
       ipcRenderer.send('sessions:unfollow')
     },
@@ -73,6 +81,15 @@ contextBridge.exposeInMainWorld('picode', {
       ipcRenderer.on('sessions:follow-update', wrapped)
       return () => {
         ipcRenderer.removeListener('sessions:follow-update', wrapped)
+      }
+    },
+    /** Trace-tab live-follow push (ticket 37): the rebuilt payload after
+     * the traced file changed size. */
+    onTraceUpdate: (listener: (payload: TracePayload) => void): (() => void) => {
+      const wrapped = (_event: IpcRendererEvent, payload: TracePayload): void => listener(payload)
+      ipcRenderer.on('sessions:trace-update', wrapped)
+      return () => {
+        ipcRenderer.removeListener('sessions:trace-update', wrapped)
       }
     },
     /** Read-only context-menu actions (ticket 35): reveal the session file

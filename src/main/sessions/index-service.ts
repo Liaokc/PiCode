@@ -28,6 +28,9 @@ export interface SessionIndexOptions {
   sessionsDir: string
   onIndexChanged: () => void
   onFollowUpdate?: (update: FollowUpdate) => void
+  /** Live-follow push for call-trace tabs (ticket 37): the rebuilt payload
+   * after the traced file changed size. */
+  onTraceUpdate?: (payload: TracePayload) => void
   /** Poll interval; defaults to 2s. */
   pollMs?: number
 }
@@ -50,6 +53,12 @@ export class SessionIndexService {
   private readonly opts: SessionIndexOptions
   private readonly cache = new Map<string, CacheState>()
   private follow: FollowState | null = null
+  /** Live-follow tails of call-trace tabs (ticket 37), file → last seen
+   * size. Unlike the transcript tail, the trace payload is a pure function
+   * of the WHOLE file — so each tail only tracks the size and re-derives
+   * the full payload on any change (growth OR shrink/rewrite). Several
+   * trace tabs can tail at once — one slot each. */
+  private readonly traceFollows = new Map<string, number>()
   private timer: NodeJS.Timeout | null = null
   private scanning = false
 
@@ -144,6 +153,29 @@ export class SessionIndexService {
     return buildTracePayload(text, file)
   }
 
+  /** Begin tailing a session file for a call-trace tab (ticket 37): returns
+   * the initial payload and records the file's current size as the growth
+   * baseline (FollowView convention — snapshot and tail never overlap). An
+   * unreadable file returns null but still registers the tail, so the push
+   * picks the file up once it appears. */
+  async startTraceFollowing(file: string): Promise<TracePayload | null> {
+    let text: string | null = null
+    try {
+      text = await readFileText(file)
+    } catch {
+      this.traceFollows.set(file, 0)
+      return null
+    }
+    this.traceFollows.set(file, Buffer.byteLength(text))
+    return buildTracePayload(text, file)
+  }
+
+  /** End one trace tab's tail. Tabs tail independently — stopping one
+   * never touches the others. */
+  stopTraceFollowing(file: string): void {
+    this.traceFollows.delete(file)
+  }
+
   start(intervalMs?: number): void {
     this.stop()
     this.timer = setInterval(() => void this.tick(), intervalMs ?? this.opts.pollMs ?? 2_000)
@@ -163,6 +195,7 @@ export class SessionIndexService {
       await this.list()
       if (this.cacheSignature() !== before) this.opts.onIndexChanged()
       await this.pollFollow()
+      await this.pollTraceFollow()
     } finally {
       this.scanning = false
     }
@@ -197,6 +230,27 @@ export class SessionIndexService {
     const { entries } = parseSessionLines(chunk.text)
     const items = extractTranscriptItems(entries)
     if (items.length > 0) this.opts.onFollowUpdate?.({ file: follow.file, items })
+  }
+
+  /** Re-derive + push the payload of every tailed trace file whose size
+   * changed since the last push (ticket 37). The full rebuild is the
+   * correct answer to growth AND to shrink/rewrite alike, and appends are
+   * the only realistic change at the 2s poll cadence. */
+  private async pollTraceFollow(): Promise<void> {
+    for (const [file, seenBytes] of [...this.traceFollows]) {
+      let size: number
+      try {
+        size = (await stat(file)).size
+      } catch {
+        continue
+      }
+      if (size === seenBytes) continue
+      const text = await readFileText(file).catch(() => null)
+      if (text === null) continue // transient read error — retry next tick
+      this.traceFollows.set(file, size)
+      const payload = buildTracePayload(text, file)
+      if (payload !== null) this.opts.onTraceUpdate?.(payload)
+    }
   }
 
   private async listSessionFiles(): Promise<string[]> {
