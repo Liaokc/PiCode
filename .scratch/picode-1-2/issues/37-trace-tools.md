@@ -10,7 +10,7 @@
 
 **Blocked by:** 36（骨架与载荷先行）。
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 - [ ] 活跟随：文件增长实时刷新（follow 通道复用），停止条件与 FollowView 惯例一致
 - [ ] 搜索：计数 + ↑↓× 导航；命中滚动定位
@@ -21,3 +21,4 @@
 ## Comments
 
 - 2026-09-02 (requirements intake): 建票。grilling Q10 定稿。归类：全新需求。波次：W5（1.2 收官票）。
+- 2026-09-02 (t37-trace-tools): implemented @ 354409d。活跟随 = host 每 tick 按 size 变化重推导整载推送（sessions:trace-follow / sessions:trace-update，契约纯增量；多 trace tab 各占一槽，停止条件 = FollowView 惯例：视图消失即停尾）。搜索 = 计数 n/m（空 0/0）+ ↑↓ 环绕导航 + ×；命中块高亮并 scrollIntoView 居中；隐藏块型同时退出搜索语料。块型开关六项默认全开（sliders 钮弹出面板，Escape/外点关闭）。全部展开↔收起（默认全展开，材质化 collapsed 集，后到块保持展开；块头 chevron 单块切换）。渲染状态纯 reducer + selectors = src/shared/sessions/trace-view.ts（Seam-1 表驱动 27 用例）；行/块 memo + 位置键，增长推送只 diff 尾部。electron smoke 新增 trace_growth_ok（增长无重请求刷新）/ trace_search_ok / trace_kind_toggles_ok / trace_expand_collapse_ok，全绿 exit 0；visual:trace 三态帧 tr1-expanded / tr2-collapsed / tr3-search 对照 ZCode 实拍通过（含结构探针断言）。typecheck / lint / test 886 全绿。code-review 两轴：Standards 2 修复（孤儿注释、blockTextOf 重复）/2 接受，Spec 0 发现。请操作者 `bash scripts/merge-ticket.sh 37`。
