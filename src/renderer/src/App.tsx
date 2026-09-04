@@ -14,6 +14,7 @@ import { initialShellUiState, shellUiReducer, SIDEBAR_WIDTH_PX, SIDEBAR_MIN_WIDT
 import { resolveKeybinding } from '../../shared/keymap'
 import { initialPanelState, normalizeRecentlyClosed, panelReducer, PANEL_DEFAULT_WIDTH_PX, PANEL_MIN_WIDTH_PX, clampPanelWidth, type PanelAction } from '../../shared/panel-model'
 import { initialDockState, dockReducer } from '../../shared/dock-model'
+import { projectPaneMotion } from '../../shared/pane-motion'
 import { initialBridgeFeedState, projectBridgeFeed } from '../../shared/bridge/feed'
 import { terminalFontStack } from '../../shared/terminal/font'
 import { detectNerdFont } from './terminal/probe-font'
@@ -162,6 +163,12 @@ export default function App(): JSX.Element {
    * defaults — that could overwrite watermarks persisted by a previous run
    * and lose unread state for sessions that grew while the app was closed. */
   const [settingsLoaded, setSettingsLoaded] = useState(false)
+  /** Pane-motion arming (ticket 40): flipped one double-rAF after the boot
+   * settings snapshot has seeded the persisted pane widths AND painted —
+   * the seed is a style change after first paint, and animating it would
+   * wiggle the boot frame. Both load outcomes arm (the failure path never
+   * seeds, so it can arm immediately too). */
+  const [paneMotionArmed, setPaneMotionArmed] = useState(false)
   /** Recently closed persistence guard (ticket 31): the JSON of the last
    * hydrated/written history, so no-op renders never write preferences. */
   const lastClosedTabsJsonRef = useRef(JSON.stringify([]))
@@ -182,6 +189,14 @@ export default function App(): JSX.Element {
   // recently closed tab history also hydrates the panel framework (ticket 31).
   useEffect(() => {
     let cancelled = false
+    /** Arm pane transitions one double-rAF after the CURRENT commit paints
+     * (one-shot; App lives for the window's lifetime). Called only from the
+     * not-cancelled branches below. */
+    const armPaneMotionAfterPaint = (): void => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => setPaneMotionArmed(true))
+      })
+    }
     void window.picode.settings
       .get()
       .then((snapshot) => {
@@ -202,9 +217,14 @@ export default function App(): JSX.Element {
         // Seed the persistence guard with the normalized form so hydration
         // alone never triggers a redundant write-back.
         lastClosedTabsJsonRef.current = JSON.stringify(closed)
+        // Ticket 40: the width seed must PAINT before transitions arm, or
+        // the boot frame animates the restore.
+        armPaneMotionAfterPaint()
       })
       .catch(() => {
-        if (!cancelled) notify('Settings could not be loaded — using defaults.', 'error')
+        if (cancelled) return
+        notify('Settings could not be loaded — using defaults.', 'error')
+        armPaneMotionAfterPaint()
       })
     return () => {
       cancelled = true
@@ -1065,16 +1085,31 @@ export default function App(): JSX.Element {
    * folder name; null hides the chip when no session is focused. */
   const sessionLabel = focused?.name ?? chat.session?.cwd.split('/').pop() ?? null
 
+  /** Pane-motion projection (ticket 40, Seam-1): each pane's open/close
+   * variable carries the ANIMATED size (0px when closed) while the content
+   * variable keeps the pane's real size, so pane content clips instead of
+   * reflowing while the edge slides. */
+  const sidebarMotion = projectPaneMotion(ui.sidebarOpen, ui.sidebarWidth)
+  const panelMotion = projectPaneMotion(ui.sidePanelOpen, panel.width)
+  const dockMotion = projectPaneMotion(dock.open, dock.height)
+
   return (
     <div
       className="app-shell"
+      data-pane-motion-armed={paneMotionArmed ? '' : undefined}
       style={
         {
-          // Pane bounds for the CSS max-widths (round-2 feedback): each pane
-          // yields before the main zone's floor does. 0 while a pane is
-          // closed.
-          '--sidebar-w': ui.sidebarOpen ? `${ui.sidebarWidth}px` : '0px',
-          '--panel-w': ui.sidePanelOpen ? `${panel.width}px` : '0px'
+          // Pane bounds for the CSS max-widths (round-2 feedback) AND the
+          // pane open/close motion (ticket 40): the pane vars are the
+          // animated sizes (0px while closed); the content vars pin each
+          // pane's real size so content clips, never reflows. Each pane
+          // yields before the main zone's floor does.
+          '--sidebar-w': sidebarMotion.pane,
+          '--sidebar-content-w': sidebarMotion.content,
+          '--panel-w': panelMotion.pane,
+          '--panel-content-w': panelMotion.content,
+          '--dock-h': dockMotion.pane,
+          '--dock-content-h': dockMotion.content
         } as CSSProperties
       }
     >
