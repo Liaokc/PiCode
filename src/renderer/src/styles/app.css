@@ -4829,6 +4829,31 @@ button.preview-crumb:hover {
   align-items: center;
 }
 
+/* Ticket 38: the access rows stack their mode name over the muted hint —
+   the row's flex gap only spaces icon|text|check, so the text block owns
+   its own vertical rhythm (pre-38 the two spans rendered glued together). */
+.cmp-access-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Tier colors on the shield (ticket 38, semantics untouched): Full Access
+   warns (orange — ZCode's full-access warning semantics), Standard stays
+   neutral, Read Only is safe (the approved-check green). */
+.cmp-access-shield-full-access {
+  color: var(--accent-orange);
+}
+
+.cmp-access-shield-standard {
+  color: var(--text-secondary);
+}
+
+.cmp-access-shield-read-only {
+  color: #2b9e4e;
+}
+
 .cmp-cmd-name {
   font-weight: 600;
   font-family: var(--font-mono, ui-monospace, 'SF Mono', Menlo, monospace);
