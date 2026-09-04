@@ -68,6 +68,9 @@ interface SessionMenuState {
 }
 
 interface SidebarProps {
+  /** Open/closed shell state (⌘B / titlebar toggle, ticket 27). The sidebar
+   * stays mounted while closed (ticket 40): the prop drives the closed
+   * end-state styling only. */
   open: boolean
   sessions: SessionSummary[]
   /** The session currently focused in the chat view. NOT the selected row
@@ -324,12 +327,20 @@ export default function Sidebar({
   // task list never re-renders mid-drag. The reducer commit happens once,
   // on pointerup; clampSidebarWidth is shared with the reducer so the live
   // write and the commit can never disagree.
+  //
+  // Ticket 40: the drag writes BOTH the pane and its pinned content wrapper
+  // (the content follows the edge 1:1, exactly as before), flips the
+  // pane-motion drag rule (size transition off), and clears its inline
+  // writes on release so the App-projected variables own the geometry again.
   const drag = useRef<{ startX: number; startWidth: number; width: number; raf: number } | null>(null)
   const frameRef = useRef<HTMLElement | null>(null)
+  const pinRef = useRef<HTMLDivElement | null>(null)
 
   function startResize(event: PointerEvent<HTMLDivElement>): void {
     event.preventDefault()
     drag.current = { startX: event.clientX, startWidth: width, width, raf: 0 }
+    // Pane-motion drag rule (ticket 40): size transition off while dragging.
+    frameRef.current?.setAttribute('data-resizing', '')
     // A vanished pointer (canceled mouse, synthetic event) must not kill the drag.
     try {
       event.currentTarget.setPointerCapture(event.pointerId)
@@ -348,13 +359,16 @@ export default function Sidebar({
       d.raf = 0
       // Drag ended before this frame ran: the pointerup commit owns the DOM.
       if (drag.current !== d) return
-      if (frameRef.current) frameRef.current.style.width = `${d.width}px`
+      const px = `${d.width}px`
+      if (frameRef.current) frameRef.current.style.width = px
+      if (pinRef.current) pinRef.current.style.width = px
     })
   }
 
   function endResize(event: PointerEvent<HTMLDivElement>): void {
     const d = drag.current
     drag.current = null
+    frameRef.current?.removeAttribute('data-resizing')
     if (d) {
       if (d.raf !== 0) cancelAnimationFrame(d.raf)
       // Single state commit per drag; the reducer clamps with the same
@@ -362,6 +376,12 @@ export default function Sidebar({
       // dispatch persists the change to preferences (App-level wrapper).
       dispatch({ type: 'set-sidebar-width', width: d.width })
     }
+    // The committed width re-enters through the App-projected variables —
+    // clear the drag's inline writes so the variables own the geometry
+    // again (the dispatch above flushes before the next paint, so no
+    // intermediate frame shows the stale variable).
+    if (frameRef.current) frameRef.current.style.width = ''
+    if (pinRef.current) pinRef.current.style.width = ''
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId)
     }
@@ -485,10 +505,13 @@ export default function Sidebar({
     )
   }
 
-  if (!open) return null
-
+  // Ticket 40: the sidebar STAYS MOUNTED while closed — the closed end
+  // state (size 0 + opacity 0 + pointer-events/visibility) is styled via
+  // [data-closed], and the open/close run is a width/opacity transition of
+  // the App-projected variables. Content keeps its real width inside the
+  // pinned wrapper, so closing CLIPS the task list instead of reflowing it.
   return (
-    <aside ref={frameRef} className="sidebar" style={{ width }}>
+    <aside ref={frameRef} className="sidebar" data-closed={open ? undefined : ''}>
       <div
         className="sidebar-resizer"
         role="separator"
@@ -500,6 +523,8 @@ export default function Sidebar({
         onPointerCancel={endResize}
         onDoubleClick={() => dispatch({ type: 'reset-sidebar-width' })}
       />
+      <div className="sidebar-clip">
+        <div className="sidebar-pin" ref={pinRef}>
       {browserTarget !== null ? (
         <FileBrowser
           key={browserTarget.cwd}
@@ -873,6 +898,8 @@ export default function Sidebar({
           </button>
         </Tooltip>
       </footer>
+        </div>
+      </div>
     </aside>
   )
 }

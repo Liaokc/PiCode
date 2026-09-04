@@ -18,6 +18,17 @@ import TerminalDock from './TerminalDock'
  * never dispatches; the raw height is rAF-coalesced and written straight to
  * the section's style, and the reducer commits once on pointerup through the
  * shared `clampDockHeight`, so live write and commit always agree.
+ *
+ * Open/close motion (ticket 40): the frame STAYS MOUNTED (it already did —
+ * the shell must survive ⌘J) but the closed state is no longer display:none:
+ * the closed end state is height 0 + opacity 0 + pointer-events/visibility,
+ * styled via [data-closed], and the open/close run is a height/opacity
+ * transition of the App-projected variables. The content wrapper keeps the
+ * dock's real height (never collapsed), so the TerminalDock root never
+ * participates in a per-frame reflow — the xterm host holds its size while
+ * the clip wrapper reveals it, and the ResizeObserver stays silent
+ * mid-animation. The drag writes both wrappers 1:1 and flips the size
+ * transition off for the duration of the drag (ZCode resizing rule).
  */
 
 interface BottomDockProps {
@@ -51,10 +62,13 @@ export default function BottomDock({
 }: BottomDockProps): JSX.Element {
   const drag = useRef<{ startY: number; startHeight: number; height: number; raf: number } | null>(null)
   const frameRef = useRef<HTMLElement | null>(null)
+  const pinRef = useRef<HTMLDivElement | null>(null)
 
   function startResize(event: PointerEvent<HTMLDivElement>): void {
     event.preventDefault()
     drag.current = { startY: event.clientY, startHeight: dock.height, height: dock.height, raf: 0 }
+    // Pane-motion drag rule (ticket 40): size transition off while dragging.
+    frameRef.current?.setAttribute('data-resizing', '')
     // A vanished pointer (canceled mouse, synthetic event) must not kill the drag.
     try {
       event.currentTarget.setPointerCapture(event.pointerId)
@@ -73,27 +87,36 @@ export default function BottomDock({
       d.raf = 0
       // Drag ended before this frame ran: the pointerup commit owns the DOM.
       if (drag.current !== d) return
-      if (frameRef.current) frameRef.current.style.height = `${d.height}px`
+      const px = `${d.height}px`
+      if (frameRef.current) frameRef.current.style.height = px
+      if (pinRef.current) pinRef.current.style.height = px
     })
   }
 
   function endResize(event: PointerEvent<HTMLDivElement>): void {
     const d = drag.current
     drag.current = null
+    frameRef.current?.removeAttribute('data-resizing')
     if (d) {
       if (d.raf !== 0) cancelAnimationFrame(d.raf)
       // Single state commit per drag; the reducer clamps with the same
       // clampDockHeight the DOM writes used, so nothing jumps.
       dispatch({ type: 'set-height', height: d.height })
     }
+    // The committed height re-enters through the App-projected variables —
+    // clear the drag's inline writes (the dispatch above flushes before the
+    // next paint, so no intermediate frame shows the stale variable).
+    if (frameRef.current) frameRef.current.style.height = ''
+    if (pinRef.current) pinRef.current.style.height = ''
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId)
     }
   }
 
   // Panel visibility follows `dock.panel` alone: the frame owns overall
-  // visibility (display:none when closed), and each sibling keeps its own
-  // display state so a hidden frame never reports a visible sibling.
+  // visibility (closed end state via [data-closed], ticket 40), and each
+  // sibling keeps its own display state so a hidden frame never reports a
+  // visible sibling.
   const showingTerminal = dock.panel === 'terminal'
 
   return (
@@ -101,7 +124,7 @@ export default function BottomDock({
       ref={frameRef}
       className="terminal-dock"
       aria-label={dock.panel === 'terminal' ? 'Terminal' : 'Agent Bridge'}
-      style={{ height: dock.height, display: dock.open ? undefined : 'none' }}
+      data-closed={dock.open ? undefined : ''}
     >
       <div
         className="terminal-dock-resizer"
@@ -115,6 +138,8 @@ export default function BottomDock({
         onDoubleClick={() => dispatch({ type: 'reset-height' })}
       />
 
+      <div className="dock-clip">
+        <div className="dock-pin" ref={pinRef}>
       {/* Both siblings stay mounted; display:none keeps the shell alive and
           the feed folding while the other panel shows. */}
       <div className="dock-panel" style={{ display: showingTerminal ? 'flex' : 'none' }}>
@@ -130,6 +155,8 @@ export default function BottomDock({
       </div>
       <div className="dock-panel" style={{ display: showingTerminal ? 'none' : 'flex' }}>
         <BridgeDock feed={bridgeFeed} fontStack={fontStack} highlight={bridgeHighlight} onHighlightDone={onBridgeHighlightDone} dispatch={dispatch} />
+      </div>
+        </div>
       </div>
     </section>
   )

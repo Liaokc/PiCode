@@ -17,7 +17,9 @@ import Tooltip from './Tooltip'
 import { ChevronDownIcon, CloseIcon, FileTextIcon, PlusIcon } from './icons'
 
 interface SidePanelProps {
-  /** Rendered only when the shell's panel zone is open (titlebar toggle). */
+  /** Open/closed shell state (⌥⌘B / titlebar toggle, ticket 27). The panel
+   * stays mounted while closed (ticket 40): the prop drives the closed
+   * end-state styling only. */
   open: boolean
   panel: PanelState
   dispatch: Dispatch<PanelAction>
@@ -41,6 +43,14 @@ interface SidePanelProps {
  * during the drag, so a heavy transcript never re-renders mid-drag. The
  * reducer commit happens once, on pointerup; `clampPanelWidth` is shared with
  * the reducer so the live write and the commit can never disagree.
+ *
+ * Open/close motion (ticket 40): the panel STAYS MOUNTED while closed — the
+ * closed end state (size 0 + opacity 0 + pointer-events/visibility) is
+ * styled via [data-closed] and the open/close run is a width/opacity
+ * transition of the App-projected variables. Content keeps its real width
+ * inside the pinned wrapper (tabs, previews and the terminal stay put —
+ * clip, never reflow); the drag writes both wrappers 1:1 and flips the
+ * size transition off for the duration of the drag (ZCode resizing rule).
  */
 export default function SidePanel({
   open,
@@ -48,18 +58,19 @@ export default function SidePanel({
   dispatch,
   workspaceCwd,
   onPreviewNavigate
-}: SidePanelProps): JSX.Element | null {
+}: SidePanelProps): JSX.Element {
   const drag = useRef<{ startX: number; startWidth: number; width: number; raf: number } | null>(null)
   const frameRef = useRef<HTMLElement | null>(null)
+  const pinRef = useRef<HTMLDivElement | null>(null)
   /** The ⌄ tab-management dropdown (search + open + recently closed). */
   const [menuOpen, setMenuOpen] = useState(false)
   const menuAnchorRef = useRef<HTMLDivElement | null>(null)
 
-  if (!open) return null
-
   function startResize(event: PointerEvent<HTMLDivElement>): void {
     event.preventDefault()
     drag.current = { startX: event.clientX, startWidth: panel.width, width: panel.width, raf: 0 }
+    // Pane-motion drag rule (ticket 40): size transition off while dragging.
+    frameRef.current?.setAttribute('data-resizing', '')
     // A vanished pointer (canceled mouse, synthetic event) must not kill the drag.
     try {
       event.currentTarget.setPointerCapture(event.pointerId)
@@ -77,19 +88,27 @@ export default function SidePanel({
       d.raf = 0
       // Drag ended before this frame ran: the pointerup commit owns the DOM.
       if (drag.current !== d) return
-      if (frameRef.current) frameRef.current.style.width = `${d.width}px`
+      const px = `${d.width}px`
+      if (frameRef.current) frameRef.current.style.width = px
+      if (pinRef.current) pinRef.current.style.width = px
     })
   }
 
   function endResize(event: PointerEvent<HTMLDivElement>): void {
     const d = drag.current
     drag.current = null
+    frameRef.current?.removeAttribute('data-resizing')
     if (d) {
       if (d.raf !== 0) cancelAnimationFrame(d.raf)
       // Single state commit per drag; the reducer clamps with the same
       // clampPanelWidth the DOM writes used, so nothing jumps.
       dispatch({ type: 'set-width', width: d.width })
     }
+    // The committed width re-enters through the App-projected variables —
+    // clear the drag's inline writes (the dispatch above flushes before the
+    // next paint, so no intermediate frame shows the stale variable).
+    if (frameRef.current) frameRef.current.style.width = ''
+    if (pinRef.current) pinRef.current.style.width = ''
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId)
     }
@@ -125,7 +144,7 @@ export default function SidePanel({
   }
 
   return (
-    <aside ref={frameRef} className="side-panel" style={{ width: panel.width }}>
+    <aside ref={frameRef} className="side-panel" data-closed={open ? undefined : ''}>
       <div
         className="panel-resizer"
         role="separator"
@@ -138,6 +157,8 @@ export default function SidePanel({
         onDoubleClick={() => dispatch({ type: 'reset-width' })}
       />
 
+      <div className="panel-clip">
+        <div className="panel-pin" ref={pinRef}>
       <div className="panel-header">
         <div ref={menuAnchorRef} className="panel-menu-anchor">
           <Tooltip label="Manage tabs">
@@ -228,6 +249,8 @@ export default function SidePanel({
             </div>
           </div>
         )}
+      </div>
+        </div>
       </div>
     </aside>
   )
