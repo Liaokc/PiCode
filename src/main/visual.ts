@@ -37,6 +37,7 @@ import path from 'node:path'
 import { app, BrowserWindow } from 'electron'
 import { terminalVisualEnabled } from './visual-terminal'
 import { traceVisualEnabled } from './visual-trace'
+import { foldVisualEnabled } from './visual-fold'
 import { ensureVisualStore, writeVisualSession } from './visual-store'
 import type { HostToParent } from '../shared/contract'
 
@@ -159,6 +160,8 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
   if (traceVisualEnabled()) return
   // And for the access-menu harness (ticket 38).
   if (process.env['PICODE_VISUAL_ACCESS'] === '1') return
+  // And for the group-fold harness (ticket 39).
+  if (foldVisualEnabled()) return
 
   // Deterministic sidebar content for the shots (ticket 20): the empty-state
   // frame must show a status dot (a session written by ANOTHER end — fresh

@@ -33,6 +33,7 @@
     "visual:context-menu": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_CONTEXT_MENU=1 electron .",
     "visual:trace": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_TRACE=1 electron .",
     "visual:access": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_ACCESS=1 electron .",
+    "visual:fold": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_FOLD=1 electron .",
     "visual:layout": "npm run build && node scripts/smoke/layout-captures.mjs",
     "perf:flame": "PICODE_PERF=1 npm run build && node scripts/perf/flame.mjs"
   },

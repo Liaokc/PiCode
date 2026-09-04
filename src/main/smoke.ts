@@ -60,6 +60,14 @@
  * retained built-in (/compact), typing a retired command bare or with
  * arguments raises the pointer toast, and the session sees ZERO new
  * messages across the gated sends (stage-local user_message observer).
+ * Ticket 39 adds the group-fold stage: a seeded 12-session project group
+ * drives the whole fold/pagination shape table in the sidebar — Show more
+ * steps +5, full expansion flips the control to "Show less", Show less
+ * resets to the initial five in one click, the group row's click folds ALL
+ * rows and unfolding restores the pre-fold step, no caret remains, the
+ * folded header stays count-free, and a renderer reload (the restart
+ * proxy) returns the group to the default shape — shapes are memory-level,
+ * never persisted.
  *
  * Any missed step times out and exits non-zero. Progress logs as
  * `SMOKE <step>` lines on stdout. Not part of `npm test`.
@@ -1847,6 +1855,132 @@ export function startSmokeIfEnabled(
       log('trace_close_ok')
     })
     log('trace_done')
+
+    // ---- ticket 39: group fold + Show more pagination ----
+    // A seeded 12-session project group (header + one user message each,
+    // distinct ascending mtimes for deterministic order) drives the whole
+    // shape table end to end: default five → +5 step → fold through the
+    // group row → unfold restores the step → +5 reaches ALL with "Show
+    // less" → one-click reset → fold/unfold again → restart (renderer
+    // reload, the ticket-31 proxy) back at the default five. The caret must
+    // be gone and the folded header must carry no count (Q9).
+    log('group_fold_start')
+    const foldProject = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-fold-'))
+    const foldStore = process.env['PICODE_SESSION_DIR']
+    if (!foldStore) fail('ticket-39 stage: PICODE_SESSION_DIR is not set')
+    const FOLD_SEED_SESSIONS = 12
+    try {
+      // Seed the isolated SESSION STORE (the only place the index walks)
+      // with header + one user message per file; the sessions' cwd is the
+      // separate REAL project dir (basename = the group label).
+      for (let i = 0; i < FOLD_SEED_SESSIONS; i++) {
+        const stamp = new Date().toISOString()
+        const lines = [
+          JSON.stringify({ type: 'session', version: 3, id: `fold39-${i}`, timestamp: stamp, cwd: foldProject }),
+          JSON.stringify({
+            type: 'message',
+            id: `fold39-${i}-u1`,
+            parentId: null,
+            timestamp: stamp,
+            message: { role: 'user', content: [{ type: 'text', text: `PICODE_FOLD_39 task ${i + 1} of ${FOLD_SEED_SESSIONS}` }] }
+          })
+        ]
+        const file = path.join(foldStore, `fold-${String(i).padStart(2, '0')}.jsonl`)
+        writeFileSync(file, lines.join('\n') + '\n')
+        // Distinct past mtimes: the group sorts newest-first, deterministically.
+        const mtime = new Date(Date.now() - (FOLD_SEED_SESSIONS - i) * 60_000)
+        utimesSync(file, mtime, mtime)
+      }
+      await withWindow(getWindow, async (win) => {
+        const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+        // The keymap stage may have left the sidebar closed — open with ⌘B
+        // (press-until-present, the panel-stage pattern).
+        const sidebarPresent = `(document.querySelector('.sidebar') !== null)`
+        if (!((await js(sidebarPresent)) as boolean)) {
+          await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', metaKey: true, bubbles: true })); true`)
+          await waitForProbe(win, sidebarPresent, 5_000)
+        }
+
+        const projectName = path.basename(foldProject)
+        /** The seeded group section, or null (the header's first span IS the
+         * project label). Probes read `${rows}|${label}` so every step
+         * asserts rows AND control label in one poll. */
+        const groupExpr = `([...document.querySelectorAll('.sb-group')].find((g) => g.querySelector('.sb-group-header span')?.textContent === '${projectName}') ?? null)`
+        const stateExpr = `(() => {
+          const g = ${groupExpr}
+          if (!g) return '-1|none'
+          const m = g.querySelector('.sb-show-more')
+          return g.querySelectorAll('.sb-task').length + '|' + (m ? (m.textContent ?? '').trim() : 'none')
+        })()`
+        const clickInGroup = (selector: string): string =>
+          `(() => { const g = ${groupExpr}; const el = g?.querySelector('${selector}'); if (el instanceof HTMLElement) { el.dispatchEvent(new MouseEvent('click', { bubbles: true })); return true } return false })()`
+
+        // Index poll (~2s) lists the seeded group at the DEFAULT shape.
+        if (!(await waitForProbe(win, `${stateExpr} === '5|Show more'`, 15_000))) {
+          fail(`the seeded fold group never reached the default shape (state: ${await js(stateExpr)})`)
+        }
+        log('fold_default_shape_ok')
+
+        // Caret deleted (ticket 39): no group header in the sidebar carries one.
+        const carets = (await js(`document.querySelectorAll('.sb-caret').length`)) as number
+        if (carets !== 0) fail(`the group-header caret survived the ticket-39 deletion (${carets} left)`)
+        log('fold_caret_gone_ok')
+
+        // +5 step: Show more reveals five more, still "Show more" (10 of 12).
+        await js(clickInGroup('.sb-show-more'))
+        if (!(await waitForProbe(win, `${stateExpr} === '10|Show more'`, 5_000))) {
+          fail(`Show more never stepped +5 (state: ${await js(stateExpr)})`)
+        }
+        log('fold_step_plus5_ok')
+
+        // Fold through the group ROW: all rows hide, the pagination control
+        // goes with them, and the header stays count-free (Q9).
+        await js(clickInGroup('.sb-group-header'))
+        if (!(await waitForProbe(win, `${stateExpr} === '0|none'`, 5_000))) {
+          fail(`the group row click never folded the group (state: ${await js(stateExpr)})`)
+        }
+        const foldedHeader = (await js(
+          `(() => { const g = ${groupExpr}; return g ? (g.querySelector('.sb-group-header')?.textContent ?? '').trim() : '' })()`
+        )) as string
+        if (foldedHeader !== projectName) fail(`the folded header carries extra text (count?): "${foldedHeader}"`)
+        log('fold_folded_ok')
+
+        // Unfold restores the PRE-FOLD shape: still the 10-row step.
+        await js(clickInGroup('.sb-group-header'))
+        if (!(await waitForProbe(win, `${stateExpr} === '10|Show more'`, 5_000))) {
+          fail(`unfolding never restored the pre-fold shape (state: ${await js(stateExpr)})`)
+        }
+        log('fold_shape_restored_ok')
+
+        // Second +5 reaches ALL 12 — the control flips to "Show less".
+        await js(clickInGroup('.sb-show-more'))
+        if (!(await waitForProbe(win, `${stateExpr} === '12|Show less'`, 5_000))) {
+          fail(`full expansion never flipped the control to Show less (state: ${await js(stateExpr)})`)
+        }
+        log('fold_all_shown_ok')
+
+        // Show less: ONE click back to the initial five.
+        await js(clickInGroup('.sb-show-more'))
+        if (!(await waitForProbe(win, `${stateExpr} === '5|Show more'`, 5_000))) {
+          fail(`Show less never reset to the initial five in one click (state: ${await js(stateExpr)})`)
+        }
+        log('fold_show_less_reset_ok')
+
+        // RESTART: shapes are memory-level (Q5) — a renderer reload, the
+        // same restart proxy the ticket-31 stage uses, must return the
+        // group to the default shape; a persisted preference would survive.
+        await win.webContents.reload()
+        await waitForProbe(win, `document.documentElement.dataset['chatSubscribed'] === 'true'`, 15_000)
+        await new Promise((r) => setTimeout(r, 500))
+        if (!(await waitForProbe(win, `${stateExpr} === '5|Show more'`, 15_000))) {
+          fail(`after restart the fold group is not at the default shape (state: ${await js(stateExpr)})`)
+        }
+        log('fold_restart_default_ok')
+      })
+    } finally {
+      rmSync(foldProject, { recursive: true, force: true })
+    }
+    log('group_fold_done')
 
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
     const livePids = supervisor.hostPids

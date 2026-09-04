@@ -813,14 +813,6 @@ kbd {
   padding: 8px 10px;
 }
 
-.sb-caret {
-  transition: transform 0.15s ease;
-}
-
-.sb-caret-up {
-  transform: rotate(180deg);
-}
-
 /* ---------- sidebar: file browser mode (ticket 26) ---------- */
 
 /* The whole sidebar swaps to this mode from a group's "View files" hover
