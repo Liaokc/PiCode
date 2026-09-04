@@ -258,7 +258,7 @@ try {
   child = bootElectron(userDataDir)
   const cdp = await connectCdp()
   await cdp.send('Runtime.enable')
-  await waitForProbe(cdp, `document.querySelector('.sidebar') !== null`, 30_000, 'sidebar never mounted')
+  await waitForProbe(cdp, `(() => { const el = document.querySelector('.sidebar'); return el !== null && !el.hasAttribute('data-closed') })()`, 30_000, 'sidebar never mounted')
   console.log('SMOKE boot1_sidebar_mounted')
 
   await waitForWidth(cdp, '.sidebar', SIDEBAR_DEFAULT, 'sidebar never reached its 320px default')
@@ -294,7 +294,7 @@ try {
 
   // The side panel: open it, drag its resizer -140 → 560 (same commit path).
   await pressAltCmdB(cdp)
-  await waitForProbe(cdp, `document.querySelector('.side-panel') !== null`, 8_000, 'side panel never opened')
+  await waitForProbe(cdp, `(() => { const el = document.querySelector('.side-panel'); return el !== null && !el.hasAttribute('data-closed') })()`, 8_000, 'side panel never opened')
   await waitForWidth(cdp, '.side-panel', PANEL_DEFAULT, 'side panel never opened at its 420px default')
   await drag(cdp, '.panel-resizer', -140, 0)
   await waitForWidth(cdp, '.side-panel', PANEL_FINAL, 'panel drag never landed on 560')
@@ -367,13 +367,13 @@ try {
   child = bootElectron(userDataDir)
   const cdp2 = await connectCdp()
   await cdp2.send('Runtime.enable')
-  await waitForProbe(cdp2, `document.querySelector('.sidebar') !== null`, 30_000, 'sidebar never mounted (boot 2)')
+  await waitForProbe(cdp2, `(() => { const el = document.querySelector('.sidebar'); return el !== null && !el.hasAttribute('data-closed') })()`, 30_000, 'sidebar never mounted (boot 2)')
 
   await waitForWidth(cdp2, '.sidebar', SIDEBAR_FINAL, 'sidebar did not restore its persisted 400px width after restart')
   console.log('SMOKE sidebar_persisted_after_restart_ok', String(SIDEBAR_FINAL))
 
   await pressAltCmdB(cdp2)
-  await waitForProbe(cdp2, `document.querySelector('.side-panel') !== null`, 8_000, 'side panel never opened (boot 2)')
+  await waitForProbe(cdp2, `(() => { const el = document.querySelector('.side-panel'); return el !== null && !el.hasAttribute('data-closed') })()`, 8_000, 'side panel never opened (boot 2)')
   await waitForWidth(cdp2, '.side-panel', PANEL_FINAL, 'side panel did not restore its persisted 560px width after restart')
   console.log('SMOKE panel_persisted_after_restart_ok', String(PANEL_FINAL))
 

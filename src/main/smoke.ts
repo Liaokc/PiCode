@@ -1214,13 +1214,15 @@ export function startSmokeIfEnabled(
         win.webContents.executeJavaScript(
           `window.dispatchEvent(new KeyboardEvent('keydown', { code: '${code}', altKey: ${alt}, metaKey: true, bubbles: true }))`
         )
-      /** Sidebar / side-panel presence. */
-      const present = (selector: string): string =>
-        `document.querySelector('${selector}') !== null`
+      /** Sidebar / side-panel open state (ticket 40): panes stay mounted
+      * while closed — the closed end state is the [data-closed] attribute
+      * (size 0 + opacity 0 + pointer-events none), not absence. */
+      const paneOpen = (selector: string): string =>
+        `(() => { const el = document.querySelector('${selector}'); return el !== null && !el.hasAttribute('data-closed') })()`
       /** Dock state string: closed | terminal | bridge | unknown. */
       const DOCK_STATE = `(() => {
         const dock = document.querySelector('.terminal-dock')
-        if (!dock || dock.style.display === 'none') return 'closed'
+        if (!dock || dock.hasAttribute('data-closed')) return 'closed'
         const panels = Array.from(document.querySelectorAll('.dock-panel'))
         if (panels[0]?.style.display !== 'none') return 'terminal'
         if (panels[1]?.style.display !== 'none') return 'bridge'
@@ -1229,22 +1231,22 @@ export function startSmokeIfEnabled(
 
       // ⌘B flips the sidebar (open↔closed) from whatever state earlier
       // stages left it in.
-      const sidebarBefore = (await win.webContents.executeJavaScript(present('.sidebar'))) as boolean
+      const sidebarBefore = (await win.webContents.executeJavaScript(paneOpen('.sidebar'))) as boolean
       await press('KeyB', false)
       const sidebarFlipped = await waitForProbe(
         win,
-        `(${sidebarBefore} ? !(${present('.sidebar')}) : ${present('.sidebar')})`,
+        `(${sidebarBefore} ? !(${paneOpen('.sidebar')}) : ${paneOpen('.sidebar')})`,
         5_000
       )
       if (!sidebarFlipped) fail(`⌘B never toggled the sidebar (was open: ${sidebarBefore})`)
       log('keymap_cmd_b_sidebar_ok')
 
       // ⌥⌘B flips the side panel the same way.
-      const panelBefore = (await win.webContents.executeJavaScript(present('.side-panel'))) as boolean
+      const panelBefore = (await win.webContents.executeJavaScript(paneOpen('.side-panel'))) as boolean
       await press('KeyB', true)
       const panelFlipped = await waitForProbe(
         win,
-        `(${panelBefore} ? !(${present('.side-panel')}) : ${present('.side-panel')})`,
+        `(${panelBefore} ? !(${paneOpen('.side-panel')}) : ${paneOpen('.side-panel')})`,
         5_000
       )
       if (!panelFlipped) fail(`⌥⌘B never toggled the side panel (was open: ${panelBefore})`)
@@ -1275,6 +1277,79 @@ export function startSmokeIfEnabled(
         await press('KeyJ', dockBefore === 'bridge')
         await waitForProbe(win, `${DOCK_STATE} === '${dockBefore}'`, 5_000)
       }
+
+      // ---- ticket 40: pane open/close motion — end-state sizes + the
+      // transition grammar must be in place after the four-key toggles.
+      // Each pane's end-state size must equal its App-projected open/close
+      // variable (the animated target), and the computed transition must
+      // carry size + opacity (+ visibility) at the calibrated 200ms ease-out.
+      const motionProbe = `(() => {
+        const pane = (sel, sizeProp) => {
+          const el = document.querySelector(sel)
+          if (!el) return null
+          const cs = getComputedStyle(el)
+          return {
+            closed: el.hasAttribute('data-closed'),
+            size: el.getBoundingClientRect()[sizeProp],
+            target: parseFloat(cs.getPropertyValue(sel === '.terminal-dock' ? '--dock-h' : sel === '.sidebar' ? '--sidebar-w' : '--panel-w')),
+            transitionProperty: cs.transitionProperty,
+            transitionDuration: cs.transitionDuration,
+            transitionTimingFunction: cs.transitionTimingFunction,
+            opacity: Number(cs.opacity),
+            pointerEvents: cs.pointerEvents,
+            visibility: cs.visibility
+          }
+        }
+        return JSON.stringify({
+          sidebar: pane('.sidebar', 'width'),
+          panel: pane('.side-panel', 'width'),
+          dock: pane('.terminal-dock', 'height')
+        })
+      })()`
+      // The open/close transition takes 200ms — wait for every pane's real
+      // size to settle on its projected target before asserting.
+      const motionSettled = await waitForProbe(
+        win,
+        `(() => { const m = JSON.parse((${motionProbe}));
+          return [m.sidebar, m.panel, m.dock].every((p) => p !== null && Math.abs(p.size - p.target) < 0.5) })()`,
+        5_000
+      )
+      if (!motionSettled) fail('ticket 40: pane sizes never settled on their projected targets after the four-key toggles')
+      const motion = JSON.parse((await win.webContents.executeJavaScript(motionProbe)) as string) as Record<
+        string,
+        {
+          closed: boolean
+          size: number
+          target: number
+          transitionProperty: string
+          transitionDuration: string
+          transitionTimingFunction: string
+          opacity: number
+          pointerEvents: string
+          visibility: string
+        }
+      >
+      for (const [name, pane] of Object.entries(motion)) {
+        const sizeProp = name === 'dock' ? 'height' : 'width'
+        if (!pane.transitionProperty.includes(sizeProp) || !pane.transitionProperty.includes('opacity') || !pane.transitionProperty.includes('visibility')) {
+          fail(`ticket 40: ${name} transition grammar missing size/opacity/visibility: ${pane.transitionProperty}`)
+        }
+        if (!pane.transitionDuration.split(', ').every((d) => d === '0.2s')) {
+          fail(`ticket 40: ${name} transition duration is not the calibrated 200ms: ${pane.transitionDuration}`)
+        }
+        if (!pane.transitionTimingFunction.split(', ').every((t) => t.includes('ease-out'))) {
+          fail(`ticket 40: ${name} transition timing is not ease-out: ${pane.transitionTimingFunction}`)
+        }
+        if (pane.closed) {
+          // Closed end state: size 0 + opacity 0 + pointer-events none.
+          if (Math.round(pane.size) !== 0 || pane.opacity !== 0 || pane.pointerEvents !== 'none') {
+            fail(`ticket 40: closed ${name} end state wrong (size ${pane.size}, opacity ${pane.opacity}, pointer-events ${pane.pointerEvents})`)
+          }
+        } else if (pane.opacity !== 1) {
+          fail(`ticket 40: open ${name} must be fully opaque at rest: ${pane.opacity}`)
+        }
+      }
+      log('keymap_pane_motion_ok', `sidebar=${motion.sidebar.size}px panel=${motion.panel.size}px dock=${motion.dock.size}px`)
     })
     log('keymap_done')
 
@@ -1294,11 +1369,13 @@ export function startSmokeIfEnabled(
         log('panel_session_ok', `sessionId=${seeded.sessionId}`)
 
         const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
-        /** Panel presence; open with ⌥⌘B when needed. */
-        const panelPresent = `(document.querySelector('.side-panel') !== null)`
-        if (!((await js(panelPresent)) as boolean)) {
+        /** Panel open state (ticket 40: panes stay mounted while closed —
+        * the [data-closed] attribute is the closed end state); open with
+        * ⌥⌘B when needed. */
+        const panelOpen = `(() => { const p = document.querySelector('.side-panel'); return p !== null && !p.hasAttribute('data-closed') })()`
+        if (!((await js(panelOpen)) as boolean)) {
           await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', altKey: true, metaKey: true, bubbles: true }))`)
-          await waitForProbe(win, panelPresent, 5_000)
+          await waitForProbe(win, panelOpen, 5_000)
         }
 
         // Open the Review tab through the picker when it is not open.
@@ -1437,13 +1514,15 @@ export function startSmokeIfEnabled(
         await win.webContents.reload()
         await waitForProbe(win, `document.documentElement.dataset['chatSubscribed'] === 'true'`, 15_000)
         await new Promise((r) => setTimeout(r, 500))
-        // Press-until-present: the fresh renderer's keymap listener may not
-        // be attached when the marker first flips.
+        // Press-until-open: the fresh renderer's keymap listener may not
+        // be attached when the marker first flips (ticket 40: the panel is
+        // always mounted — open state is the absence of [data-closed]).
         await waitForProbe(
           win,
           `(() => {
             window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', altKey: true, metaKey: true, bubbles: true }))
-            return document.querySelector('.side-panel') !== null
+            const p = document.querySelector('.side-panel')
+            return p !== null && !p.hasAttribute('data-closed')
           })()`,
           5_000
         )
