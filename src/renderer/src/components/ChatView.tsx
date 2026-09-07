@@ -6,6 +6,7 @@ import Composer, { type ComposerApi } from './Composer'
 import TreePanel from './TreePanel'
 import TurnContainer from './TurnContainer'
 import AnswerBlock from './AnswerBlock'
+import MessageActions from './MessageActions'
 import Tooltip from './Tooltip'
 import { ChevronDownIcon, GitBranchIcon, PencilIcon } from './icons'
 
@@ -154,7 +155,17 @@ export default function ChatView({
           )}
           {turns.map((turn) => (
             <Fragment key={turn.id}>
-              {turn.user !== null && <div className="msg msg-user">{turn.userText}</div>}
+              {turn.user !== null && (
+                /* Ticket 44: the bubble and its persistent action row travel
+                  as one right-aligned block. Copy carries the bubble's text —
+                  the raw message as sent (the display text already strips the
+                  injected skill prologue); no Fork — that anchor lives on
+                  assistant entries. */
+                <div className="msg-user-block">
+                  <div className="msg msg-user">{turn.userText}</div>
+                  <MessageActions text={turn.userText} showTime={false} />
+                </div>
+              )}
               {(turn.hasWork || turn.live) && (
                 <TurnContainer
                   turn={turn}

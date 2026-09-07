@@ -7,6 +7,9 @@ interface MessageActionsProps {
   entryId?: string
   /** Fork the session at this entry (host swaps to the new session in place). */
   onFork?: (entryId: string) => void
+  /** Timestamp after the buttons. The assistant row stamps one (screenshot
+   * 04); the user bubble's row (ticket 44) is Copy-only and opts out. */
+  showTime?: boolean
 }
 
 /**
@@ -17,22 +20,27 @@ interface MessageActionsProps {
  * The timestamp is stamped once on mount — the contract stream carries no
  * clock, and the reducer stays time-free.
  */
-export default function MessageActions({ text, entryId, onFork }: MessageActionsProps): JSX.Element {
+export default function MessageActions({ text, entryId, onFork, showTime = true }: MessageActionsProps): JSX.Element {
   const [copied, setCopied] = useState(false)
   const [time, setTime] = useState('')
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     // Async stamp: keep the effect itself side-effect-free (purity lint).
-    const stamp = setTimeout(() => {
-      const d = new Date()
-      setTime(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`)
-    }, 0)
+    // The user row (ticket 44) opts out of the timestamp entirely — but the
+    // cleanup is registered either way so the copied-feedback timer can never
+    // outlive the row.
+    const stamp = showTime
+      ? setTimeout(() => {
+          const d = new Date()
+          setTime(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`)
+        }, 0)
+      : null
     return () => {
-      clearTimeout(stamp)
+      if (stamp !== null) clearTimeout(stamp)
       if (copiedTimer.current !== null) clearTimeout(copiedTimer.current)
     }
-  }, [])
+  }, [showTime])
 
   async function handleCopy(): Promise<void> {
     try {
@@ -64,7 +72,7 @@ export default function MessageActions({ text, entryId, onFork }: MessageActions
           <span>Fork</span>
         </button>
       )}
-      {time !== '' && <span className="msg-actions-time">{time}</span>}
+      {showTime && time !== '' && <span className="msg-actions-time">{time}</span>}
     </div>
   )
 }

@@ -78,7 +78,7 @@ import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
-import { app, type BrowserWindow } from 'electron'
+import { app, clipboard, type BrowserWindow } from 'electron'
 import type { HostSupervisor } from './host-supervisor'
 import { focusSessionFromNotification, type ApprovalNotice } from './notifications'
 import type { HostToParent, SessionScopedEvent } from '../shared/contract'
@@ -447,6 +447,77 @@ export function startSmokeIfEnabled(
       if (!listed) fail('sidebar never listed the session created by this smoke')
       log('sidebar_index_ok')
     })
+
+    // ---- ticket 44: the user bubble's persistent Copy — same action-row
+    // family as the assistant's (icon + label + ✓ feedback), no Fork (fork
+    // anchors to assistant entries), and the clipboard receives the message's
+    // exact raw text. REAL pasteboard assertion: the window is focused for
+    // real first (navigator.clipboard rejects while unfocused — the visual
+    // harness stubs it, this stage must not) and main reads it back. ----
+    log('user_copy_start')
+    await withWindow(getWindow, async (win) => {
+      const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+      // The last user block is round 2's bubble — its exact prompt text.
+      const USER_PROMPT = 'Reply with exactly: PICODE_SMOKE_OK'
+      const lastBlock = (body: string): string => `(() => {
+        const blocks = document.querySelectorAll('.chat-thread > .msg-user-block')
+        const block = blocks[blocks.length - 1]
+        if (!(block instanceof HTMLElement)) return null
+        ${body}
+      })()`
+
+      // ① Both settled turns carry the persistent row, and the user row's
+      // shape is Copy-only: exactly one button, no Fork.
+      if (!(await waitForProbe(win, `document.querySelectorAll('.chat-thread > .msg-user-block').length >= 2`, 10_000))) {
+        fail('ticket-44 stage: the user message blocks never rendered')
+      }
+      const btnCount = (await js(lastBlock(`return block.querySelectorAll('.msg-action-btn').length`))) as number | null
+      if (btnCount !== 1) fail(`ticket-44 stage: the user action row must carry exactly one button (Copy), saw ${String(btnCount)}`)
+      log('user_copy_row_shape_ok')
+
+      // ② Real clipboard round-trip: focus the window for real, park a
+      // sentinel, click Copy, then poll the pasteboard from main until the
+      // sentinel is replaced by the message's raw text.
+      win.show()
+      win.focus()
+      app.focus({ steal: true })
+      let focused = false
+      for (let waited = 0; waited < 10_000 && !focused; waited += 100) {
+        focused = (await js('document.hasFocus()')) === true
+        if (!focused) await new Promise((r) => setTimeout(r, 100))
+      }
+      if (!focused) fail('ticket-44 stage: the window never took focus for the real-clipboard click')
+      const previous = await clipboard.readText()
+      try {
+        await clipboard.writeText('PICODE_CLIPBOARD_SENTINEL_44')
+        const clicked = (await js(
+          lastBlock(`const btn = block.querySelector('.msg-action-btn')\n        if (!(btn instanceof HTMLElement)) return false\n        btn.click()\n        return true`)
+        )) as boolean
+        if (!clicked) fail('ticket-44 stage: the user row copy button is missing')
+        let got = ''
+        for (let waited = 0; waited < 5_000; waited += 100) {
+          got = await clipboard.readText()
+          if (got === USER_PROMPT) break
+          await new Promise((r) => setTimeout(r, 100))
+        }
+        if (got !== USER_PROMPT) {
+          fail(`ticket-44 stage: clipboard never carried the raw user text (got ${JSON.stringify(got)})`)
+        }
+        log('user_copy_clipboard_ok')
+
+        // ③ ✓ feedback identical to the assistant row: check icon + Copied.
+        const copied = (await js(
+          lastBlock(
+            `return block.querySelector('.msg-action-copied') !== null && block.querySelector('.msg-action-btn span')?.textContent === 'Copied'`
+          )
+        )) as boolean
+        if (!copied) fail('ticket-44 stage: the Copied feedback never showed on the user row')
+        log('user_copy_feedback_ok')
+      } finally {
+        await clipboard.writeText(previous) // leave the operator's pasteboard as found
+      }
+    })
+    log('user_copy_done')
 
     // ---- ticket 38: retired slash built-ins — the `/` menu drops the six
     // duplicated commands, and typing them by hand raises a pointer toast
