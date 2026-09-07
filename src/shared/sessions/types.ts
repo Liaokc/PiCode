@@ -82,6 +82,18 @@ export type TranscriptItem =
       isError: boolean
     }
 
+/** One tool call of an assistant message, projected for the history tree
+ * (ticket 43): the node's display expands it into a `[name: summary]`
+ * monospace row under the assistant row. Purely additive contract field. */
+export interface SessionTreeToolCallDTO {
+  /** Tool call id — unique within the message; the display row key builds
+   * on it (`<entryId>#<toolCallId>`). */
+  id: string
+  name: string
+  /** Single-line argument summary (the args part of the display row). */
+  summary: string
+}
+
 /** Serializable node of a session's entry tree (tree navigation panel). */
 export interface SessionTreeNodeDTO {
   id: string
@@ -94,6 +106,9 @@ export interface SessionTreeNodeDTO {
   preview: string
   timestamp: string
   children: SessionTreeNodeDTO[]
+  /** Tool calls of an assistant message (ticket 43). Present — possibly
+   * empty — on `assistant` nodes; absent on every other kind. */
+  toolCalls?: SessionTreeToolCallDTO[]
 }
 
 /** Full tree payload the host sends for the open session. */

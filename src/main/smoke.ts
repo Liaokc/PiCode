@@ -189,7 +189,12 @@ export function startSmokeIfEnabled(
    * says WHAT actually arrived instead of just what never did. */
   const recentEvents: string[] = []
   const noteEvent = (scoped: Scoped): void => {
-    const detail = scoped.type === 'approval_resolved' ? `(${String(scoped.approved)}:${scoped.reason ?? '-'})` : ''
+    const detail =
+      scoped.type === 'approval_resolved'
+        ? `(${String(scoped.approved)}:${scoped.reason ?? '-'})`
+        : scoped.type === 'session_created'
+          ? `(${scoped.sessionFile ?? 'no-file'})`
+          : ''
     recentEvents.push(`${scoped.sessionId.slice(-6)}:${scoped.type}${detail}`)
     if (recentEvents.length > 40) recentEvents.shift()
   }
@@ -2388,6 +2393,146 @@ export function startSmokeIfEnabled(
       rmSync(liveProject, { recursive: true, force: true })
     }
     log('dead_cwd_done')
+
+    // ---- ticket 43: history tree restyle — jump + fork don't regress ----
+    // A seeded branched session (user → assistant+toolCall → toolResult →
+    // assistant text, plus a second assistant branch off the user) drives
+    // the restyled dropdown end to end: type labels and the [bash: …] tool
+    // row render, the noise entries stay hidden, exactly one current tag —
+    // then clicking the sibling branch row MOVES the leaf (session_tree
+    // leafId + current tag follows) and the row-end fork creates a new
+    // session (session_created, new file in the isolated store) without
+    // touching the original.
+    log('history_tree_start')
+    const treeStore = process.env['PICODE_SESSION_DIR']
+    if (!treeStore) fail('ticket-43 stage: PICODE_SESSION_DIR is not set')
+    const treeProject = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-tree43-'))
+    try {
+      const stamp = new Date().toISOString()
+      const treeFile = path.join(treeStore, 'tree43.jsonl')
+      writeFileSync(
+        treeFile,
+        [
+          JSON.stringify({ type: 'session', version: 3, id: 'tree43-fixed-id', timestamp: stamp, cwd: treeProject }),
+          JSON.stringify({
+            type: 'message', id: 't43-u1', parentId: null, timestamp: stamp,
+            message: { role: 'user', content: [{ type: 'text', text: 'PICODE_TREE43 fork point' }] }
+          }),
+          JSON.stringify({
+            type: 'message', id: 't43-a1', parentId: 't43-u1', timestamp: stamp,
+            message: {
+              role: 'assistant',
+              content: [
+                { type: 'toolCall', id: 't43-c1', name: 'bash', arguments: { command: 'rg -n rate src/gateway' } },
+                { type: 'text', text: 'PICODE_TREE43 branch one' }
+              ],
+              stopReason: 'toolUse'
+            }
+          }),
+          JSON.stringify({
+            type: 'message', id: 't43-r1', parentId: 't43-a1', timestamp: stamp,
+            message: {
+              role: 'toolResult', toolCallId: 't43-c1', toolName: 'bash',
+              content: [{ type: 'text', text: 'src/gateway/middleware.ts:41' }], isError: false
+            }
+          }),
+          JSON.stringify({
+            type: 'message', id: 't43-a3', parentId: 't43-u1', timestamp: stamp,
+            message: { role: 'assistant', content: [{ type: 'text', text: 'PICODE_TREE43 branch two' }], stopReason: 'stop' }
+          }),
+          // Written LAST so the file-order leaf (Pi's restore rule) is a2.
+          JSON.stringify({
+            type: 'message', id: 't43-a2', parentId: 't43-r1', timestamp: stamp,
+            message: { role: 'assistant', content: [{ type: 'text', text: 'PICODE_TREE43 leaf path end' }], stopReason: 'stop' }
+          })
+        ].join('\n') + '\n'
+      )
+
+      supervisor.handleParentCommand({ type: 'resume_session', sessionFile: treeFile, cwd: treeProject })
+      await waitFor((e) => e.type === 'session_created' && e.sessionFile === treeFile, 'ticket-43 resume session_created')
+
+      await withWindow(getWindow, async (win) => {
+        const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+        if (!(await waitForProbe(win, `document.querySelector('.chat-view') !== null`, 10_000))) {
+          fail('ticket-43 stage: the resumed session never reached the chat view')
+        }
+
+        // Open the History dropdown.
+        await js(
+          `[...document.querySelectorAll('.chat-topbar-btn')].find((el) => el.textContent?.includes('History'))?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
+        )
+        if (!(await waitForProbe(win, `document.querySelectorAll('.tree-row').length > 0`, 5_000))) {
+          fail('ticket-43 stage: the tree rows never rendered')
+        }
+
+        // Display form: type labels, the tool row, noise hidden, one current.
+        const form = (await js(`(() => {
+          const texts = [...document.querySelectorAll('.tree-row .tree-row-text')].map((el) => el.textContent ?? '')
+          const labels = [...document.querySelectorAll('.tree-row .tree-row-type')].map((el) => el.textContent ?? '')
+          return {
+            userLabels: labels.filter((l) => l === 'user:').length,
+            assistantLabels: labels.filter((l) => l === 'assistant:').length,
+            toolRows: texts.filter((t) => t.startsWith('[bash: ')).length,
+            noise: texts.filter((t) => t.includes('model_change') || t.includes('toolResult')).length,
+            currentTags: document.querySelectorAll('.tree-leaf-tag').length
+          }
+        })()`)) as { userLabels: number; assistantLabels: number; toolRows: number; noise: number; currentTags: number }
+        if (form.userLabels < 1 || form.assistantLabels < 2) {
+          fail(`ticket-43 stage: type labels missing (${JSON.stringify(form)})`)
+        }
+        if (form.toolRows !== 1) fail(`ticket-43 stage: expected exactly one tool row (${JSON.stringify(form)})`)
+        if (form.noise !== 0) fail(`ticket-43 stage: noise leaked into the tree (${JSON.stringify(form)})`)
+        if (form.currentTags !== 1) fail(`ticket-43 stage: expected exactly one current tag (${JSON.stringify(form)})`)
+        log('history_tree_form_ok')
+
+        // JUMP: click the sibling branch row — the leaf moves (session_tree
+        // with the new leafId), and the current tag follows the row.
+        const branchRow = `[...document.querySelectorAll('.tree-row')].find((el) => el.textContent?.includes('PICODE_TREE43 branch two'))`
+        const jumpPromise = waitFor(
+          (e) => e.type === 'session_tree' && e.tree.leafId === 't43-a3',
+          'ticket-43 navigate session_tree'
+        )
+        await js(`${branchRow}?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
+        await jumpPromise
+        if (!(await waitForProbe(win, `(() => {
+          const row = [...document.querySelectorAll('.tree-row')].find((el) => el.textContent?.includes('PICODE_TREE43 branch two'))
+          return row !== undefined && row.querySelector('.tree-leaf-tag') !== null
+        })()`, 5_000))) {
+          fail('ticket-43 stage: the current tag never followed the jump')
+        }
+        log('history_tree_jump_ok')
+
+        // FORK: the row-end fork button on the OTHER branch's leaf row —
+        // a new session appears (session_created with a NEW file), the
+        // original file stays on disk with every branch.
+        const forkPromise = waitFor(
+          (e) => e.type === 'session_created' && typeof e.sessionFile === 'string' && e.sessionFile !== treeFile,
+          'ticket-43 fork session_created'
+        )
+        await js(`(() => {
+          const row = [...document.querySelectorAll('.tree-row')].find((el) => el.textContent?.includes('PICODE_TREE43 leaf path end'))
+          row?.querySelector('.tree-fork-btn')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+          return true
+        })()`)
+        const forked = await forkPromise
+        if (forked.type !== 'session_created' || typeof forked.sessionFile !== 'string') {
+          fail('ticket-43 stage: fork produced no session_created with a file')
+        }
+        if (!existsSync(forked.sessionFile)) fail('ticket-43 stage: the forked session file never landed in the store')
+        if (!(await waitForProbe(win, `document.querySelector('[data-file="${forked.sessionFile}"]') !== null`, 10_000))) {
+          fail('ticket-43 stage: the forked session never reached the sidebar')
+        }
+        if (!existsSync(treeFile)) fail('ticket-43 stage: the original session file vanished after the fork')
+        log('history_tree_fork_ok')
+
+        // Close the dropdown (Escape) — the panel must not linger over the
+        // switched session.
+        await js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`)
+      })
+    } finally {
+      rmSync(treeProject, { recursive: true, force: true })
+    }
+    log('history_tree_done')
 
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
     const livePids = supervisor.hostPids

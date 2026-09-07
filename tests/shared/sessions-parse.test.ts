@@ -6,6 +6,7 @@ import {
   parseSessionLines,
   sniffSkillName,
   summarizeSession,
+  toolCallSummary,
   truncateTitle
 } from '../../src/shared/sessions/parse.ts'
 import type { RawSessionEntry } from '../../src/shared/sessions/parse.ts'
@@ -405,6 +406,89 @@ describe('buildSessionTree', () => {
     expect(nodes[0]?.kind).toBe('session-info')
     expect(nodes[0]?.name).toBe('Renamed task')
     expect(nodes[0]?.children[0]?.label).toBe('second')
+  })
+})
+
+describe('buildSessionTree — tool calls ride the assistant node (ticket 43)', () => {
+  it('attaches per-family summaries to assistant nodes and omits the field elsewhere', () => {
+    const raw = [
+      headerLine(),
+      messageLine('u1', null, 'user', text('probe the tree')),
+      messageLine('a1', 'u1', 'assistant', [
+        { type: 'toolCall', id: 'c1', name: 'bash', arguments: { command: 'rg -n rate src' } },
+        { type: 'toolCall', id: 'c2', name: 'read', arguments: { path: '/work/src/gw.ts' } },
+        { type: 'text', text: 'looking' }
+      ]),
+      messageLine('tr1', 'a1', 'toolResult', text('hit'))
+    ].join('\n')
+    const { nodes } = buildSessionTree(parseSessionLines(raw).entries)
+    const u1 = nodes[0]
+    const a1 = u1?.children[0]
+    expect(a1?.toolCalls).toEqual([
+      { id: 'c1', name: 'bash', summary: 'rg -n rate src' },
+      { id: 'c2', name: 'read', summary: '/work/src/gw.ts' }
+    ])
+    expect(u1?.toolCalls).toBeUndefined()
+    // The toolResult echo node is 'other' — the display expands tools from
+    // the assistant's toolCall blocks, never from result entries.
+    const tr1 = a1?.children[0]
+    expect(tr1?.kind).toBe('other')
+  })
+
+  it('carries an empty toolCalls array on an assistant message without calls', () => {
+    const raw = [
+      headerLine(),
+      messageLine('a1', null, 'assistant', text('plain reply'))
+    ].join('\n')
+    const { nodes } = buildSessionTree(parseSessionLines(raw).entries)
+    expect(nodes[0]?.toolCalls).toEqual([])
+  })
+
+  it('degrades a text-less assistant preview like the TUI tree: aborted / error / no content', () => {
+    const aborted = JSON.stringify({
+      type: 'message', id: 'a1', parentId: null, timestamp: 't',
+      message: { role: 'assistant', content: [{ type: 'toolCall', id: 'c', name: 'bash', arguments: {} }], stopReason: 'aborted' }
+    })
+    const errored = JSON.stringify({
+      type: 'message', id: 'a2', parentId: null, timestamp: 't',
+      message: { role: 'assistant', content: [], errorMessage: 'provider exploded after 30 retries' }
+    })
+    const empty = messageLine('a3', null, 'assistant', [{ type: 'thinking', thinking: 'only thoughts' }])
+    const { nodes } = buildSessionTree(parseSessionLines([headerLine(), aborted, errored, empty].join('\n')).entries)
+    expect(nodes.map((n) => n.preview)).toEqual(['(aborted)', 'provider exploded after 30 retries', '(no content)'])
+  })
+})
+
+describe('toolCallSummary — the [name: …] args part (TUI tree port, ticket 43)', () => {
+  const HOME = '/Users/demo'
+
+  it('flattens and truncates bash commands at 50 chars', () => {
+    expect(toolCallSummary('bash', { command: 'line one\n\ttwo' }, HOME)).toBe('line one two')
+    const long = 'x'.repeat(60)
+    expect(toolCallSummary('bash', { command: long }, HOME)).toBe(`${'x'.repeat(50)}...`)
+    expect(toolCallSummary('bash', { command: 'y'.repeat(50) }, HOME)).toBe('y'.repeat(50))
+    expect(toolCallSummary('bash', {}, HOME)).toBe('')
+  })
+
+  it('projects read/write/edit paths with home shortening and read line ranges', () => {
+    expect(toolCallSummary('read', { path: `${HOME}/proj/src/gw.ts` }, HOME)).toBe('~/proj/src/gw.ts')
+    expect(toolCallSummary('read', { path: '/etc/hosts', offset: 40, limit: 10 }, HOME)).toBe('/etc/hosts:40-49')
+    expect(toolCallSummary('read', { file_path: '/a/b', offset: 7 }, HOME)).toBe('/a/b:7')
+    expect(toolCallSummary('read', { path: '/a/b', limit: 5 }, HOME)).toBe('/a/b:1-5')
+    expect(toolCallSummary('write', { path: `${HOME}/out.md` }, HOME)).toBe('~/out.md')
+    expect(toolCallSummary('edit', { file_path: '/a/b.ts' }, HOME)).toBe('/a/b.ts')
+  })
+
+  it('formats grep/find/ls and falls back to trimmed JSON for unknown tools', () => {
+    expect(toolCallSummary('grep', { pattern: 'rate limit', path: `${HOME}/src` }, HOME)).toBe('/rate limit/ in ~/src')
+    expect(toolCallSummary('grep', { pattern: 'x' }, HOME)).toBe('/x/ in .')
+    expect(toolCallSummary('find', { pattern: '*.ts', path: '/w' }, HOME)).toBe('*.ts in /w')
+    expect(toolCallSummary('ls', { path: `${HOME}/src` }, HOME)).toBe('~/src')
+    expect(toolCallSummary('ls', {}, HOME)).toBe('.')
+    const args = { file: '/a.md', mode: 'w' }
+    expect(toolCallSummary('todo_write', args, HOME)).toBe(JSON.stringify(args))
+    const big = { blob: 'z'.repeat(50) }
+    expect(toolCallSummary('custom', big, HOME)).toBe(`${JSON.stringify(big).slice(0, 40)}...`)
   })
 })
 
