@@ -6,7 +6,7 @@
 
 **Blocked by:** None (can start immediately)。
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 - [ ] cwd 不存在的会话不进侧栏两视图、不进 ⌘K；侧栏不再出现死组
 - [ ] in-app 活会话（cwd 中途被删）仍列出、可聚焦，不受过滤影响
@@ -18,3 +18,4 @@
 ## Comments
 
 - 2026-09-03 (requirements intake): 建票（spec R4，grilling Q4 方案 a + 标题修正）。过滤谓词先例 filterArchived（注入式纯函数）；43 因 parse 同文件被本票阻塞。波次：W1。
+- 2026-09-04 (implement, t42-dead-cwd-filter @ 774caa9): 完成。① 索引加 cwd 存活性维度：纯谓词 `filterDeadCwd`（src/shared/sessions/cwd-liveness.ts，stat 注入、Seam-1 表驱动 8 行）；index-service 每轮扫描对去重后的 cwd 各 stat 一次（目录才算活），liveness+豁免并入 index-changed 签名——目录消失/复现即使零文件变化也触发侧栏刷新；侧栏两视图与 ⌘K 由同一索引自动不可达（零 renderer 改动）。② 活 host 豁免：supervisor 新增 `liveSessionIds()`（announced 绑定集合），main 接线注入；electron smoke 实证 resume 后删 cwd，行存活（dead_cwd_live_exempt_ok）。③ 标题：`sessionTitleFromUserText` 逐字镜像 SDK parseSkillBlock 正则（agent-session.js），取 `</skill>` 后文本、缺失回退技能名，经 summarizeSession 表驱动 7 用例；既有 24 标题用例零回归。④ 会话文件零改动（smoke 断言字节仍在）；目录复现即恢复列出（单测）。⑤ 6 个 visual harness + 基座 harness 原种假 cwd（/Users/dev/projects/*）全部改种真 tmpdir（ensureVisualProjectDir，basename 保持探针不变）——过滤器要求 fixture 真实。⑥ electron smoke 新增 dead_cwd 阶段 8 探针全绿（隔离 PICODE_SESSION_DIR + 一次性 userData，只读种子）；smoke:electron 全程通过（含既有全部阶段）；typecheck/lint/vitest 964/964 绿。code-review 双轴：Standards 3（1 已修 774caa9，2 记录性 judgement call）、Spec 0 缺失 0 超范围。**待操作者合并：`bash scripts/merge-ticket.sh 42`**（不自行 merge）。
