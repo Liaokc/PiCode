@@ -33,6 +33,12 @@
   --side-panel-w: 420px;
   --titlebar-h: 52px;
 
+  /* Pane open/close motion (ticket 40): ZCode-calibrated duration for the
+     three panes' size+opacity transition (transition-[width,opacity]
+     duration-200 ease-out). Reduced motion and the boot gate cut it to
+     instant. */
+  --pane-motion-duration: 200ms;
+
   font-family:
     -apple-system,
     BlinkMacSystemFont,
@@ -150,11 +156,52 @@ kbd {
   color: var(--text-primary);
 }
 
+/* ---------- pane open/close motion (ticket 40) ---------- */
+
+/* The three collapsible panes (.sidebar / .side-panel / .terminal-dock)
+   share one motion grammar, ZCode-calibrated: 200ms ease-out, size and
+   opacity animating together, closing as the exact reverse of opening.
+
+   Dual-variable mode: each pane's width/height comes from an OPEN/CLOSE
+   variable (--sidebar-w / --panel-w / --dock-h, 0px when closed) that App
+   projects through shared/pane-motion.ts, while the pane's content wrapper
+   is sized by the matching CONTENT variable (--*-content-w / --dock-content-h)
+   that never collapses. The content wrapper therefore keeps its real size
+   while the pane edge slides — content CLIPS (pane-clip, overflow hidden)
+   instead of reflowing, so sidebar/panel text never re-wraps mid-motion and
+   the terminal's xterm never refits per-frame.
+
+   Closed end state: size 0 + opacity 0 + pointer-events none + visibility
+   hidden (kept mounted — visibility is transitioned, which keeps the pane
+   visible for the whole close run and hides it exactly at the end; it also
+   removes the hidden pane from keyboard tab order). */
+
+/* Drag rule (ZCode data-workspace-sidebar-resizing): while a resizer drag
+   is live the size transition is OFF — the drag writes are 1:1 (ticket 30
+   direct-write feel); only opacity keeps its curve. */
+.sidebar[data-resizing],
+.side-panel[data-resizing],
+.terminal-dock[data-resizing] {
+  transition: opacity var(--pane-motion-duration) ease-out;
+}
+
+/* Boot gate: transitions arm only once the boot settings snapshot has
+   seeded the persisted pane widths AND that seed has painted (App flips the
+   attribute one double-rAF after settingsLoaded). Without it the boot frame
+   would animate the width restore — the app must not wiggle while loading. */
+.app-shell:not([data-pane-motion-armed]) .sidebar,
+.app-shell:not([data-pane-motion-armed]) .side-panel,
+.app-shell:not([data-pane-motion-armed]) .terminal-dock {
+  transition: none;
+}
+
 /* ---------- sidebar (nav rail + task list skeleton) ---------- */
 
-/* Width (ticket 29): the shell state's inline width owns the geometry —
-   var(--sidebar-w) is only the pre-hydration fallback. Round-2 floor: the
-   pane yields before the session view does — max-width = window − other
+/* Width (ticket 29 + ticket 40): the open/close variable --sidebar-w owns
+   the geometry — App projects it (pane-motion.ts) as the animated size,
+   0px while closed; the sidebar's content wrapper is sized by
+   --sidebar-content-w (the real width, never collapsed). Round-2 floor:
+   the pane yields before the session view does — max-width = window − other
    pane − 420px main floor (the CSS mirror of the commit clamp in App;
    --panel-w is 0 while the panel is closed), floored at the pane min.
    z-index keeps the panes ABOVE the empty-state watermark: ZCode covers
@@ -167,6 +214,35 @@ kbd {
   z-index: 1;
   background: var(--bg-sidebar);
   padding-top: var(--titlebar-h);
+  display: flex;
+  flex-direction: column;
+  transition:
+    width var(--pane-motion-duration) ease-out,
+    opacity var(--pane-motion-duration) ease-out,
+    visibility var(--pane-motion-duration) ease-out;
+}
+
+.sidebar[data-closed] {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* The clip wrapper tracks the animated pane size and does the clipping;
+   the pinned wrapper inside keeps the content's real width so the pane's
+   children never reflow while the edge moves. */
+.sidebar-clip {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-pin {
+  flex: 1;
+  min-height: 0;
+  width: var(--sidebar-content-w);
   display: flex;
   flex-direction: column;
 }
@@ -2505,6 +2581,11 @@ button.heat:hover {
 
 /* ---------- side panel ---------- */
 
+/* Width (ticket 29 + ticket 40): the open/close variable --panel-w owns the
+   geometry (0px while closed); the content wrapper is sized by
+   --panel-content-w (real width, never collapsed) so deep-linked previews
+   and the call-trace tab never reflow while the panel edge slides. The
+   drag rule and boot gate are pane-motion shared rules above. */
 .side-panel {
   position: relative;
   background: var(--bg-main);
@@ -2517,8 +2598,39 @@ button.heat:hover {
      --sidebar-w is only the pre-hydration fallback here), floored at the
      pane min. */
   flex-shrink: 0;
+  width: var(--panel-w);
   max-width: max(280px, calc(100% - 420px));
   z-index: 1;
+  transition:
+    width var(--pane-motion-duration) ease-out,
+    opacity var(--pane-motion-duration) ease-out,
+    visibility var(--pane-motion-duration) ease-out,
+    border-left-width var(--pane-motion-duration) ease-out;
+}
+
+/* Closed end state: the border is zeroed with the width so the closed pane
+   occupies exactly 0px (border-box would otherwise leave a 1px sliver). */
+.side-panel[data-closed] {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  border-left-width: 0;
+}
+
+.panel-clip {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.panel-pin {
+  flex: 1;
+  min-height: 0;
+  width: var(--panel-content-w);
+  display: flex;
+  flex-direction: column;
 }
 
 .panel-resizer {
@@ -5166,14 +5278,66 @@ button.preview-crumb:hover {
 
 /* ---------- bottom terminal dock (ticket 18) ---------- */
 
+/* Height (ticket 18 + ticket 40): the open/close variable --dock-h owns the
+   geometry (0px while closed); the content wrapper is sized by
+   --dock-content-h (real height, never collapsed) — the dock's TerminalDock
+   root therefore never participates in the per-frame reflow of the open/
+   close animation: the xterm host keeps its size while the clip wrapper
+   reveals it, so the ResizeObserver never fires mid-animation. Closed end
+   state zeroes the top border with the height (border-box would otherwise
+   leave a 1px sliver). The drag rule and boot gate are pane-motion shared
+   rules above. */
 .terminal-dock {
   position: relative;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   min-height: 0;
+  height: var(--dock-h);
   background: var(--bg-main);
   border-top: 1px solid var(--border);
+  transition:
+    height var(--pane-motion-duration) ease-out,
+    opacity var(--pane-motion-duration) ease-out,
+    visibility var(--pane-motion-duration) ease-out,
+    border-top-width var(--pane-motion-duration) ease-out;
+}
+
+.terminal-dock[data-closed] {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  border-top-width: 0;
+}
+
+/* Clip tracks the animated height; the pinned wrapper keeps the content's
+   real height (header + active dock panel + terminal) so the shell and the
+   feed never squish while the dock edge slides. */
+.dock-clip {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.dock-pin {
+  flex: none;
+  height: var(--dock-content-h);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Reduced motion cuts every pane's open/close to the instant end state.
+   Lives AFTER all three pane sections: same specificity as the base rules,
+   so source order decides — this must come last. */
+@media (prefers-reduced-motion: reduce) {
+  .sidebar,
+  .side-panel,
+  .terminal-dock {
+    transition: none;
+  }
 }
 
 .terminal-dock-resizer {

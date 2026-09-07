@@ -169,7 +169,7 @@ try {
   const cdp = await connectCdp()
   await cdp.send('Runtime.enable')
   await cdp.send('Page.enable')
-  await waitForProbe(cdp, `document.querySelector('.sidebar') !== null`, 30_000, 'sidebar never mounted')
+  await waitForProbe(cdp, `(() => { const el = document.querySelector('.sidebar'); return el !== null && !el.hasAttribute('data-closed') })()`, 30_000, 'sidebar never mounted')
 
   // 1 — the launch baseline: sidebar at its 320px default, panel closed.
   await waitForWidth(cdp, '.sidebar', 320, 'sidebar default width')
@@ -188,7 +188,7 @@ try {
   await drag(cdp, '.sidebar-resizer', -120)
   await waitForWidth(cdp, '.sidebar', 400, 'sidebar 400')
   await pressAltCmdB(cdp)
-  await waitForProbe(cdp, `document.querySelector('.side-panel') !== null`, 8_000, 'side panel never opened')
+  await waitForProbe(cdp, `(() => { const el = document.querySelector('.side-panel'); return el !== null && !el.hasAttribute('data-closed') })()`, 8_000, 'side panel never opened')
   await waitForWidth(cdp, '.side-panel', 420, 'side panel default width')
   await drag(cdp, '.panel-resizer', -140)
   await waitForWidth(cdp, '.side-panel', 560, 'panel 560')
