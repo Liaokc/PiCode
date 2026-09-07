@@ -36,6 +36,7 @@ import type { SessionDefaults } from '../shared/preferences'
 import { buildSessionTree, extractTranscriptItems, type RawSessionEntry } from '../shared/sessions/parse'
 import type { SessionTreePayload } from '../shared/sessions/types'
 import { toolResultText } from '../shared/tool-format'
+import { homedir } from 'node:os'
 import { ApprovalGate } from './approval-gate'
 import { runAuthProbe } from './auth-probe'
 import {
@@ -106,7 +107,7 @@ function rawEntries(manager: SessionManager): RawSessionEntry[] {
 
 function treePayload(): SessionTreePayload {
   const manager = runtime!.session.sessionManager
-  const { nodes } = buildSessionTree(rawEntries(manager))
+  const { nodes } = buildSessionTree(rawEntries(manager), homedir())
   return {
     sessionId: manager.getSessionId(),
     // The live leaf pointer (NOT the file-order tail — branch() moves the

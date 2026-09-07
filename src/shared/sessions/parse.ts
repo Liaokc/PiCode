@@ -303,9 +303,13 @@ export function extractTranscriptItems(entries: RawSessionEntry[]): TranscriptIt
  * Build the entry tree for the navigation panel. Orphaned entries (broken
  * parent chain) become roots, mirroring SessionManager.getTree. The leaf is
  * the LAST entry in file order — the same rule SessionManager applies when
- * reopening a file.
+ * reopening a file. `home` (ticket 43) shortens absolute paths in tool-call
+ * summaries; pass '' to disable shortening.
  */
-export function buildSessionTree(entries: RawSessionEntry[]): { nodes: SessionTreeNodeDTO[]; leafId: string | null } {
+export function buildSessionTree(
+  entries: RawSessionEntry[],
+  home = ''
+): { nodes: SessionTreeNodeDTO[]; leafId: string | null } {
   const labels = new Map<string, string>()
   for (const entry of entries) {
     if (entry.type === 'label') {
@@ -329,6 +333,15 @@ export function buildSessionTree(entries: RawSessionEntry[]): { nodes: SessionTr
       timestamp: entry.timestamp,
       children: []
     }
+    // Ticket 43: assistant messages carry their tool calls (possibly empty)
+    // so the tree display can expand them into [name: summary] rows.
+    if (node.kind === 'assistant') {
+      node.toolCalls = toolCalls(entry.message?.content).map((call) => ({
+        id: call.id,
+        name: call.name,
+        summary: toolCallSummary(call.name, call.args, home)
+      }))
+    }
     byId.set(entry.id, node)
     const parent = entry.parentId !== null ? byId.get(entry.parentId) : undefined
     if (parent) parent.children.push(node)
@@ -350,7 +363,17 @@ function nodeKind(entry: RawSessionEntry): SessionTreeNodeDTO['kind'] {
 function nodePreview(entry: RawSessionEntry): string {
   if (entry.type === 'message') {
     const text = messageText(entry.message?.content)
-    return text.trim() !== '' ? truncate(text, TITLE_MAX_CHARS) : `(${entry.message?.role ?? 'message'})`
+    if (text.trim() !== '') return truncate(text, TITLE_MAX_CHARS)
+    // Ticket 43: a text-less assistant message degrades like the TUI's
+    // /tree — the abort state, the platform error, or (no content) when
+    // the content was all thinking/tool traffic.
+    if (entry.message?.role === 'assistant') {
+      if (entry.message['stopReason'] === 'aborted') return '(aborted)'
+      const error = entry.message['errorMessage']
+      if (typeof error === 'string' && error.trim() !== '') return truncate(error, TITLE_MAX_CHARS)
+      return '(no content)'
+    }
+    return `(${entry.message?.role ?? 'message'})`
   }
   if (entry.type === 'session_info') return entryName(entry) ?? '(session info)'
   if (entry.type === 'compaction' || entry.type === 'branch_summary') {
@@ -358,6 +381,48 @@ function nodePreview(entry: RawSessionEntry): string {
     return summary.trim() !== '' ? truncate(summary, TITLE_MAX_CHARS) : `(${entry.type})`
   }
   return `(${entry.type})`
+}
+
+/** Single-line argument summary of one tool call (ticket 43) — the desktop
+ * port of the Pi TUI's /tree formatter: per-tool-family projections (bash
+ * commands flattened and cut at 50, read/write/edit paths home-shortened
+ * with read line ranges, grep/find pattern-in-path, ls path), unknown tools
+ * falling back to 40 chars of JSON. Pure: `home` injected by the caller
+ * (the host passes os.homedir(); '' disables shortening). */
+export function toolCallSummary(name: string, args: Record<string, unknown>, home: string): string {
+  const shorten = (value: string): string =>
+    home !== '' && value.startsWith(home) ? `~${value.slice(home.length)}` : value
+  const pathArg = (): string => shorten(String(args['path'] || args['file_path'] || ''))
+  switch (name) {
+    case 'read': {
+      const display = pathArg()
+      const offset = args['offset']
+      const limit = args['limit']
+      if (offset === undefined && limit === undefined) return display
+      const start = typeof offset === 'number' ? offset : 1
+      const end = limit !== undefined ? start + (typeof limit === 'number' ? limit : 0) - 1 : ''
+      return `${display}:${start}${end !== '' ? `-${end}` : ''}`
+    }
+    case 'write':
+    case 'edit':
+      return pathArg()
+    case 'bash': {
+      const flat = String(args['command'] || '')
+        .replace(/\s+/g, ' ')
+        .trim()
+      return flat.length > 50 ? `${flat.slice(0, 50)}...` : flat
+    }
+    case 'grep':
+      return `/${String(args['pattern'] || '')}/ in ${shorten(String(args['path'] || '.'))}`
+    case 'find':
+      return `${String(args['pattern'] || '')} in ${shorten(String(args['path'] || '.'))}`
+    case 'ls':
+      return shorten(String(args['path'] || '.'))
+    default: {
+      const json = JSON.stringify(args)
+      return json.length > 40 ? `${json.slice(0, 40)}...` : json
+    }
+  }
 }
 
 function truncate(text: string, max: number): string {

@@ -33,7 +33,13 @@ session_file_count() {
   fi
 }
 SESSIONS_BEFORE=$(session_file_count)
-SMOKE_SESSIONS_STORE="$(mktemp -d picode-smoke-sessions-XXXXXXXX)"
+# Absolute path: BSD mktemp creates a slash-less template in the CWD and
+# prints it RELATIVE — the host then resolves it against ITS cwd and the
+# smoke's sessionFile matchers (absolute vs relative) never agree. TMPDIR's
+# trailing slash is stripped too (mktemp prints the doubled slash, the host
+# normalizes it, and prefix checks disagree again).
+smoke_store_base="${TMPDIR:-/tmp}"
+SMOKE_SESSIONS_STORE="$(mktemp -d "${smoke_store_base%/}/picode-smoke-sessions-XXXXXXXX")"
 export PICODE_SESSION_DIR="$SMOKE_SESSIONS_STORE"
 cleanup() {
   rm -rf "$SMOKE_SESSIONS_STORE"

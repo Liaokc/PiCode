@@ -4180,7 +4180,10 @@ button.heat:hover {
   color: var(--text-primary);
 }
 
-/* ---------- tree panel (in-place branch navigation) ---------- */
+/* ---------- tree panel (in-place branch navigation, ticket 43 restyle) ----------
+   Display form aligned with the Pi TUI /tree (pitui13-tree): type labels,
+   [name: …] tool rows, branch-only connectors and rails — in the app's own
+   palette (kind colors shared with the call-trace view). */
 
 .tree-panel {
   position: absolute;
@@ -4225,17 +4228,96 @@ button.heat:hover {
 .tree-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 30px;
-  padding-right: 10px;
+  height: 26px;
+  padding: 0 10px 0 8px;
   border-radius: 7px;
   font-size: 12.5px;
   cursor: pointer;
   color: var(--text-primary);
 }
 
+.tree-row-tool {
+  height: 22px;
+}
+
 .tree-row:hover {
   background: var(--bg-hover);
+}
+
+/* Indent guides: one cell per ancestor level plus an optional connector
+   cell — drawn only where the tree actually branches (tree-view.ts). */
+.tree-guide {
+  position: relative;
+  flex: none;
+  width: 16px;
+  align-self: stretch;
+}
+
+.tree-guide::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 7px;
+  width: 1px;
+  background: transparent;
+}
+
+.tree-guide-on::before {
+  background: var(--border-strong);
+}
+
+/* Connector cell: ├ (stem through) or └ (stem to the midpoint). */
+.tree-guide-conn::before {
+  background: var(--border-strong);
+}
+
+.tree-guide-conn::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 7px;
+  width: 8px;
+  height: 1px;
+  background: var(--border-strong);
+}
+
+.tree-guide-conn.tree-guide-last::before {
+  bottom: 50%;
+}
+
+.tree-row-type {
+  flex: none;
+  margin-right: 6px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.tree-row-user .tree-row-type {
+  color: var(--accent-blue);
+}
+
+.tree-row-assistant .tree-row-type {
+  color: #16a34a;
+}
+
+.tree-row-text {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Tool rows: the [name: …] monospace line, a step quieter than speech. */
+.tree-row-tool .tree-row-text {
+  font-family: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.tree-row-info .tree-row-text {
+  color: var(--text-secondary);
+  font-size: 12px;
 }
 
 .tree-row-aside {
@@ -4246,15 +4328,18 @@ button.heat:hover {
   background: var(--bg-inset);
 }
 
-.tree-row-label {
-  flex: 1;
+.tree-row-label-chip {
+  flex: none;
+  margin-right: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--bg-inset);
+  font-size: 10.5px;
+  color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.tree-row-user .tree-row-label {
-  font-weight: 600;
+  max-width: 120px;
 }
 
 .tree-fork-btn {
@@ -4279,7 +4364,7 @@ button.heat:hover {
 
 .tree-leaf-tag {
   font-size: 10.5px;
-  color: var(--text-faint);
+  color: var(--accent-blue);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 1px 7px;

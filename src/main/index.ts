@@ -31,6 +31,7 @@ import { startAccessVisualIfEnabled } from './visual-access'
 import { startContextMenuVisualIfEnabled, isolateContextMenuUserData } from './visual-context-menu'
 import { startTraceVisualIfEnabled, isolateTraceUserData } from './visual-trace'
 import { startFoldVisualIfEnabled, isolateFoldUserData } from './visual-fold'
+import { startTreeVisualIfEnabled, isolateTreeUserData } from './visual-tree'
 import { startApprovalVisualIfEnabled } from './visual-approval'
 import { startUsageVisualIfEnabled } from './visual-usage'
 import { startPerfIfEnabled } from './visual-perf'
@@ -65,6 +66,9 @@ isolateTraceUserData()
 // Ticket-39 group-fold harness reads the default 'projects' view from a
 // throwaway userData (no-op unless PICODE_VISUAL_FOLD=1).
 isolateFoldUserData()
+// Ticket-43 history-tree harness — same throwaway-userData rule (no-op
+// unless PICODE_VISUAL_TREE=1).
+isolateTreeUserData()
 
 // Ticket-13 hygiene, extended by ticket 31: the smoke drives the REAL
 // settings service too (panel recently closed round-trip), so it gets the
@@ -194,6 +198,8 @@ app.whenReady().then(() => {
   // Ticket-39 group-fold harness — same seeding constraint (12 fake
   // sessions land in the isolated store before the index reads it).
   startFoldVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  // Ticket-43 history-tree harness — same seeding constraint.
+  startTreeVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
 
   // Renderer → host relay (Seam-1: the only chat channel the renderer has).
   ipcMain.on('chat:to-host', (_event, message: ParentToHost) => {
