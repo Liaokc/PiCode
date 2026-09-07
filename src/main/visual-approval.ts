@@ -35,14 +35,17 @@ import { mkdirSync } from 'node:fs'
 import path from 'node:path'
 import { type BrowserWindow } from 'electron'
 import { approvalVisualEnabled, emitContractEvent, visualOutDir } from './visual'
-import { ensureVisualStore, writeVisualSession } from './visual-store'
+import { ensureVisualProjectDir, ensureVisualStore, writeVisualSession } from './visual-store'
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 const BG_ID = 'approval-visual-bg'
 const FG_ID = 'approval-visual-fg'
-const API_CWD = '/Users/dev/projects/api-server'
-const WEB_CWD = '/Users/dev/projects/web-app'
+/** Real tmpdir project dirs (ticket 42): the cwd-liveness filter drops
+ * sessions whose cwd is not a directory on disk. Basenames keep the
+ * 'api-server' / 'web-app' group labels. */
+const API_CWD = (): string => ensureVisualProjectDir('api-server')
+const WEB_CWD = (): string => ensureVisualProjectDir('web-app')
 const BG_PROMPT = 'Deploy the API server to staging'
 const FG_PROMPT = 'Wire the new checkout form to the payments sandbox'
 const DENY_PROMPT = 'Create picode-deny-probe.txt with the word nope'
@@ -114,8 +117,8 @@ export function startApprovalVisualIfEnabled(getWindow: () => BrowserWindow | nu
   // starter runs BEFORE that line in the boot sequence, so seeding here
   // isolates the visual store like the smoke does.
   const store = ensureVisualStore()
-  const bgFile = writeVisualSession(store, { id: BG_ID, cwd: API_CWD, userText: BG_PROMPT })
-  const fgFile = writeVisualSession(store, { id: FG_ID, cwd: WEB_CWD, userText: FG_PROMPT })
+  const bgFile = writeVisualSession(store, { id: BG_ID, cwd: API_CWD(), userText: BG_PROMPT })
+  const fgFile = writeVisualSession(store, { id: FG_ID, cwd: WEB_CWD(), userText: FG_PROMPT })
 
   void (async () => {
     try {
@@ -141,7 +144,7 @@ export function startApprovalVisualIfEnabled(getWindow: () => BrowserWindow | nu
       emitContractEvent({
         type: 'session_event',
         sessionId: BG_ID,
-        event: { type: 'session_created', sessionId: BG_ID, cwd: API_CWD, model: 'claude-opus-4-5', sessionFile: bgFile }
+        event: { type: 'session_created', sessionId: BG_ID, cwd: API_CWD(), model: 'claude-opus-4-5', sessionFile: bgFile }
       })
       emitContractEvent({ type: 'session_event', sessionId: BG_ID, event: { type: 'user_message', text: BG_PROMPT } })
       emitContractEvent({ type: 'session_event', sessionId: BG_ID, event: { type: 'agent_start' } })
@@ -158,7 +161,7 @@ export function startApprovalVisualIfEnabled(getWindow: () => BrowserWindow | nu
       emitContractEvent({
         type: 'session_event',
         sessionId: FG_ID,
-        event: { type: 'session_created', sessionId: FG_ID, cwd: WEB_CWD, model: 'claude-opus-4-5', sessionFile: fgFile }
+        event: { type: 'session_created', sessionId: FG_ID, cwd: WEB_CWD(), model: 'claude-opus-4-5', sessionFile: fgFile }
       })
       emitContractEvent({ type: 'session_event', sessionId: FG_ID, event: { type: 'user_message', text: FG_PROMPT } })
       emitContractEvent({ type: 'session_event', sessionId: FG_ID, event: { type: 'agent_start' } })

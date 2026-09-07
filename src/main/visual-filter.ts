@@ -38,7 +38,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { app, type BrowserWindow } from 'electron'
 import { visualOutDir } from './visual'
-import { ensureVisualStore, writeVisualSession } from './visual-store'
+import { ensureVisualProjectDir, ensureVisualStore, writeVisualSession } from './visual-store'
 
 export function filterVisualEnabled(): boolean {
   return process.env['PICODE_VISUAL_FILTER'] === '1'
@@ -54,8 +54,10 @@ export function isolateFilterUserData(): void {
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
-const API_CWD = '/Users/dev/projects/api-server'
-const WEB_CWD = '/Users/dev/projects/web-app'
+/** REAL tmpdir dirs (ticket 42): the cwd-liveness filter drops sessions
+ * whose cwd is not a directory on disk; basenames keep the group labels. */
+const API_CWD = (): string => ensureVisualProjectDir('api-server')
+const WEB_CWD = (): string => ensureVisualProjectDir('web-app')
 
 interface Seed {
   file: string
@@ -89,17 +91,17 @@ function seedSessions(): { api: Seed[]; web: Seed[] } {
   // api-old is freshened to 30m ago — updated order becomes
   // [api-old, api-young, api-mid] while created stays [api-old, api-mid,
   // api-young] (on birthtime-tracking filesystems the orders disagree).
-  const apiOld = seed('filter-api-old', API_CWD, 'Refresh the token rotation job')
+  const apiOld = seed('filter-api-old', API_CWD(), 'Refresh the token rotation job')
   backdate(apiOld.file, 10)
-  const apiMid = seed('filter-api-mid', API_CWD, 'Trace the webhook retry storm')
+  const apiMid = seed('filter-api-mid', API_CWD(), 'Trace the webhook retry storm')
   backdate(apiMid.file, 5)
-  const apiYoung = seed('filter-api-young', API_CWD, 'Draft the rate-limit headers')
+  const apiYoung = seed('filter-api-young', API_CWD(), 'Draft the rate-limit headers')
   backdate(apiYoung.file, 1)
   freshen(apiOld.file, 30)
   // web-app: 2h / 3d — the pin target is the OLDER web session.
-  const webNew = seed('filter-web-new', WEB_CWD, 'Polish the empty-state copy')
+  const webNew = seed('filter-web-new', WEB_CWD(), 'Polish the empty-state copy')
   backdate(webNew.file, 0.08)
-  const webOld = seed('filter-web-old', WEB_CWD, 'Audit the checkout funnel')
+  const webOld = seed('filter-web-old', WEB_CWD(), 'Audit the checkout funnel')
   backdate(webOld.file, 3)
   return { api: [apiOld, apiMid, apiYoung], web: [webNew, webOld] }
 }

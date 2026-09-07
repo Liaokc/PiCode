@@ -300,7 +300,10 @@ app.whenReady().then(() => {
     onFollowUpdate: (update: FollowUpdate) => broadcastChannel('sessions:follow-update', update),
     // Trace-tab live follow (ticket 37): the rebuilt payload after the
     // traced file changed size — same push semantics as the transcript tail.
-    onTraceUpdate: (payload: TracePayload) => broadcastChannel('sessions:trace-update', payload)
+    onTraceUpdate: (payload: TracePayload) => broadcastChannel('sessions:trace-update', payload),
+    // cwd-liveness exemption (ticket 42): sessions with a live host in this
+    // app stay listed even when their cwd was deleted mid-run.
+    liveSessionIds: () => supervisor?.liveSessionIds() ?? new Set<string>()
   })
   ipcMain.handle('sessions:list', () => sessionIndex?.list())
   ipcMain.handle('sessions:rename', (_event, file: string, name: string) => {

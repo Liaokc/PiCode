@@ -64,6 +64,13 @@ export class HostSupervisor {
     return this.bySession.get(sessionId)?.child.pid ?? null
   }
 
+  /** Session ids with a live host in this app (ticket 42): the session
+   * index's cwd-liveness filter exempts these — a running session whose
+   * cwd was deleted mid-run must not vanish from the registry/sidebar. */
+  liveSessionIds(): Set<string> {
+    return new Set(this.bySession.keys())
+  }
+
   /** Renderer command entry point. Unknown commands are ignored defensively. */
   handleParentCommand(message: ParentToHost): void {
     switch (message.type) {

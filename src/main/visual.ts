@@ -38,7 +38,7 @@ import { app, BrowserWindow } from 'electron'
 import { terminalVisualEnabled } from './visual-terminal'
 import { traceVisualEnabled } from './visual-trace'
 import { foldVisualEnabled } from './visual-fold'
-import { ensureVisualStore, writeVisualSession } from './visual-store'
+import { ensureVisualProjectDir, ensureVisualStore, writeVisualSession } from './visual-store'
 import type { HostToParent } from '../shared/contract'
 
 export function visualEnabled(): boolean {
@@ -166,12 +166,14 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
   // Deterministic sidebar content for the shots (ticket 20): the empty-state
   // frame must show a status dot (a session written by ANOTHER end — fresh
   // mtime, no registry events = static green dot) next to the ticket-17
-  // chip. Seed an isolated store before the session index constructs.
+  // chip. Seed an isolated store before the session index constructs. The
+  // cwd must be a REAL directory (ticket 42: the cwd-liveness filter drops
+  // sessions whose working directory is not on disk).
   if (!terminalVisualEnabled() && !process.env['PICODE_SESSION_DIR']) {
     const store = ensureVisualStore()
     writeVisualSession(store, {
       id: 'visual-tui-live',
-      cwd: '/Users/dev/projects/api-server',
+      cwd: ensureVisualProjectDir('api-server'),
       userText: 'Wire the new checkout form to the payments sandbox'
     })
   }

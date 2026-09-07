@@ -40,7 +40,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { app, type BrowserWindow } from 'electron'
 import { visualOutDir } from './visual'
-import { ensureVisualStore, writeVisualSession } from './visual-store'
+import { ensureVisualProjectDir, ensureVisualStore, writeVisualSession } from './visual-store'
 
 export function contextMenuVisualEnabled(): boolean {
   return process.env['PICODE_VISUAL_CONTEXT_MENU'] === '1'
@@ -57,7 +57,9 @@ export function isolateContextMenuUserData(): void {
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
-const GROUP_CWD = '/Users/dev/projects/api-server'
+/** REAL tmpdir dir (ticket 42): the cwd-liveness filter drops sessions
+ * whose cwd is not a directory on disk; the basename keeps the group label. */
+const GROUP_CWD = (): string => ensureVisualProjectDir('api-server')
 /** Ages (days) of the three group sessions — all settled ("Nd ago"), empty
  * dot slots: the probe measures the idle grid, not live-state noise. */
 const GROUP_AGES_DAYS = [3, 6, 9]
@@ -204,7 +206,7 @@ export function startContextMenuVisualIfEnabled(getWindow: () => BrowserWindow |
   for (let i = 0; i < GROUP_AGES_DAYS.length; i++) {
     const file = writeVisualSession(store, {
       id: `context-menu-${i}`,
-      cwd: GROUP_CWD,
+      cwd: GROUP_CWD(),
       userText: `Archive probe task number ${i + 1}`
     })
     backdate(file, GROUP_AGES_DAYS[i])
