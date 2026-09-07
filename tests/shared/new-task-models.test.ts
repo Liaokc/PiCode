@@ -3,11 +3,13 @@ import type { AuthProbeReport, ModelCatalogEntry, ProviderAuthStatus } from '../
 import { ALL_THINKING_LEVELS } from '../../src/shared/contract'
 import type { SessionDefaults } from '../../src/shared/preferences'
 import {
+  clampThinkingLevelToLevels,
   findCatalogModel,
   mergeNewTaskDefaults,
   PI_FALLBACK_THINKING_LEVEL,
   projectNewTaskCatalog,
   resolveNewTaskModelChip,
+  resolveNewTaskThinkingLevels,
   type NewTaskModelChoice
 } from '../../src/shared/new-task-models.ts'
 
@@ -17,8 +19,10 @@ function provider(providerId: string, authType: ProviderAuthStatus['authType'], 
   return { providerId, name, modelCount: 0, authType, source: authType === null ? null : 'KEY', oauthExpiresAt: null }
 }
 
-function model(providerId: string, modelId: string, name = modelId): ModelCatalogEntry {
-  return { providerId, modelId, name }
+function model(providerId: string, modelId: string, name = modelId, thinkingLevels?: string[]): ModelCatalogEntry {
+  return thinkingLevels === undefined
+    ? { providerId, modelId, name }
+    : { providerId, modelId, name, thinkingLevels: thinkingLevels as ModelCatalogEntry['thinkingLevels'] }
 }
 
 function report(parts: {
@@ -37,10 +41,10 @@ function report(parts: {
 const CATALOG = report({
   providers: [provider('anthropic', 'oauth', 'Anthropic'), provider('openai', null, 'OpenAI'), provider('gemini', 'api_key', 'Google')],
   models: [
-    model('anthropic', 'claude-opus-4', 'Claude Opus 4'),
-    model('anthropic', 'claude-sonnet-4', 'Claude Sonnet 4'),
+    model('anthropic', 'claude-opus-4', 'Claude Opus 4', ['off', 'medium', 'high', 'xhigh', 'max']),
+    model('anthropic', 'claude-sonnet-4', 'Claude Sonnet 4', ['off', 'low', 'medium', 'high', 'xhigh', 'max']),
     model('openai', 'gpt-5', 'GPT-5'),
-    model('gemini', 'gemini-2.5-pro', 'Gemini 2.5 Pro')
+    model('gemini', 'gemini-2.5-pro', 'Gemini 2.5 Pro', ['low', 'high', 'max'])
   ]
 })
 
@@ -59,15 +63,36 @@ describe('projectNewTaskCatalog', () => {
         providerId: 'anthropic',
         name: 'Anthropic',
         models: [
-          { providerId: 'anthropic', modelId: 'claude-opus-4', name: 'Claude Opus 4' },
-          { providerId: 'anthropic', modelId: 'claude-sonnet-4', name: 'Claude Sonnet 4' }
+          {
+            providerId: 'anthropic',
+            modelId: 'claude-opus-4',
+            name: 'Claude Opus 4',
+            thinkingLevels: ['off', 'medium', 'high', 'xhigh', 'max']
+          },
+          {
+            providerId: 'anthropic',
+            modelId: 'claude-sonnet-4',
+            name: 'Claude Sonnet 4',
+            thinkingLevels: ['off', 'low', 'medium', 'high', 'xhigh', 'max']
+          }
         ]
       },
-      { providerId: 'openai', name: 'OpenAI', models: [{ providerId: 'openai', modelId: 'gpt-5', name: 'GPT-5' }] },
+      {
+        providerId: 'openai',
+        name: 'OpenAI',
+        models: [{ providerId: 'openai', modelId: 'gpt-5', name: 'GPT-5' }]
+      },
       {
         providerId: 'gemini',
         name: 'Google',
-        models: [{ providerId: 'gemini', modelId: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' }]
+        models: [
+          {
+            providerId: 'gemini',
+            modelId: 'gemini-2.5-pro',
+            name: 'Gemini 2.5 Pro',
+            thinkingLevels: ['low', 'high', 'max']
+          }
+        ]
       }
     ])
   })
@@ -79,7 +104,12 @@ describe('projectNewTaskCatalog', () => {
 
   it('resolves Pi fallback default: the first model of the first auth-configured provider', () => {
     const catalog = projectNewTaskCatalog(CATALOG)
-    expect(catalog.piFallback).toEqual({ providerId: 'anthropic', modelId: 'claude-opus-4', name: 'Claude Opus 4' })
+    expect(catalog.piFallback).toEqual({
+      providerId: 'anthropic',
+      modelId: 'claude-opus-4',
+      name: 'Claude Opus 4',
+      thinkingLevels: ['off', 'medium', 'high', 'xhigh', 'max']
+    })
   })
 
   it('skips auth-configured providers that carry no models, then keeps looking', () => {
@@ -183,11 +213,12 @@ describe('resolveNewTaskModelChip', () => {
 describe('findCatalogModel', () => {
   const providers = projectNewTaskCatalog(CATALOG).providers
 
-  it('finds a model by provider + id with its display name', () => {
+  it('finds a model by provider + id with its display name and level data', () => {
     expect(findCatalogModel(providers, 'anthropic', 'claude-sonnet-4')).toEqual({
       providerId: 'anthropic',
       modelId: 'claude-sonnet-4',
-      name: 'Claude Sonnet 4'
+      name: 'Claude Sonnet 4',
+      thinkingLevels: ['off', 'low', 'medium', 'high', 'xhigh', 'max']
     })
   })
 
@@ -232,5 +263,47 @@ describe('mergeNewTaskDefaults', () => {
       providerId: 'x',
       modelId: 'y'
     })
+  })
+})
+
+describe('resolveNewTaskThinkingLevels', () => {
+  const providers = projectNewTaskCatalog(CATALOG).providers
+
+  it('filters to the chip model supported levels from the catalog (table)', () => {
+    const cases: Array<{ modelId: string | null; levels: string[] }> = [
+      { modelId: 'claude-opus-4', levels: ['off', 'medium', 'high', 'xhigh', 'max'] },
+      { modelId: 'gemini-2.5-pro', levels: ['low', 'high', 'max'] },
+      // Catalog entry without level info (older probe) → the full seven.
+      { modelId: 'gpt-5', levels: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] }
+    ]
+    for (const c of cases) {
+      const ref = c.modelId === null ? null : (findCatalogModel(providers, 'anthropic', c.modelId) ?? findCatalogModel(providers, 'gemini', c.modelId!))
+      expect(resolveNewTaskThinkingLevels(providers, ref)).toEqual(c.levels)
+    }
+  })
+
+  it('degrades to the full seven when the model or catalog is unknown', () => {
+    const all = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
+    expect(resolveNewTaskThinkingLevels(providers, null)).toEqual(all)
+    expect(resolveNewTaskThinkingLevels(providers, { providerId: 'x', modelId: 'y', name: 'y' })).toEqual(all)
+    expect(resolveNewTaskThinkingLevels([], null)).toEqual(all)
+  })
+})
+
+describe('clampThinkingLevelToLevels', () => {
+  it('keeps a supported request (table)', () => {
+    expect(clampThinkingLevelToLevels('high', ['low', 'high', 'max'])).toBe('high')
+    expect(clampThinkingLevelToLevels('off', ['off'])).toBe('off')
+  })
+
+  it('searches forward then backward, mirroring the SDK clamp (table)', () => {
+    // GLM-5.3 shape: 'off' unsupported → forward to the lowest supported.
+    expect(clampThinkingLevelToLevels('off', ['low', 'high', 'max'])).toBe('low')
+    // 'medium' unsupported → forward to 'high'.
+    expect(clampThinkingLevelToLevels('medium', ['low', 'high', 'max'])).toBe('high')
+    // 'max' requested but unsupported → backward to 'high'.
+    expect(clampThinkingLevelToLevels('max', ['off', 'low'])).toBe('low')
+    // Unknown levels → passthrough.
+    expect(clampThinkingLevelToLevels('medium', [])).toBe('medium')
   })
 })

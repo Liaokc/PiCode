@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { collectAuthStatuses, type AuthProbeModels, type StoredCredentialLike } from '../../src/host/auth-probe.ts'
+import {
+  collectAuthStatuses,
+  supportedThinkingLevels,
+  type AuthProbeModels,
+  type StoredCredentialLike
+} from '../../src/host/auth-probe.ts'
 
-function fakeRuntime(providers: Array<{ id: string; name?: string; models?: Array<{ id: string; name?: string }> }>): AuthProbeModels {
+function fakeRuntime(
+  providers: Array<{
+    id: string
+    name?: string
+    models?: Array<{ id: string; name?: string; reasoning?: boolean; thinkingLevelMap?: Record<string, string | null> }>
+  }>
+): AuthProbeModels {
   return {
     getProviders: () => providers.map((p) => ({ id: p.id })),
     getProvider: (id: string) => {
@@ -49,10 +60,21 @@ describe('collectAuthStatuses', () => {
         oauthExpiresAt: NOW + 60_000
       }
     ])
+    // Non-reasoning fixtures support 'off' only (SDK getSupportedThinkingLevels).
     expect(report.models).toEqual([
-      { providerId: 'anthropic', modelId: 'claude-opus-4-5', name: 'claude-opus-4-5' },
-      { providerId: 'anthropic', modelId: 'claude-sonnet-4-5', name: 'claude-sonnet-4-5' },
-      { providerId: 'openai', modelId: 'gpt-5.1', name: 'GPT-5.1' }
+      {
+        providerId: 'anthropic',
+        modelId: 'claude-opus-4-5',
+        name: 'claude-opus-4-5',
+        thinkingLevels: ['off']
+      },
+      {
+        providerId: 'anthropic',
+        modelId: 'claude-sonnet-4-5',
+        name: 'claude-sonnet-4-5',
+        thinkingLevels: ['off']
+      },
+      { providerId: 'openai', modelId: 'gpt-5.1', name: 'GPT-5.1', thinkingLevels: ['off'] }
     ])
     expect(report.error).toBeNull()
   })
@@ -68,5 +90,32 @@ describe('collectAuthStatuses', () => {
     const runtime = fakeRuntime([{ id: 'bella', models: [{ id: 'GLM-5.3' }] }])
     const report = await collectAuthStatuses(runtime, () => ({ type: 'api_key' }))
     expect(report.providers[0]).toMatchObject({ authType: 'api_key', source: null, oauthExpiresAt: null })
+  })
+})
+
+// Ticket 41: the level extraction mirrors the SDK's getSupportedThinkingLevels
+// (reasoning gate; null mappings unsupported; xhigh/max need explicit maps).
+describe('supportedThinkingLevels', () => {
+  it('gives a non-reasoning model only off', () => {
+    expect(supportedThinkingLevels({ id: 'm' })).toEqual(['off'])
+    expect(supportedThinkingLevels({ id: 'm', reasoning: false })).toEqual(['off'])
+  })
+
+  it('treats null mappings as unsupported and missing low-tier keys as supported', () => {
+    // GLM-5.3 shape: off/minimal/medium/xhigh map to null → only low/high/max.
+    expect(
+      supportedThinkingLevels({
+        id: 'GLM-5.3',
+        reasoning: true,
+        thinkingLevelMap: { off: null, minimal: null, low: 'low', medium: null, high: 'high', xhigh: null, max: 'max' }
+      })
+    ).toEqual(['low', 'high', 'max'])
+  })
+
+  it('requires explicit maps for xhigh/max, defaults the rest (reasoning model)', () => {
+    expect(supportedThinkingLevels({ id: 'm', reasoning: true })).toEqual(['off', 'minimal', 'low', 'medium', 'high'])
+    expect(
+      supportedThinkingLevels({ id: 'm', reasoning: true, thinkingLevelMap: { max: 'max' } })
+    ).toEqual(['off', 'minimal', 'low', 'medium', 'high', 'max'])
   })
 })

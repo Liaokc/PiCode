@@ -15,7 +15,7 @@
  *   shows a styled hint instead of a blank panel).
  */
 import type { AuthProbeReport } from './auth-status.ts'
-import type { ModelRef, ProviderModels, ThinkingLevel } from './contract.ts'
+import { ALL_THINKING_LEVELS, type ModelRef, type ProviderModels, type ThinkingLevel } from './contract.ts'
 import type { SessionDefaults } from './preferences.ts'
 
 /**
@@ -26,10 +26,21 @@ import type { SessionDefaults } from './preferences.ts'
  */
 export const PI_FALLBACK_THINKING_LEVEL: ThinkingLevel = 'medium'
 
+/** Catalog row = the cascade's ModelRef plus the probe's per-model level
+ * data (which levels the model actually supports; absent = unknown). */
+export interface NewTaskCatalogModel extends ModelRef {
+  thinkingLevels?: ThinkingLevel[]
+}
+
+/** Catalog group = the cascade's provider group over the extended rows. */
+export interface NewTaskProviderGroup extends Omit<ProviderModels, 'models'> {
+  models: NewTaskCatalogModel[]
+}
+
 /** The empty state's model catalog, projected from a probe report. */
 export interface NewTaskCatalog {
   /** Provider→model cascade for the model menu (may be empty). */
-  providers: ProviderModels[]
+  providers: NewTaskProviderGroup[]
   /**
    * What Pi itself would run with no PiCode preference: the first model of
    * the first auth-configured provider (the probe's read-only health rows
@@ -50,7 +61,7 @@ export interface NewTaskCatalog {
  */
 export function projectNewTaskCatalog(report: AuthProbeReport): NewTaskCatalog {
   const names = new Map(report.providers.map((provider) => [provider.providerId, provider.name]))
-  const groups = new Map<string, ProviderModels>()
+  const groups = new Map<string, NewTaskProviderGroup>()
   for (const entry of report.models) {
     let group = groups.get(entry.providerId)
     if (!group) {
@@ -61,14 +72,19 @@ export function projectNewTaskCatalog(report: AuthProbeReport): NewTaskCatalog {
       }
       groups.set(entry.providerId, group)
     }
-    group.models.push({ providerId: entry.providerId, modelId: entry.modelId, name: entry.name })
+    group.models.push({
+      providerId: entry.providerId,
+      modelId: entry.modelId,
+      name: entry.name,
+      thinkingLevels: entry.thinkingLevels
+    })
   }
   const providers = [...groups.values()]
   return { providers, piFallback: piFallbackFrom(report, providers), error: report.error }
 }
 
 /** First model of the first auth-configured provider (report order kept). */
-function piFallbackFrom(report: AuthProbeReport, providers: readonly ProviderModels[]): ModelRef | null {
+function piFallbackFrom(report: AuthProbeReport, providers: readonly NewTaskProviderGroup[]): ModelRef | null {
   for (const provider of report.providers) {
     if (provider.authType === null) continue
     const first = providers.find((group) => group.providerId === provider.providerId)?.models[0]
@@ -95,6 +111,46 @@ export interface NewTaskChipInput {
   preferenceThinkingLevel: ThinkingLevel | null
   /** The projected catalog; null while the probe has not landed yet. */
   catalog: NewTaskCatalog | null
+}
+
+/**
+ * The thinking levels a model actually supports, from its catalog entry —
+ * the probe reads `Model.reasoning` + `thinkingLevelMap` (null = unsupported).
+ * Unknown model / absent field / no catalog → the full seven (the menu
+ * cannot know better; the session's host-pushed list stays authoritative).
+ */
+export function resolveNewTaskThinkingLevels(
+  providers: readonly NewTaskProviderGroup[],
+  model: ModelRef | null
+): ThinkingLevel[] {
+  if (model === null) return [...ALL_THINKING_LEVELS]
+  const entry = findCatalogModel(providers, model.providerId, model.modelId)
+  return entry?.thinkingLevels && entry.thinkingLevels.length > 0
+    ? entry.thinkingLevels
+    : [...ALL_THINKING_LEVELS]
+}
+
+/**
+ * Clamp a requested level to a model's supported list — mirrors the SDK's
+ * `clampThinkingLevel` (forward search from the requested level, then
+ * backward). Levels unknown → the request passes through unchanged; a null
+ * request (no value to show) passes through too.
+ */
+export function clampThinkingLevelToLevels(
+  level: ThinkingLevel | null,
+  supported: readonly ThinkingLevel[]
+): ThinkingLevel | null {
+  if (level === null || supported.length === 0 || supported.includes(level)) return level
+  const requestedIndex = ALL_THINKING_LEVELS.indexOf(level)
+  for (let i = Math.max(requestedIndex, 0); i < ALL_THINKING_LEVELS.length; i++) {
+    const candidate = ALL_THINKING_LEVELS[i]!
+    if (supported.includes(candidate)) return candidate
+  }
+  for (let i = requestedIndex - 1; i >= 0; i--) {
+    const candidate = ALL_THINKING_LEVELS[i]!
+    if (supported.includes(candidate)) return candidate
+  }
+  return level
 }
 
 /**
@@ -132,10 +188,10 @@ function resolveChipModel(
 
 /** Look a model up in the cascade shape (provider + model id → full ref). */
 export function findCatalogModel(
-  providers: readonly ProviderModels[],
+  providers: readonly NewTaskProviderGroup[],
   providerId: string,
   modelId: string
-): ModelRef | null {
+): NewTaskCatalogModel | null {
   for (const provider of providers) {
     if (provider.providerId !== providerId) continue
     const model = provider.models.find((candidate) => candidate.modelId === modelId)

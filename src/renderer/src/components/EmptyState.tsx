@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { greetingForHour } from '../../../shared/greeting'
 import { filterWorkspaces } from '../../../shared/new-task'
-import { findCatalogModel, type NewTaskModelChoice } from '../../../shared/new-task-models'
-import { ALL_THINKING_LEVELS, type ModelRef, type ProviderModels, type ThinkingLevel } from '../../../shared/contract'
+import {
+  clampThinkingLevelToLevels,
+  findCatalogModel,
+  resolveNewTaskThinkingLevels,
+  type NewTaskModelChoice
+} from '../../../shared/new-task-models'
+import { type ModelRef, type ProviderModels, type ThinkingLevel } from '../../../shared/contract'
 import { projectLabel } from '../../../shared/sessions/group'
 import { initialChatState } from '../../../shared/chat-reducer'
 import type { ImageAttachment } from '../../../shared/contract'
 import Composer, { type ComposerApi, type ComposerChat } from './Composer'
-
-/** The empty-state thinking menu's levels: all seven Pi levels (mutable copy
- * of the shared constant for the ComposerChat slice's array typing). */
-const EMPTY_STATE_LEVELS: ThinkingLevel[] = [...ALL_THINKING_LEVELS]
 import {
   BugIcon,
   CalendarIcon,
@@ -114,21 +115,32 @@ export default function EmptyState({
   const [modelPick, setModelPick] = useState<{ providerId: string; modelId: string } | null>(null)
   const [thinkingPick, setThinkingPick] = useState<ThinkingLevel | null>(null)
 
+  /** The displayed model: the explicit pick, else the chained default. The
+   * thinking menu (and the chip's level) follow IT — the probe catalog
+   * carries each model's supported levels, so unsupported levels never
+   * show; unknown levels degrade to the full seven. */
+  const shownModel: ModelRef | null =
+    modelPick === null
+      ? model
+      : (findCatalogModel(providers, modelPick.providerId, modelPick.modelId) ?? {
+          providerId: modelPick.providerId,
+          modelId: modelPick.modelId,
+          name: modelPick.modelId
+        })
+  const shownLevels = useMemo(() => resolveNewTaskThinkingLevels(providers, shownModel), [providers, shownModel])
+  const shownLevel = useMemo(
+    () => clampThinkingLevelToLevels(thinkingPick ?? thinkingLevel, shownLevels),
+    [thinkingPick, thinkingLevel, shownLevels]
+  )
+
   /** The empty state's composer slice: real catalog menu, chained chip
-   * defaults, and the full seven-level thinking menu — no host involved. */
+   * defaults, and the thinking menu filtered to the model's own levels. */
   const chat: ComposerChat = {
     ...idleChat,
     providers,
-    model:
-      modelPick === null
-        ? model
-        : (findCatalogModel(providers, modelPick.providerId, modelPick.modelId) ?? {
-            providerId: modelPick.providerId,
-            modelId: modelPick.modelId,
-            name: modelPick.modelId
-          }),
-    thinkingLevel: thinkingPick ?? thinkingLevel,
-    availableLevels: EMPTY_STATE_LEVELS,
+    model: shownModel,
+    thinkingLevel: shownLevel,
+    availableLevels: [...shownLevels],
     modelIsDefault: modelPick === null && modelIsDefault && model !== null,
     thinkingIsDefault: thinkingPick === null && thinkingIsDefault,
     modelMenuHint

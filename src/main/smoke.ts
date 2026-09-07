@@ -81,7 +81,7 @@ import { existsSync, mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } 
 import { app, type BrowserWindow } from 'electron'
 import type { HostSupervisor } from './host-supervisor'
 import { focusSessionFromNotification, type ApprovalNotice } from './notifications'
-import { ALL_THINKING_LEVELS, type HostToParent, type SessionScopedEvent } from '../shared/contract'
+import type { HostToParent, SessionScopedEvent } from '../shared/contract'
 import { FOLLOW_TAKEOVER_REJECTED_TOAST } from '../shared/sessions/group'
 import type { SessionContextActionService } from './sessions/context-actions'
 
@@ -330,8 +330,10 @@ export function startSmokeIfEnabled(
       if (pickedModelId === '') fail('the picked model id is empty')
       log('empty_state_model_pick_ok', `model=${pickedModelId}${override ? ' (override)' : ' (default re-pick)'}`)
 
-      // ④ The thinking menu: all seven Pi levels (host-free constant), and
-      // an explicit pick — Off, available for every model — rides too.
+      // ④ The thinking menu: only the picked model's OWN levels (the probe
+      // catalog carries each model's supported levels; the SDK clamps the
+      // rest away at create time). Pick the FIRST row — supported by
+      // construction, so the ride is assertable without knowing the model.
       if (!(await win.webContents.executeJavaScript(composerChipClickJs('Thinking:')).catch(() => false))) {
         fail('the thinking chip is missing for the empty-state stage')
       }
@@ -343,28 +345,29 @@ export function startSmokeIfEnabled(
         if (levelRows.length > 0) break
         await new Promise((r) => setTimeout(r, 100))
       }
-      if (levelRows.length !== 7) {
-        fail(`the empty-state thinking menu lists ${levelRows.length} levels, expected 7`)
+      if (levelRows.length < 1 || levelRows.length > 7) {
+        fail(`the empty-state thinking menu lists ${levelRows.length} levels, expected 1..7`)
       }
       log('empty_state_thinking_levels_ok', levelRows.join(' '))
-      const pickOff = `(() => {
+      const firstLevel = levelRows[0]!
+      const pickFirstLevel = `(() => {
         const rows = [...document.querySelectorAll('.cmp-popover .cmp-menu-list .cmp-menu-row')]
-        const row = rows.find((r) => (r.querySelector('.cmp-menu-title')?.textContent ?? '') === 'Off')
+        const row = rows.find((r) => (r.querySelector('.cmp-menu-title')?.textContent ?? '') === ${JSON.stringify(firstLevel)})
         if (!(row instanceof HTMLElement)) return false
         row.click()
         return true
       })()`
-      if (!(await win.webContents.executeJavaScript(pickOff).catch(() => false))) {
-        fail('the thinking menu never offered Off')
+      if (!(await win.webContents.executeJavaScript(pickFirstLevel).catch(() => false))) {
+        fail(`the thinking menu never offered ${firstLevel}`)
       }
       let thinkingLabel = ''
       for (let waited = 0; waited < 5_000; waited += 100) {
         thinkingLabel = (await win.webContents.executeJavaScript(composerChipLabelJs('Thinking:')).catch(() => '')) as string
-        if (thinkingLabel === 'Thinking: Off') break
+        if (thinkingLabel === `Thinking: ${firstLevel}`) break
         await new Promise((r) => setTimeout(r, 100))
       }
-      if (thinkingLabel !== 'Thinking: Off') fail('the empty-state thinking pick never reached the chip')
-      log('empty_state_thinking_pick_ok')
+      if (thinkingLabel !== `Thinking: ${firstLevel}`) fail('the empty-state thinking pick never reached the chip')
+      log('empty_state_thinking_pick_ok', `level=${firstLevel}`)
 
       // ⑤ Send from the empty state: the session is created from HERE, with
       // the picks riding the defaults and the prompt riding the pending
@@ -394,22 +397,20 @@ export function startSmokeIfEnabled(
     log('empty_state_pick_rides_ok', `model=${created.model}`)
     const composer = (await composerState) as Extract<Scoped, { type: 'composer_state' }>
     if (composer.thinkingLevel === null) fail('the session opened with no thinking level')
-    // The pick rides; the SDK then clamps the request to the model's OWN
-    // levels (e.g. a model whose map sends 'off' → null cannot turn thinking
-    // off, and opens at its lowest supported level instead). Expected value:
-    // the request when supported, else the lowest supported level.
-    const clamped =
-      composer.availableLevels.includes('off')
-        ? 'off'
-        : ALL_THINKING_LEVELS.find((level) => composer.availableLevels.includes(level))
-    if (composer.thinkingLevel !== clamped) {
+    // The picked level came FROM the picked model's supported list, so the
+    // session must open exactly there — the menu list itself must equal the
+    // session's host-pushed levels (same model, same source order).
+    if (composer.thinkingLevel !== composer.availableLevels[0]) {
       fail(
         `the empty-state thinking pick did not ride into the session (${String(
           composer.thinkingLevel
-        )} ≠ clamp(off) = ${String(clamped)})`
+        )} ≠ first supported ${String(composer.availableLevels[0])})`
       )
     }
-    log('empty_state_thinking_rides_ok', `thinking=${String(composer.thinkingLevel)} (clamped from off)`)
+    log(
+      'empty_state_thinking_rides_ok',
+      `thinking=${String(composer.thinkingLevel)} levels=${composer.availableLevels.join(',')}`
+    )
 
     // Round 1: the pending prompt starts the run; abort mid-flight.
     await agentStarted
