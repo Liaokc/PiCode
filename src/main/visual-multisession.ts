@@ -56,7 +56,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { app, type BrowserWindow } from 'electron'
 import { emitContractEvent, multiSessionVisualEnabled, visualOutDir } from './visual'
-import { ensureVisualProjectFixture, ensureVisualStore, writeVisualSession } from './visual-store'
+import { ensureVisualProjectDir, ensureVisualProjectFixture, ensureVisualStore, writeVisualSession } from './visual-store'
 
 export { multiSessionVisualEnabled } from './visual'
 
@@ -74,7 +74,9 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 const RUNNING_ID = 'multi-visual-running'
 const TUI_ID = 'multi-visual-tui'
 const IDLE_ID = 'multi-visual-idle'
-const WEB_CWD = '/Users/dev/projects/web-app'
+/** REAL tmpdir dir (ticket 42): the cwd-liveness filter drops sessions
+ * whose cwd is not a directory on disk; the basename keeps the group label. */
+const WEB_CWD = (): string => ensureVisualProjectDir('web-app')
 const STREAM_MARKER = 'Count the deploy checklist from one to twenty, one item per line'
 
 async function waitFor(getWindow: () => BrowserWindow | null, probe: string, budgetMs: number): Promise<boolean> {
@@ -170,7 +172,7 @@ export function startMultiSessionVisualIfEnabled(getWindow: () => BrowserWindow 
   })
   writeVisualSession(store, {
     id: TUI_ID,
-    cwd: WEB_CWD,
+    cwd: WEB_CWD(),
     userText: 'Wire the new checkout form to the payments sandbox'
   })
   const idleFile = writeVisualSession(store, {

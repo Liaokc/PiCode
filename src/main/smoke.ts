@@ -74,6 +74,7 @@
  */
 
 import os from 'node:os'
+import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
@@ -2060,6 +2061,154 @@ export function startSmokeIfEnabled(
       rmSync(foldProject, { recursive: true, force: true })
     }
     log('group_fold_done')
+
+    // ---- ticket 42: dead-cwd sessions never reach the index ----
+    // Three seeded sessions in an isolated store drive the whole stage:
+    //  - DEAD: its project dir is deleted BEFORE the scan — the session must
+    //    be absent from the sidebar AND from ⌘K (structurally unreachable:
+    //    resume would crash the host), its file byte-identical on disk;
+    //  - ALIVE (control): real dir, first message carries the SDK's skill-
+    //    injection prologue — the title must be the text AFTER the block;
+    //  - LIVE: resumed in-app, then its project dir is deleted MID-RUN —
+    //    the exemption keeps the row listed (registry/sidebar).
+    log('dead_cwd_start')
+    const cwdStore = process.env['PICODE_SESSION_DIR']
+    if (!cwdStore) fail('ticket-42 stage: PICODE_SESSION_DIR is not set')
+    const deadProject = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-dead42-'))
+    const aliveProject = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-alive42-'))
+    const liveProject = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-live42-'))
+    const DEAD_MARKER = 'PICODE_42_DEAD unreachable task'
+    const ALIVE_TITLE = 'PICODE_42_TITLE_ALIVE text'
+    const LIVE_MARKER = 'PICODE_42_LIVE running task'
+    try {
+      const seed42 = (file: string, id: string, project: string, userText: string): void => {
+        const stamp = new Date().toISOString()
+        writeFileSync(
+          file,
+          [
+            JSON.stringify({ type: 'session', version: 3, id, timestamp: stamp, cwd: project }),
+            JSON.stringify({
+              type: 'message',
+              id: `${id}-u1`,
+              parentId: null,
+              timestamp: stamp,
+              message: { role: 'user', content: [{ type: 'text', text: userText }] }
+            })
+          ].join('\n') + '\n'
+        )
+      }
+      const deadFile = path.join(cwdStore, 'dead42.jsonl')
+      seed42(deadFile, randomUUID(), deadProject, DEAD_MARKER)
+      // The physical death happens BEFORE any scan sees the directory.
+      rmSync(deadProject, { recursive: true, force: true })
+
+      // The exact prologue the Pi SDK injects for a skill-driven turn
+      // (agent-session.js), with the user's own text after a blank line.
+      const skillPrologue = [
+        '<skill name="implement" location="' + path.join(aliveProject, 'SKILL.md') + '">',
+        'References are relative to ' + aliveProject + '.',
+        '',
+        'Implement the work described by the user.',
+        '</skill>',
+        '',
+        ALIVE_TITLE
+      ].join('\n')
+      const aliveFile = path.join(cwdStore, 'alive42.jsonl')
+      seed42(aliveFile, randomUUID(), aliveProject, skillPrologue)
+      const liveFile = path.join(cwdStore, 'live42.jsonl')
+      seed42(liveFile, randomUUID(), liveProject, LIVE_MARKER)
+
+      await withWindow(getWindow, async (win) => {
+        const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+        // The fold stage may have left the sidebar closed — open with ⌘B
+        // (press-until-present, the panel-stage pattern).
+        const sidebarPresent = `(document.querySelector('.sidebar') !== null)`
+        if (!((await js(sidebarPresent)) as boolean)) {
+          await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', metaKey: true, bubbles: true })); true`)
+          await waitForProbe(win, sidebarPresent, 5_000)
+        }
+
+        // Index pickup, proven by the CONTROL row appearing.
+        const aliveRow = `[data-file="${aliveFile}"]`
+        if (!(await waitForProbe(win, `document.querySelector('${aliveRow}') !== null`, 15_000))) {
+          fail('ticket-42 stage: the alive-cwd control row never reached the sidebar')
+        }
+        log('dead_cwd_control_listed_ok')
+
+        // Same scan, dead session: structurally absent from the sidebar.
+        const deadRow = `[data-file="${deadFile}"]`
+        if ((await js(`document.querySelector('${deadRow}') !== null`)) as boolean) {
+          fail('ticket-42 stage: the dead-cwd session is listed in the sidebar')
+        }
+        log('dead_cwd_hidden_ok')
+
+        // The dead session's file is untouched — zero delete/migrate action.
+        if (!existsSync(deadFile)) fail('ticket-42 stage: the dead-cwd session file vanished from disk')
+        log('dead_cwd_file_untouched_ok')
+
+        // Title derivation: the post-skill text, never the raw prologue.
+        const title = (await js(`document.querySelector('${aliveRow} .sb-task-title')?.textContent ?? ''`)) as string
+        if (title !== ALIVE_TITLE) fail(`ticket-42 stage: skill-prologue title not derived (got "${title}")`)
+        log('dead_cwd_title_skip_ok')
+
+        // ⌘K: the dead session is unreachable there either; the control is.
+        await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyK', metaKey: true, bubbles: true })); true`)
+        if (!(await waitForProbe(win, `document.querySelector('.palette-overlay') !== null`, 5_000))) {
+          fail('ticket-42 stage: the ⌘K palette never opened')
+        }
+        const typeIntoPalette = (text: string): string =>
+          `(() => {
+            const input = document.querySelector('.palette-input')
+            if (!input) return false
+            const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+            setter.call(input, '${text}')
+            input.dispatchEvent(new Event('input', { bubbles: true }))
+            return true
+          })()`
+        await js(typeIntoPalette('PICODE_42_DEAD'))
+        if (!(await waitForProbe(win, `document.querySelectorAll('.palette-item').length === 0`, 3_000))) {
+          fail('ticket-42 stage: the dead-cwd session is reachable from ⌘K')
+        }
+        log('dead_cwd_palette_hidden_ok')
+
+        await js(typeIntoPalette('PICODE_42_TITLE_ALIVE'))
+        if (!(await waitForProbe(win, `document.querySelectorAll('.palette-item').length === 1`, 3_000))) {
+          fail('ticket-42 stage: the control session is not uniquely reachable from ⌘K')
+        }
+        log('dead_cwd_palette_control_ok')
+        await js(`document.querySelector('.palette-input')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`)
+        if (!(await waitForProbe(win, `document.querySelector('.palette-overlay') === null`, 5_000))) {
+          fail('ticket-42 stage: the ⌘K palette never closed')
+        }
+
+        // LIVE: resume the seeded session in-app (no prompt — the host
+        // announces without one), then delete its cwd MID-RUN. The row must
+        // survive the index tick that now sees a dead cwd.
+        supervisor.handleParentCommand({ type: 'resume_session', sessionFile: liveFile, cwd: liveProject })
+        await waitFor((e) => e.type === 'session_created' && e.sessionFile === liveFile, 'ticket-42 resume session_created')
+        const liveRow = `[data-file="${liveFile}"]`
+        if (!(await waitForProbe(win, `document.querySelector('${liveRow}') !== null`, 10_000))) {
+          fail('ticket-42 stage: the resumed live session never reached the sidebar')
+        }
+        log('dead_cwd_live_resumed_ok')
+
+        rmSync(liveProject, { recursive: true, force: true })
+        await new Promise((r) => setTimeout(r, 3_500)) // > one 2s index tick
+        if (!((await js(`document.querySelector('${liveRow}') !== null`)) as boolean)) {
+          fail('ticket-42 stage: the in-app live session vanished when its cwd was deleted mid-run')
+        }
+        log('dead_cwd_live_exempt_ok')
+
+        // The control row survived everything (no accidental over-filtering).
+        if (!((await js(`document.querySelector('${aliveRow}') !== null`)) as boolean)) {
+          fail('ticket-42 stage: the alive control row was wrongly filtered')
+        }
+      })
+    } finally {
+      rmSync(aliveProject, { recursive: true, force: true })
+      rmSync(liveProject, { recursive: true, force: true })
+    }
+    log('dead_cwd_done')
 
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
     const livePids = supervisor.hostPids

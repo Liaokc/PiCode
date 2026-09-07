@@ -45,6 +45,17 @@ export function ensureVisualStore(): string {
   return process.env['PICODE_SESSION_DIR'] as string
 }
 
+/** A REAL directory to seed as a session's cwd (ticket 42): the session
+ * index's cwd-liveness filter drops sessions whose working directory is not
+ * a directory on disk, so visual stores must seed truthful cwds. The
+ * basename is kept (harness probes match the group label); the location is
+ * an isolated tmpdir, never the operator's filesystem. */
+export function ensureVisualProjectDir(name: string): string {
+  const dir = path.join(tmpdir(), `picode-visual-projects-${process.pid}`, name)
+  mkdirSync(dir, { recursive: true })
+  return dir
+}
+
 /** Real project fixture for the ticket-26 file-browser captures: the tree
  * reads through the REAL preview channel, so the browsed cwd must exist
  * with hidden entries (.git, .idea) and typed files on disk. Returns the

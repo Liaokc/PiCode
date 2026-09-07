@@ -29,6 +29,16 @@ afterAll(async () => {
   await rm(dir, { recursive: true, force: true })
 })
 
+/** A REAL directory to seed as a session cwd — the cwd-liveness filter
+ * (ticket 42) drops sessions whose working directory is not a directory on
+ * disk, so every fixture seeds a truthful one. Idempotent mkdir: tests that
+ * delete their cwd can re-seed the same name safely. */
+async function cwdFor(name: string): Promise<string> {
+  const target = path.join(dir, 'cwds', name)
+  await mkdir(target, { recursive: true })
+  return target
+}
+
 async function writeSession(project: string, file: string, text: string, mtimeMs?: number): Promise<string> {
   const projectDir = path.join(dir, `--${project}--`)
   await mkdir(projectDir, { recursive: true })
@@ -40,8 +50,10 @@ async function writeSession(project: string, file: string, text: string, mtimeMs
 
 describe('SessionIndexService.list', () => {
   it('finds sessions across project dirs and summarizes them', async () => {
-    await writeSession('projA', 's1.jsonl', sessionText('/work/projA', 'id-1', [userLine('e1', null, 'first task')]), 1_756_300_000_000)
-    await writeSession('projB', 's2.jsonl', sessionText('/work/projB', 'id-2', [userLine('e1', null, 'second task'), infoLine('e2', 'e1', 'Named task')]), 1_756_300_100_000)
+    const cwdA = await cwdFor('projA')
+    const cwdB = await cwdFor('projB')
+    await writeSession('projA', 's1.jsonl', sessionText(cwdA, 'id-1', [userLine('e1', null, 'first task')]), 1_756_300_000_000)
+    await writeSession('projB', 's2.jsonl', sessionText(cwdB, 'id-2', [userLine('e1', null, 'second task'), infoLine('e2', 'e1', 'Named task')]), 1_756_300_100_000)
     await writeFile(path.join(dir, '--projA--', 'notes.txt'), 'not a session')
 
     const service = new SessionIndexService({ sessionsDir: dir, onIndexChanged: () => {} })
@@ -54,12 +66,12 @@ describe('SessionIndexService.list', () => {
       id: 'id-2',
       name: 'Named task',
       title: 'Named task',
-      cwd: '/work/projB'
+      cwd: cwdB
     })
   })
 
   it('caches by mtime: repeated scans are idempotent', async () => {
-    const file = await writeSession('projC', 's3.jsonl', sessionText('/c', 'id-3', []), 1_756_300_200_000)
+    const file = await writeSession('projC', 's3.jsonl', sessionText(await cwdFor('projC'), 'id-3', []), 1_756_300_200_000)
     const service = new SessionIndexService({ sessionsDir: dir, onIndexChanged: () => {} })
     const a = await service.list()
     const b = await service.list()
@@ -68,7 +80,7 @@ describe('SessionIndexService.list', () => {
   })
 
   it('reports renames through list after appendSessionInfo', async () => {
-    const file = await writeSession('projD', 's4.jsonl', sessionText('/d', 'id-4', [userLine('e1', null, 'orig')]))
+    const file = await writeSession('projD', 's4.jsonl', sessionText(await cwdFor('projD'), 'id-4', [userLine('e1', null, 'orig')]))
     const service = new SessionIndexService({ sessionsDir: dir, onIndexChanged: () => {} })
     await service.list()
 
@@ -95,7 +107,7 @@ describe('SessionIndexService.list', () => {
     const file = await writeSession(
       'projF',
       's6.jsonl',
-      sessionText('/f', 'id-6', [userLine('e1', null, 'birthtime task')]),
+      sessionText(await cwdFor('projF'), 'id-6', [userLine('e1', null, 'birthtime task')]),
       1_756_300_000_000
     )
     const service = new SessionIndexService({ sessionsDir: dir, onIndexChanged: () => {} })
@@ -121,7 +133,7 @@ describe('SessionIndexService.list', () => {
 
 describe('SessionIndexService polling + follow', () => {
   it('fires onIndexChanged when a file changes and pushes follow tail items', async () => {
-    const file = await writeSession('projE', 's5.jsonl', sessionText('/e', 'id-5', [userLine('e1', null, 'before')]))
+    const file = await writeSession('projE', 's5.jsonl', sessionText(await cwdFor('projE'), 'id-5', [userLine('e1', null, 'before')]))
     let changes = 0
     const updates: Array<{ file: string; items: Array<{ id: string }> }> = []
     const service = new SessionIndexService({
@@ -179,7 +191,7 @@ describe('SessionIndexService trace follow (ticket 37)', () => {
     })
 
   it('returns the initial payload, then pushes a rebuilt payload when the file grows', async () => {
-    const file = await writeSession('projF', 's6.jsonl', sessionText('/f', 'id-6', [userLine('e1', null, 'before')]))
+    const file = await writeSession('projF', 's6.jsonl', sessionText(await cwdFor('projF'), 'id-6', [userLine('e1', null, 'before')]))
     const updates: Array<{ file: string; calls: Array<{ messageId: string }> }> = []
     const service = new SessionIndexService({
       sessionsDir: dir,
@@ -222,8 +234,8 @@ describe('SessionIndexService trace follow (ticket 37)', () => {
   })
 
   it('tracks several trace tabs independently and stops only the requested file', async () => {
-    const fileA = await writeSession('projF', 'sa.jsonl', sessionText('/f', 'id-a', [userLine('ea', null, 'a')]))
-    const fileB = await writeSession('projF', 'sb.jsonl', sessionText('/f', 'id-b', [userLine('eb', null, 'b')]))
+    const fileA = await writeSession('projF', 'sa.jsonl', sessionText(await cwdFor('projF'), 'id-a', [userLine('ea', null, 'a')]))
+    const fileB = await writeSession('projF', 'sb.jsonl', sessionText(await cwdFor('projF'), 'id-b', [userLine('eb', null, 'b')]))
     const updates: string[] = []
     const service = new SessionIndexService({
       sessionsDir: dir,
@@ -259,7 +271,8 @@ describe('SessionIndexService trace follow (ticket 37)', () => {
   })
 
   it('a shrink (rewrite) still re-derives: the push reflects the new content', async () => {
-    const file = await writeSession('projF', 's7.jsonl', sessionText('/g', 'id-7', [userLine('g1', null, 'v1'), assistantLine('g2', 'g1', 'old answer', { input: 1, output: 1 })]))
+    const cwd = await cwdFor('projG')
+    const file = await writeSession('projF', 's7.jsonl', sessionText(cwd, 'id-7', [userLine('g1', null, 'v1'), assistantLine('g2', 'g1', 'old answer', { input: 1, output: 1 })]))
     const updates: Array<{ calls: Array<{ messageId: string }> }> = []
     const service = new SessionIndexService({
       sessionsDir: dir,
@@ -274,7 +287,7 @@ describe('SessionIndexService trace follow (ticket 37)', () => {
       // Rewrite with DIFFERENT, SHORTER content (truncation scenario) — a
       // same-size in-place rewrite is invisible to any size check, matching
       // the transcript tail's semantics.
-      await writeFile(file, sessionText('/g', 'id-7', [userLine('h1', null, 'v2'), assistantLine('h2', 'h1', 'new', { input: 2, output: 2 })]))
+      await writeFile(file, sessionText(cwd, 'id-7', [userLine('h1', null, 'v2'), assistantLine('h2', 'h1', 'new', { input: 2, output: 2 })]))
       await sleep(300)
       expect(updates.length).toBeGreaterThanOrEqual(1)
       expect(updates.at(-1)?.calls.map((c) => c.messageId)).toEqual(['h2'])
@@ -282,5 +295,79 @@ describe('SessionIndexService trace follow (ticket 37)', () => {
       service.stop()
     }
     service.stopTraceFollowing(file)
+  })
+})
+
+describe('SessionIndexService cwd-liveness filter (ticket 42)', () => {
+  it('drops sessions whose cwd is gone from the index while leaving their files untouched', async () => {
+    const deadCwd = await cwdFor('liveness-dead')
+    const file = await writeSession('livenessA', 'dead.jsonl', sessionText(deadCwd, 'id-dead', [userLine('e1', null, 'dead cwd task')]))
+    const keepCwd = await cwdFor('liveness-keep')
+    await writeSession('livenessA', 'keep.jsonl', sessionText(keepCwd, 'id-keep', [userLine('e1', null, 'alive task')]))
+
+    const service = new SessionIndexService({ sessionsDir: dir, onIndexChanged: () => {} })
+    const ids = (): Promise<string[]> => service.list().then((list) => list.map((s) => s.id))
+    expect(await ids()).toEqual(expect.arrayContaining(['id-dead', 'id-keep']))
+
+    await rm(deadCwd, { recursive: true, force: true })
+    expect(await ids()).toContain('id-keep')
+    expect(await ids()).not.toContain('id-dead')
+
+    // Zero file action: the filtered session's bytes are exactly as before —
+    // no delete, no move, no marker (the dead-cwd session's file is
+    // deliberately NOT reachable from the UI, but nothing on disk changed).
+    const text = await readFile(file, 'utf8')
+    expect(text).toContain('"id-dead"')
+
+    // The directory reappearing makes its sessions listable again.
+    await mkdir(deadCwd, { recursive: true })
+    expect(await ids()).toContain('id-dead')
+  })
+
+  it('exempts in-app live host sessions — a running session whose cwd died mid-run stays listed', async () => {
+    const cwd = await cwdFor('liveness-live')
+    await writeSession('livenessB', 'live.jsonl', sessionText(cwd, 'id-live', [userLine('e1', null, 'running task')]))
+
+    const exempt = new Set<string>(['id-live'])
+    const service = new SessionIndexService({
+      sessionsDir: dir,
+      onIndexChanged: () => {},
+      liveSessionIds: () => exempt
+    })
+    const ids = (): Promise<string[]> => service.list().then((list) => list.map((s) => s.id))
+    expect(await ids()).toContain('id-live')
+
+    await rm(cwd, { recursive: true, force: true })
+    expect(await ids()).toContain('id-live')
+
+    // Host gone (exemption lifted): the now unhosted dead-cwd session drops.
+    exempt.clear()
+    expect(await ids()).not.toContain('id-live')
+  })
+
+  it('fires onIndexChanged when a cwd appears or vanishes, even with no file change', async () => {
+    const cwd = await cwdFor('liveness-sig')
+    await writeSession('livenessC', 's.jsonl', sessionText(cwd, 'id-sig', [userLine('e1', null, 'sig task')]))
+
+    let changes = 0
+    const service = new SessionIndexService({ sessionsDir: dir, onIndexChanged: () => changes++ })
+    await service.list()
+    service.start(25)
+    const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+    try {
+      await sleep(120)
+      expect(changes).toBe(0) // steady state: nothing changed yet
+
+      await rm(cwd, { recursive: true, force: true })
+      await sleep(400)
+      expect(changes).toBeGreaterThanOrEqual(1)
+
+      // The liveness flip is a ONE-TIME signature change — steady again.
+      const after = changes
+      await sleep(300)
+      expect(changes).toBe(after)
+    } finally {
+      service.stop()
+    }
   })
 })

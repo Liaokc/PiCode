@@ -26,7 +26,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { app, type BrowserWindow } from 'electron'
 import { visualOutDir } from './visual'
-import { ensureVisualStore } from './visual-store'
+import { ensureVisualProjectDir, ensureVisualStore } from './visual-store'
 
 export function traceVisualEnabled(): boolean {
   return process.env['PICODE_VISUAL_TRACE'] === '1'
@@ -43,7 +43,9 @@ export function isolateTraceUserData(): void {
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
-const SESSION_CWD = '/Users/dev/projects/api-server'
+/** REAL tmpdir dir (ticket 42): the cwd-liveness filter drops sessions
+ * whose cwd is not a directory on disk; the basename keeps the group label. */
+const SESSION_CWD = (): string => ensureVisualProjectDir('api-server')
 /** The search probe's needle — matches exactly three fixture blocks. */
 const SEARCH_NEEDLE = 'rate limit'
 
@@ -55,7 +57,7 @@ const SEARCH_NEEDLE = 'rate limit'
 function writeTraceFixtureSession(dir: string): string {
   const t = new Date(Date.now() - 2 * 60 * 60 * 1_000).toISOString()
   const lines = [
-    JSON.stringify({ type: 'session', version: 3, id: 'trace-visual-1', timestamp: t, cwd: SESSION_CWD }),
+    JSON.stringify({ type: 'session', version: 3, id: 'trace-visual-1', timestamp: t, cwd: SESSION_CWD() }),
     JSON.stringify({
       type: 'message',
       id: 'tv-u1',

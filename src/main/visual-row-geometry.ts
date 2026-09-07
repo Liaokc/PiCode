@@ -42,7 +42,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { app, type BrowserWindow } from 'electron'
 import { visualOutDir } from './visual'
-import { ensureVisualStore, writeVisualSession } from './visual-store'
+import { ensureVisualProjectDir, ensureVisualStore, writeVisualSession } from './visual-store'
 
 export function rowGeometryVisualEnabled(): boolean {
   return process.env['PICODE_VISUAL_ROW_GEOMETRY'] === '1'
@@ -60,10 +60,11 @@ export function isolateRowGeometryUserData(): void {
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 /** The project group seeded with more than SHOW_FIRST (5) sessions so the
- * sidebar shows "Show more". Cwd string only — the file browser is not
- * exercised here, no real directory needed. */
-const GROUP_CWD = '/Users/dev/projects/api-server'
-const PIN_CWD = '/Users/dev/projects/web-app'
+ * sidebar shows "Show more". REAL tmpdir dirs (ticket 42): the cwd-liveness
+ * filter drops sessions whose cwd is not a directory on disk; basenames
+ * keep the 'api-server' / 'web-app' group labels. */
+const GROUP_CWD = (): string => ensureVisualProjectDir('api-server')
+const PIN_CWD = (): string => ensureVisualProjectDir('web-app')
 /** Ages (days) of the seven group sessions. Day 0 stays fresh on purpose:
  * its time reads "just now" — the LONGEST string the slot must hold — and
  * its live dot proves the fixed dot slot survives the new row grid. */
@@ -277,7 +278,7 @@ export function startRowGeometryVisualIfEnabled(getWindow: () => BrowserWindow |
   for (let i = 0; i < GROUP_AGES_DAYS.length; i++) {
     const file = writeVisualSession(store, {
       id: `row-geometry-g${i}`,
-      cwd: GROUP_CWD,
+      cwd: GROUP_CWD(),
       userText: `Calibrate the row grid sample task number ${i + 1}`
     })
     backdate(file, GROUP_AGES_DAYS[i])
@@ -285,7 +286,7 @@ export function startRowGeometryVisualIfEnabled(getWindow: () => BrowserWindow |
   }
   const pinFile = writeVisualSession(store, {
     id: 'row-geometry-pin',
-    cwd: PIN_CWD,
+    cwd: PIN_CWD(),
     userText: 'Pin this task to verify the pinned-row geometry'
   })
   backdate(pinFile, PIN_TARGET_AGE_DAYS)

@@ -5,7 +5,8 @@ import {
   makeSessionInfoLine,
   parseSessionLines,
   sniffSkillName,
-  summarizeSession
+  summarizeSession,
+  truncateTitle
 } from '../../src/shared/sessions/parse.ts'
 import type { RawSessionEntry } from '../../src/shared/sessions/parse.ts'
 import { UNFINISHED_TOOL_OUTPUT } from '../../src/shared/tool-format'
@@ -124,6 +125,68 @@ describe('summarizeSession', () => {
 
   it('is null for files without a session header', () => {
     expect(summarizeSession('{"type":"message","id":"x","parentId":null,"timestamp":"","message":{"role":"user","content":"hi"}}\n', '/s/f.jsonl', 1)).toBeNull()
+  })
+})
+
+describe('summarizeSession — title skips the skill-injection prologue (ticket 42)', () => {
+  /** The exact prologue the Pi SDK injects for a skill-driven turn
+   * (agent-session.js: `<skill name=… location=…>\n…body…\n</skill>`, the
+   * user's own text riding after a blank line). Worktree sessions used to
+   * title themselves `<skill name="implement" locat…`. */
+  const prologue = (name: string, body: string): string =>
+    `<skill name="${name}" location="/tmp/skills/${name}/SKILL.md">\nReferences are relative to /tmp/skills/${name}.\n\n${body}\n</skill>`
+
+  it('titles the session with the text AFTER the skill block', () => {
+    const raw = [
+      headerLine(),
+      messageLine('e1', null, 'user', text(`${prologue('implement', 'Implement the work described by the user.')}\n\n.scratch/picode-1-3/issues/42.md`))
+    ].join('\n')
+    expect(summarizeSession(raw, '/s/f.jsonl', 1)?.title).toBe('.scratch/picode-1-3/issues/42.md')
+  })
+
+  it('falls back to the skill name when the block is the whole message', () => {
+    const raw = [headerLine(), messageLine('e1', null, 'user', text(prologue('implement', 'body text')))].join('\n')
+    expect(summarizeSession(raw, '/s/f.jsonl', 1)?.title).toBe('implement')
+  })
+
+  it('falls back to the skill name when only whitespace follows the block', () => {
+    const raw = [headerLine(), messageLine('e1', null, 'user', text(`${prologue('review', 'body')}\n\n   `))].join('\n')
+    expect(summarizeSession(raw, '/s/f.jsonl', 1)?.title).toBe('review')
+  })
+
+  it('still truncates the post-skill text to the sidebar budget', () => {
+    const long = 'y'.repeat(140)
+    const raw = [headerLine(), messageLine('e1', null, 'user', text(`${prologue('implement', 'body')}\n\n${long}`))].join('\n')
+    expect(summarizeSession(raw, '/s/f.jsonl', 1)?.title).toBe(`${long.slice(0, 80)}…`)
+  })
+
+  it('leaves non-skill messages untouched — the prologue must be the exact SDK shape', () => {
+    const raw = [headerLine(), messageLine('e1', null, 'user', text('<skill name="implement" location="/tmp/x">never closed'))].join('\n')
+    expect(summarizeSession(raw, '/s/f.jsonl', 1)?.title).toBe('<skill name="implement" location="/tmp/x">never closed')
+    // A mid-message mention is not an invocation (the raw text passes
+    // through; titles are single-line via truncateTitle).
+    const mention = [headerLine(), messageLine('e1', null, 'user', text(`see ${prologue('x', 'b')} for context`))].join('\n')
+    expect(summarizeSession(mention, '/s/f.jsonl', 1)?.title).toBe(
+      truncateTitle(`see ${prologue('x', 'b')} for context`)
+    )
+  })
+
+  it('a session_info rename still wins over the skill-derived title', () => {
+    const raw = [
+      headerLine(),
+      messageLine('e1', null, 'user', text(`${prologue('implement', 'body')}\n\n.scratch/ticket.md`)),
+      entryLine('e2', 'e1', { type: 'session_info', name: 'Chosen name' })
+    ].join('\n')
+    expect(summarizeSession(raw, '/s/f.jsonl', 1)?.title).toBe('Chosen name')
+  })
+
+  it('a later plain user message does not rescue a skill-block-only first message', () => {
+    const raw = [
+      headerLine(),
+      messageLine('e1', null, 'user', text(prologue('implement', 'body'))),
+      messageLine('e2', 'e1', 'user', text('plain follow-up'))
+    ].join('\n')
+    expect(summarizeSession(raw, '/s/f.jsonl', 1)?.title).toBe('implement')
   })
 })
 

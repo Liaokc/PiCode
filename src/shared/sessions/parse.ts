@@ -100,6 +100,30 @@ function firstUserText(content: unknown): string | null {
   return null
 }
 
+/**
+ * The exact prologue shape the Pi SDK injects when a turn is driven by a
+ * skill — mirrors the SDK's own parseSkillBlock (agent-session.js):
+ * `<skill name="…" location="…">\n<body>\n</skill>` with the user's own
+ * text riding after a blank line. Anchored at BOTH ends: a mid-message
+ * mention is not an invocation, and a shape the SDK itself would not parse
+ * is shown as-is.
+ */
+const SKILL_BLOCK = /^<skill name="([^"]+)" location="([^"]+)">\n([\s\S]*?)\n<\/skill>(?:\n\n([\s\S]+))?$/
+
+/** Title text of the first user message (ticket 42): a skill-driven turn's
+ * message opens with the injected skill block — raw skill prose, never a
+ * readable title. When the message is the SDK's skill-block shape, the
+ * title is the text AFTER the block; when the block is the whole message
+ * (or nothing usable follows it), the skill name is the fallback. Anything
+ * else passes through untouched. Tested through summarizeSession — the
+ * title the sidebar actually shows. */
+function sessionTitleFromUserText(text: string): string {
+  const match = SKILL_BLOCK.exec(text)
+  if (match === null) return text
+  const userMessage = match[4]?.trim()
+  return userMessage !== undefined && userMessage !== '' ? userMessage : (match[1] ?? '')
+}
+
 /** Concatenated text parts of a message content value ('' when none).
  * Exported for the call-trace builder (ticket 36), which needs the same
  * projection of user-message content. */
@@ -136,7 +160,11 @@ export function summarizeSession(
     if (entry.type !== 'message') continue
     messageCount++
     if (firstUser === null && entry.message?.role === 'user') {
-      firstUser = firstUserText(entry.message.content)
+      // Ticket 42: skip a leading skill-injection prologue — the title is
+      // the user's own words (or the skill name when the turn carries
+      // nothing else), never the raw `<skill name=… locat…` text.
+      const raw = firstUserText(entry.message.content)
+      if (raw !== null) firstUser = sessionTitleFromUserText(raw)
     }
   }
   // Later session_info entries win (file order), matching SessionManager.getSessionName.

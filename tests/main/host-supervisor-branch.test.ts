@@ -8,6 +8,9 @@ import type { HostToParent } from '../../src/shared/contract'
  * crashed sessions keep their registry entry), it must degrade to
  * `branch_info(null)` — never the "no live host" error toast that real
  * commands rightly produce.
+ *
+ * The liveSessionIds projection (ticket 42) is the cwd-liveness filter's
+ * exemption source: no host, no exemption.
  */
 describe('HostSupervisor — get_branch without a live host', () => {
   it('answers branch_info(null) instead of session_command_error', () => {
@@ -30,5 +33,10 @@ describe('HostSupervisor — get_branch without a live host', () => {
     expect(events).toEqual([
       { type: 'session_event', sessionId: 'ghost', event: { type: 'session_command_error', message: 'This session has no live host — reopen it from the sidebar.' } }
     ])
+  })
+
+  it('reports no live session ids before any host announces (ticket 42)', () => {
+    const supervisor = new HostSupervisor({ hostEntryPath: '/unused', onHostEvent: () => {} })
+    expect(supervisor.liveSessionIds()).toEqual(new Set())
   })
 })

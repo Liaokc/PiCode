@@ -19,6 +19,7 @@ import {
   parseSessionLines,
   summarizeSession
 } from '../../shared/sessions/parse.ts'
+import { filterDeadCwd } from '../../shared/sessions/cwd-liveness.ts'
 import { buildTracePayload, type TracePayload } from '../../shared/sessions/trace.ts'
 import type { FollowUpdate, SessionSummary, TranscriptItem } from '../../shared/sessions/types'
 
@@ -33,6 +34,10 @@ export interface SessionIndexOptions {
   onTraceUpdate?: (payload: TracePayload) => void
   /** Poll interval; defaults to 2s. */
   pollMs?: number
+  /** Session ids with a live host in this app (ticket 42): exempt from the
+   * cwd-liveness filter — a running session whose cwd was deleted mid-run
+   * stays listed (registry/sidebar) instead of dropping out of the index. */
+  liveSessionIds?: () => ReadonlySet<string>
 }
 
 interface CacheState {
@@ -61,12 +66,22 @@ export class SessionIndexService {
   private readonly traceFollows = new Map<string, number>()
   private timer: NodeJS.Timeout | null = null
   private scanning = false
+  /** Last scan's injected stat results (cwd → is a live directory) and the
+   * exemption set (ticket 42) — both feed the index-changed signature so a
+   * directory appearing/vanishing (or a host starting/stopping) fires
+   * onIndexChanged even when no session file changed. */
+  private cwdAlive = new Map<string, boolean>()
+  private exemptIds = new Set<string>()
 
   constructor(opts: SessionIndexOptions) {
     this.opts = opts
   }
 
-  /** All sessions across all project dirs, unchanged files served from cache. */
+  /** All sessions across all project dirs, unchanged files served from cache.
+   * cwd-liveness filtered (ticket 42): sessions whose working directory is
+   * gone are physically unreachable (resume would crash the host) and never
+   * reach the sidebar or ⌘K; in-app live host sessions are exempt. Session
+   * files are never touched by any of this. */
   async list(): Promise<SessionSummary[]> {
     const paths = await this.listSessionFiles()
     const known = new Set(paths)
@@ -74,7 +89,10 @@ export class SessionIndexService {
     for (const file of [...this.cache.keys()]) {
       if (!known.has(file)) this.cache.delete(file)
     }
-    return [...this.cache.values()].map((state) => state.summary).sort((a, b) => b.modifiedAt - a.modifiedAt)
+    const all = [...this.cache.values()].map((state) => state.summary).sort((a, b) => b.modifiedAt - a.modifiedAt)
+    this.cwdAlive = await this.statCwds(all)
+    this.exemptIds = new Set(this.opts.liveSessionIds?.() ?? [])
+    return filterDeadCwd(all, (cwd) => this.cwdAlive.get(cwd) === true, this.exemptIds)
   }
 
   /**
@@ -206,7 +224,24 @@ export class SessionIndexService {
     for (const [file, state] of [...this.cache.entries()].sort()) {
       signature += `${file}:${state.mtimeMs}:${state.size};`
     }
+    // cwd liveness + exemptions are part of the index's identity (ticket 42):
+    // a directory appearing/vanishing (or a host binding coming/going) must
+    // fire onIndexChanged even when no session file changed.
+    for (const [cwd, alive] of [...this.cwdAlive.entries()].sort()) {
+      signature += `${cwd}:${alive ? '1' : '0'};`
+    }
+    for (const id of [...this.exemptIds].sort()) {
+      signature += `x:${id};`
+    }
     return signature
+  }
+
+  /** One injected stat per unique cwd (deduped — many sessions share a
+   * project). A cwd counts as alive only when it is a DIRECTORY on disk. */
+  private async statCwds(sessions: readonly SessionSummary[]): Promise<Map<string, boolean>> {
+    const unique = new Set(sessions.map((session) => session.cwd))
+    const entries = await Promise.all([...unique].map(async (cwd) => [cwd, await directoryExists(cwd)] as const))
+    return new Map(entries)
   }
 
   /** Deliver any newly appended transcript items for the followed file. */
@@ -330,4 +365,14 @@ export class SessionIndexService {
 
 async function readFileText(file: string): Promise<string> {
   return readFile(file, 'utf8')
+}
+
+/** The ticket-42 liveness fact: the cwd must be a directory on disk (a file
+ * at the path cannot host a session either). Any stat failure reads as dead. */
+async function directoryExists(cwd: string): Promise<boolean> {
+  try {
+    return (await stat(cwd)).isDirectory()
+  } catch {
+    return false
+  }
 }
