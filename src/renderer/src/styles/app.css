@@ -4902,6 +4902,14 @@ button.preview-crumb:hover {
   right: 0;
 }
 
+/* Ticket 41: the thinking menu's rows are single short labels — the 380px
+   popover floor (sized for the access menu's descriptions) renders it
+   mostly empty. The thinking card shrinks to its content instead. */
+.cmp-popover-thinking {
+  width: max-content;
+  min-width: 140px;
+}
+
 .cmp-menu-list {
   max-height: 320px;
   overflow-y: auto;
