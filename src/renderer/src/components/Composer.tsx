@@ -19,6 +19,14 @@ export interface ComposerChat {
   availableLevels: ThinkingLevel[]
   providers: ProviderModels[]
   slashCommands: SlashCommandItem[]
+  /** Ticket 41 (new-task empty state): the displayed chip value is Pi's own
+   * fallback (not a user preference) — the chip tags it "default". In-session
+   * slices never set these: every contract-pushed value is the session's own. */
+  modelIsDefault?: boolean
+  thinkingIsDefault?: boolean
+  /** Styled hint for the model menu when the catalog is empty (ticket 41:
+   * the blank dropdown is replaced everywhere a menu finds no providers). */
+  modelMenuHint?: string | null
 }
 
 /** Everything the composer can do to the rest of the app. */
@@ -347,7 +355,13 @@ export default function Composer({
         <AccessMenu current={chat.accessMode} onPick={onSetAccessMode} onClose={() => setMenu(null)} />
       )}
       {menu === 'model' && (
-        <ModelMenu providers={chat.providers} current={chat.model} onPick={onSetModel} onClose={() => setMenu(null)} />
+        <ModelMenu
+          providers={chat.providers}
+          current={chat.model}
+          emptyHint={chat.modelMenuHint ?? undefined}
+          onPick={onSetModel}
+          onClose={() => setMenu(null)}
+        />
       )}
       {menu === 'thinking' && (
         <ThinkingMenu
@@ -444,6 +458,9 @@ export default function Composer({
             ) : (
               <span>{density === 'compact' ? modelName ?? modelFullLabel : modelFullLabel}</span>
             )}
+            {density === 'full' && chat.modelIsDefault && chat.model !== null && (
+              <span className="cmp-chip-default">default</span>
+            )}
             {density !== 'minimal' && <span className="cmp-caret">⌄</span>}
           </button>
         </Tooltip>
@@ -457,6 +474,9 @@ export default function Composer({
           >
             <GaugeIcon />
             {density === 'full' && <span>{chat.thinkingLevel ? thinkingLabel(chat.thinkingLevel) : 'Thinking'}</span>}
+            {density === 'full' && chat.thinkingIsDefault && chat.thinkingLevel !== null && (
+              <span className="cmp-chip-default">default</span>
+            )}
             {density === 'compact' && (
               <span
                 className={thinkingBarShimmers(chat.thinkingLevel) ? 'cmp-think-bar cmp-think-shimmer' : 'cmp-think-bar'}

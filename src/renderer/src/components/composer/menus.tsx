@@ -24,7 +24,8 @@ export function ComposerPopover({
   align = 'left',
   onClose,
   label,
-  captureKeys = false
+  captureKeys = false,
+  className
 }: {
   children: JSX.Element
   align?: 'left' | 'right'
@@ -32,6 +33,8 @@ export function ComposerPopover({
   label: string
   /** Steal focus so chip-opened menus own the keyboard directly. */
   captureKeys?: boolean
+  /** Extra class on the popover root (e.g. the thinking menu's narrow card). */
+  className?: string
 }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
 
@@ -57,7 +60,7 @@ export function ComposerPopover({
   return (
     <div
       ref={ref}
-      className={`cmp-popover cmp-popover-${align}`}
+      className={`cmp-popover cmp-popover-${align}${className ? ` ${className}` : ''}`}
       role="dialog"
       aria-label={label}
       tabIndex={captureKeys ? -1 : undefined}
@@ -187,7 +190,7 @@ export function ThinkingMenu({
   }
 
   return (
-    <ComposerPopover label="Thinking Level" align="right" onClose={onClose} captureKeys>
+    <ComposerPopover label="Thinking Level" align="right" onClose={onClose} captureKeys className="cmp-popover-thinking">
       <div
         className="cmp-menu-list"
         role="listbox"
@@ -211,15 +214,20 @@ export function ThinkingMenu({
   )
 }
 
-/** Provider → model cascade (screenshot 07): providers left, models right. */
+/** Provider → model cascade (screenshot 07): providers left, models right.
+ * Ticket 41: an empty catalog renders a styled hint instead of a blank
+ * panel — the blank dropdown is gone everywhere (the new-task empty state
+ * passes its specific hint; other callers get the generic one). */
 export function ModelMenu({
   providers,
   current,
+  emptyHint,
   onPick,
   onClose
 }: {
   providers: { providerId: string; name: string; models: { providerId: string; modelId: string; name: string }[] }[]
   current: { providerId: string; modelId: string } | null
+  emptyHint?: string
   onPick: (providerId: string, modelId: string) => void
   onClose: () => void
 }): JSX.Element {
@@ -246,6 +254,16 @@ export function ModelMenu({
     if (!model) return
     onPick(model.providerId, model.modelId)
     onClose()
+  }
+
+  if (providers.length === 0) {
+    return (
+      <ComposerPopover label="Select model" align="right" onClose={onClose} captureKeys>
+        <div className="cmp-menu-empty" role="status">
+          {emptyHint ?? 'No models available'}
+        </div>
+      </ComposerPopover>
+    )
   }
 
   return (

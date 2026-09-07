@@ -8,6 +8,8 @@
  * Pure health derivation + a structural guard for the probe's IPC report.
  */
 
+import type { ThinkingLevel } from './contract.ts'
+
 export type AuthMethod = 'api_key' | 'oauth'
 
 /** One provider row of the read-only sign-in status list. */
@@ -53,11 +55,20 @@ export interface AuthProbeReport {
   error: string | null
 }
 
-/** One row of the model catalog the probe reports. */
+/**
+ * One row of the model catalog the probe reports.
+ *
+ * Ticket 41 (additive, operator-approved): `thinkingLevels` carries the
+ * levels the model actually supports (pi-ai `Model.reasoning` +
+ * `thinkingLevelMap` semantics — null mappings are unsupported), so the
+ * new-task empty state can filter its thinking menu without a host. Reports
+ * from older probes omit the field; consumers fall back to the full seven.
+ */
 export interface ModelCatalogEntry {
   providerId: string
   modelId: string
   name: string
+  thinkingLevels?: ThinkingLevel[]
 }
 
 function isProviderStatus(value: unknown): value is ProviderAuthStatus {
@@ -72,13 +83,20 @@ function isProviderStatus(value: unknown): value is ProviderAuthStatus {
   return idOk && countOk && authTypeOk && sourceOk && expiresOk
 }
 
+const THINKING_LEVEL_SET = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
+
 function isModelCatalogEntry(value: unknown): value is ModelCatalogEntry {
   if (typeof value !== 'object' || value === null) return false
   const record = value as Record<string, unknown>
+  const levels = record['thinkingLevels']
+  const levelsOk =
+    levels === undefined ||
+    (Array.isArray(levels) && levels.every((level) => typeof level === 'string' && THINKING_LEVEL_SET.has(level)))
   return (
     typeof record['providerId'] === 'string' &&
     typeof record['modelId'] === 'string' &&
-    typeof record['name'] === 'string'
+    typeof record['name'] === 'string' &&
+    levelsOk
   )
 }
 

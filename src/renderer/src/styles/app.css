@@ -1185,6 +1185,18 @@ kbd {
   white-space: nowrap;
 }
 
+/* Ticket 41: the "default" tag on a chip showing Pi's own fallback (the
+   chained default in the new-task empty state) — full density only, dimmed
+   so it reads as provenance, not as part of the value. */
+.cmp-chip-default {
+  font-size: 10.5px;
+  line-height: 1;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px 6px;
+}
+
 /* The green thinking-strength bar (ZCode parity): bar length = the level's
    position in the model's own level list; empty = thinking off. Same green
    as the liveness dot. */
@@ -4888,6 +4900,14 @@ button.preview-crumb:hover {
 .cmp-popover-right {
   left: auto;
   right: 0;
+}
+
+/* Ticket 41: the thinking menu's rows are single short labels — the 380px
+   popover floor (sized for the access menu's descriptions) renders it
+   mostly empty. The thinking card shrinks to its content instead. */
+.cmp-popover-thinking {
+  width: max-content;
+  min-width: 140px;
 }
 
 .cmp-menu-list {
