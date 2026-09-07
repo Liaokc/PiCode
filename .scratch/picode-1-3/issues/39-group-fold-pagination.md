@@ -6,7 +6,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] 组行点击折叠/展开；展开恢复折叠前形状（步进位置不丢）
 - [x] Show more 每次 +5；全展开转 "Show less"；Show less 一次回初始 5 条
@@ -19,3 +19,4 @@
 - 2026-09-03 (requirements intake): 建票（spec R5）。形状机同型先例 panel-model；Sidebar 本批唯一写者。波次：W1。
 - 2026-09-03 (implementation start): claimed by worktree t39-group-fold (W1, Sidebar 唯一写者)。计划：Seam-1 fold-model 表驱动 TDD → Sidebar 组头区重写（删 caret）→ app.css 组头段清理 → electron smoke 折叠/分页点击序 + 重启回默认 → visual 帧核验。
 - 2026-09-03 (implementation done): **bc16d74** on t39-group-fold（未自行 merge——请操作者执行 `bash scripts/merge-ticket.sh 39`）。全验收项落：fold-model.ts 纯形状机 + 42 表驱动测试；Sidebar 组头区重写（caret/SHOW_FIRST 删净，TaskItem/工具区零接触）；app.css 删 .sb-caret 段；electron smoke 新 ticket-39 舞台 8 步全过（点击序 + reload 重启回默认，全套 SMOKE done 77 ok）；visual:fold 六帧（f1–f6，逐帧状态断言）+ 基础 harness 退位；typecheck / lint / test 928 全绿；CONTEXT.md 入「分组折叠（Group Fold）」词条（intake 措辞 + Avoid）。备注：组的会话 jsonl 须写进会话库（PICODE_SESSION_DIR）而非 cwd——首跑已修。
+- 2026-09-04 (merge): merged as **7f04cbb**（--no-ff，16 文件 +701/−38，实现提交重放为 9e1acfd）。验收口径：操作者目检后明说「已验收」（与 40 同批）。冲突处置：**例行级，双方保留**——t39 未预 rebase 就撞上 38 的合并，4 文件各 1 处平行追加（package.json visual:access/visual:fold 双行；index.ts 双 harness 启动调用；smoke.ts 双文档段落；visual.ts 双 early-return），按合并时序 38 在前逐一双方保留，无语义级对撞。main 终态审计：typecheck + vitest **937/937**（70 文件，+42）；CONTEXT 分组折叠词条 / fold-model 纯函数套件 / 六帧 f1–f6 幸存；38 的菜单段与 Call Trace 词条完好；app.css −8 行为 39 专属区段内删 .sb-caret（caret 已随票退役），非违规。解锁：无直接后续（43 仍阻于 42）。
