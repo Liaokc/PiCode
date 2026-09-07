@@ -207,12 +207,15 @@ export default function App(): JSX.Element {
       .get()
       .then((snapshot) => {
         if (cancelled) return
-        setSettings({
+        // Ticket 41: preserve any in-flight/landed auth-probe state — the
+        // empty state now triggers the scan at boot, and this snapshot (a
+        // separate query) must not reset it.
+        setSettings((prev) => ({
           preferences: snapshot.preferences,
           lastUsedDirectory: snapshot.lastUsedDirectory,
-          auth: null,
-          authScanning: false
-        })
+          auth: prev.auth,
+          authScanning: prev.authScanning
+        }))
         // Ticket 29: restore the persisted pane widths exactly once at boot,
         // through the RAW dispatches — seeding must not re-persist.
         dispatch({ type: 'set-sidebar-width', width: snapshot.preferences.sidebarWidth })

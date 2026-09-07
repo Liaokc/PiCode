@@ -206,6 +206,11 @@ app.whenReady().then(() => {
   })
 
   ipcMain.handle('chat:pick-directory', async (event) => {
+    // Smoke (ticket 41 stage): the empty-state send creates the session from
+    // the composer, and no human is present for the folder picker — answer
+    // with the smoke working directory, exactly what supervisor.createSession
+    // would have used.
+    if (smokeEnabled()) return process.env['PICODE_SMOKE_CWD'] || tmpdir()
     const win = BrowserWindow.fromWebContents(event.sender)
     const result = await dialog.showOpenDialog(win as BrowserWindow, {
       title: 'Choose a working directory',

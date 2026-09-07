@@ -81,7 +81,7 @@ import { existsSync, mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } 
 import { app, type BrowserWindow } from 'electron'
 import type { HostSupervisor } from './host-supervisor'
 import { focusSessionFromNotification, type ApprovalNotice } from './notifications'
-import type { HostToParent, SessionScopedEvent } from '../shared/contract'
+import { ALL_THINKING_LEVELS, type HostToParent, type SessionScopedEvent } from '../shared/contract'
 import { FOLLOW_TAKEOVER_REJECTED_TOAST } from '../shared/sessions/group'
 import type { SessionContextActionService } from './sessions/context-actions'
 
@@ -96,6 +96,46 @@ const BG_APPROVAL_MARKER = 'PICODE_BG_APPROVAL'
 const BG_REMEMBER_MARKER = 'PICODE_BG_REMEMBERED'
 const BG_DENY_MARKER = 'PICODE_BG_DENY'
 const BG_DENY_REASON = 'No new files today.'
+
+// ---- composer DOM drivers (shared by the ticket-41 and ticket-38 stages):
+// React-controlled textarea — set the value through the native setter so
+// onChange fires, like the visual harness does. ----
+const composerTypeJs = (text: string): string => `(() => {
+  const ta = document.querySelector('.composer-input')
+  if (!(ta instanceof HTMLTextAreaElement)) return false
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+  setter.call(ta, ${JSON.stringify(text)})
+  ta.dispatchEvent(new Event('input', { bubbles: true }))
+  ta.focus()
+  return true
+})()`
+const composerKeyJs = (key: string): string => `(() => {
+  const ta = document.querySelector('.composer-input')
+  if (!(ta instanceof HTMLTextAreaElement)) return false
+  ta.dispatchEvent(new KeyboardEvent('keydown', { key: '${key}', bubbles: true, cancelable: true }))
+  return true
+})()`
+const composerClearJs = `(() => {
+  const ta = document.querySelector('.composer-input')
+  if (!(ta instanceof HTMLTextAreaElement)) return false
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+  setter.call(ta, '')
+  ta.dispatchEvent(new Event('input', { bubbles: true }))
+  return true
+})()`
+
+/** Click the composer chip whose aria-label starts with the given prefix
+ * (the model/thinking chips are uniquely addressable that way). */
+const composerChipClickJs = (ariaPrefix: string): string => `(() => {
+  const chip = document.querySelector('.cmp-chip[aria-label^=${JSON.stringify(ariaPrefix)}]')
+  if (!(chip instanceof HTMLElement)) return false
+  chip.click()
+  return true
+})()`
+
+/** The aria-label of the chip whose aria-label starts with the prefix ('' = absent). */
+const composerChipLabelJs = (ariaPrefix: string): string =>
+  `document.querySelector('.cmp-chip[aria-label^=${JSON.stringify(ariaPrefix)}]')?.getAttribute('aria-label') ?? ''`
 
 export function smokeEnabled(): boolean {
   return process.env['PICODE_SMOKE'] === '1'
@@ -200,16 +240,178 @@ export function startSmokeIfEnabled(
   async function main(): Promise<void> {
     log('start', `cwd=${cwd} pid=${process.pid}`)
 
-    // Round 1: stream a few deltas, then abort mid-flight.
-    supervisor.createSession(cwd)
-    const created = (await waitFor((e) => e.type === 'session_created', 'session_created')) as Extract<
+    // ---- ticket 41: the new-task empty state — the model menu lists the
+    // REAL auth-probe catalog, the thinking menu offers all seven levels,
+    // the chip shows the chained default (Pi's fallback, tagged), and a
+    // pick made here rides create_session's defaults. Round 1 is created BY
+    // the renderer's empty-state send; the first prompt still rides the
+    // pending chain. ----
+    log('empty_state_start')
+    // The smoke's main() starts before the window exists (index.ts wires the
+    // hooks during app setup, creates the window on whenReady) — poll for it.
+    let smokeWin: BrowserWindow | null = null
+    for (let waited = 0; waited < 30_000 && smokeWin === null; waited += 100) {
+      smokeWin = getWindow()
+      if (smokeWin === null) await new Promise((r) => setTimeout(r, 100))
+    }
+    if (smokeWin === null) fail('smoke window missing for the empty-state stage')
+    const win = smokeWin
+    let pickedModelId: string | null = null
+    {
+      const modelPrefix = 'Model:'
+
+      // ① The chained default reaches the chip once the probe catalog lands:
+      // a real model (never the dead placeholder), tagged "default" — the
+      // smoke's isolated settings carry no PiCode preference, so Pi's own
+      // fallback shows.
+      let chipLabel = ''
+      for (let waited = 0; waited < 60_000; waited += 200) {
+        chipLabel = (await win.webContents.executeJavaScript(composerChipLabelJs(modelPrefix)).catch(() => '')) as string
+        if (chipLabel.startsWith(modelPrefix)) break
+        await new Promise((r) => setTimeout(r, 200))
+      }
+      if (!chipLabel.startsWith(modelPrefix)) fail('the empty-state model chip never showed the chained default')
+      const tagged = (await win.webContents.executeJavaScript(
+        `document.querySelector('.cmp-chip[aria-label^="${modelPrefix}"] .cmp-chip-default')?.textContent ?? ''`
+      ).catch(() => '')) as string
+      if (tagged !== 'default') fail('the chained-default chip does not carry the default tag')
+      log('empty_state_chip_default_ok', chipLabel)
+
+      // ② The model menu lists the real catalog (the probe ran against this
+      // machine's Pi registry): at least one provider and one model row.
+      if (!(await win.webContents.executeJavaScript(composerChipClickJs(modelPrefix)).catch(() => false))) {
+        fail('the model chip is missing for the empty-state stage')
+      }
+      let providerRows = 0
+      let modelRows: string[] = []
+      for (let waited = 0; waited < 5_000; waited += 100) {
+        const cols = (await win.webContents.executeJavaScript(
+          `[...document.querySelectorAll('.cmp-popover .cmp-cascade-col')].map((col) => [...col.querySelectorAll('.cmp-menu-title')].map((n) => n.textContent ?? ''))`
+        ).catch(() => [])) as string[][]
+        if (cols.length >= 2) {
+          providerRows = cols[0]!.length
+          modelRows = cols[1]!
+          if (providerRows > 0 && modelRows.length > 0) break
+        }
+        await new Promise((r) => setTimeout(r, 100))
+      }
+      if (providerRows === 0) fail('the empty-state model menu lists no providers')
+      if (modelRows.length === 0) fail('the empty-state model menu lists no models')
+      log('empty_state_menu_catalog_ok', `providers=${providerRows} models=${modelRows.length}`)
+
+      // ③ Pick a model from the menu. With ≥2 models in the active provider
+      // (the chained default's own, so credentials exist) pick the second
+      // row — a REAL override — and wait for the chip to change; otherwise
+      // re-pick the check-marked default row. The chip label then carries
+      // the picked model id.
+      const pickRow = (index: number | 'checked'): string =>
+        `(() => {
+          const cols = document.querySelectorAll('.cmp-popover .cmp-cascade-col')
+          const rows = [...(cols[1]?.querySelectorAll('.cmp-menu-row') ?? [])]
+          const row = ${index === 'checked' ? 'rows.find((r) => r.querySelector(\'.cmp-menu-check\'))' : `rows[${index}]`}
+          if (!(row instanceof HTMLElement)) return false
+          row.click()
+          return true
+        })()`
+      const override = modelRows.length >= 2
+      const pickJs = override ? pickRow(1) : pickRow('checked')
+      if (!(await win.webContents.executeJavaScript(pickJs).catch(() => false))) {
+        fail('the model menu never offered a pickable row')
+      }
+      let afterLabel = chipLabel
+      for (let waited = 0; waited < 5_000 && override; waited += 100) {
+        afterLabel = (await win.webContents.executeJavaScript(composerChipLabelJs(modelPrefix)).catch(() => '')) as string
+        if (afterLabel !== chipLabel) break
+        await new Promise((r) => setTimeout(r, 100))
+      }
+      if (override && afterLabel === chipLabel) fail('the model pick never changed the chip')
+      if (!afterLabel.startsWith(modelPrefix)) fail('the model pick lost the chip label')
+      pickedModelId = afterLabel.slice(modelPrefix.length).trim()
+      if (pickedModelId === '') fail('the picked model id is empty')
+      log('empty_state_model_pick_ok', `model=${pickedModelId}${override ? ' (override)' : ' (default re-pick)'}`)
+
+      // ④ The thinking menu: all seven Pi levels (host-free constant), and
+      // an explicit pick — Off, available for every model — rides too.
+      if (!(await win.webContents.executeJavaScript(composerChipClickJs('Thinking:')).catch(() => false))) {
+        fail('the thinking chip is missing for the empty-state stage')
+      }
+      let levelRows: string[] = []
+      for (let waited = 0; waited < 5_000; waited += 100) {
+        levelRows = (await win.webContents.executeJavaScript(
+          `[...document.querySelectorAll('.cmp-popover .cmp-menu-list .cmp-menu-row .cmp-menu-title')].map((n) => n.textContent ?? '')`
+        ).catch(() => [])) as string[]
+        if (levelRows.length > 0) break
+        await new Promise((r) => setTimeout(r, 100))
+      }
+      if (levelRows.length !== 7) {
+        fail(`the empty-state thinking menu lists ${levelRows.length} levels, expected 7`)
+      }
+      log('empty_state_thinking_levels_ok', levelRows.join(' '))
+      const pickOff = `(() => {
+        const rows = [...document.querySelectorAll('.cmp-popover .cmp-menu-list .cmp-menu-row')]
+        const row = rows.find((r) => (r.querySelector('.cmp-menu-title')?.textContent ?? '') === 'Off')
+        if (!(row instanceof HTMLElement)) return false
+        row.click()
+        return true
+      })()`
+      if (!(await win.webContents.executeJavaScript(pickOff).catch(() => false))) {
+        fail('the thinking menu never offered Off')
+      }
+      let thinkingLabel = ''
+      for (let waited = 0; waited < 5_000; waited += 100) {
+        thinkingLabel = (await win.webContents.executeJavaScript(composerChipLabelJs('Thinking:')).catch(() => '')) as string
+        if (thinkingLabel === 'Thinking: Off') break
+        await new Promise((r) => setTimeout(r, 100))
+      }
+      if (thinkingLabel !== 'Thinking: Off') fail('the empty-state thinking pick never reached the chip')
+      log('empty_state_thinking_pick_ok')
+
+      // ⑤ Send from the empty state: the session is created from HERE, with
+      // the picks riding the defaults and the prompt riding the pending
+      // chain. The smoke's pick-directory short-circuit answers the folder
+      // picker (no chip project exists in the isolated store).
+      if (!(await win.webContents.executeJavaScript(composerTypeJs('Count slowly from one to twenty, one number per sentence.')).catch(() => false))) {
+        fail('composer textarea missing for the empty-state send')
+      }
+      await new Promise((r) => setTimeout(r, 300))
+      await win.webContents.executeJavaScript(composerKeyJs('Enter'))
+    }
+
+    // The empty-state send created the session; assert the pick arrived.
+    // All waiters go up BEFORE anything resolves: composer_state follows
+    // session_created back-to-back from the same host tick (announce), so a
+    // late waiter would miss it.
+    const agentStarted = waitFor((e) => e.type === 'agent_start', 'agent_start (pending prompt)')
+    const composerState = waitFor((e) => e.type === 'composer_state', 'composer_state (empty-state defaults)')
+    const created = (await waitFor((e) => e.type === 'session_created', 'session_created (empty-state send)')) as Extract<
       Scoped,
       { type: 'session_created' }
     >
     log('session_created', `sessionId=${created.sessionId} model=${created.model ?? '?'}`)
+    if (created.model === null || created.model !== pickedModelId) {
+      fail(`the empty-state model pick did not ride into the session (${created.model ?? 'null'} ≠ ${pickedModelId ?? '?'})`)
+    }
+    log('empty_state_pick_rides_ok', `model=${created.model}`)
+    const composer = (await composerState) as Extract<Scoped, { type: 'composer_state' }>
+    if (composer.thinkingLevel === null) fail('the session opened with no thinking level')
+    // The pick rides; the SDK then clamps the request to the model's OWN
+    // levels (e.g. a model whose map sends 'off' → null cannot turn thinking
+    // off, and opens at its lowest supported level instead). Expected value:
+    // the request when supported, else the lowest supported level.
+    const clamped =
+      composer.availableLevels.includes('off')
+        ? 'off'
+        : ALL_THINKING_LEVELS.find((level) => composer.availableLevels.includes(level))
+    if (composer.thinkingLevel !== clamped) {
+      fail(
+        `the empty-state thinking pick did not ride into the session (${String(
+          composer.thinkingLevel
+        )} ≠ clamp(off) = ${String(clamped)})`
+      )
+    }
+    log('empty_state_thinking_rides_ok', `thinking=${String(composer.thinkingLevel)} (clamped from off)`)
 
-    const agentStarted = waitFor((e) => e.type === 'agent_start', 'agent_start')
-    supervisor.handleParentCommand({ type: 'prompt', text: 'Count slowly from one to twenty, one number per sentence.' })
+    // Round 1: the pending prompt starts the run; abort mid-flight.
     await agentStarted
     log('agent_start')
 
@@ -245,37 +447,12 @@ export function startSmokeIfEnabled(
     // with ZERO session traffic (no user_message, no agent round) ----
     log('slash_gate_start')
     await withWindow(getWindow, async (win) => {
-      // React-controlled textarea: set the value through the native setter
-      // so onChange fires, like the visual harness does.
-      const typeJs = (text: string): string => `(() => {
-        const ta = document.querySelector('.composer-input')
-        if (!(ta instanceof HTMLTextAreaElement)) return false
-        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
-        setter.call(ta, ${JSON.stringify(text)})
-        ta.dispatchEvent(new Event('input', { bubbles: true }))
-        ta.focus()
-        return true
-      })()`
-      const keyJs = (key: string): string => `(() => {
-        const ta = document.querySelector('.composer-input')
-        if (!(ta instanceof HTMLTextAreaElement)) return false
-        ta.dispatchEvent(new KeyboardEvent('keydown', { key: '${key}', bubbles: true, cancelable: true }))
-        return true
-      })()`
-      const clearJs = `(() => {
-        const ta = document.querySelector('.composer-input')
-        if (!(ta instanceof HTMLTextAreaElement)) return false
-        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
-        setter.call(ta, '')
-        ta.dispatchEvent(new Event('input', { bubbles: true }))
-        return true
-      })()`
       /** Toast line present? */
       const toastProbe = (needle: string): string =>
         `[...document.querySelectorAll('.toast-message')].some((n) => (n.textContent ?? '').includes(${JSON.stringify(needle)}))`
 
       // ① The `/` menu: the six retired built-ins are gone, /compact stays.
-      if (!(await win.webContents.executeJavaScript(typeJs('/')).catch(() => false))) {
+      if (!(await win.webContents.executeJavaScript(composerTypeJs('/')).catch(() => false))) {
         fail('composer textarea missing for the slash-gate stage')
       }
       let menuNames: string[] = []
@@ -304,13 +481,13 @@ export function startSmokeIfEnabled(
       }
       observers.push(onLeak)
       const gateCase = async (typed: string, needle: string): Promise<void> => {
-        await win.webContents.executeJavaScript(keyJs('Escape'))
-        if (!(await win.webContents.executeJavaScript(typeJs(typed)).catch(() => false))) {
+        await win.webContents.executeJavaScript(composerKeyJs('Escape'))
+        if (!(await win.webContents.executeJavaScript(composerTypeJs(typed)).catch(() => false))) {
           fail(`composer textarea missing while typing ${typed}`)
         }
         await new Promise((r) => setTimeout(r, 300))
-        await win.webContents.executeJavaScript(keyJs('Escape'))
-        await win.webContents.executeJavaScript(keyJs('Enter'))
+        await win.webContents.executeJavaScript(composerKeyJs('Escape'))
+        await win.webContents.executeJavaScript(composerKeyJs('Enter'))
         const toasted = await waitForProbe(win, toastProbe(needle), 5_000)
         if (!toasted) fail(`typing ${typed} never raised the pointer toast (${needle})`)
       }
@@ -327,7 +504,7 @@ export function startSmokeIfEnabled(
       log('slash_gate_zero_send_ok')
 
       // Leave the composer clean for the later stages.
-      await win.webContents.executeJavaScript(clearJs)
+      await win.webContents.executeJavaScript(composerClearJs)
     })
     log('slash_gate_done')
 
@@ -1308,11 +1485,12 @@ export function startSmokeIfEnabled(
         })
       })()`
       // The open/close transition takes 200ms — wait for every pane's real
-      // size to settle on its projected target before asserting.
+      // size AND opacity to settle on their end states before asserting
+      // (subpixel size can land a frame before the opacity fade ends).
       const motionSettled = await waitForProbe(
         win,
         `(() => { const m = JSON.parse((${motionProbe}));
-          return [m.sidebar, m.panel, m.dock].every((p) => p !== null && Math.abs(p.size - p.target) < 0.5) })()`,
+          return [m.sidebar, m.panel, m.dock].every((p) => p !== null && Math.abs(p.size - p.target) < 0.5 && (p.closed ? p.opacity === 0 : p.opacity === 1)) })()`,
         5_000
       )
       if (!motionSettled) fail('ticket 40: pane sizes never settled on their projected targets after the four-key toggles')
