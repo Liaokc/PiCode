@@ -6,7 +6,7 @@
 
 **Blocked by:** 42（parse 同文件双写者——标题推导与节点预览同文件，已实证）。
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] 显示行序列 = SessionTreePayload 的纯函数推导：类型标签着色 / 工具行 / 噪音滤除 / 叶路径高亮
 - [x] 工具调用入树：`[名称: 参数摘要]` 等宽行（树数据源节点预览扩展）
@@ -27,3 +27,4 @@
   - electron smoke：smoke.ts 新增 ticket-43 stage——种子分支会话 → History 面板（形态断言）→ 点旁支行跳转（session_tree leafId + current 跟随）→ 行尾 fork（session_created 新文件、原文件分毫不动）；`npm run smoke` 全套 6 阶段 **ALL GREEN**。
   - ⚠️ 计划外但必要：`scripts/smoke/run-all.sh` 的隔离 store 改绝对路径——BSD mktemp 对无斜杠模板在 **CWD 建目录且打印相对路径**（拼 $TMPDIR 又打印双斜杠），host 按自身 cwd 解析成绝对路径后 smoke 自家的 sessionFile 匹配器永远失配（ticket-42 stage 必超时；main 上同样必现，与本次改动无关）。另 noteEvent 失败转储补 sessionFile 详情（诊断该问题的关键）。两处均不触 IPC 契约，请操作者知悉。
   - 合并请走：`bash scripts/merge-ticket.sh 43`（本会话不自行 merge）。
+- 2026-09-07 (merge): merged as **8542a6d**（--no-ff，15 文件 +1235/−75，实现 64a89ec 单提交重放，tracker 判重丢弃）。验收口径：操作者目检后明说「已验收」（与 44 同批）。冲突处置：无——43 会话自行 rebase 到 4819f2a，零代差零冲突。main 终态审计：typecheck + vitest **1002/1002**（74 文件，+15）；tree-view 纯模型 + 294 行套件在位；parse.ts 接棒 42 的写者位（sessionTitleFromUserText/filterDeadCwd 调用完好）；tr43-tree + 票 captures 帧入库；38–42 全部接缝幸存；无冲突标记。解锁：无（45 仍阻于 44）。进度 **9/10** → 待 44。
