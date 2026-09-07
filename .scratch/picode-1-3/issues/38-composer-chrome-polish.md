@@ -4,16 +4,17 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
-- [ ] 访问菜单三行：模式名与描述有明显间距；盾牌橙/灰/绿分色；勾选/键盘行为不变
-- [ ] 标题栏 Help 按钮删除，布局无残缺
-- [ ] `/` 菜单不再出现六条内建；`/compact` 与提示模板/技能行为不变
-- [ ] 手敲六条（含 `/name xxx` 带参形式）→ toast 指路、不发给会话；其他 `/` 文本不受影响
-- [ ] 守门纯函数表驱动（Seam-1：text → {hint} | null）
-- [ ] electron smoke：toast 断言 + 会话零新消息断言；visual 帧（访问菜单间距+三色）
-- [ ] 调用轨迹词条入 CONTEXT.md；typecheck / lint / test 全绿
+- [x] 访问菜单三行：模式名与描述有明显间距；盾牌橙/灰/绿分色；勾选/键盘行为不变
+- [x] 标题栏 Help 按钮删除，布局无残缺
+- [x] `/` 菜单不再出现六条内建；`/compact` 与提示模板/技能行为不变
+- [x] 手敲六条（含 `/name xxx` 带参形式）→ toast 指路、不发给会话；其他 `/` 文本不受影响
+- [x] 守门纯函数表驱动（Seam-1：text → {hint} | null）
+- [x] electron smoke：toast 断言 + 会话零新消息断言；visual 帧（访问菜单间距+三色）
+- [x] 调用轨迹词条入 CONTEXT.md；typecheck / lint / test 全绿
 
 ## Comments
 
 - 2026-09-03 (requirements intake): 建票（spec R6+R7+R10 合一，操作者批准）。守门纯函数同型先例 keymap.ts；菜单样式先例票 22/33。含调用轨迹词条补账 rider。波次：W1。
+- 2026-09-04 (implement): 全项落地，提交 f59e32e（分支 t38-composer-chrome，rebased on main c6829ae）。守门落 `src/shared/composer/slash-gate.ts`（表驱动，tests/shared/slash-gate.test.ts 8 例）；菜单退役同步 `PICODE_BUILTIN_COMMANDS`；electron smoke 新 slash-gate 阶段全绿（slash_menu_retired_ok / slash_gate_toast_ok / slash_gate_args_toast_ok / slash_gate_zero_send_ok，user_message 观察者证零发送）；新 `visual:access` harness 出帧 `.scratch/visual/a1-access-menu.png`（间距 8px 计算样式断言 + 三色 rgb 断言 + 单勾选）；调用轨迹词条已原文入 CONTEXT.md（与 intake 附录逐字 diff 一致）。typecheck / lint / vitest 895/895 全绿。待操作者 `bash scripts/merge-ticket.sh 38`。
