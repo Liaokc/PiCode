@@ -29,6 +29,12 @@ import {
 import type { SessionRowAction } from '../../shared/sessions/context-menu'
 import { sessionDefaultsFromPreferences, DEFAULT_PREFERENCES, setSessionArchived, toggleHiddenGroup, type AppPreferences } from '../../shared/preferences'
 import { recentProjects, resolveNewTaskProject } from '../../shared/new-task'
+import {
+  mergeNewTaskDefaults,
+  projectNewTaskCatalog,
+  resolveNewTaskModelChip,
+  type NewTaskModelChoice
+} from '../../shared/new-task-models'
 import { toastReducer, type ToastLevel, type ToastList } from '../../shared/toast'
 import type { AccessMode, ImageAttachment, ThinkingLevel } from '../../shared/contract'
 import type { AuthProbeReport } from '../../shared/auth-status'
@@ -361,9 +367,13 @@ export default function App(): JSX.Element {
     })
   }, [])
 
-  /** create_session carrying the settings-window defaults (ticket 11). */
-  const sendCreateSession = useCallback((cwd: string): void => {
-    const defaults = sessionDefaultsFromPreferences(settings.preferences) ?? undefined
+  /** create_session carrying the settings-window defaults (ticket 11) plus,
+   * since ticket 41, any model/thinking choice made in the new-task empty
+   * state — the choice wins where present (same precedence as switching after
+   * send), preference fields ride untouched, zero new contract (the additive
+   * `defaults` field). */
+  const sendCreateSession = useCallback((cwd: string, choice?: NewTaskModelChoice): void => {
+    const defaults = mergeNewTaskDefaults(sessionDefaultsFromPreferences(settings.preferences), choice ?? null) ?? undefined
     window.picode.chat.sendToHost({ type: 'create_session', cwd, defaults })
   }, [settings.preferences])
 
@@ -470,8 +480,14 @@ export default function App(): JSX.Element {
   /** Ticket 17: start a task from the empty state in the chip's project.
    * null degrades to the system folder picker (brand-new machine with no
    * recent projects); the first message (text + images) rides the pending
-   * chain and is delivered once the session exists. */
-  function startTask(cwd: string | null, text: string, images: ImageAttachment[]): void {
+   * chain and is delivered once the session exists. A model/thinking choice
+   * made in the empty state (ticket 41) rides `create_session`'s defaults. */
+  function startTask(
+    cwd: string | null,
+    text: string,
+    images: ImageAttachment[],
+    choice: NewTaskModelChoice = { model: null, thinkingLevel: null }
+  ): void {
     void (async () => {
       const project = cwd ?? (await window.picode.chat.pickWorkingDirectory())
       if (!project) return
@@ -480,7 +496,7 @@ export default function App(): JSX.Element {
       // as the first prompt once the session exists.
       pendingPromptRef.current = text
       pendingImagesRef.current = images.length > 0 ? images : null
-      sendCreateSession(project)
+      sendCreateSession(project, choice)
     })()
   }
 
@@ -1055,6 +1071,48 @@ export default function App(): JSX.Element {
   const showError = chat.error !== null && chat.error !== focused?.dismissedError
   const showFollow = followedFile !== null
   const showTranscript = chat.entries.length > 0 || chat.session !== null
+
+  // ---- ticket 41: the new-task empty state's model/thinking slice ----
+  // Catalog from the auth-probe report (the ticket-11 settings channel,
+  // main-cached; zero new contract), then the chained chip default.
+  const newTaskCatalog = useMemo(
+    () => (settings.auth !== null ? projectNewTaskCatalog(settings.auth) : null),
+    [settings.auth]
+  )
+  const newTaskChip = useMemo(
+    () =>
+      resolveNewTaskModelChip({
+        preferenceModel: settings.preferences.defaultModel,
+        preferenceThinkingLevel: settings.preferences.defaultThinkingLevel,
+        catalog: newTaskCatalog
+      }),
+    [settings.preferences.defaultModel, settings.preferences.defaultThinkingLevel, newTaskCatalog]
+  )
+  /** The model menu's empty-catalog hint: the menu never opens blank —
+   * scanning, unconfigured, and probe failure each explain themselves. */
+  const newTaskModelMenuHint = useMemo(() => {
+    if (newTaskCatalog === null) return 'Scanning for models…'
+    if (newTaskCatalog.error !== null) return 'Model catalog unavailable — refresh from Settings'
+    if (newTaskCatalog.providers.length === 0) {
+      return 'No models configured — sign in from the Pi TUI, then refresh in Settings'
+    }
+    return null
+  }, [newTaskCatalog])
+
+  // Feed the empty-state menu by running the auth-probe scan once per app
+  // lifetime when a new-task surface is on screen (boot empty state or ⌘N).
+  // Same channel + auto-scan precedent as the settings window's Models
+  // section — driven from App because the boot empty state lives outside it.
+  // (The callback goes through a ref, the codebase's latest-value pattern —
+  // the scan trigger is a deliberate guarded fetch, not a render-phase set.)
+  const refreshAuthRef = useRef(handleRefreshAuth)
+  refreshAuthRef.current = handleRefreshAuth
+  const newTaskSurface = newTaskOpen || !showTranscript
+  useEffect(() => {
+    if (!newTaskSurface) return
+    if (settings.auth !== null || settings.authScanning) return
+    refreshAuthRef.current()
+  }, [newTaskSurface, settings.auth, settings.authScanning])
   /** The group-row preset is only meaningful while the new-task state is
    * open — closing it (Escape, session create, follow) falls back to the
    * ticket-17 chain so the boot empty state never inherits a stale preset. */
@@ -1172,6 +1230,12 @@ export default function App(): JSX.Element {
                 creating={creating}
                 defaultProject={newTaskPresetActive ?? newTaskDefaultProject}
                 recentProjects={recentWorkspaceList}
+                providers={newTaskCatalog?.providers ?? []}
+                model={newTaskChip.model}
+                thinkingLevel={newTaskChip.thinkingLevel}
+                modelIsDefault={newTaskChip.modelSource === 'pi-fallback'}
+                thinkingIsDefault={newTaskChip.thinkingSource === 'pi-fallback'}
+                modelMenuHint={newTaskModelMenuHint}
                 onStart={startTask}
                 onOpenFolder={() => window.picode.chat.pickWorkingDirectory()}
                 composerApi={composerApi}

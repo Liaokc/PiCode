@@ -1,10 +1,16 @@
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import { greetingForHour } from '../../../shared/greeting'
 import { filterWorkspaces } from '../../../shared/new-task'
+import { findCatalogModel, type NewTaskModelChoice } from '../../../shared/new-task-models'
+import { ALL_THINKING_LEVELS, type ModelRef, type ProviderModels, type ThinkingLevel } from '../../../shared/contract'
 import { projectLabel } from '../../../shared/sessions/group'
 import { initialChatState } from '../../../shared/chat-reducer'
 import type { ImageAttachment } from '../../../shared/contract'
-import Composer, { type ComposerApi } from './Composer'
+import Composer, { type ComposerApi, type ComposerChat } from './Composer'
+
+/** The empty-state thinking menu's levels: all seven Pi levels (mutable copy
+ * of the shared constant for the ComposerChat slice's array typing). */
+const EMPTY_STATE_LEVELS: ThinkingLevel[] = [...ALL_THINKING_LEVELS]
 import {
   BugIcon,
   CalendarIcon,
@@ -44,8 +50,22 @@ interface EmptyStateProps {
   defaultProject: string | null
   /** Recent workspace cwds, most recent first — the dropdown's list. */
   recentProjects: readonly string[]
-  /** Start the task in the given project; null degrades to the system folder picker. */
-  onStart: (project: string | null, text: string, images: ImageAttachment[]) => void
+  // ---- ticket 41: the empty state's model/thinking slice ----
+  /** The auth-probe catalog grouped for the cascade menu (may be empty). */
+  providers: ProviderModels[]
+  /** The chained chip default (preference → Pi fallback); null = nothing. */
+  model: ModelRef | null
+  /** The chained thinking default (preference → Pi's 'medium'). */
+  thinkingLevel: ThinkingLevel | null
+  /** The displayed chain value is Pi's own fallback → the chip tags it "default". */
+  modelIsDefault: boolean
+  thinkingIsDefault: boolean
+  /** The model menu's empty-catalog hint (scanning / unconfigured / error). */
+  modelMenuHint: string | null
+  /** Start the task in the given project; null degrades to the system folder
+   * picker. The model/thinking choices made here ride `create_session`'s
+   * defaults (ticket 41). */
+  onStart: (project: string | null, text: string, images: ImageAttachment[], choice: NewTaskModelChoice) => void
   /** The dropdown's bottom "Open folder…" entry — the system folder picker. */
   onOpenFolder: () => Promise<string | null>
   /** Composer commands (slash built-ins still dispatch from the empty state). */
@@ -60,11 +80,22 @@ interface EmptyStateProps {
  * the session in it, delivering the typed message via the pending chain.
  * Until the user picks a project from the dropdown the chip follows the
  * live-resolved default (the session index loads asynchronously at boot).
+ *
+ * Ticket 41: the composer chips are live here too — the model menu lists the
+ * auth-probe catalog, the thinking menu offers all seven Pi levels, and the
+ * chips show the chained default (preference → Pi fallback, tagged). Picks
+ * made here override the chain and ride `create_session`'s defaults.
  */
 export default function EmptyState({
   creating,
   defaultProject,
   recentProjects,
+  providers,
+  model,
+  thinkingLevel,
+  modelIsDefault,
+  thinkingIsDefault,
+  modelMenuHint,
   onStart,
   onOpenFolder,
   composerApi
@@ -76,6 +107,32 @@ export default function EmptyState({
     [pinnedHour]
   )
   const idleChat = initialChatState()
+
+  // Ticket 41: model/thinking picks made in the empty state. null = the chip
+  // still follows the chained default; an explicit pick overrides it and
+  // rides create_session's defaults (the pending-chain precedent, ticket 17).
+  const [modelPick, setModelPick] = useState<{ providerId: string; modelId: string } | null>(null)
+  const [thinkingPick, setThinkingPick] = useState<ThinkingLevel | null>(null)
+
+  /** The empty state's composer slice: real catalog menu, chained chip
+   * defaults, and the full seven-level thinking menu — no host involved. */
+  const chat: ComposerChat = {
+    ...idleChat,
+    providers,
+    model:
+      modelPick === null
+        ? model
+        : (findCatalogModel(providers, modelPick.providerId, modelPick.modelId) ?? {
+            providerId: modelPick.providerId,
+            modelId: modelPick.modelId,
+            name: modelPick.modelId
+          }),
+    thinkingLevel: thinkingPick ?? thinkingLevel,
+    availableLevels: EMPTY_STATE_LEVELS,
+    modelIsDefault: modelPick === null && modelIsDefault && model !== null,
+    thinkingIsDefault: thinkingPick === null && thinkingIsDefault,
+    modelMenuHint
+  }
 
   // Round-2 feedback (ticket 29): the empty state degrades with the main
   // zone instead of overflowing it. The quick-start chips hide (visibility
@@ -242,10 +299,14 @@ export default function EmptyState({
           busy={false}
           disabled={creating}
           placeholder={creating ? 'Starting session…' : 'Ask anything — @ to add context, / for commands'}
-          chat={idleChat}
+          chat={chat}
           queue={idleChat.queue}
           {...composerApi}
-          onSend={(text, images) => onStart(selected, text, images)}
+          onSetModel={(providerId, modelId) => setModelPick({ providerId, modelId })}
+          onSetThinkingLevel={(level) => setThinkingPick(level)}
+          onSend={(text, images) =>
+            onStart(selected, text, images, { model: modelPick, thinkingLevel: thinkingPick })
+          }
         />
       </div>
 
