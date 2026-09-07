@@ -24,6 +24,20 @@ import type { SessionTreePayload, TranscriptItem } from './sessions/types.ts'
  * never imports the Pi SDK — Seam-1 guardrail). */
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
+/** All seven Pi thinking levels in canonical order (mirrors the SDK's
+ * THINKING_LEVEL_OPTIONS). Ticket 41: the new-task empty state offers the
+ * full menu before any host exists — in-session lists stay host-pushed and
+ * clamped per model (composer_state / thinking_level_changed). */
+export const ALL_THINKING_LEVELS: readonly ThinkingLevel[] = [
+  'off',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max'
+]
+
 /** Access Mode presets (CONTEXT.md): tiers of the PiCode approval gate —
  * NOT Pi project trust, which stays untouched. */
 export type AccessMode = 'full-access' | 'standard' | 'read-only'
