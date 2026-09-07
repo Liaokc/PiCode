@@ -115,8 +115,9 @@ const SKILL_BLOCK = /^<skill name="([^"]+)" location="([^"]+)">\n([\s\S]*?)\n<\/
  * readable title. When the message is the SDK's skill-block shape, the
  * title is the text AFTER the block; when the block is the whole message
  * (or nothing usable follows it), the skill name is the fallback. Anything
- * else passes through untouched. */
-export function sessionTitleFromUserText(text: string): string {
+ * else passes through untouched. Tested through summarizeSession — the
+ * title the sidebar actually shows. */
+function sessionTitleFromUserText(text: string): string {
   const match = SKILL_BLOCK.exec(text)
   if (match === null) return text
   const userMessage = match[4]?.trim()
