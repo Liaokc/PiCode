@@ -99,16 +99,6 @@ export function PulseIcon({ size, className }: IconProps): JSX.Element {
   )
 }
 
-export function HelpCircleIcon({ size, className }: IconProps): JSX.Element {
-  return (
-    <svg {...svgProps(size, className)}>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M9.4 9.2a2.7 2.7 0 0 1 5.2.9c0 1.8-2.6 2.4-2.6 3.7" />
-      <path d="M12 17.2h.01" strokeWidth={2.2} />
-    </svg>
-  )
-}
-
 export function HashIcon({ size, className }: IconProps): JSX.Element {
   return (
     <svg {...svgProps(size, className)}>

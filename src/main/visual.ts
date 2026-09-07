@@ -157,6 +157,8 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
   if (process.env['PICODE_VISUAL_CONTEXT_MENU'] === '1') return
   // And for the trace tool-surfaces harness (ticket 37).
   if (traceVisualEnabled()) return
+  // And for the access-menu harness (ticket 38).
+  if (process.env['PICODE_VISUAL_ACCESS'] === '1') return
 
   // Deterministic sidebar content for the shots (ticket 20): the empty-state
   // frame must show a status dot (a session written by ANOTHER end — fresh
@@ -658,7 +660,8 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       emit({
         type: 'slash_commands',
         commands: [
-          { name: 'model', description: 'Select model (provider → model menu)', source: 'builtin' },
+          // Ticket 38: the menu carries the one retained built-in (compact);
+          // /model /new /tree /name /copy /thinking are retired.
           { name: 'compact', description: 'Compact the session context', source: 'builtin' },
           { name: 'review', description: 'Review the current diff against HEAD', source: 'prompt' },
           { name: 'plan', description: 'Switch to plan mode and send a task', source: 'prompt' },

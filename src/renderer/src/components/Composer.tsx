@@ -3,6 +3,7 @@ import type { AccessMode, ImageAttachment, ModelRef, ProviderModels, SlashComman
 import type { ChatQueue } from '../../../shared/chat-reducer'
 import { applyMention, mentionQueryAt } from '../../../shared/composer/mention'
 import { accessModeLabel } from '../../../shared/composer/access'
+import { gateSlashCommand } from '../../../shared/composer/slash-gate'
 import { composerDensity, thinkingBarFraction, thinkingBarShimmers, type ComposerDensity } from '../../../shared/composer/density'
 import { AccessMenu, ModelMenu, ThinkingMenu, thinkingLabel } from './composer/menus'
 import { FileMenu, SlashMenu } from './composer/list-menus'
@@ -33,6 +34,9 @@ export interface ComposerApi {
   onListFiles: (requestId: string, query: string) => void
   onPickImages: () => Promise<ImageAttachment[]>
   onBuiltinCommand: (name: string) => void
+  /** A retired `/` command was typed by hand (ticket 38): the composer
+   * blocked the send; the app raises the pointer toast. */
+  onSlashHint: (hint: string) => void
 }
 
 interface ComposerProps extends ComposerApi {
@@ -85,7 +89,8 @@ export default function Composer({
   onClearQueue,
   onListFiles,
   onPickImages,
-  onBuiltinCommand
+  onBuiltinCommand,
+  onSlashHint
 }: ComposerProps): JSX.Element {
   const [value, setValue] = useState('')
   const [caret, setCaret] = useState(0)
@@ -245,6 +250,14 @@ export default function Composer({
     const text = value.trim()
     const payload = images.map((img) => ({ mimeType: img.mimeType, data: img.data }))
     if (text === '' && payload.length === 0) return
+    // Ticket 38: a hand-typed retired command never reaches the session —
+    // neither as a normal send nor queued while the agent runs. Toast points
+    // at the owning control instead.
+    const gate = gateSlashCommand(text)
+    if (gate) {
+      onSlashHint(gate.hint)
+      return
+    }
     if (disabled) return
     if (busy) {
       if (queuedMode === 'steer') onSteer(text, payload)

@@ -4,7 +4,6 @@ import type { ShellUiAction, ShellUiState } from '../../../shared/layout-model'
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
-  HelpCircleIcon,
   PanelBottomIcon,
   PanelLeftIcon,
   PanelRightIcon,
@@ -62,11 +61,6 @@ export default function TitleBar({ ui, dispatch, dispatchDock }: TitleBarProps):
       <div className="titlebar-title">{settings ? 'Settings' : APP_NAME}</div>
 
       <div className="titlebar-cluster titlebar-cluster-right">
-        <Tooltip label="Help">
-          <button type="button" className="tb-btn" aria-label="Help">
-            <HelpCircleIcon />
-          </button>
-        </Tooltip>
         {!settings && (
           <Tooltip shortcut="⌥⌘J">
             <button

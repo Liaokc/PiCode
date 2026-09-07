@@ -11,15 +11,14 @@ import type { ModelRef, ProviderModels, SlashCommandItem } from '../shared/contr
  * Built-in slash commands PiCode actually executes. The full Pi list lives in
  * the SDK's BUILTIN_SLASH_COMMANDS; anything not mapped here stays TUI-only
  * and is not offered in the menu.
+ *
+ * Ticket 38 retires the six built-ins PiCode supersedes with dedicated UI
+ * (`/new` `/tree` `/name` `/copy` `/model` `/thinking` — menu duplication);
+ * typing them by hand is gated by shared/composer/slash-gate with a pointer
+ * toast. `/compact` stays: manual context compaction has no other entry.
  */
 export const EXECUTABLE_BUILTIN_NAMES: ReadonlySet<string> = new Set([
-  'model', // opens the cascading model menu
-  'thinking', // opens the thinking-level dropdown
-  'compact', // manual context compaction (host)
-  'new', // start a new Task (session)
-  'tree', // open the history/branch panel
-  'copy', // copy the last assistant reply
-  'name' // rename the active Task
+  'compact' // manual context compaction (host)
 ])
 
 interface BuiltinLike {
@@ -96,14 +95,9 @@ export function groupModelsByProvider(
 
 /**
  * The built-in rows PiCode offers, with PiCode-accurate descriptions (each
- * maps onto a PiCode control, not a TUI dialog).
+ * maps onto a PiCode control, not a TUI dialog). Mirrors
+ * EXECUTABLE_BUILTIN_NAMES — the ticket-38 retirement applies to both.
  */
 export const PICODE_BUILTIN_COMMANDS: ReadonlyArray<BuiltinLike> = [
-  { name: 'model', description: 'Select model (provider → model menu)' },
-  { name: 'thinking', description: 'Set the thinking level' },
-  { name: 'compact', description: 'Compact the session context' },
-  { name: 'new', description: 'Start a new Task (session)' },
-  { name: 'tree', description: 'Browse session history branches' },
-  { name: 'copy', description: 'Copy the last assistant reply' },
-  { name: 'name', description: 'Rename this Task' }
+  { name: 'compact', description: 'Compact the session context' }
 ]

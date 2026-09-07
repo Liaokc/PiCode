@@ -56,6 +56,11 @@
  * in ZCode order, and the copy actions fire the read-only context-action
  * IPC (asserted against main's bounded action log).
  *
+ * Ticket 38 adds the retired-slash stage: the `/` menu lists only the
+ * retained built-in (/compact), typing a retired command bare or with
+ * arguments raises the pointer toast, and the session sees ZERO new
+ * messages across the gated sends (stage-local user_message observer).
+ *
  * Any missed step times out and exits non-zero. Progress logs as
  * `SMOKE <step>` lines on stdout. Not part of `npm test`.
  */
@@ -225,6 +230,97 @@ export function startSmokeIfEnabled(
       if (!listed) fail('sidebar never listed the session created by this smoke')
       log('sidebar_index_ok')
     })
+
+    // ---- ticket 38: retired slash built-ins — the `/` menu drops the six
+    // duplicated commands, and typing them by hand raises a pointer toast
+    // with ZERO session traffic (no user_message, no agent round) ----
+    log('slash_gate_start')
+    await withWindow(getWindow, async (win) => {
+      // React-controlled textarea: set the value through the native setter
+      // so onChange fires, like the visual harness does.
+      const typeJs = (text: string): string => `(() => {
+        const ta = document.querySelector('.composer-input')
+        if (!(ta instanceof HTMLTextAreaElement)) return false
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+        setter.call(ta, ${JSON.stringify(text)})
+        ta.dispatchEvent(new Event('input', { bubbles: true }))
+        ta.focus()
+        return true
+      })()`
+      const keyJs = (key: string): string => `(() => {
+        const ta = document.querySelector('.composer-input')
+        if (!(ta instanceof HTMLTextAreaElement)) return false
+        ta.dispatchEvent(new KeyboardEvent('keydown', { key: '${key}', bubbles: true, cancelable: true }))
+        return true
+      })()`
+      const clearJs = `(() => {
+        const ta = document.querySelector('.composer-input')
+        if (!(ta instanceof HTMLTextAreaElement)) return false
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+        setter.call(ta, '')
+        ta.dispatchEvent(new Event('input', { bubbles: true }))
+        return true
+      })()`
+      /** Toast line present? */
+      const toastProbe = (needle: string): string =>
+        `[...document.querySelectorAll('.toast-message')].some((n) => (n.textContent ?? '').includes(${JSON.stringify(needle)}))`
+
+      // ① The `/` menu: the six retired built-ins are gone, /compact stays.
+      if (!(await win.webContents.executeJavaScript(typeJs('/')).catch(() => false))) {
+        fail('composer textarea missing for the slash-gate stage')
+      }
+      let menuNames: string[] = []
+      for (let waited = 0; waited < 5_000; waited += 100) {
+        menuNames = (await win.webContents.executeJavaScript(
+          `[...document.querySelectorAll('.cmp-popover .cmp-cmd-name')].map((n) => n.textContent ?? '')`
+        ).catch(() => [])) as string[]
+        if (menuNames.length > 0) break
+        await new Promise((r) => setTimeout(r, 100))
+      }
+      if (menuNames.length === 0) fail('the / menu never opened for the slash-gate stage')
+      for (const retired of ['/new', '/tree', '/name', '/copy', '/model', '/thinking']) {
+        if (menuNames.includes(retired)) fail(`retired ${retired} still listed in the / menu`)
+      }
+      if (!menuNames.includes('/compact')) fail('/compact missing from the / menu')
+      log('slash_menu_retired_ok', `rows=${menuNames.join(' ')}`)
+
+      // ② Bare retired command: gated with the pointer toast. Escape first so
+      // the Enter lands on the composer's dispatch, not a fuzzy menu row.
+      // The stage-local observer (ticket-25 negative-assertion precedent)
+      // watches from BEFORE the first gated send: no user_message may reach
+      // any session while the toasts are up (③ checks after both sends).
+      let leaked = 0
+      const onLeak = (event: Scoped): void => {
+        if (event.type === 'user_message') leaked++
+      }
+      observers.push(onLeak)
+      const gateCase = async (typed: string, needle: string): Promise<void> => {
+        await win.webContents.executeJavaScript(keyJs('Escape'))
+        if (!(await win.webContents.executeJavaScript(typeJs(typed)).catch(() => false))) {
+          fail(`composer textarea missing while typing ${typed}`)
+        }
+        await new Promise((r) => setTimeout(r, 300))
+        await win.webContents.executeJavaScript(keyJs('Escape'))
+        await win.webContents.executeJavaScript(keyJs('Enter'))
+        const toasted = await waitForProbe(win, toastProbe(needle), 5_000)
+        if (!toasted) fail(`typing ${typed} never raised the pointer toast (${needle})`)
+      }
+      await gateCase('/model', '/model — use the Select Model picker')
+      log('slash_gate_toast_ok')
+      await gateCase('/name my task', '/name — use the Rename task button in the chat header')
+      log('slash_gate_args_toast_ok')
+
+      // ③ The window has passed: assert zero session traffic across both
+      // gated sends.
+      await new Promise((r) => setTimeout(r, 2_500))
+      observers.splice(observers.indexOf(onLeak), 1)
+      if (leaked > 0) fail(`gated slash commands leaked ${leaked} message(s) into the session`)
+      log('slash_gate_zero_send_ok')
+
+      // Leave the composer clean for the later stages.
+      await win.webContents.executeJavaScript(clearJs)
+    })
+    log('slash_gate_done')
 
     // Crash isolation: SIGKILL the host; supervisor must report it unclean —
     // and scoped to exactly the session that died (ticket 20).

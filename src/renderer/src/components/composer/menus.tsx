@@ -149,7 +149,7 @@ export function AccessMenu({
         {ACCESS_MODES.map((mode, i) => (
           <MenuRow key={mode} selected={i === index} onSelect={() => pick(mode)} onHover={() => setIndex(i)}>
             <span className="cmp-access-row">
-              <ShieldCheckIcon size={14} />
+              <ShieldCheckIcon size={14} className={`cmp-access-shield cmp-access-shield-${mode}`} />
               <span className="cmp-access-row-text">
                 <span className="cmp-menu-title">{accessModeLabel(mode)}</span>
                 <span className="cmp-menu-desc">{accessModeHint(mode)}</span>

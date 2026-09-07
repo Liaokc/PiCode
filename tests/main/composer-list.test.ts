@@ -24,10 +24,10 @@ describe('slash command menu rows', () => {
 
   it('orders rows built-ins → prompts → skills, keeping Pi descriptions', () => {
     const rows = buildSlashCommands(prompts, skills, builtins)
-    expect(rows.map((r) => r.name)).toEqual(['model', 'compact', 'review', 'plan', 'code-review', 'research'])
-    expect(rows[0]).toMatchObject({ source: 'builtin', description: 'Select model (opens selector UI)' })
-    expect(rows[2]).toMatchObject({ source: 'prompt', argumentHint: '[path]' })
-    expect(rows[4]).toMatchObject({ source: 'skill' })
+    expect(rows.map((r) => r.name)).toEqual(['compact', 'review', 'plan', 'code-review', 'research'])
+    expect(rows[0]).toMatchObject({ source: 'builtin', description: 'Compact the session context' })
+    expect(rows[1]).toMatchObject({ source: 'prompt', argumentHint: '[path]' })
+    expect(rows[3]).toMatchObject({ source: 'skill' })
   })
 
   it('only lists built-ins PiCode can actually execute', () => {
@@ -36,16 +36,20 @@ describe('slash command menu rows', () => {
     for (const row of rows) expect(EXECUTABLE_BUILTIN_NAMES.has(row.name)).toBe(true)
   })
 
+  it('retires the six duplicated built-ins from the menu (ticket 38)', () => {
+    // /new /tree /name /copy /model /thinking have dedicated PiCode UI; only
+    // /compact stays (no other entry point). Typing them is gated separately
+    // (shared/composer/slash-gate).
+    for (const retired of ['new', 'tree', 'name', 'copy', 'model', 'thinking']) {
+      expect(EXECUTABLE_BUILTIN_NAMES.has(retired), `/${retired} must be retired`).toBe(false)
+    }
+    expect(EXECUTABLE_BUILTIN_NAMES.has('compact')).toBe(true)
+    const rows = buildSlashCommands([], [], builtins)
+    expect(rows.map((r) => r.name)).toEqual(['compact'])
+  })
+
   it('EXECUTABLE_BUILTIN_NAMES covers the mapped actions', () => {
-    expect([...EXECUTABLE_BUILTIN_NAMES].sort()).toEqual([
-      'compact',
-      'copy',
-      'model',
-      'name',
-      'new',
-      'thinking',
-      'tree'
-    ])
+    expect([...EXECUTABLE_BUILTIN_NAMES].sort()).toEqual(['compact'])
   })
 })
 

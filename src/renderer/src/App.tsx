@@ -541,6 +541,12 @@ export default function App(): JSX.Element {
     }
   }
 
+  /** Ticket 38: a hand-typed retired `/` command was blocked — point at
+   * the control that owns the job. */
+  function handleSlashHint(hint: string): void {
+    notify(hint, 'info')
+  }
+
   const composerApi: ComposerApi = {
     onSend: (text, images) => void handleComposerSend(text, images),
     onSteer: handleSteer,
@@ -552,7 +558,8 @@ export default function App(): JSX.Element {
     onClearQueue: handleClearQueue,
     onListFiles: handleListFiles,
     onPickImages: () => handlePickImages(),
-    onBuiltinCommand: handleBuiltinCommand
+    onBuiltinCommand: handleBuiltinCommand,
+    onSlashHint: handleSlashHint
   }
 
   function handleStop(): void {

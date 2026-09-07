@@ -27,6 +27,7 @@ import { startTerminalVisualIfEnabled } from './visual-terminal'
 import { startMultiSessionVisualIfEnabled, isolateVisualUserData } from './visual-multisession'
 import { startRowGeometryVisualIfEnabled, isolateRowGeometryUserData } from './visual-row-geometry'
 import { startFilterVisualIfEnabled, isolateFilterUserData } from './visual-filter'
+import { startAccessVisualIfEnabled } from './visual-access'
 import { startContextMenuVisualIfEnabled, isolateContextMenuUserData } from './visual-context-menu'
 import { startTraceVisualIfEnabled, isolateTraceUserData } from './visual-trace'
 import { startApprovalVisualIfEnabled } from './visual-approval'
@@ -184,6 +185,8 @@ app.whenReady().then(() => {
   startContextMenuVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-37 trace tool-surfaces harness — same seeding constraint.
   startTraceVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  // Ticket-38 access-menu harness — renderer-only injection, no store writes.
+  startAccessVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
 
   // Renderer → host relay (Seam-1: the only chat channel the renderer has).
   ipcMain.on('chat:to-host', (_event, message: ParentToHost) => {
