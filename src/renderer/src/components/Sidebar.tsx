@@ -1,4 +1,13 @@
-import { useEffect, useMemo, useRef, useState, type Dispatch, type JSX, type PointerEvent } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  type Dispatch,
+  type JSX,
+  type PointerEvent
+} from 'react'
 import type { SessionSummary } from '../../../shared/sessions/types'
 import { clampSidebarWidth, type ShellUiAction } from '../../../shared/layout-model'
 import { archivedList, filterArchived } from '../../../shared/sessions/archive'
@@ -13,6 +22,12 @@ import {
   type SessionView
 } from '../../../shared/sessions/group'
 import { sessionMenuGroups, type SessionMenuAction, type SessionRowAction } from '../../../shared/sessions/context-menu'
+import {
+  groupFoldReducer,
+  initialFoldState,
+  showMoreControl,
+  visibleRowCount
+} from '../../../shared/sessions/fold-model'
 import { sidebarDotState, sidebarRowState, type SidebarDotState } from '../../../shared/session-registry'
 import { useNowTick } from './use-now'
 import Tooltip from './Tooltip'
@@ -22,7 +37,6 @@ import {
   ArrowUpIcon,
   CalendarIcon,
   CheckIcon,
-  ChevronDownIcon,
   ChevronLeftIcon,
   ClockIcon,
   CloseIcon,
@@ -38,9 +52,6 @@ import {
   PlusIcon,
   SearchIcon,
 } from './icons'
-
-/** Rows shown per project group before "Show more". */
-const SHOW_FIRST = 5
 
 /** Context-menu clamp (viewport fit): keeps the fixed-position menu inside
  * the window no matter where the row was right-clicked. Generous — the real
@@ -284,7 +295,11 @@ export default function Sidebar({
 }: SidebarProps): JSX.Element | null {
   const now = useNowTick(30_000)
   const [filterMenuOpen, setFilterMenuOpen] = useState(false)
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
+  // Group fold shapes (ticket 39): the pure shape machine owns rows shown,
+  // the Show more/less step position and fold/unfold. Memory-level only —
+  // nothing here reaches preferences, so a restart returns every group to
+  // the default shape (spec R5, Q5).
+  const [folds, dispatchFold] = useReducer(groupFoldReducer, undefined, initialFoldState)
   /** The project group whose ⋯ menu is open (ticket 19); null = none. */
   const [groupMenuCwd, setGroupMenuCwd] = useState<string | null>(null)
   /** The project whose files the sidebar is browsing (ticket 26); null =
@@ -468,15 +483,6 @@ export default function Sidebar({
       isSessionLive(s, now),
       unreadIds.has(s.id)
     )
-  }
-
-  function toggleExpanded(cwd: string): void {
-    setExpanded((prev) => {
-      const next = new Set(prev)
-      if (next.has(cwd)) next.delete(cwd)
-      else next.add(cwd)
-      return next
-    })
   }
 
   if (!open) return null
@@ -666,18 +672,22 @@ export default function Sidebar({
             </div>
 
             {visibleProjectGroups.map((group) => {
-              const isExpanded = expanded.has(group.cwd)
-              const shown = isExpanded ? group.sessions : group.sessions.slice(0, SHOW_FIRST)
+              // Fold + pagination come from the shape machine (ticket 39):
+              // the header row's click folds/unfolds the WHOLE group, the
+              // remembered step survives folds, Show more steps +5, Show
+              // less resets in one click.
+              const rowCount = visibleRowCount(folds, group.cwd, group.sessions.length)
+              const control = showMoreControl(folds, group.cwd, group.sessions.length)
+              const rows = group.sessions.slice(0, rowCount)
               const menuOpen = groupMenuCwd === group.cwd
               return (
                 <section key={group.cwd} className="sb-group">
-                  <div className="sb-group-header" onClick={() => toggleExpanded(group.cwd)}>
+                  <div className="sb-group-header" onClick={() => dispatchFold({ type: 'toggle-fold', cwd: group.cwd })}>
                     <FolderIcon />
                     <span>{group.project}</span>
                     <span className="sb-section-spacer" />
-                    {group.sessions.length > SHOW_FIRST && (
-                      <ChevronDownIcon size={13} className={isExpanded ? 'sb-caret sb-caret-up' : 'sb-caret'} />
-                    )}
+                    {/* Caret deleted (ticket 39): one control, one job — the
+                        group row's click owns folding. No count either (Q9). */}
                     <span className="sb-group-actions">
                       <Tooltip label="More actions">
                         <button
@@ -746,7 +756,7 @@ export default function Sidebar({
                       </button>
                     </div>
                   )}
-                  {shown.map((s) => (
+                  {rows.map((s) => (
                     <TaskItem
                       key={s.file}
                       session={s}
@@ -766,14 +776,18 @@ export default function Sidebar({
                       onContextMenu={(x, y) => openSessionMenu(s, x, y)}
                     />
                   ))}
-                  {!isExpanded && group.sessions.length > SHOW_FIRST && (
-                    <div className="sb-show-more" onClick={() => toggleExpanded(group.cwd)}>
-                      Show more
-                    </div>
-                  )}
-                  {isExpanded && group.sessions.length > SHOW_FIRST && (
-                    <div className="sb-show-more" onClick={() => toggleExpanded(group.cwd)}>
-                      Show less
+                  {control !== null && (
+                    <div
+                      className="sb-show-more"
+                      onClick={() =>
+                        dispatchFold(
+                          control === 'more'
+                            ? { type: 'show-more', cwd: group.cwd, total: group.sessions.length }
+                            : { type: 'show-less', cwd: group.cwd }
+                        )
+                      }
+                    >
+                      {control === 'more' ? 'Show more' : 'Show less'}
                     </div>
                   )}
                 </section>
