@@ -6,14 +6,15 @@
 
 **Blocked by:** 44（ChatView 串行链）。
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
-- [ ] 流式期间滚离原地：新内容到达不拽底；nearBottom 或自发送时照旧置底
-- [ ] 滚离超阈值 → 圆形 ↓ 淡入；点击平滑回底 + 恢复吸底 + 钮淡出
-- [ ] shouldAutoScroll 纯函数表驱动（Seam-1 决策表：滚动状态 × 增长 × 自发送）
-- [ ] electron smoke（滚离后流式增长不拽底 / 回底钮现→点击回底 / 自发送跳底）
-- [ ] typecheck / lint / test 全绿
+- [x] 流式期间滚离原地：新内容到达不拽底；nearBottom 或自发送时照旧置底
+- [x] 滚离超阈值 → 圆形 ↓ 淡入；点击平滑回底 + 恢复吸底 + 钮淡出
+- [x] shouldAutoScroll 纯函数表驱动（Seam-1 决策表：滚动状态 × 增长 × 自发送）
+- [x] electron smoke（滚离后流式增长不拽底 / 回底钮现→点击回底 / 自发送跳底）
+- [x] typecheck / lint / test 全绿
 
 ## Comments
 
 - 2026-09-03 (requirements intake): 建票（spec R9 前半，R9 整包拆二——本票为独立可验收切片，Q12 行为变更拍板）。吸底阈值沿用现状 160px。波次：W4（串行链第二棒，44 合入后开）。
+- 2026-09-07 (implementation): 完成于 t45-scroll-stay，feat 0222e81 + review polish 9761add + visual 帧 8e6e12b。① `shouldAutoScroll(ScrollState, ContentGrowth, selfSent)` 纯函数落 `src/shared/scroll-stay.ts`，Seam-1 八行决策表（tests/shared/scroll-stay.test.ts）；Q12 生效：滚离 + 增长不拽底；nearBottom 沿用 160px，自发送（send/steer/follow-up 三路 sendPin）置底。② 回底钮 `.chat-jump-btn` 圆形 outline（card 底）于 composer 上方中央，opacity 160ms 淡入淡出 + reduced-motion 直切；点击 smooth 回底，travel pin 保证中途增长仍吸底、用户上滚即中断。③ 新聚焦/新建会话 arrival pin 落底（resume 两拍均强制置底，保留现状开话即落底）。electron smoke 新增 scroll_stay 段三断言全绿（fresh session 构造性在 ChatView——sidebar row 点击遇 fresh mtime 会走 Live Follow，其视图共用 .chat-scroll 却无 composer，调试中实证的坑）；typecheck / lint / test 1007 全绿；CONTEXT.md 落「回底钮（Jump to Latest）」词条。**截图**：`.scratch/visual/2e-jump-to-latest.png`（滚离态 + 钮淡入，harness 新帧，probe 断言类在 + opacity 落定；拍摄中发现 harness 后台窗口节流会冻结合成器过渡——opacity 卡 0，已给 harness 窗口关 backgroundThrottling，真实 app 无此问题）。滚离态 z13 对照帧按票 46 验收归口（visual 三帧在 46）。边界守住：未做 tick 轨、未做锚点定位（留 46），FollowView 未动。
