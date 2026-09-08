@@ -4123,7 +4123,7 @@ button.heat:hover {
   bottom: 100%;
   left: 50%;
   transform: translate(-50%, -14px);
-  z-index: 5;
+  z-index: 10;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4133,7 +4133,7 @@ button.heat:hover {
   border: 1px solid var(--border-strong);
   background: var(--bg-card);
   color: var(--text-secondary);
-  box-shadow: 0 2px 8px rgb(0 0 0 / 6%);
+  box-shadow: 0 2px 8px rgba(30, 30, 25, 0.08);
   opacity: 0;
   pointer-events: none;
   transition: opacity 160ms ease-out;

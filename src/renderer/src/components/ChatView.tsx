@@ -156,21 +156,16 @@ export default function ChatView({
   // Ticket 45: the user's own send (send, steer, follow-up) asks for the
   // bottom — the stick decision honors it on the pass that lands the
   // message (spec: 自发送置底).
+  const withPin = (send: ComposerApi['onSend']): ComposerApi['onSend'] => (text, images) => {
+    sendPin.current = true
+    send(text, images)
+  }
   const pinnedComposerApi = useMemo<ComposerApi>(
     () => ({
       ...composerApi,
-      onSend: (text, images) => {
-        sendPin.current = true
-        composerApi.onSend(text, images)
-      },
-      onSteer: (text, images) => {
-        sendPin.current = true
-        composerApi.onSteer(text, images)
-      },
-      onFollowUp: (text, images) => {
-        sendPin.current = true
-        composerApi.onFollowUp(text, images)
-      }
+      onSend: withPin(composerApi.onSend),
+      onSteer: withPin(composerApi.onSteer),
+      onFollowUp: withPin(composerApi.onFollowUp)
     }),
     [composerApi]
   )
