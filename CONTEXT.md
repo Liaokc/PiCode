@@ -106,6 +106,10 @@ _Avoid_: 删除（归档可恢复）；隐藏（含义过宽，组隐藏是另�
 项目组行点击触发的整组折叠/展开（票 39）：折叠收起该组全部会话行，再点展开并恢复折叠前的形状（Show more 的步进位置不丢）；Show more 每次展开 5 条、全展开转 Show less、Show less 一次回初始 5 条；组头无 caret、无计数。形状记忆仅会话期（内存级，重启回默认）；折叠是视图态，非归档。
 _Avoid_: 归档（折叠不持久、可逆，归档是本地偏好的整理动作）；展开/收起箭头（caret 已随票删除）
 
+**导航轨（Turn Navigator）**：
+主转录左缘的垂直 tick 束（ZCode turn navigator 同型，票 46）：每个真实用户消息（含 steer/follow-up）一根；等宽基条以 scaleX 表达焦点/活跃衰减——视口锚定根 focus 前景色满宽、其余 muted 次级色按距离衰减有下限，运行中不低于 0.72 不透明；hover 右弹双段预览气泡（用户输入 clamp 2 行 + 助手回复 clamp 3 行，短延迟开合，上下移动气泡微位移跟随）；点击 smooth 平滑定位该用户消息（DOM 直查优先，未挂载 rAF 兜底等挂载）；tick 列垂直居中、独立滚动（滚轮滚 tick 列不滚转录）；tick < 2 整轨不渲染；窗口宽低于 864px（ZCode 校准）不显示，显隐带 opacity/位移过渡。仅 ChatView；FollowView 不做。渲染决策全部收敛于 Seam-1 纯模型（锚点分数、tick 显隐规则）。
+_Avoid_: 黑条（颜色绑定）、minimap（语义不同）、进度条（tick 不表达进度）
+
 **回底钮（Jump to Latest）**：
 滚离转录底部超过吸底阈值（160px）时浮现于 Composer 上方中央的圆形 ↓ 钮（ZCode 同型：card 底 outline 圆钮，票 45）；点击平滑回底并恢复吸底；吸底态隐藏，显隐淡入淡出。配套**滚离保持**（Q12 行为变更）：流式期间用户上翻阅读保持原地——吸底决策收敛为纯函数 `shouldAutoScroll`（滚动状态 × 内容增长 × 是否自己发送），仅 nearBottom（160px 阈值）或自己发送（含 steer/follow-up）时自动置底，内容增长不拽人。仅 ChatView；FollowView 不做。
 _Avoid_: 悬浮球（形态不符）；自动滚动（含义过宽——吸底只是其一种裁定）

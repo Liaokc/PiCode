@@ -141,6 +141,22 @@ async function captureMenu(
   return file
 }
 
+/** Poll a compositor-driven fade to completion: the harness window may be
+ * unfocused, and Electron throttles a background renderer's transitions —
+ * the element must be SEEN opaque (or the poll gives up), not just
+ * class-flagged. Returns the last observed opacity. */
+async function pollOpacity(win: BrowserWindow, selector: string, budgetMs: number): Promise<number> {
+  let last = 0
+  for (let waited = 0; waited < budgetMs; waited += 100) {
+    last = (await win.webContents.executeJavaScript(
+      `(() => { const el = document.querySelector(${JSON.stringify(selector)}); return el === null ? 0 : Number(getComputedStyle(el).opacity) })()`
+    )) as number
+    if (last > 0.9) return last
+    await sleep(100)
+  }
+  return last
+}
+
 export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): void {
   if (!visualEnabled()) return
   // Density runs (ticket 15) own the window alone: a fixed sample transcript
@@ -489,18 +505,9 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       // window may be unfocused, and Electron throttles a background
       // renderer's transitions — the button must be SEEN opaque, not just
       // class-flagged.
-      let fadeSettled = false
-      for (let waited = 0; waited < 8_000; waited += 100) {
-        const opacity = (await win.webContents.executeJavaScript(
-          `Number(getComputedStyle(document.querySelector('.chat-jump-btn') ?? document.body).opacity)`
-        )) as number
-        if (opacity > 0.9) {
-          fadeSettled = true
-          break
-        }
-        await sleep(100)
+      if ((await pollOpacity(win, '.chat-jump-btn', 8_000)) <= 0.9) {
+        throw new Error('visual 2e: the jump button never faded in (opacity stuck at 0)')
       }
-      if (!fadeSettled) throw new Error('visual 2e: the jump button never faded in (opacity stuck at 0)')
       await captureMenu(win, '2e-jump-to-latest', { 'jump button visible': '.chat-jump-btn-visible' })
       await win.webContents.executeJavaScript(
         `(() => { const el = document.querySelector('.chat-scroll'); if (el) el.scrollTop = el.scrollHeight; return true })()`
@@ -1174,6 +1181,92 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
         })()`
       )
       await sleep(200)
+
+      // ---- ticket 46: the turn navigator rail — three operator frames
+      // against the ZCode references (z13-navigator-rail / z13-navigator-hover
+      // / the scrolled-away state). A fresh focused session with two settled
+      // turns drives the chain: rail with two ticks → hover bubble on the
+      // second tick → scrolled away past the stick threshold (jump button +
+      // rail together). Events are injected, so the run needs no model.
+      emit({
+        type: 'session_created',
+        sessionId: 'visual-navigator',
+        cwd: '/Users/dev/projects/api-server',
+        model: 'claude-opus-4-5'
+      })
+      await sleep(300)
+      const navTurn = async (text: string, lead: string): Promise<void> => {
+        emit({ type: 'user_message', text })
+        emit({ type: 'agent_start' })
+        await sleep(300)
+        emit({ type: 'message_start' })
+        // Long enough answers to overflow the viewport — the scrolled-away
+        // frame needs a transcript that can actually scroll past the stick
+        // threshold.
+        const filler =
+          'The register endpoint validates the payload in three passes, and the migration backfills the breached-list column for the cutover window. '
+        await streamText([lead, ' ', filler.repeat(14)])
+        emit({ type: 'message_end' })
+        emit({ type: 'agent_end' })
+        await sleep(300)
+      }
+      await navTurn(
+        'Add input validation to the register endpoint and re-run its tests.',
+        'Done. The register endpoint now rejects malformed addresses before they reach the service layer, and the test suite is green.'
+      )
+      await navTurn(
+        'Now write the migration for the new schema.',
+        'The migration is in place. It adds the breached-list column, backfills the existing rows, and leaves the old index in place for the cutover window.'
+      )
+      await captureMenu(win, '9-nav-rail', { rail: '.nav-rail', tick: '.nav-tick' })
+      const tickCount = (await win.webContents.executeJavaScript(
+        `document.querySelectorAll('.nav-rail:not(.nav-rail-hidden) .nav-tick').length`
+      )) as number
+      if (tickCount !== 2) throw new Error(`visual 9: expected 2 ticks, saw ${tickCount}`)
+
+      // Hover the second tick → the two-segment preview bubble (user input
+      // clamp 2 + assistant reply clamp 3) fades in after the open delay.
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const slots = document.querySelectorAll('.nav-tick-slot')
+          const slot = slots[slots.length - 1]
+          if (!(slot instanceof HTMLElement)) return false
+          const r = slot.getBoundingClientRect()
+          const opts = { bubbles: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }
+          slot.dispatchEvent(new MouseEvent('mouseover', opts))
+          slot.dispatchEvent(new MouseEvent('mouseenter', opts))
+          return true
+        })()`
+      )
+      if ((await pollOpacity(win, '.nav-bubble.nav-bubble-open', 8_000)) <= 0.9) {
+        throw new Error('visual 9b: the preview bubble never opened on tick hover')
+      }
+      await captureMenu(win, '9b-nav-hover', { bubble: '.nav-bubble.nav-bubble-open' })
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const slots = document.querySelectorAll('.nav-tick-slot')
+          const slot = slots[slots.length - 1]
+          if (slot instanceof HTMLElement) {
+            slot.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }))
+            slot.dispatchEvent(new MouseEvent('mouseleave', { relatedTarget: document.body }))
+          }
+          return true
+        })()`
+      )
+      await sleep(500)
+
+      // Scrolled away past the stick threshold: the circular jump button is
+      // up AND the rail rides the left edge — the full scrolled-away state.
+      await win.webContents.executeJavaScript(
+        `(() => { const el = document.querySelector('.chat-scroll'); if (el) el.scrollTop = 0; return true })()`
+      )
+      if ((await pollOpacity(win, '.chat-jump-btn', 8_000)) <= 0.9) {
+        throw new Error('visual 9c: the jump button never faded in for the scrolled-away frame')
+      }
+      await captureMenu(win, '9c-nav-scrollaway', {
+        jump: '.chat-jump-btn-visible',
+        rail: '.nav-rail:not(.nav-rail-hidden)'
+      })
 
       console.log('VISUAL done')
       app.exit(0)
