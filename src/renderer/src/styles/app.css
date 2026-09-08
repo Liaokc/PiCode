@@ -4110,7 +4110,49 @@ button.heat:hover {
 }
 
 .chat-dock {
+  position: relative; /* anchors the Jump-to-Latest button (ticket 45) */
   padding: 0 48px 22px;
+}
+
+/* Ticket 45: Jump to Latest (CONTEXT.md 回底钮) — circular outline button,
+   centered above the composer (ZCode type: card surface + outline ring).
+   Fades in once the reader is scrolled past the stick threshold, fades out
+   on arrival; the hidden state never intercepts pointers. */
+.chat-jump-btn {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translate(-50%, -14px);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 6%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease-out;
+}
+
+.chat-jump-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--text-faint);
+}
+
+.chat-jump-btn-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-jump-btn {
+    transition: none;
+  }
 }
 
 .chat-dock .composer {
