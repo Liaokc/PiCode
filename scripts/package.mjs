@@ -8,17 +8,20 @@
  *
  * Usage:
  *   npm run package              → release/picode-darwin-<arch>/PiCode.app
- *   npm run package -- --verify  → then launch the artifact with PICODE_SMOKE=1
+ *   npm run package -- --verify  → then boot the artifact through
+ *                                  LaunchServices (`open`) with PICODE_SMOKE=1
  *                                  and require a real-session smoke round to
- *                                  exit 0 (artifact boots + runs a live chat).
+ *                                  complete (artifact boots + runs a live
+ *                                  chat + takes real window focus).
  */
 
-import { execSync } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { execFileSync, execSync } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { packager } from '@electron/packager'
+import { openLaunchArgs, verdictFromSmokeLogs } from './package-verify-launch.ts'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const outDir = path.join(root, 'release')
@@ -60,24 +63,90 @@ if (!verify) {
   process.exit(0)
 }
 
-// Artifact launch verification: boot the PACKAGED binary and let the in-app
-// smoke drive a real session round through main → host → Pi SDK → renderer
-// DOM (create → stream → abort → live-follow → crash isolation). Requires
-// working model auth in ~/.pi/agent, same as the pi TUI.
-console.log('→ verifying artifact: launching packaged app with PICODE_SMOKE=1')
-const binary = path.join(appDir, 'PiCode.app', 'Contents', 'MacOS', 'PiCode')
-// Session isolation (ticket 13): the smoke writes sessions into a throwaway
-// store, never into the real ~/.pi/agent/sessions.
-const smokeSessionsStore = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-sessions-'))
+// Artifact launch verification: boot the PACKAGED app through LaunchServices
+// (`open`) and let the in-app smoke drive a real session round through main →
+// host → Pi SDK → renderer DOM (create → stream → abort → live-follow →
+// crash isolation → real-clipboard copy). Requires working model auth in
+// ~/.pi/agent, same as the pi TUI.
+//
+// WHY `open` and not a direct binary spawn (ticket 47): the smoke's ticket-44
+// stage needs the window to take REAL OS focus (navigator.clipboard rejects
+// while unfocused). A binary spawned straight from a terminal stays
+// background on this macOS — win.show() + win.focus() + app.focus({ steal:
+// true }) never win focus — while a LaunchServices launch activates the app
+// like a normal user launch and the focus poll succeeds. See
+// scripts/package-verify-launch.ts for the two `open` quirks this harness
+// handles: `open -W` does not propagate the app's exit status (the verdict
+// reads the smoke's own log markers), and a stale running instance would be
+// activated instead of this build (guarded below).
+console.log('→ verifying artifact: launching packaged app via `open` (LaunchServices) with PICODE_SMOKE=1')
+const appPath = path.join(appDir, 'PiCode.app')
+const binary = path.join(appPath, 'Contents', 'MacOS', 'PiCode')
+// LaunchServices keys apps by bundle id (app.picode.desktop): any running
+// PiCode copy — this artifact, another worktree's, or /Applications — would
+// be ACTIVATED by `open` instead of this fresh build, dropping the --env
+// payload so no smoke would run. Bail out up front instead of hanging on
+// `open -W` or passing vacuously.
+let runningPids = ''
 try {
-  sh(`"${binary}"`, {
-    env: { ...process.env, PICODE_SMOKE: '1', PICODE_SESSION_DIR: smokeSessionsStore },
+  runningPids = execFileSync('pgrep', ['-f', 'PiCode\\.app/Contents/MacOS/PiCode'], { encoding: 'utf8' })
+} catch {
+  // pgrep exits 1 when nothing matches — the good case.
+}
+if (runningPids.trim()) {
+  console.error(
+    'PACKAGED ARTIFACT VERIFY FAILED: a packaged PiCode instance is already running (pids: ' +
+      runningPids.trim().split('\n').join(', ') +
+      '). Quit it first — LaunchServices would activate it instead of this fresh build and the smoke env would be dropped.'
+  )
+  process.exit(1)
+}
+// Session isolation (ticket 13): the smoke writes sessions into a throwaway
+// store, never into the real ~/.pi/agent/sessions. The dir name carries the
+// picode-smoke- prefix so cleanup-smoke-sessions can sweep any leftovers.
+const verifyTmp = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-verify-'))
+const sessionDir = path.join(verifyTmp, 'sessions')
+mkdirSync(sessionDir)
+const stdoutLog = path.join(verifyTmp, 'smoke-stdout.log')
+const stderrLog = path.join(verifyTmp, 'smoke-stderr.log')
+writeFileSync(stdoutLog, '')
+writeFileSync(stderrLog, '')
+
+let failure = null
+try {
+  execFileSync('open', openLaunchArgs({ appPath, sessionDir, stdoutLog, stderrLog }), {
+    stdio: 'inherit',
     timeout: 5 * 60_000
   })
-  console.log('PACKAGED ARTIFACT VERIFIED: launched and completed the real-session smoke (exit 0)')
+  const stdout = readFileSync(stdoutLog, 'utf8')
+  const stderr = readFileSync(stderrLog, 'utf8')
+  if (stdout) process.stdout.write(stdout)
+  if (stderr) process.stderr.write(stderr)
+  const verdict = verdictFromSmokeLogs(stdout, stderr)
+  if (!verdict.ok) failure = verdict.reason
+  else console.log('PACKAGED ARTIFACT VERIFIED: launched and completed the real-session smoke (SMOKE done)')
 } catch (err) {
-  console.error('PACKAGED ARTIFACT VERIFY FAILED:', err.message)
-  process.exit(1)
+  // `open` timed out (smoke hung) or failed to launch: dump whatever the
+  // smoke logged so far and stop OUR app instance (the pkill pattern is this
+  // build's binary path only).
+  for (const [label, file] of [['stdout', stdoutLog], ['stderr', stderrLog]]) {
+    try {
+      const text = readFileSync(file, 'utf8')
+      if (text) process.stderr.write(`— smoke ${label} —\n${text}\n`)
+    } catch {
+      // stream file never created
+    }
+  }
+  try {
+    execFileSync('pkill', ['-f', binary])
+  } catch {
+    // nothing left to kill
+  }
+  failure = err instanceof Error ? err.message : String(err)
 } finally {
-  rmSync(smokeSessionsStore, { recursive: true, force: true })
+  rmSync(verifyTmp, { recursive: true, force: true })
+}
+if (failure) {
+  console.error('PACKAGED ARTIFACT VERIFY FAILED:', failure)
+  process.exit(1)
 }

@@ -2986,12 +2986,36 @@ export function startSmokeIfEnabled(
   }
 }
 
+/** Milliseconds the withWindow re-activation waits for real key state. */
+const REFOCUS_WAIT_MS = 5_000
+
 async function withWindow(
   getWindow: () => BrowserWindow | null,
   body: (win: BrowserWindow) => Promise<void>
 ): Promise<void> {
   const win = getWindow()
   if (!win) throw new Error('smoke window missing')
+  // The smoke window must keep running compositor animations (the ticket-45
+  // opacity probes) even when another app's windows occlude it mid-run —
+  // macOS freezes renderer compositing for occluded windows, which would
+  // stick CSS transitions at their start opacity and hang the probes. Same
+  // root cause the visual harness disables throttling for (src/main/visual.ts);
+  // smoke-mode only, so the shipped app keeps stock throttling.
+  win.webContents.setBackgroundThrottling(false)
+  // Re-activate the window for every stage (ticket 47): the operator's real
+  // windows can take focus back mid-run, and several stages gate on window
+  // state — ticket-44's real-clipboard focus poll, ticket-35's REAL-input
+  // hover, and the opacity probes. app.focus({ steal: true }) is verified to
+  // work for both the dev app and the LaunchServices-launched packaged app;
+  // best-effort — stages with a hard focus gate enforce it themselves.
+  win.show()
+  if (!win.isFocused()) {
+    win.focus()
+    app.focus({ steal: true })
+    for (let waited = 0; waited < REFOCUS_WAIT_MS && !win.isFocused(); waited += 100) {
+      await new Promise((r) => setTimeout(r, 100))
+    }
+  }
   await body(win)
 }
 
