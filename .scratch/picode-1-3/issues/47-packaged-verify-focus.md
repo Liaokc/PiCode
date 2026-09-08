@@ -15,14 +15,21 @@
 
 **Blocked by:** None（发版流程唯一 blocker，操作者已批准开票）。
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
-- [ ] package:verify 连跑两次全绿 exit 0（打包版 ticket-44 阶段含真剪贴板断言通过，或按方向 2 有记录的降级通过）
-- [ ] npm run smoke 六阶段 ALL GREEN（dev 断言不弱化）
-- [ ] typecheck / lint / vitest 全绿（1024+）
-- [ ] 改动范围仅：scripts/package.mjs（及必要的 smoke.ts 焦点逻辑微调）； CONTEXT.md 不涉及
-- [ ] 全英文文案；Comments 记录根因结论（哪个方向生效 + 证据）
+- [x] package:verify 连跑两次全绿 exit 0（打包版 ticket-44 阶段含真剪贴板断言通过，或按方向 2 有记录的降级通过）
+- [x] npm run smoke 六阶段 ALL GREEN（dev 断言不弱化）
+- [x] typecheck / lint / vitest 全绿（1024+）
+- [x] 改动范围仅：scripts/package.mjs（及必要的 smoke.ts 焦点逻辑微调）； CONTEXT.md 不涉及
+- [x] 全英文文案；Comments 记录根因结论（哪个方向生效 + 证据）
 
 ## Comments
 
 - 2026-09-08 (requirements intake, 合并会话): 发版 v1.3.0 时 package:verify 首次暴露——44 的 user_copy 是史上第一个需要真实窗口焦点的 packaged-verify 阶段，v1.2.0 发版时此路径不存在。诊断与两个方向见上。波次外插票（W6，单人单票），完工即重跑发版链。
+- 2026-09-08 (implementation, t47): **方向 1 生效（LaunchServices）**，方向 2 未采用、零降级。commit `e98b9fb`。根因链与证据：
+  1. **直接 spawn 的打包 app 在本机 macOS 15.6.1 上拿不到 key focus**（票面诊断属实）：spawn 二进制 + PICODE_SMOKE=1 时 `show/focus/app.focus({steal:true})` 全部无效，`document.hasFocus()` 永远 false。
+  2. **修法**：`scripts/package.mjs` --verify 改用 `open`（LaunchServices）启动打包 app：`open -W --stdout/--stderr --env PICODE_SMOKE=1 --env PICODE_SESSION_DIR=<tmp>`。app 正常激活，焦点轮询通过，ticket-44 真剪贴板断言原样通过。
+  3. **`open` 的两个坑**（实测证据，记录在 scripts/package-verify-launch.ts）：`open -W` **不透传 app 退出码**（探针：子进程 exit 3、open 仍 exit 0），故 pass/fail 改读 smoke 自身日志哨兵（stdout 含 `SMOKE done`＝成功；stderr 首条 `SMOKE FAIL ...`＝失败原因）；LaunchServices 按 bundle id 认 app，若已有 PiCode 实例在跑会被激活而非新 build（--env 被丢弃）——verify 启动前 pgrep 预检，直接报错退出。
+  4. **smoke.ts 两处 harness 稳健性微调（仅 PICODE_SMOKE=1 生效，断言零弱化）**：withWindow 对 smoke 窗口 `setBackgroundThrottling(false)`——被遮挡窗口的合成器动画会被冻结，45 的 opacity 探针会卡在起始值（ticket-45 已在 visual harness 记录同一根因）；每阶段用 44 的机制重新激活窗口（show + focus + app.focus({steal:true}) + key 轮询），操作者中途切走窗口不再让 REAL-input hover/opacity 阶段闪挂。
+  5. **验证门实测**：package:verify 连续 3 次 exit 0（含真剪贴板断言）；npm run smoke 六阶段 ALL GREEN、会话 hygiene 通过（真实 ~/.pi 库 97 个文件不变）；typecheck / lint / vitest 1030（+6 个新单测，覆盖 open argv 构造与日志 verdict 逻辑）全绿。
+- 2026-09-08 (operator hint): 发版链可重跑。merge：`bash scripts/merge-ticket.sh 47`（实现会话不自行 merge）。
