@@ -15,7 +15,7 @@
 
 **Blocked by:** None（发版流程唯一 blocker，操作者已批准开票）。
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] package:verify 连跑两次全绿 exit 0（打包版 ticket-44 阶段含真剪贴板断言通过，或按方向 2 有记录的降级通过）
 - [x] npm run smoke 六阶段 ALL GREEN（dev 断言不弱化）
@@ -33,3 +33,4 @@
   4. **smoke.ts 两处 harness 稳健性微调（仅 PICODE_SMOKE=1 生效，断言零弱化）**：withWindow 对 smoke 窗口 `setBackgroundThrottling(false)`——被遮挡窗口的合成器动画会被冻结，45 的 opacity 探针会卡在起始值（ticket-45 已在 visual harness 记录同一根因）；每阶段用 44 的机制重新激活窗口（show + focus + app.focus({steal:true}) + key 轮询），操作者中途切走窗口不再让 REAL-input hover/opacity 阶段闪挂。
   5. **验证门实测**：package:verify 连续 3 次 exit 0（含真剪贴板断言）；npm run smoke 六阶段 ALL GREEN、会话 hygiene 通过（真实 ~/.pi 库 97 个文件不变）；typecheck / lint / vitest 1030（+6 个新单测，覆盖 open argv 构造与日志 verdict 逻辑）全绿。
 - 2026-09-08 (operator hint): 发版链可重跑。merge：`bash scripts/merge-ticket.sh 47`（实现会话不自行 merge）。
+- 2026-09-08 (merge): merged as **ab798b1**（--no-ff，4 文件 +267/−18，实现 e98b9fb 单提交重放，tracker 判重丢弃）。验收口径：操作者验收。冲突处置：零冲突（零代差）。根因结论（会话 Comments 已记）：**直启 spawn 永远赢不了焦点，LaunchServices 启动修复**——走票面方向 1，package.mjs 改经 open 启动打包 app（新 package-verify-launch.ts 模块 + 75 行测试），smoke.ts 仅焦点逻辑微调；产品 renderer/shared 零接触 ✓。main 终态审计：typecheck + vitest **1030/1030**（77 文件，+6）。解锁：发版链恢复（smoke + package:verify 复跑 → tag v1.3.0）。
