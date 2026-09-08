@@ -4,6 +4,7 @@ import { isNearBottom, shouldAutoScroll } from '../../../shared/scroll-stay'
 import { groupTurns } from '../../../shared/turn-collapse'
 import type { SessionTreePayload } from '../../../shared/sessions/types'
 import Composer, { type ComposerApi } from './Composer'
+import NavigatorRail from './NavigatorRail'
 import TreePanel from './TreePanel'
 import TurnContainer from './TurnContainer'
 import AnswerBlock from './AnswerBlock'
@@ -228,39 +229,46 @@ export default function ChatView({
         </button>
         {treeOpen && <TreePanel tree={tree} onNavigate={onNavigateTree} onFork={onFork} onClose={onCloseTree} />}
       </div>
-      <div ref={scrollRef} className="chat-scroll" onScroll={handleScroll}>
-        <div className="chat-thread">
-          {chat.entries.length === 0 && !chat.agentRunning && (
-            <div className="chat-empty-hint">No messages yet — describe what you need below.</div>
-          )}
-          {turns.map((turn) => (
-            <Fragment key={turn.id}>
-              {turn.user !== null && (
-                /* Ticket 44: the bubble and its persistent action row travel
-                  as one right-aligned block. Copy carries the bubble's text —
-                  the raw message as sent (the display text already strips the
-                  injected skill prologue); no Fork — that anchor lives on
-                  assistant entries. */
-                <div className="msg-user-block">
-                  <div className="msg msg-user">{turn.userText}</div>
-                  <MessageActions text={turn.userText} showTime={false} />
-                </div>
-              )}
-              {(turn.hasWork || turn.live) && (
-                <TurnContainer
-                  turn={turn}
-                  open={chat.expandedTurns.has(turn.id) || turn.pendingApproval}
-                  onToggle={() => onToggleTurn(turn.id)}
-                  onOpenFile={onOpenFile}
-                  onShowInBridge={onShowInBridge}
-                  onApprove={onApprove}
-                  onDeny={onDeny}
-                />
-              )}
-              {turn.answer.length > 0 && <AnswerBlock turn={turn} onFork={onFork} />}
-            </Fragment>
-          ))}
+      <div className="chat-body">
+        <div ref={scrollRef} className="chat-scroll" onScroll={handleScroll}>
+          <div className="chat-thread">
+            {chat.entries.length === 0 && !chat.agentRunning && (
+              <div className="chat-empty-hint">No messages yet — describe what you need below.</div>
+            )}
+            {turns.map((turn) => (
+              <Fragment key={turn.id}>
+                {turn.user !== null && (
+                  /* Ticket 44: the bubble and its persistent action row travel
+                    as one right-aligned block. Copy carries the bubble's text —
+                    the raw message as sent (the display text already strips the
+                    injected skill prologue); no Fork — that anchor lives on
+                    assistant entries. `data-turn-id` is the navigator rail's
+                    scroll/anchor hook (ticket 46). */
+                  <div className="msg-user-block" data-turn-id={turn.id}>
+                    <div className="msg msg-user">{turn.userText}</div>
+                    <MessageActions text={turn.userText} showTime={false} />
+                  </div>
+                )}
+                {(turn.hasWork || turn.live) && (
+                  <TurnContainer
+                    turn={turn}
+                    open={chat.expandedTurns.has(turn.id) || turn.pendingApproval}
+                    onToggle={() => onToggleTurn(turn.id)}
+                    onOpenFile={onOpenFile}
+                    onShowInBridge={onShowInBridge}
+                    onApprove={onApprove}
+                    onDeny={onDeny}
+                  />
+                )}
+                {turn.answer.length > 0 && <AnswerBlock turn={turn} onFork={onFork} />}
+              </Fragment>
+            ))}
+          </div>
         </div>
+        {/* Ticket 46: the turn navigator rides the transcript's left edge.
+            It owns its hover/anchor state — transcript scroll/hover/click
+            never re-render the chat. */}
+        <NavigatorRail turns={turns} scrollRef={scrollRef} />
       </div>
       <div className="chat-dock">
         <Tooltip label="Jump to latest">

@@ -2754,6 +2754,194 @@ export function startSmokeIfEnabled(
     })
     log('scroll_stay_done')
 
+    // ---- ticket 46: the turn navigator rail ----
+    // A FRESH session (createSession focuses it — in-app ChatView by
+    // construction) drives the acceptance chain:
+    // ① the rail renders only from two real user messages up (empty and
+    //    one-message transcripts show nothing);
+    // ② hovering a tick pops the two-segment preview bubble (user input
+    //    + assistant reply) after the short open delay, and it fades out
+    //    after the shorter close delay;
+    // ③ clicking a tick smooth-scrolls that user message to the top edge
+    //    and the anchored (focus) tick follows the viewport;
+    // ④ a window narrower than the 864px calibration threshold hides the
+    //    rail (innerWidth shadowed in-page — the app's own minWidth 1040
+    //    can never reach the threshold for real).
+    log('nav_rail_start')
+    const navCreated = waitFor(
+      (e) => e.type === 'session_created',
+      'nav_rail session_created'
+    ) as Promise<Extract<Scoped, { type: 'session_created' }>>
+    supervisor.createSession(cwd)
+    const navSession = await navCreated
+    const navId = navSession.sessionId
+    const NAV_1 = 'Reply with exactly: PICODE_NAV_1'
+    const NAV_2 = 'Reply with exactly: PICODE_NAV_2'
+    await withWindow(getWindow, async (win) => {
+      const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+      const RAIL_GONE = `document.querySelector('.nav-rail') === null`
+      const RAIL_TICKS = (n: number): string =>
+        `document.querySelectorAll('.nav-rail:not(.nav-rail-hidden) .nav-tick').length === ${n}`
+      const BUBBLE_OPEN = (text: string): string => `(() => {
+        const b = document.querySelector('.nav-bubble.nav-bubble-open')
+        return b !== null && (b.textContent ?? '').includes(${JSON.stringify(text)}) && Number(getComputedStyle(b).opacity) > 0.9
+      })()`
+      const BUBBLE_CLOSED = `document.querySelector('.nav-bubble.nav-bubble-open') === null`
+      const TICK_FOCUS = (id: string): string =>
+        `document.querySelector('.nav-tick-slot[data-nav-tick="${id}"] .nav-tick')?.classList.contains('nav-tick-focus') ?? false`
+
+      // ① Empty transcript: no rail at all.
+      if (!(await waitForProbe(win, `document.querySelector('.chat-empty-hint') !== null`, 10_000))) {
+        fail('ticket-46 stage: the fresh session never reached the empty chat view')
+      }
+      if (!(await waitForProbe(win, RAIL_GONE, 3_000))) {
+        fail('ticket-46 stage: the rail rendered on an empty transcript (tick < 2 must not render)')
+      }
+      log('nav_rail_empty_ok')
+
+      // First real user message: still one tick short — no rail.
+      if (!(await win.webContents.executeJavaScript(composerTypeJs(NAV_1)).catch(() => false))) {
+        fail('ticket-46 stage: composer textarea missing for the first nav prompt')
+      }
+      await new Promise((r) => setTimeout(r, 300))
+      await win.webContents.executeJavaScript(composerKeyJs('Enter'))
+      await waitFor((e) => e.type === 'agent_start' && e.sessionId === navId, 'nav_rail first agent_start')
+      await waitFor(
+        (e) => e.type === 'agent_end' && e.sessionId === navId,
+        'nav_rail first agent_end'
+      )
+      if (!(await waitForProbe(win, `(${RAIL_GONE}) && document.querySelector('.chat-thread')?.textContent.includes('PICODE_NAV_1')`, 10_000))) {
+        fail('ticket-46 stage: after one user message the rail must stay hidden')
+      }
+      log('nav_rail_one_tick_hidden_ok')
+
+      // Second real user message: the rail appears with exactly two ticks.
+      if (!(await win.webContents.executeJavaScript(composerTypeJs(NAV_2)).catch(() => false))) {
+        fail('ticket-46 stage: composer textarea missing for the second nav prompt')
+      }
+      await new Promise((r) => setTimeout(r, 300))
+      await win.webContents.executeJavaScript(composerKeyJs('Enter'))
+      await waitFor((e) => e.type === 'agent_start' && e.sessionId === navId, 'nav_rail second agent_start')
+      await waitFor(
+        (e) => e.type === 'agent_end' && e.sessionId === navId,
+        'nav_rail second agent_end'
+      )
+      if (!(await waitForProbe(win, RAIL_TICKS(2), 10_000))) {
+        fail('ticket-46 stage: the rail never rendered with two ticks')
+      }
+      log('nav_rail_two_ticks_ok')
+
+      // ② Hover the first tick: the preview bubble opens with the user
+      // input (the assistant reply clamp rides along in the same bubble).
+      const hoverJs = `(() => {
+        const slot = document.querySelector('.nav-tick-slot')
+        if (!slot) return false
+        const r = slot.getBoundingClientRect()
+        const opts = { bubbles: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 }
+        slot.dispatchEvent(new MouseEvent('mouseover', opts))
+        slot.dispatchEvent(new MouseEvent('mouseenter', opts))
+        return true
+      })()`
+      if (!(await win.webContents.executeJavaScript(hoverJs).catch(() => false))) {
+        fail('ticket-46 stage: no tick slot to hover')
+      }
+      if (!(await waitForProbe(win, BUBBLE_OPEN('PICODE_NAV_1'), 8_000))) {
+        fail('ticket-46 stage: hovering a tick never opened the preview bubble')
+      }
+      log('nav_rail_bubble_ok')
+
+      // Leave: the bubble closes after the short close delay + fade.
+      const unhoverJs = `(() => {
+        const slot = document.querySelector('.nav-tick-slot')
+        if (!slot) return false
+        slot.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }))
+        slot.dispatchEvent(new MouseEvent('mouseleave', { relatedTarget: document.body }))
+        return true
+      })()`
+      await win.webContents.executeJavaScript(unhoverJs)
+      if (!(await waitForProbe(win, BUBBLE_CLOSED, 5_000))) {
+        fail('ticket-46 stage: the preview bubble never closed after the pointer left')
+      }
+      log('nav_rail_bubble_close_ok')
+
+      // ③ Click the first tick: smooth-scroll lands the message just below
+      // the top edge, and the anchored tick follows the viewport.
+      const clickJs = `(() => {
+        const el = document.querySelector('.chat-scroll')
+        const slot = document.querySelector('.nav-tick-slot')
+        if (!el || !slot) return null
+        const id = slot.getAttribute('data-nav-tick')
+        const target = el.querySelector('[data-turn-id="' + id + '"]')
+        if (!target) return null
+        const expected = Math.max(0, target.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop - 16)
+        slot.querySelector('button')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        return { id, expected }
+      })()`
+      const clicked = (await js(clickJs)) as { id: string; expected: number } | null
+      if (clicked === null || clicked.id === '') {
+        fail('ticket-46 stage: the tick click could not resolve its scroll target')
+      }
+      const landed = await waitForProbe(
+        win,
+        `(() => { const el = document.querySelector('.chat-scroll'); return Math.abs(el.scrollTop - ${clicked.expected}) < 60 })()`,
+        5_000
+      )
+      if (!landed) {
+        fail(`ticket-46 stage: the tick click never smooth-scrolled to the message (expected ${clicked.expected})`)
+      }
+      if (!(await waitForProbe(win, TICK_FOCUS(clicked.id), 5_000))) {
+        fail('ticket-46 stage: the clicked message tick never took the anchored (focus) state')
+      }
+      log('nav_rail_click_jump_ok')
+
+      // ④ Narrower than the 864px threshold → the rail hides with the
+      // fade/translate transition. The app's minWidth (1040) can never
+      // reach it, so shadow window.innerWidth in-page and fire resize.
+      const narrowJs = `(() => {
+        const own = Object.getOwnPropertyDescriptor(window, 'innerWidth')
+        const desc = own ?? Object.getOwnPropertyDescriptor(Object.getPrototypeOf(window), 'innerWidth')
+        window.__navInnerWidth = { own, desc }
+        Object.defineProperty(window, 'innerWidth', { value: 700, configurable: true })
+        window.dispatchEvent(new Event('resize'))
+        return window.innerWidth === 700
+      })()`
+      if ((await js(narrowJs)) !== true) {
+        fail('ticket-46 stage: could not shadow innerWidth for the narrow-window probe')
+      }
+      if (
+        !(await waitForProbe(
+          win,
+          `(() => { const r = document.querySelector('.nav-rail'); return r !== null && r.classList.contains('nav-rail-hidden') && Number(getComputedStyle(r).opacity) < 0.1 })()`,
+          5_000
+        ))
+      ) {
+        fail('ticket-46 stage: the rail never hid below the 864px window threshold')
+      }
+      const widenJs = `(() => {
+        const saved = window.__navInnerWidth ?? {}
+        Reflect.deleteProperty(window, 'innerWidth')
+        if (saved.own) Object.defineProperty(window, 'innerWidth', saved.own)
+        window.dispatchEvent(new Event('resize'))
+        return window.innerWidth > 1000
+      })()`
+      if ((await js(widenJs)) !== true) {
+        fail('ticket-46 stage: could not restore innerWidth after the narrow-window probe')
+      }
+      if (
+        !(await waitForProbe(
+          win,
+          `(() => { const r = document.querySelector('.nav-rail'); return r !== null && !r.classList.contains('nav-rail-hidden') && Number(getComputedStyle(r).opacity) > 0.9 })()`,
+          5_000
+        ))
+      ) {
+        fail('ticket-46 stage: the rail never came back once the window widened')
+      }
+      log('nav_rail_narrow_hidden_ok')
+
+      await win.webContents.executeJavaScript(composerClearJs)
+    })
+    log('nav_rail_done')
+
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
     const livePids = supervisor.hostPids
     if (livePids.length < 2) fail(`expected at least 2 live hosts before quit, saw ${livePids.length}`)

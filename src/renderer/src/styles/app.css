@@ -3311,6 +3311,17 @@ button.heat:hover {
   padding: 10px 48px 18px;
 }
 
+/* Ticket 46: the navigator rail lives inside the transcript's flex cell so
+   it can anchor to the scroll area's edges without covering the topbar or
+   the composer dock. */
+.chat-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .chat-thread {
   max-width: 860px;
   margin: 0 auto;
@@ -4159,6 +4170,165 @@ button.heat:hover {
   width: 100%;
   max-width: 860px;
   margin: 0 auto;
+}
+
+/* ---------- turn navigator rail (ticket 46, CONTEXT.md: 导航轨) ----------
+   ZCode-calibrated: 48px left-edge hit zone, 36px tick column vertically
+   centered and independently scrollable (wheel over the rail never scrolls
+   the transcript), equal-width 12×2px tick bars whose length decay reads
+   through scaleX. Show/hide is a 150ms opacity + translate transition. */
+
+.nav-rail {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 48px;
+  z-index: 5;
+  display: flex;
+  justify-content: center;
+  opacity: 1;
+  transform: translateX(0);
+  transition:
+    opacity 150ms ease-out,
+    transform 150ms ease-out;
+}
+
+.nav-rail-hidden {
+  opacity: 0;
+  transform: translateX(-8px);
+  pointer-events: none;
+}
+
+.nav-rail-ticks {
+  width: 36px;
+  max-height: calc(100% - 6rem);
+  margin: auto 0; /* vertical centering that degrades to top-align on overflow */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.nav-rail-ticks::-webkit-scrollbar {
+  display: none;
+}
+
+/* Inner wrapper keeps `margin: auto` centering safe while scrolling: with
+   few ticks the stack centers; once it overflows the margins collapse and
+   the top stays reachable. */
+.nav-rail-ticks-inner {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  justify-content: center;
+  padding: 2px 0;
+}
+
+.nav-tick-slot {
+  position: relative;
+  height: 10px;
+  width: 100%;
+  flex-shrink: 0;
+}
+
+.nav-tick {
+  appearance: none;
+  background: none;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.nav-tick:focus-visible {
+  outline: 1px solid var(--border-strong);
+  outline-offset: -1px;
+}
+
+.nav-tick-bar {
+  display: block;
+  width: 12px;
+  height: 2px;
+  border-radius: 1px;
+  transform-origin: left center;
+  background: var(--text-secondary);
+  transition: height 120ms ease-out;
+}
+
+.nav-tick-focus .nav-tick-bar {
+  background: var(--text-primary);
+}
+
+/* Hover bolds only the hovered tick — never rescales the others. */
+.nav-tick:hover .nav-tick-bar {
+  height: 3px;
+  background: var(--text-primary);
+}
+
+/* The preview bubble hangs off the rail itself (not the scrolling tick
+   column) so the column's overflow never clips it; `top` is measured per
+   hovered tick and transitions — moving up/down the rail glides the bubble
+   along (fade + micro-shift, no popping). */
+.nav-bubble {
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 0;
+  width: 320px;
+  z-index: 20;
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(30, 30, 25, 0.1);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  opacity: 0;
+  transform: translateY(-50%) translateX(4px);
+  transition:
+    opacity 150ms ease-out,
+    transform 150ms ease-out,
+    top 150ms ease-out;
+  pointer-events: none;
+}
+
+.nav-bubble-open {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+
+.nav-bubble-user {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  font-weight: 500;
+}
+
+.nav-bubble-reply {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  color: var(--text-secondary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-rail,
+  .nav-bubble {
+    transition: none;
+  }
 }
 
 /* ---------- chat topbar (session title + history dropdown) ---------- */
