@@ -185,6 +185,11 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       // events emitted before that point would never reach the reducer.
       const win = await waitForWindow(getWindow)
       if (!win) throw new Error('visual harness: no window')
+      // The visual frames capture compositor-driven fades (ticket 45's jump
+      // button, pane motion). A backgrounded window's renderer is throttled
+      // and the fade would freeze at opacity 0 mid-transition — opt this
+      // harness window out.
+      win.webContents.setBackgroundThrottling(false)
 
       // ---- reference 02: pristine empty state (greeting + composer + chips)
       await sleep(700)
@@ -462,6 +467,44 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
         `document.querySelector('.toast-message')?.textContent ?? ''`
       )) as string
       if (!toastText.includes('Forked')) throw new Error(`visual 2d: unexpected fork toast ${JSON.stringify(toastText)}`)
+      await sleep(300)
+
+      // ---- ticket 45: Jump to Latest — scrolled away past the stick
+      // threshold, the circular ↓ button fades in centered above the
+      // composer (operator review frame; ZCode reference
+      // z13-jump-to-latest). The 2d toast must clear first — it parks
+      // bottom-right and would sit in the frame.
+      for (let waited = 0; waited < 8_000; waited += 200) {
+        const toastUp = (await win.webContents.executeJavaScript(
+          `document.querySelector('.toast') !== null`
+        )) as boolean
+        if (!toastUp) break
+        await sleep(200)
+      }
+      const scrollable = (await win.webContents.executeJavaScript(
+        `(() => { const el = document.querySelector('.chat-scroll'); if (!el) return false; el.scrollTop = 0; return el.scrollHeight > el.clientHeight + 160 })()`
+      )) as boolean
+      if (!scrollable) throw new Error('visual 2e: the settled transcript does not overflow the viewport')
+      // Poll the fade to completion instead of a fixed sleep: the harness
+      // window may be unfocused, and Electron throttles a background
+      // renderer's transitions — the button must be SEEN opaque, not just
+      // class-flagged.
+      let fadeSettled = false
+      for (let waited = 0; waited < 8_000; waited += 100) {
+        const opacity = (await win.webContents.executeJavaScript(
+          `Number(getComputedStyle(document.querySelector('.chat-jump-btn') ?? document.body).opacity)`
+        )) as number
+        if (opacity > 0.9) {
+          fadeSettled = true
+          break
+        }
+        await sleep(100)
+      }
+      if (!fadeSettled) throw new Error('visual 2e: the jump button never faded in (opacity stuck at 0)')
+      await captureMenu(win, '2e-jump-to-latest', { 'jump button visible': '.chat-jump-btn-visible' })
+      await win.webContents.executeJavaScript(
+        `(() => { const el = document.querySelector('.chat-scroll'); if (el) el.scrollTop = el.scrollHeight; return true })()`
+      )
       await sleep(300)
 
       // Density check: with the container already open, unfold the inner
