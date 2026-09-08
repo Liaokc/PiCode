@@ -2605,6 +2605,155 @@ export function startSmokeIfEnabled(
     }
     log('history_tree_done')
 
+    // ---- ticket 45: scroll stay + jump-to-latest ----
+    // A FRESH session drives the three acceptance assertions. createSession
+    // switches focus to it (multi-session precedent), so the transcript is
+    // an in-app ChatView BY CONSTRUCTION — no sidebar routing (a row click
+    // on a session with a fresh file mtime can take the Live Follow path,
+    // whose view shares .chat-scroll but has no composer/jump button):
+    // ① streamed growth does NOT yank a reader who scrolled away (Q12 fix)
+    //    and the circular jump button fades in past the stick threshold;
+    // ② clicking the button smooth-travels back to the bottom and the
+    //    button fades out;
+    // ③ the user's own send jumps to the bottom even from scrolled-away.
+    log('scroll_stay_start')
+    const scrollCreated = waitFor(
+      (e) => e.type === 'session_created',
+      'scroll_stay session_created'
+    ) as Promise<Extract<Scoped, { type: 'session_created' }>>
+    supervisor.createSession(cwd)
+    const scrollSession = await scrollCreated
+    const scrollId = scrollSession.sessionId
+    // The transcript's height must not depend on the model's answer format
+    // (a fast model may compress the count into a few wrapped lines). The
+    // user bubble renders pre-wrap, so the prompt itself carries 100 blank
+    // lines — a ~2500px bubble that makes the transcript scrollable no
+    // matter how the reply comes back.
+    const COUNT_PROMPT =
+      'PICODE_SCROLL_45: Count from 1 to 120. Output each number on its own line, one number per line. Do not summarize and do not stop early.\n' +
+      '\n'.repeat(100)
+    await withWindow(getWindow, async (win) => {
+      const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+      /** Bottom-distance probe on the transcript scroll container. */
+      const AT_BOTTOM = `(() => { const el = document.querySelector('.chat-scroll'); return el !== null && el.scrollHeight - el.scrollTop - el.clientHeight < 40 })()`
+      /** Jump button probe: present, visible class on, opacity settled. */
+      const JUMP_VISIBLE = `(() => {
+        const btn = document.querySelector('.chat-jump-btn')
+        return btn !== null && btn.classList.contains('chat-jump-btn-visible') && Number(getComputedStyle(btn).opacity) > 0.9
+      })()`
+      const JUMP_HIDDEN = `(() => {
+        const btn = document.querySelector('.chat-jump-btn')
+        return btn !== null && !btn.classList.contains('chat-jump-btn-visible')
+      })()`
+      const SCROLL_DIAG = `JSON.stringify({
+        scrollTop: document.querySelector('.chat-scroll')?.scrollTop ?? null,
+        scrollH: document.querySelector('.chat-scroll')?.scrollHeight ?? null,
+        clientH: document.querySelector('.chat-scroll')?.clientHeight ?? null,
+        btn: document.querySelector('.chat-jump-btn')?.className ?? null,
+        btnOpacity: document.querySelector('.chat-jump-btn')
+          ? Number(getComputedStyle(document.querySelector('.chat-jump-btn')).opacity)
+          : null,
+        chatView: document.querySelector('.chat-view') !== null,
+        followBadge: document.querySelector('.follow-badge') !== null
+      })`
+
+      // The fresh session's empty chat view is on screen.
+      if (!(await waitForProbe(win, `document.querySelector('.chat-view') !== null`, 10_000))) {
+        fail('ticket-45 stage: the fresh session never reached the chat view')
+      }
+
+      // Start a LONG streaming run on the focused session. The user_message
+      // echo renders the turn (the arrival pin completes there) and the
+      // answer streams with the view pinned at the bottom.
+      supervisor.handleParentCommand({
+        type: 'session_command',
+        sessionId: scrollId,
+        command: { type: 'prompt', text: COUNT_PROMPT }
+      })
+      await waitFor((e) => e.type === 'agent_start' && e.sessionId === scrollId, 'scroll_stay agent_start')
+      if (
+        !(await waitForProbe(
+          win,
+          `(document.querySelector('.chat-thread')?.textContent ?? '').includes('PICODE_SCROLL_45')`,
+          10_000
+        ))
+      ) {
+        fail('ticket-45 stage: the count prompt never rendered in the focused transcript')
+      }
+      await waitFor((e) => e.type === 'text_delta' && e.sessionId === scrollId, 'scroll_stay first text_delta')
+      if (!(await waitForProbe(win, AT_BOTTOM, 5_000))) {
+        fail('ticket-45 stage: the streaming transcript did not stay pinned at the bottom')
+      }
+      log('scroll_stay_focus_pinned_ok')
+
+      // ① Scroll away while streaming: growth must NOT yank (Q12), and the
+      // jump button must fade in past the stick threshold.
+      await js(`(() => { const el = document.querySelector('.chat-scroll'); el.scrollTop = 0; return true })(); true`)
+      if (!(await waitForProbe(win, `document.querySelector('.chat-scroll').scrollTop === 0 && (${JUMP_VISIBLE})`, 5_000))) {
+        const diag = (await win.webContents.executeJavaScript(SCROLL_DIAG).catch(() => 'unavailable')) as string
+        fail(`ticket-45 stage: the jump button never faded in after scrolling away; DOM: ${diag}`)
+      }
+      const topBefore = (await js(`document.querySelector('.chat-scroll').scrollTop`)) as number
+      for (let seen = 0; seen < 3; seen++) {
+        await waitFor((e) => e.type === 'text_delta' && e.sessionId === scrollId, 'scroll_stay growth text_delta')
+      }
+      await new Promise((r) => setTimeout(r, 300))
+      const topAfter = (await js(`document.querySelector('.chat-scroll').scrollTop`)) as number
+      if (topAfter !== topBefore) fail(`ticket-45 stage: streamed growth yanked the reader (${topBefore} → ${topAfter})`)
+      log('scroll_stay_no_yank_ok')
+
+      // ② Click the jump button: travel back to the bottom, button fades out.
+      await js(
+        `document.querySelector('.chat-jump-btn').dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
+      )
+      if (!(await waitForProbe(win, `(${AT_BOTTOM}) && (${JUMP_HIDDEN})`, 5_000))) {
+        const diag = (await win.webContents.executeJavaScript(SCROLL_DIAG).catch(() => 'unavailable')) as string
+        fail(`ticket-45 stage: the jump click never returned to the bottom / the button never faded out; DOM: ${diag}`)
+      }
+      log('scroll_stay_jump_back_ok')
+
+      // ③ Own send jumps from scrolled-away: settle the run first (a send
+      // while busy would take the queued follow-up path — no user_message
+      // echo), then scroll to the top and send normally. The echo's
+      // user_message pass must pin the bottom.
+      supervisor.handleParentCommand({
+        type: 'session_command',
+        sessionId: scrollId,
+        command: { type: 'abort_turn' }
+      })
+      // Idle = the send button replaced the stop button — true whether the
+      // abort landed or the count had already finished on its own.
+      if (!(await waitForProbe(win, `document.querySelector('.cmp-send') !== null`, 15_000))) {
+        fail('ticket-45 stage: the composer never left the busy state after the abort')
+      }
+      await new Promise((r) => setTimeout(r, 500)) // the settle/fold rewrites settle
+      await js(`(() => { const el = document.querySelector('.chat-scroll'); el.scrollTop = 0; return true })(); true`)
+      if (!(await waitForProbe(win, `document.querySelector('.chat-scroll').scrollTop === 0 && (${JUMP_VISIBLE})`, 5_000))) {
+        const diag = (await win.webContents.executeJavaScript(SCROLL_DIAG).catch(() => 'unavailable')) as string
+        fail(`ticket-45 stage: the jump button never re-showed for the self-send step; DOM: ${diag}`)
+      }
+      if (!(await win.webContents.executeJavaScript(composerTypeJs('Reply with exactly: PICODE_SEND_45')).catch(() => false))) {
+        fail('ticket-45 stage: composer textarea missing for the self-send')
+      }
+      await new Promise((r) => setTimeout(r, 300))
+      await win.webContents.executeJavaScript(composerKeyJs('Enter'))
+      const sent = await waitForProbe(
+        win,
+        `(document.querySelector('.chat-thread')?.textContent ?? '').includes('PICODE_SEND_45') && (${AT_BOTTOM}) && (${JUMP_HIDDEN})`,
+        10_000
+      )
+      if (!sent) {
+        const diag = (await win.webContents.executeJavaScript(SCROLL_DIAG).catch(() => 'unavailable')) as string
+        fail(`ticket-45 stage: the own send never jumped back to the bottom; DOM: ${diag}`)
+      }
+      log('scroll_stay_self_send_ok')
+
+      // Let the reply turn settle so the stage leaves a quiet session.
+      await waitFor((e) => e.type === 'agent_end' && e.sessionId === scrollId, 'scroll_stay reply agent_end')
+      await win.webContents.executeJavaScript(composerClearJs)
+    })
+    log('scroll_stay_done')
+
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
     const livePids = supervisor.hostPids
     if (livePids.length < 2) fail(`expected at least 2 live hosts before quit, saw ${livePids.length}`)

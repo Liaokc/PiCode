@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type JSX } from 'react'
-import type { ChatState } from '../../../shared/chat-reducer'
+import type { ChatEntry, ChatState } from '../../../shared/chat-reducer'
+import { isNearBottom, shouldAutoScroll } from '../../../shared/scroll-stay'
 import { groupTurns } from '../../../shared/turn-collapse'
 import type { SessionTreePayload } from '../../../shared/sessions/types'
 import Composer, { type ComposerApi } from './Composer'
@@ -63,7 +64,18 @@ export default function ChatView({
   onDeny
 }: ChatViewProps): JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null)
-  const lastLength = useRef(0)
+  // Ticket 45 scroll-stay bookkeeping: growth detection by reference (every
+  // reducer rewrite of entries/expandedTurns), the focused session's id, and
+  // the two pin latches — send (one decision pass) and jump travel (until
+  // the bottom is reached or the user's own scroll takes over).
+  const lastEntries = useRef<ChatEntry[] | null>(null)
+  const lastTurns = useRef<ReadonlySet<string> | null>(null)
+  const lastSessionId = useRef<string | null>(null)
+  const arrivalPending = useRef(true)
+  const sendPin = useRef(false)
+  const returning = useRef(false)
+  const lastScrollTop = useRef(0)
+  const [jumpVisible, setJumpVisible] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [draft, setDraft] = useState('')
   /** Ticket 23: the flat transcript grouped into per-turn fold containers. */
@@ -79,16 +91,84 @@ export default function ChatView({
     return () => window.removeEventListener(RENAME_EVENT, focusRename)
   }, [tree?.name])
 
-  // Keep the newest content in view while streaming (and when a fold toggle
-  // changes the transcript height while the reader sits at the bottom).
+  // Ticket 45: the stick decision is the Seam-1 pure function
+  // shouldAutoScroll — the viewport pins to the bottom only while the reader
+  // is already near it or their own agency asks for it (send / jump click).
+  // Growth alone NEVER yanks a reader who scrolled away (Q12 behavior
+  // change). A freshly focused transcript has no reading position to
+  // preserve, so arrival pins the bottom until the content has landed
+  // (a resumed session arrives over two passes: session_created empties the
+  // transcript, history_loaded replays it).
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
-    const grew = chat.entries.length !== lastLength.current
-    lastLength.current = chat.entries.length
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 160
-    if (grew || nearBottom) el.scrollTop = el.scrollHeight
-  }, [chat.entries, chat.expandedTurns])
+    const sessionId = chat.session?.sessionId ?? null
+    if (sessionId !== lastSessionId.current) {
+      lastSessionId.current = sessionId
+      arrivalPending.current = true
+      lastEntries.current = null
+      lastTurns.current = null
+    }
+    const grew = chat.entries !== lastEntries.current || chat.expandedTurns !== lastTurns.current
+    lastEntries.current = chat.entries
+    lastTurns.current = chat.expandedTurns
+    const selfSent = sendPin.current || returning.current
+    sendPin.current = false
+    if (arrivalPending.current) {
+      el.scrollTop = el.scrollHeight
+      setJumpVisible(false)
+      if (chat.entries.length > 0) arrivalPending.current = false
+      return
+    }
+    const nearBottom = isNearBottom(el)
+    if (shouldAutoScroll({ nearBottom }, { grew }, selfSent)) {
+      el.scrollTop = el.scrollHeight
+    }
+    setJumpVisible(!isNearBottom(el))
+  }, [chat.entries, chat.expandedTurns, chat.session])
+
+  // Ticket 45: track the reader's position for the Jump-to-Latest button,
+  // and end the jump travel when it arrives — or when the user scrolls
+  // upward mid-travel (their wheel took over; the pin must not survive it
+  // and yank them back on the next growth pass).
+  function handleScroll(): void {
+    const el = scrollRef.current
+    if (!el) return
+    const top = el.scrollTop
+    if (returning.current && (isNearBottom(el) || top < lastScrollTop.current - 1)) {
+      returning.current = false
+    }
+    lastScrollTop.current = top
+    setJumpVisible(!isNearBottom(el))
+  }
+
+  // Ticket 45 (CONTEXT.md: 回底钮): smooth travel back to the newest
+  // content. The travel pin keeps the bottom pinned through growth that
+  // lands mid-travel, so the click restores stickiness.
+  function jumpToLatest(): void {
+    const el = scrollRef.current
+    if (!el) return
+    returning.current = true
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    el.scrollTo({ top: el.scrollHeight, behavior: reduced ? 'auto' : 'smooth' })
+  }
+
+  // Ticket 45: the user's own send (send, steer, follow-up) asks for the
+  // bottom — the stick decision honors it on the pass that lands the
+  // message (spec: 自发送置底).
+  const withPin = (send: ComposerApi['onSend']): ComposerApi['onSend'] => (text, images) => {
+    sendPin.current = true
+    send(text, images)
+  }
+  const pinnedComposerApi = useMemo<ComposerApi>(
+    () => ({
+      ...composerApi,
+      onSend: withPin(composerApi.onSend),
+      onSteer: withPin(composerApi.onSteer),
+      onFollowUp: withPin(composerApi.onFollowUp)
+    }),
+    [composerApi]
+  )
 
   function startRename(): void {
     setDraft(tree?.name ?? '')
@@ -148,7 +228,7 @@ export default function ChatView({
         </button>
         {treeOpen && <TreePanel tree={tree} onNavigate={onNavigateTree} onFork={onFork} onClose={onCloseTree} />}
       </div>
-      <div ref={scrollRef} className="chat-scroll">
+      <div ref={scrollRef} className="chat-scroll" onScroll={handleScroll}>
         <div className="chat-thread">
           {chat.entries.length === 0 && !chat.agentRunning && (
             <div className="chat-empty-hint">No messages yet — describe what you need below.</div>
@@ -183,6 +263,16 @@ export default function ChatView({
         </div>
       </div>
       <div className="chat-dock">
+        <Tooltip label="Jump to latest">
+          <button
+            type="button"
+            className={jumpVisible ? 'chat-jump-btn chat-jump-btn-visible' : 'chat-jump-btn'}
+            aria-label="Jump to latest"
+            onClick={jumpToLatest}
+          >
+            <ChevronDownIcon size={14} />
+          </button>
+        </Tooltip>
         <Composer
           busy={chat.agentRunning}
           disabled={creating || noSession}
@@ -193,7 +283,7 @@ export default function ChatView({
           }
           chat={chat}
           queue={chat.queue}
-          {...composerApi}
+          {...pinnedComposerApi}
         />
       </div>
     </div>
