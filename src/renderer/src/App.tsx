@@ -149,6 +149,11 @@ export default function App(): JSX.Element {
   const pendingPromptRef = useRef<string | null>(null)
   /** Images typed (pasted) before a folder exists; attached to the first prompt. */
   const pendingImagesRef = useRef<ImageAttachment[] | null>(null)
+  /** Ticket 51 fork ack: the session id a fork_session command was sent to,
+   * while the command is in flight. The success toast fires only when the
+   * forked session's announcement (session_created) arrives — never
+   * optimistically; failures clear it and surface session_command_error. */
+  const forkAckRef = useRef<string | null>(null)
 
   // ---- session index + sidebar state ----
   const [sessions, setSessions] = useState<SessionSummary[]>([])
@@ -302,6 +307,13 @@ export default function App(): JSX.Element {
             })
           }
           refreshSessions()
+          // Ticket 51: the fork's success toast is an ACK — it fires when
+          // the forked session's announcement arrives (the announcement is
+          // always a NEW session id, never the fork target's).
+          if (forkAckRef.current !== null && scopeId !== forkAckRef.current) {
+            forkAckRef.current = null
+            notify('Forked to a new session.', 'info')
+          }
           break
         }
         case 'history_loaded':
@@ -337,11 +349,16 @@ export default function App(): JSX.Element {
           break
         }
         case 'session_command_error':
+          // A failed fork will never announce — drop the pending ack so no
+          // later unrelated announcement can toast a success that didn't
+          // happen (ticket 51). The error itself surfaces below.
+          forkAckRef.current = null
           if (event.type === 'session_event') notify(event.event.message, 'error')
           else notify(event.message, 'error')
           break
         case 'session_error':
         case 'host_exit':
+          forkAckRef.current = null
           setCreating(false)
           pendingPromptRef.current = null
           pendingImagesRef.current = null
@@ -988,11 +1005,15 @@ export default function App(): JSX.Element {
   }
 
   /** Fork the session at an entry (branch-history panel or message action
-   * row, ticket 16). The host swaps to the branched session by re-announcing
-   * session_created — the toast confirms the switch the user just got. */
+   * row, ticket 16). Toast discipline (ticket 51): the click itself is
+   * silent — the success toast fires only when the forked session's
+   * announcement arrives, and failures surface through the existing
+   * session_command_error toast. A click mid-run stays a silent no-op (Q5:
+   * the host's requireSettledSession guard stays in place untouched). */
   function handleFork(entryId: string): void {
+    if (chat.agentRunning || chat.session === null) return
+    forkAckRef.current = focusedIdRef.current
     sendFocused({ type: 'fork_session', entryId })
-    notify('Forked to a new session.', 'info')
   }
 
   // ---- File Preview deep-links (ticket 07, multi-tab semantics ticket 31) ----

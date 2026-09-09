@@ -372,12 +372,15 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
 
     case 'user_message': {
       // Ticket 23: opening a turn folds the previous one (unless it errored);
-      // the new turn starts expanded so its run streams in view.
+      // the new turn starts expanded so its run streams in view. Ticket 51:
+      // a real session entry id rides the event when the host read it back
+      // at persistence (live fork anchor); absence (aborted/failed prompt
+      // shapes) falls back to the positional synthetic id.
       const folded = collapseCurrentTurn(state)
       const entries: ChatEntry[] = [
         ...folded.entries,
         {
-          id: entryId(folded.entries.length),
+          id: event.entryId ?? entryId(folded.entries.length),
           role: 'user',
           text: event.text,
           skillName: sniffSkillName(event.text)
@@ -458,9 +461,14 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case 'message_end': {
       const last = state.entries[state.entries.length - 1]
       if (!isStreamingAssistant(last)) return state
+      // Ticket 51: the host backfills the real session entry id (read back
+      // at persistence) so the fork anchor addresses the actual entry.
       return {
         ...state,
-        entries: [...state.entries.slice(0, -1), { ...last, streaming: false, parts: last.parts.map(closeThinking) }]
+        entries: [
+          ...state.entries.slice(0, -1),
+          { ...last, id: event.entryId ?? last.id, streaming: false, parts: last.parts.map(closeThinking) }
+        ]
       }
     }
 

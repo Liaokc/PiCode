@@ -112,6 +112,13 @@ interface TurnDraft {
   userText: string
   raw: RawItem[]
   pendingApproval: boolean
+  /** Ordinal for the next assistant part inside this turn. Part keys are
+   * POSITIONAL (turn id + ordinal), never the owning entry's id: the
+   * ticket-51 real-id backfill rewrites an assistant entry's id at
+   * message_end, and an id-derived key would remount the streamed subtree
+   * mid-session. Parts only ever append, so ordinals are stable from first
+   * render through the answer↔narration split. */
+  nextPartIndex: number
 }
 
 /**
@@ -163,20 +170,29 @@ export function groupTurns(entries: ChatEntry[], agentRunning: boolean): TurnGro
         skillName: entry.skillName,
         userText: stripSkillPrologue(entry.text, entry.skillName),
         raw: [],
-        pendingApproval: false
+        pendingApproval: false,
+        nextPartIndex: 0
       }
       drafts.push(current)
       continue
     }
     if (current === null) {
-      current = { id: HEAD_TURN_ID, user: null, skillName: null, userText: '', raw: [], pendingApproval: false }
+      current = {
+        id: HEAD_TURN_ID,
+        user: null,
+        skillName: null,
+        userText: '',
+        raw: [],
+        pendingApproval: false,
+        nextPartIndex: 0
+      }
       drafts.push(current)
     }
     const draft: TurnDraft = current
     switch (entry.role) {
       case 'assistant':
-        entry.parts.forEach((part, index) => {
-          const key = `${entry.id}-p${index}`
+        entry.parts.forEach((part) => {
+          const key = `${draft.id}-p${draft.nextPartIndex++}`
           if (part.kind === 'thinking') {
             draft.raw.push({ kind: 'thinking', key, part })
           } else {

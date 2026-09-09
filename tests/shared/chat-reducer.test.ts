@@ -3,6 +3,7 @@ import { chatReducer, initialChatState, type ChatState, type UserEntry } from '.
 import type { HostToParent } from '../../src/shared/contract'
 import type { TranscriptItem } from '../../src/shared/sessions/types'
 import { UNFINISHED_TOOL_OUTPUT } from '../../src/shared/tool-format'
+import { groupTurns } from '../../src/shared/turn-collapse'
 
 const SESSION_CREATED: HostToParent = {
   type: 'session_created',
@@ -320,6 +321,102 @@ describe('chatReducer — thinking blocks', () => {
       ],
       streaming: true
     })
+  })
+})
+
+describe('chatReducer — real entry id backfill (ticket 51)', () => {
+  /** Table: [user_message echo, expected user-entry id]. The host carries
+   * the real session entry id when it read it back at persistence (live
+   * fork anchor, ticket 51); absence (aborted/failed prompt shapes) falls
+   * back to the positional synthetic id. */
+  const userMessageCases: Array<{ name: string; event: HostToParent; expectedId: string }> = [
+    {
+      name: 'adopts the real session entry id when the event carries one',
+      event: { type: 'user_message', text: 'hi there', entryId: 'u-real-1' },
+      expectedId: 'u-real-1'
+    },
+    {
+      name: 'falls back to the synthetic positional id when the event carries none',
+      event: { type: 'user_message', text: 'hi there' },
+      expectedId: 'm0'
+    }
+  ]
+  for (const tc of userMessageCases) {
+    it(`user_message ${tc.name}`, () => {
+      const state = run(initialChatState(), SESSION_CREATED, tc.event)
+      expect(state.entries).toEqual([{ id: tc.expectedId, role: 'user', text: 'hi there', skillName: null }])
+    })
+  }
+
+  it('synthetic ids stay positional across turns so a late real id never collides', () => {
+    const state = run(
+      initialChatState(),
+      SESSION_CREATED,
+      { type: 'user_message', text: 'first', entryId: 'u-real-1' },
+      { type: 'user_message', text: 'second' }
+    )
+    expect(state.entries.map((e) => (e.role === 'user' ? e.id : null))).toEqual(['u-real-1', 'm1'])
+  })
+
+  it('message_end backfills the real entry id onto the open streaming assistant entry', () => {
+    const state = run(
+      initialChatState(),
+      SESSION_CREATED,
+      { type: 'user_message', text: 'q', entryId: 'u-real-1' },
+      { type: 'message_start' },
+      { type: 'text_delta', delta: 'a' },
+      { type: 'message_end', entryId: 'a-real-1' }
+    )
+    expect(state.entries[1]).toEqual({
+      id: 'a-real-1',
+      role: 'assistant',
+      parts: [{ kind: 'text', text: 'a' }],
+      streaming: false
+    })
+  })
+
+  it('message_end without an id keeps the synthetic id (aborted-turn robustness)', () => {
+    const state = run(
+      initialChatState(),
+      SESSION_CREATED,
+      { type: 'user_message', text: 'q', entryId: 'u-real-1' },
+      { type: 'message_start' },
+      { type: 'text_delta', delta: 'a' },
+      { type: 'message_end' }
+    )
+    expect(state.entries[1]).toMatchObject({ id: 'm1', streaming: false })
+  })
+
+  it('a full turn with real ids leaves both entries fork-addressable', () => {
+    const state = run(
+      initialChatState(),
+      SESSION_CREATED,
+      { type: 'user_message', text: 'hello', entryId: 'u-real-1' },
+      { type: 'agent_start' },
+      { type: 'message_start' },
+      { type: 'text_delta', delta: 'Hel' },
+      { type: 'text_delta', delta: 'lo' },
+      { type: 'message_end', entryId: 'a-real-1' },
+      { type: 'agent_end' }
+    )
+    expect(state.entries.map((e) => e.id)).toEqual(['u-real-1', 'a-real-1'])
+    // The turn-collapse fork anchor follows the backfilled id (ticket 16;
+    // the ticket-53 split keeps the anchor on the last text part's entry).
+    const [turn] = groupTurns(state.entries, state.agentRunning)
+    expect(turn.answer?.entryId).toBe('a-real-1')
+  })
+
+  it('agent_end settle without message_end never invents a real id (aborted turn)', () => {
+    const state = run(
+      initialChatState(),
+      SESSION_CREATED,
+      { type: 'user_message', text: 'q', entryId: 'u-real-1' },
+      { type: 'agent_start' },
+      { type: 'message_start' },
+      { type: 'text_delta', delta: 'partial' },
+      { type: 'agent_end' }
+    )
+    expect(state.entries[1]).toMatchObject({ id: 'm1', streaming: false })
   })
 })
 

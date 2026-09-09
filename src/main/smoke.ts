@@ -84,7 +84,7 @@ import os from 'node:os'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { app, clipboard, type BrowserWindow } from 'electron'
 import type { HostSupervisor } from './host-supervisor'
 import { focusSessionFromNotification, type ApprovalNotice } from './notifications'
@@ -3297,6 +3297,163 @@ export function startSmokeIfEnabled(
       })
     }
     log('answer_split_done')
+
+    // ---- ticket 51: live-path fork — real entry ids + toast ack regime.
+    // A brand-new session (never resumed) takes two real turns; forking the
+    // settled answer must land (the anchor is now the REAL session entry id
+    // backfilled at persistence), produce exactly ONE success toast (the ack
+    // fired by the forked session's announcement — no optimistic toast, no
+    // error companion), inject zero junk user turns into the parent, and
+    // leave mid-run clicks a silent no-op. ----
+    log('fork_live_start')
+    const forkProject = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-fork51-'))
+    try {
+      supervisor.createSession(forkProject)
+      const parentCreated = (await waitFor(
+        (e) => e.type === 'session_created' && e.cwd === forkProject,
+        'ticket-51 parent session_created'
+      )) as Extract<Scoped, { type: 'session_created' }>
+      const parentSessionId = parentCreated.sessionId
+      log('fork_live_parent_created', `session=${parentSessionId.slice(-6)}`)
+
+      await withWindow(getWindow, async (win) => {
+        const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+        const toastCount = (needle: string): string =>
+          `[...document.querySelectorAll('.toast-message')].filter((n) => (n.textContent ?? '').includes(${JSON.stringify(needle)})).length`
+        const clickForkJs = `(() => {
+          const btns = [...document.querySelectorAll('.msg-action-btn')].filter((b) => b.textContent?.includes('Fork'))
+          if (btns.length === 0) return false
+          btns[btns.length - 1].dispatchEvent(new MouseEvent('click', { bubbles: true }))
+          return btns.length
+        })()`
+
+        // Two real turns through the composer (the live path the fix is for).
+        // Waiters arm BEFORE the send — events match on arrival only, and a
+        // fast model can finish a short reply inside any later sleep.
+        for (const marker of ['PICODE_FORK_LIVE_ONE', 'PICODE_FORK_LIVE_TWO']) {
+          await js(composerClearJs)
+          const settled = waitFor(
+            (e) => e.type === 'agent_end' && e.sessionId === parentSessionId,
+            `ticket-51 turn ${marker} agent_end`
+          )
+          if (!(await js(composerTypeJs(`Reply with exactly: ${marker}`)).catch(() => false))) {
+            fail('ticket-51 stage: the composer textarea is missing')
+          }
+          await js(composerKeyJs('Enter'))
+          await settled
+        }
+        log('fork_live_two_turns_ok')
+
+        // MID-RUN: start a third turn and click the most recent settled
+        // answer's Fork while it runs. Q5: a silent no-op — no command, no
+        // toast, no fork. (Settled turns keep their actions rows; the live
+        // turn offers none.)
+        await js(composerClearJs)
+        const turnThreeStart = waitFor(
+          (e) => e.type === 'agent_start' && e.sessionId === parentSessionId,
+          'ticket-51 turn three agent_start'
+        )
+        const turnThreeEnd = waitFor(
+          (e) => e.type === 'agent_end' && e.sessionId === parentSessionId,
+          'ticket-51 turn three agent_end'
+        )
+        await js(composerTypeJs('Reply with exactly: PICODE_FORK_LIVE_THREE'))
+        await js(composerKeyJs('Enter'))
+        await turnThreeStart
+        let silentForkAnnouncements = 0
+        const onSilentAnnouncement = (e: Scoped): void => {
+          if (e.type === 'session_created') silentForkAnnouncements++
+        }
+        observers.push(onSilentAnnouncement)
+        if (!((await js(clickForkJs)) as boolean)) fail('ticket-51 stage: the settled answer\'s Fork button never rendered')
+        await new Promise((r) => setTimeout(r, 2_500))
+        observers.splice(observers.indexOf(onSilentAnnouncement), 1)
+        if (silentForkAnnouncements > 0) fail('ticket-51 stage: a mid-run Fork click restructured the session')
+        const silentToasts = (await js(`document.querySelectorAll('.toast-message').length`)) as number
+        if (silentToasts !== 0) {
+          fail('ticket-51 stage: the mid-run Fork click raised a toast (must stay silent)')
+        }
+        log('fork_live_midrun_silent_ok')
+        // Let the third turn settle; the stage leaves a quiet session.
+        await turnThreeEnd
+        await js(composerClearJs)
+
+        // THE FORK: click the last settled answer's Fork. The parent must
+        // see ZERO user_message from here on (no junk turns), and the
+        // success toast may only appear when the forked session announces.
+        let parentUserMessages = 0
+        const onParentUserMessage = (e: Scoped): void => {
+          if (e.type === 'user_message' && e.sessionId === parentSessionId) parentUserMessages++
+        }
+        observers.push(onParentUserMessage)
+        if (!((await js(clickForkJs)) as boolean)) fail('ticket-51 stage: the last answer\'s Fork button never rendered')
+
+        const childCreated = (await waitFor(
+          (e) => e.type === 'session_created' && e.sessionId !== parentSessionId && e.cwd === forkProject,
+          'ticket-51 forked session_created'
+        )) as Extract<Scoped, { type: 'session_created' }>
+        const childSessionId = childCreated.sessionId
+        if (typeof childCreated.sessionFile !== 'string') fail('ticket-51 stage: the forked announcement carries no session file')
+        const childFile = childCreated.sessionFile
+        await waitFor((e) => e.type === 'history_loaded' && e.sessionId === childSessionId, 'ticket-51 forked history_loaded')
+
+        // Exactly ONE success toast — the ack. No error companion.
+        let successToasts = 0
+        for (let waited = 0; waited < 5_000; waited += 100) {
+          successToasts = (await js(toastCount('Forked to a new session.')).catch(() => 0)) as number
+          if (successToasts > 0) break
+          await new Promise((r) => setTimeout(r, 100))
+        }
+        if (successToasts !== 1) fail(`ticket-51 stage: expected exactly 1 success toast, saw ${successToasts}`)
+        if (((await js(`document.querySelectorAll('.toast-error').length`)) as number) > 0) {
+          fail('ticket-51 stage: a successful fork raised an error toast beside it (double toast)')
+        }
+        log('fork_live_ack_toast_ok')
+
+        // Zero junk turns in the parent across the whole fork window.
+        await new Promise((r) => setTimeout(r, 2_500))
+        observers.splice(observers.indexOf(onParentUserMessage), 1)
+        if (parentUserMessages > 0) fail(`ticket-51 stage: the fork leaked ${parentUserMessages} user_message(s) into the parent`)
+
+        // parentSession fidelity: the child file's header names the parent,
+        // the transcript cloned up to the fork point, and the child's tail
+        // entry IS the anchored (real-id) assistant entry.
+        if (!existsSync(childFile)) fail('ticket-51 stage: the forked session file never landed')
+        const childLines = readFileSync(childFile, 'utf-8').trim().split('\n')
+        const childHeader = JSON.parse(childLines[0]) as { type?: string; parentSession?: string }
+        if (childHeader.type !== 'session' || typeof childHeader.parentSession !== 'string') {
+          fail('ticket-51 stage: the forked session header does not name its parent session')
+        }
+        if (!existsSync(childHeader.parentSession)) fail('ticket-51 stage: the named parent session file is missing')
+        const childAnchor = childLines
+          .map((line) => JSON.parse(line) as { type?: string; id?: string; message?: { role?: string; content?: unknown } })
+          .filter((e) => e.type === 'message' && e.message?.role === 'assistant')
+          .at(-1)
+        const parentLines = readFileSync(childHeader.parentSession, 'utf-8').trim().split('\n')
+        const parentAnchor = parentLines
+          .map((line) => JSON.parse(line) as { type?: string; id?: string; message?: { role?: string; content?: unknown } })
+          .filter((e) => e.type === 'message' && e.message?.role === 'assistant')
+          .at(-1)
+        if (!childAnchor || !parentAnchor || childAnchor.id !== parentAnchor.id) {
+          fail('ticket-51 stage: the fork did not anchor at the parent\'s last assistant entry (real id mismatch)')
+        }
+        log('fork_live_parent_session_ok')
+
+        // The view switched: the forked session is focused in the sidebar.
+        let focusedRow = false
+        for (let waited = 0; waited < 5_000; waited += 100) {
+          focusedRow = (await js(
+            `document.querySelector('[data-file=${JSON.stringify(childFile)}]')?.classList.contains('sb-task-active') ?? false`
+          ).catch(() => false)) as boolean
+          if (focusedRow) break
+          await new Promise((r) => setTimeout(r, 100))
+        }
+        if (!focusedRow) fail('ticket-51 stage: the view never switched to the forked session')
+      })
+      log('fork_live_done')
+    } finally {
+      rmSync(forkProject, { recursive: true, force: true })
+    }
 
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
     const livePids = supervisor.hostPids

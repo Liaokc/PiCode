@@ -49,6 +49,7 @@ import {
 import { listRelativeFiles } from './files'
 import { readGitBranch } from './git-branch'
 import { createApprovalGateExtension, toImageContents } from './gate-extension'
+import { HeldMessageEnd, monitorSessionManager } from './live-entry-ids'
 import { parseSessionArgs } from './session-args'
 
 /** Working directory / resume target / PiCode preference defaults (ticket 11),
@@ -88,10 +89,17 @@ let pendingTurnError: string | null = null
 const gate = new ApprovalGate()
 const approvalExtension = createApprovalGateExtension(gate, send)
 
-/** User messages this process already echoed via the `prompt` command; used
- * to de-duplicate the `entry_appended` relay so delivered Steer/Follow-up
- * messages surface exactly once (ticket 05 queue semantics). */
+/** User messages this process already echoed via the `prompt` command; the
+ * appendMessage monitor consumes them at the persistence moment, where the
+ * echo is relayed WITH the real session entry id (ticket 51). A prompt that
+ * fails before persisting echoes id-less from its catch (flushPendingEcho). */
 const pendingEchoes: string[] = []
+
+/** Ticket 51: the current session's held assistant message_end (see
+ * live-entry-ids). Re-armed per session wiring; released by the
+ * appendMessage monitor at the persistence moment, or flushed id-less when
+ * any other SDK event arrives first (aborted-turn shapes). */
+let heldMessageEnd = new HeldMessageEnd()
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -130,9 +138,16 @@ function sendHistory(): void {
 
 function wireSessionEvents(agentSession: AgentSession): void {
   unwireSession?.()
+  heldMessageEnd = new HeldMessageEnd()
   /** Wall-clock start of the currently open thinking block (host-measured). */
   let thinkingStartedAt: number | null = null
   const unsubscribe = agentSession.subscribe((event: AgentSessionEvent) => {
+    // Ticket 51: a held message_end whose entry never persisted flushes
+    // id-less BEFORE anything can reorder the stream (the assistant hold
+    // itself is the one message_end case that must not flush).
+    if (!(event.type === 'message_end' && event.message.role === 'assistant') && heldMessageEnd.flush()) {
+      send({ type: 'message_end' })
+    }
     switch (event.type) {
       case 'agent_start':
         settled = false
@@ -181,13 +196,12 @@ function wireSessionEvents(agentSession: AgentSession): void {
         break
       }
       case 'message_end': {
-        if (event.message.role === 'user') {
-          // Steer/Follow-up deliveries surface as injected user messages.
-          relayDeliveredUserText(userEntryText(event.message.content))
-          break
-        }
+        if (event.message.role === 'user') break
         if (event.message.role !== 'assistant') break
-        send({ type: 'message_end' })
+        // Ticket 51: held — the contract event is released by the
+        // appendMessage monitor at the persistence moment, carrying the
+        // real session entry id the fork anchor needs.
+        heldMessageEnd.hold()
         // Hold the error: auto-retry may still recover; only a run that ends
         // in failure surfaces `turn_error` (see `agent_end` below).
         if (event.message.stopReason === 'error') {
@@ -217,9 +231,6 @@ function wireSessionEvents(agentSession: AgentSession): void {
       case 'queue_update':
         send({ type: 'queue_update', steering: [...event.steering], followUp: [...event.followUp] })
         break
-      case 'entry_appended':
-        relayAppendedUserEntry(event.entry)
-        break
       case 'thinking_level_changed':
         send({
           type: 'thinking_level_changed',
@@ -248,28 +259,29 @@ function wireSessionEvents(agentSession: AgentSession): void {
   unwireSession = unsubscribe
 }
 
-/** A user message delivered mid-run (Steer/Follow-up) surfaces in the
- * transcript exactly once: prompt echoes are pre-recorded and consumed, and
- * a small recent-set guards the double path (message_end + entry_appended). */
-const recentRelays: string[] = []
-
-function relayDeliveredUserText(text: string | null): void {
+/** Relay one persisted user message (ticket 51): the single surfacing point
+ * for prompt echoes AND delivered Steer/Follow-up messages — the
+ * appendMessage monitor calls this at the persistence moment, where the real
+ * session entry id is known. Prompt echoes are pre-recorded and consumed
+ * here so delivered messages surface exactly once (ticket 05 semantics). */
+function relayDeliveredUserText(text: string | null, entryId: string | undefined): void {
   if (text === null || text === '') return
   const echoIndex = pendingEchoes.indexOf(text)
-  if (echoIndex !== -1) {
-    pendingEchoes.splice(echoIndex, 1)
-    return
-  }
-  if (recentRelays.includes(text)) return
-  recentRelays.push(text)
-  if (recentRelays.length > 20) recentRelays.shift()
-  send({ type: 'user_message', text })
+  if (echoIndex !== -1) pendingEchoes.splice(echoIndex, 1)
+  send(entryId !== undefined ? { type: 'user_message', text, entryId } : { type: 'user_message', text })
 }
 
-function relayAppendedUserEntry(entry: SessionEntry): void {
-  const candidate = entry as { type?: string; message?: { role?: string; content?: unknown } }
-  if (candidate.type !== 'message' || candidate.message?.role !== 'user') return
-  relayDeliveredUserText(userEntryText(candidate.message.content))
+/** The appendMessage monitor callback (ticket 51): the persistence moment of
+ * every LLM message. User messages relay with their real entry id; assistant
+ * messages release the held message_end with theirs. */
+function onMessageAppended(message: Parameters<SessionManager['appendMessage']>[0], entryId: string): void {
+  if (message.role === 'user') {
+    relayDeliveredUserText(userEntryText(message.content), entryId)
+    return
+  }
+  if (message.role === 'assistant' && heldMessageEnd.settle()) {
+    send({ type: 'message_end', entryId })
+  }
 }
 
 function userEntryText(content: unknown): string | null {
@@ -360,6 +372,11 @@ async function createSession(): Promise<void> {
       cwd: opts.cwd,
       resourceLoaderOptions: { extensionFactories: [approvalExtension] }
     })
+    // Ticket 51: wrap the manager BEFORE the AgentSession consumes it, so
+    // every message persistence reports its real entry id (live fork anchor
+    // + user_message echo). The factory backs the initial session AND every
+    // in-host replacement (fork), so one wrap covers all sessions.
+    monitorSessionManager(opts.sessionManager, onMessageAppended)
     // Seeds apply to the INITIAL creation only — in-host replacements (fork)
     // re-run this factory and must inherit the branched session's model.
     const seed = pendingSeed ? newSessionSeedOptions(services) : {}
@@ -406,22 +423,29 @@ function handlePrompt(text: string, images?: ImageAttachment[]): void {
     send({ type: 'turn_error', message: 'Cannot prompt while no session is ready or a run is in flight.' })
     return
   }
-  send({ type: 'user_message', text })
+  // Ticket 51: the user_message echo waits for the entry's persistence (the
+  // appendMessage monitor) so it carries the real session entry id. A prompt
+  // that fails before persisting echoes id-less from its catch — the message
+  // still surfaces next to its error.
   pendingEchoes.push(text)
   try {
     agentSession.prompt(text, { images: toImageContents(images) }).catch((err: unknown) => {
-      pullEcho(text)
+      flushPendingEcho(text)
       send({ type: 'turn_error', message: errorText(err) })
     })
   } catch (err) {
-    pullEcho(text)
+    flushPendingEcho(text)
     send({ type: 'turn_error', message: errorText(err) })
   }
 }
 
-function pullEcho(text: string): void {
+/** Echo a prompt whose entry never persisted — id-less (the renderer falls
+ * back to its synthetic id). No-op when the monitor already relayed it. */
+function flushPendingEcho(text: string): void {
   const index = pendingEchoes.indexOf(text)
-  if (index !== -1) pendingEchoes.splice(index, 1)
+  if (index === -1) return
+  pendingEchoes.splice(index, 1)
+  send({ type: 'user_message', text })
 }
 
 /** Explicit Steer: inject into the RUNNING turn (renderer chose the mode).
