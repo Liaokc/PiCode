@@ -484,7 +484,15 @@ export function startSmokeIfEnabled(
       let focused = false
       for (let waited = 0; waited < 10_000 && !focused; waited += 100) {
         focused = (await js('document.hasFocus()')) === true
-        if (!focused) await new Promise((r) => setTimeout(r, 100))
+        if (!focused) {
+          // macOS 15 denies a focus steal while the user is actively typing
+          // in another app and coalesces activation requests — re-request
+          // every poll tick so the steal lands the moment that interaction
+          // pauses (ticket-47 harness-robustness class: smoke-mode only,
+          // the assertion itself is untouched).
+          if (!win.isFocused()) app.focus({ steal: true })
+          await new Promise((r) => setTimeout(r, 100))
+        }
       }
       if (!focused) fail('ticket-44 stage: the window never took focus for the real-clipboard click')
       const previous = await clipboard.readText()
@@ -3002,6 +3010,14 @@ async function withWindow(
   // root cause the visual harness disables throttling for (src/main/visual.ts);
   // smoke-mode only, so the shipped app keeps stock throttling.
   win.webContents.setBackgroundThrottling(false)
+  // The launcher's frontmost app often lives on another Space (a fullscreen
+  // terminal/editor) — a window that only lives on its own Space can never
+  // win the ticket-44 real-clipboard focus poll (document.hasFocus() stays
+  // false forever, the stage fails before any clipboard assertion). Pin the
+  // smoke window to every Space, fullscreen ones included, so the per-stage
+  // re-activation below can actually raise it on top. Smoke-mode only; the
+  // shipped app keeps stock space behavior.
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   // Re-activate the window for every stage (ticket 47): the operator's real
   // windows can take focus back mid-run, and several stages gate on window
   // state — ticket-44's real-clipboard focus poll, ticket-35's REAL-input
