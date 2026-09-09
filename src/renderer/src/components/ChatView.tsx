@@ -260,7 +260,16 @@ export default function ChatView({
                     onDeny={onDeny}
                   />
                 )}
-                {turn.answer.length > 0 && <AnswerBlock turn={turn} onFork={onFork} />}
+                {turn.answer !== null && (
+                  <AnswerBlock
+                    turn={turn}
+                    onFork={onFork}
+                    onOpenFile={onOpenFile}
+                    onShowInBridge={onShowInBridge}
+                    onApprove={onApprove}
+                    onDeny={onDeny}
+                  />
+                )}
               </Fragment>
             ))}
           </div>

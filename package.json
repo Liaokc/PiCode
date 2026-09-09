@@ -35,6 +35,7 @@
     "visual:access": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_ACCESS=1 electron .",
     "visual:fold": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_FOLD=1 electron .",
     "visual:codeblock": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_CODEBLOCK=1 electron .",
+    "visual:answer": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_ANSWER=1 electron .",
     "visual:expand": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_EXPAND=1 electron .",
     "visual:tree": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_TREE=1 electron .",
     "visual:layout": "npm run build && node scripts/smoke/layout-captures.mjs",

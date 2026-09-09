@@ -87,7 +87,9 @@ export function railAnchors(turns: readonly TurnGroup[]): RailAnchor[] {
     anchors.push({
       turnId: turn.id,
       userText: turn.userText,
-      replyText: turn.answer.map((part) => part.text).join('\n\n'),
+      // Ticket 53: the reply preview mirrors the transcript — the turn's
+      // answer is its last text block, not the narration wall.
+      replyText: turn.answer?.text ?? '',
       live: turn.live
     })
   }
