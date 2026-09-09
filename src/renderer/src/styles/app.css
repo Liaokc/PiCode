@@ -1132,6 +1132,33 @@ kbd {
   font-size: 14px;
   line-height: 1.5;
   color: var(--text-primary);
+  /* Ticket 49 auto-grow: height is projected in JS (clamped 74→160px);
+     once pinned at the cap the overflow scrolls inside the input. */
+  overflow-y: auto;
+}
+
+/* Ticket 49 输入展开: the persistent expand button at the card's top-right
+   (operator-approved position — ZCode has no such button). Card-colored
+   background so input text flowing beneath stays masked; the icon flips to
+   the collapse glyph while expanded. */
+.composer-expand {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 1;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+}
+
+.composer-expand:hover {
+  background: var(--bg-inset);
+  color: var(--text-primary);
 }
 
 .composer-input::placeholder {

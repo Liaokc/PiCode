@@ -2824,16 +2824,19 @@ export function startSmokeIfEnabled(
       log('nav_rail_one_tick_hidden_ok')
 
       // Second real user message: the rail appears with exactly two ticks.
+      // The agent_start waiter registers BEFORE the send: a warm host with a
+      // fast model can land agent_start inside the executeJavaScript
+      // round-trip, and a waiter registered after the Enter would never see
+      // it (observed twice on glm-5.3-flash, 2026-09-09).
+      const navSecondStart = waitFor((e) => e.type === 'agent_start' && e.sessionId === navId, 'nav_rail second agent_start')
+      const navSecondEnd = waitFor((e) => e.type === 'agent_end' && e.sessionId === navId, 'nav_rail second agent_end')
       if (!(await win.webContents.executeJavaScript(composerTypeJs(NAV_2)).catch(() => false))) {
         fail('ticket-46 stage: composer textarea missing for the second nav prompt')
       }
       await new Promise((r) => setTimeout(r, 300))
       await win.webContents.executeJavaScript(composerKeyJs('Enter'))
-      await waitFor((e) => e.type === 'agent_start' && e.sessionId === navId, 'nav_rail second agent_start')
-      await waitFor(
-        (e) => e.type === 'agent_end' && e.sessionId === navId,
-        'nav_rail second agent_end'
-      )
+      await navSecondStart
+      await navSecondEnd
       if (!(await waitForProbe(win, RAIL_TICKS(2), 10_000))) {
         fail('ticket-46 stage: the rail never rendered with two ticks')
       }
@@ -2949,6 +2952,223 @@ export function startSmokeIfEnabled(
       await win.webContents.executeJavaScript(composerClearJs)
     })
     log('nav_rail_done')
+
+    // ---- ticket 49: composer adaptive height — auto-grow 74→160px plus
+    // the top-right expand button ----
+    // The component is SHARED by both composers, so the stage drives both:
+    // ① the New Task empty state (opened from the sidebar): the persistent
+    //    top-right button with the label-only tooltip ("Expand input", no
+    //    shortcut — Tooltip discipline), the 74px floor, in-place expansion
+    //    to about half the main zone, and the Esc collapse;
+    // ② a fresh session (createSession focuses it — ChatView by
+    //    construction): auto-grow clamps [74,160] with internal scrolling
+    //    at the cap, the expansion PUSHES the transcript down (no overlay),
+    //    and all three collapse paths (re-click / Esc / send success) land
+    //    back on the resting composer.
+    log('composer_expand_start')
+    await withWindow(getWindow, async (win) => {
+      const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+      /** The tooltip contract: label-only ("Expand input"), no shortcut. */
+      const expandTipJs = (scope: string): string => `(() => {
+        const b = document.querySelector('${scope} .composer-expand')
+        if (!(b instanceof HTMLElement)) return null
+        return JSON.stringify({ label: b.getAttribute('data-tip-label'), shortcut: b.getAttribute('data-tip-shortcut') })
+      })()`
+      /** Expanded height = about half the main zone, clamped [280, 560]
+       *  (the Seam-1 projection, re-derived from the same measured region). */
+      const EXPANDED_FORMULA = (region: string): string => `(() => {
+        const ta = document.querySelector('.composer-input')
+        const zone = document.querySelector('${region}')
+        if (!(ta instanceof HTMLElement) || zone === null) return false
+        const expected = Math.round(Math.min(Math.max(zone.clientHeight / 2, 280), 560))
+        return ta.clientHeight === expected && ta.clientHeight >= 280 && ta.clientHeight <= 560
+      })()`
+      /** Click the expand button inside the given composer scope. */
+      const clickExpand = async (scope: string): Promise<void> => {
+        const clicked = (await js(`(() => {
+          const b = document.querySelector('${scope} .composer-expand')
+          if (b instanceof HTMLElement) { b.dispatchEvent(new MouseEvent('click', { bubbles: true })); return true }
+          return false
+        })()`)) as boolean
+        if (!clicked) fail(`ticket-49 stage: could not click the ${scope} expand button`)
+      }
+
+      // ① The New Task empty state. The sidebar may be closed by earlier
+      // stages — reopen it through its titlebar toggle first.
+      await js(`(() => {
+        if (document.querySelector('.sb-actions')) return true
+        const toggle = document.querySelector('button[aria-label="Show sidebar"]')
+        if (toggle instanceof HTMLElement) { toggle.click(); return true }
+        return false
+      })()`)
+      if (!(await waitForProbe(win, `document.querySelector('.sb-actions') !== null`, 5_000))) {
+        fail('ticket-49 stage: the sidebar never showed for the New Task click')
+      }
+      const newTaskClicked = (await js(`(() => {
+        const row = [...document.querySelectorAll('.sb-action-row')].find((b) => (b.textContent ?? '').includes('New Task'))
+        if (row instanceof HTMLElement) { row.dispatchEvent(new MouseEvent('click', { bubbles: true })); return true }
+        return false
+      })()`)) as boolean
+      if (!newTaskClicked) fail('ticket-49 stage: could not click the sidebar New Task row')
+      const emptyTa = `document.querySelector('.empty-state textarea.composer-input')`
+      if (!(await waitForProbe(win, `${emptyTa} !== null`, 5_000))) {
+        fail('ticket-49 stage: the New Task empty state never showed its composer')
+      }
+      if (!(await waitForProbe(win, `${emptyTa}.clientHeight === 74`, 5_000))) {
+        fail('ticket-49 stage: the empty-state composer never settled at the 74px floor')
+      }
+      const emptyTip = JSON.parse(String(await js(expandTipJs('.empty-state'))))
+      if (!emptyTip || emptyTip.label !== 'Expand input' || emptyTip.shortcut !== null) {
+        fail(`ticket-49 stage: the empty-state expand tooltip is ${JSON.stringify(emptyTip)}, expected label "Expand input" with no shortcut`)
+      }
+      await clickExpand('.empty-state')
+      if (!(await waitForProbe(win, EXPANDED_FORMULA('.empty-state'), 5_000))) {
+        fail('ticket-49 stage: the empty-state expansion never reached the projected half-zone height')
+      }
+      // Esc collapses back to the floor (collapse path ②).
+      await win.webContents.executeJavaScript(composerKeyJs('Escape'))
+      if (!(await waitForProbe(win, `${emptyTa}.clientHeight === 74`, 5_000))) {
+        fail('ticket-49 stage: Esc never collapsed the empty-state composer back to the floor')
+      }
+      log('composer_expand_empty_state_ok')
+
+      // ② A fresh session drives the in-session chain. createSession
+      // focuses it — the empty state swaps to the ChatView by construction.
+      const expandCreated = waitFor(
+        (e) => e.type === 'session_created',
+        'expand session_created'
+      ) as Promise<Extract<Scoped, { type: 'session_created' }>>
+      supervisor.createSession(cwd)
+      const expandSession = await expandCreated
+      const expandId = expandSession.sessionId
+      if (!(await waitForProbe(win, `document.querySelector('.chat-dock textarea.composer-input') !== null`, 10_000))) {
+        fail('ticket-49 stage: the fresh session never reached the chat view composer')
+      }
+      const chatTa = `document.querySelector('.chat-dock textarea.composer-input')`
+      const chatExpand = `document.querySelector('.chat-dock .composer-expand')`
+      const EXPAND_DIAG = `JSON.stringify({
+        height: document.querySelector('.chat-dock textarea.composer-input')?.clientHeight ?? null,
+        scrollH: document.querySelector('.chat-dock textarea.composer-input')?.scrollHeight ?? null,
+        expanded: document.querySelector('.chat-dock .composer-expand')?.getAttribute('aria-expanded') ?? null,
+        zoneH: document.querySelector('.chat-view')?.clientHeight ?? null,
+        scrollClientH: document.querySelector('.chat-scroll')?.clientHeight ?? null
+      })`
+      /** The projection, re-derived from the live measurement: the rendered
+       *  height must equal clamp(scrollHeight, 74, 160) at ALL times. */
+      const AUTO_GROW_FORMULA = `${chatTa} !== null && ${chatTa}.clientHeight === Math.min(Math.max(${chatTa}.scrollHeight, 74), 160)`
+
+      if (!(await waitForProbe(win, `${chatTa}.clientHeight === 74`, 5_000))) {
+        fail('ticket-49 stage: the in-session composer never settled at the 74px floor')
+      }
+      // A few lines grow the input inside the band (still under the cap).
+      if (!(await win.webContents.executeJavaScript(composerTypeJs('line one\nline two\nline three')).catch(() => false))) {
+        fail('ticket-49 stage: could not type the mid-band draft')
+      }
+      if (!(await waitForProbe(win, `${chatTa}.clientHeight > 74 && ${chatTa}.clientHeight < 160 && (${AUTO_GROW_FORMULA})`, 5_000))) {
+        const diag = (await win.webContents.executeJavaScript(EXPAND_DIAG).catch(() => 'unavailable')) as string
+        fail(`ticket-49 stage: the input never grew inside the 74→160 band; DOM: ${diag}`)
+      }
+      log('composer_autogrow_midband_ok')
+
+      // A long pasted draft pins the 160px cap and scrolls INTERNALLY.
+      const LONG_DRAFT = Array.from({ length: 14 }, (_, i) => `draft line ${i + 1}`).join('\n')
+      if (!(await win.webContents.executeJavaScript(composerTypeJs(LONG_DRAFT)).catch(() => false))) {
+        fail('ticket-49 stage: could not type the long draft')
+      }
+      if (!(await waitForProbe(win, `${chatTa}.clientHeight === 160 && ${chatTa}.scrollHeight > ${chatTa}.clientHeight`, 5_000))) {
+        const diag = (await win.webContents.executeJavaScript(EXPAND_DIAG).catch(() => 'unavailable')) as string
+        fail(`ticket-49 stage: the long draft never pinned the 160px cap with internal scrolling; DOM: ${diag}`)
+      }
+      log('composer_autogrow_cap_ok')
+      await win.webContents.executeJavaScript(composerClearJs)
+      if (!(await waitForProbe(win, `${chatTa}.clientHeight === 74`, 5_000))) {
+        fail('ticket-49 stage: clearing the draft never returned the input to the floor')
+      }
+      log('composer_autogrow_reset_ok')
+
+      // The expand button: persistent, icon-only, no shortcut, aria-expanded.
+      const chatTip = JSON.parse(String(await js(expandTipJs('.chat-dock'))))
+      if (!chatTip || chatTip.label !== 'Expand input' || chatTip.shortcut !== null) {
+        fail(`ticket-49 stage: the chat expand tooltip is ${JSON.stringify(chatTip)}, expected label "Expand input" with no shortcut`)
+      }
+      // Expansion pushes the transcript down: the transcript cell shrinks
+      // and the composer card stays fully BELOW it (in-flow, no overlay).
+      const transcriptBefore = (await js(`document.querySelector('.chat-scroll')?.clientHeight ?? 0`)) as number
+      await clickExpand('.chat-dock')
+      if (
+        !(await waitForProbe(
+          win,
+          `(() => {
+            const ta = document.querySelector('.chat-dock textarea.composer-input')
+            const card = document.querySelector('.chat-dock .composer')
+            const transcript = document.querySelector('.chat-scroll')
+            const expandBtn = document.querySelector('.chat-dock .composer-expand')
+            if (!ta || !card || !transcript || !expandBtn) return false
+            if (expandBtn.getAttribute('aria-expanded') !== 'true') return false
+            if (transcript.clientHeight >= ${transcriptBefore}) return false
+            return card.getBoundingClientRect().top >= transcript.getBoundingClientRect().bottom - 1
+          })()`,
+          5_000
+        ))
+      ) {
+        const diag = (await win.webContents.executeJavaScript(EXPAND_DIAG).catch(() => 'unavailable')) as string
+        fail(`ticket-49 stage: the expansion never pushed the transcript down in place; DOM: ${diag}`)
+      }
+      if (!(await waitForProbe(win, EXPANDED_FORMULA('.chat-view'), 5_000))) {
+        const diag = (await win.webContents.executeJavaScript(EXPAND_DIAG).catch(() => 'unavailable')) as string
+        fail(`ticket-49 stage: the in-session expansion never reached the projected half-zone height; DOM: ${diag}`)
+      }
+      log('composer_expand_open_ok')
+
+      // Collapse path ①: clicking the button again lands back on the floor.
+      await clickExpand('.chat-dock')
+      if (!(await waitForProbe(win, `${chatTa}.clientHeight === 74`, 5_000))) {
+        fail('ticket-49 stage: re-clicking the expand button never collapsed the input')
+      }
+      // Collapse path ②: Esc with the textarea focused.
+      await clickExpand('.chat-dock')
+      if (!(await waitForProbe(win, EXPANDED_FORMULA('.chat-view'), 5_000))) {
+        fail('ticket-49 stage: the input never re-expanded for the Esc path')
+      }
+      await win.webContents.executeJavaScript(composerKeyJs('Escape'))
+      if (!(await waitForProbe(win, `${chatTa}.clientHeight === 74`, 5_000))) {
+        fail('ticket-49 stage: Esc never collapsed the in-session composer')
+      }
+      log('composer_expand_collapse_paths_ok')
+
+      // Collapse path ③: a successful send starts the next turn from the
+      // resting composer. The button STAYS while the turn runs (persistent).
+      // The agent_end waiter registers BEFORE the send (warm host + fast
+      // model: the settled event can beat a late-registered waiter, the
+      // same race the ticket-46 stage hit on glm-5.3-flash).
+      const expandReplyEnd = waitFor((e) => e.type === 'agent_end' && e.sessionId === expandId, 'composer_expand reply agent_end')
+      await clickExpand('.chat-dock')
+      if (!(await waitForProbe(win, EXPANDED_FORMULA('.chat-view'), 5_000))) {
+        fail('ticket-49 stage: the input never re-expanded for the send path')
+      }
+      if (!(await win.webContents.executeJavaScript(composerTypeJs('Reply with exactly: PICODE_SEND_49')).catch(() => false))) {
+        fail('ticket-49 stage: composer textarea missing for the send-collapse step')
+      }
+      await win.webContents.executeJavaScript(composerKeyJs('Enter'))
+      const sent = await waitForProbe(
+        win,
+        `(document.querySelector('.chat-thread')?.textContent ?? '').includes('PICODE_SEND_49') && ${chatTa}.clientHeight === 74`,
+        10_000
+      )
+      if (!sent) {
+        const diag = (await win.webContents.executeJavaScript(EXPAND_DIAG).catch(() => 'unavailable')) as string
+        fail(`ticket-49 stage: the send never collapsed the expanded input; DOM: ${diag}`)
+      }
+      if ((await js(`${chatExpand} === null`)) === true) {
+        fail('ticket-49 stage: the expand button vanished while the turn runs (must stay persistent)')
+      }
+      log('composer_expand_send_collapse_ok')
+
+      // Let the reply turn settle so the stage leaves a quiet session.
+      await expandReplyEnd
+      await win.webContents.executeJavaScript(composerClearJs)
+    })
+    log('composer_expand_done')
 
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
     const livePids = supervisor.hostPids

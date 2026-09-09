@@ -1,13 +1,20 @@
-import { useEffect, useRef, useState, type ClipboardEvent, type JSX, type KeyboardEvent } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type JSX, type KeyboardEvent } from 'react'
 import type { AccessMode, ImageAttachment, ModelRef, ProviderModels, SlashCommandItem, ThinkingLevel } from '../../../shared/contract'
 import type { ChatQueue } from '../../../shared/chat-reducer'
 import { applyMention, mentionQueryAt } from '../../../shared/composer/mention'
 import { accessModeLabel } from '../../../shared/composer/access'
 import { gateSlashCommand } from '../../../shared/composer/slash-gate'
 import { composerDensity, thinkingBarFraction, thinkingBarShimmers, type ComposerDensity } from '../../../shared/composer/density'
+import {
+  composerAutoGrowHeight,
+  composerExpandHeight,
+  reduceComposerExpand,
+  type ComposerExpandEvent,
+  type ComposerExpandState
+} from '../../../shared/composer/expand'
 import { AccessMenu, ModelMenu, ThinkingMenu, thinkingLabel } from './composer/menus'
 import { FileMenu, SlashMenu } from './composer/list-menus'
-import { ArrowUpIcon, CloseIcon, CubeIcon, GaugeIcon, PlusIcon, ShieldCheckIcon, StopIcon } from './icons'
+import { ArrowUpIcon, CloseIcon, CubeIcon, FoldIcon, GaugeIcon, PlusIcon, ShieldCheckIcon, StopIcon, UnfoldIcon } from './icons'
 import QueuePanel from './QueuePanel'
 import Tooltip from './Tooltip'
 
@@ -107,6 +114,11 @@ export default function Composer({
   const [menu, setMenu] = useState<MenuState>(null)
   const [menuIndex, setMenuIndex] = useState(0)
   const [fileOptions, setFileOptions] = useState<string[]>([])
+  /** 输入展开 (ticket 49): component-local, never persisted — the next turn
+   * and the next session both start from the resting composer. The state
+   * is the Seam-1 machine's state; `expanded` below is its boolean view. */
+  const [expandState, setExpandState] = useState<ComposerExpandState>('collapsed')
+  const expanded = expandState === 'expanded'
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const sectionRef = useRef<HTMLElement | null>(null)
   const fileSeq = useRef(0)
@@ -131,6 +143,36 @@ export default function Composer({
 
   const mention = mentionQueryAt(value, caret)
   const slashQuery = value.startsWith('/') ? value.slice(1) : null
+
+  // 输入展开 (ticket 49): adaptive height, applied imperatively — height
+  // lives OUTSIDE React state so typing re-measures and re-styles the
+  // textarea without a single setState — no per-keystroke render storm
+  // (the ticket 30/46 red line). Every decision is the Seam-1 projection
+  // (expand.ts); this only measures and applies.
+  useLayoutEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    if (expanded) {
+      applyExpandHeight(el)
+      return
+    }
+    // Measure honestly: reset to auto first — a clamped element reports its
+    // clamped client height as scrollHeight, never the smaller content, so
+    // shrinking would stick at the cap without the reset.
+    el.style.height = 'auto'
+    el.style.height = `${composerAutoGrowHeight(el.scrollHeight)}px`
+  }, [value, expanded])
+
+  // While expanded, a window resize re-projects the expanded height against
+  // the new main-zone height (imperative, same no-setState path).
+  useEffect(() => {
+    if (!expanded) return
+    function onResize(): void {
+      applyExpandHeight(textareaRef.current)
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [expanded])
 
   // `file_list` replies correlate here — request/response, not reducer state.
   useEffect(() => {
@@ -251,7 +293,29 @@ export default function Composer({
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault()
       dispatch()
+      return
     }
+    // 输入展开 (ticket 49), collapse path ②: Esc reverts the expanded input
+    // — but never while a menu owns the key (the slash/file menus intercept
+    // above; the chip menus keep their own document-level Escape handler,
+    // so the guard skips those too).
+    if (event.key === 'Escape' && expanded && menu === null) {
+      event.preventDefault()
+      transitionExpand('escape')
+    }
+  }
+
+  /** 输入展开 (ticket 49): apply one expand-machine event (Seam-1). Every
+   * path — the button's toggle and all three collapse routes — goes through
+   * here; afterwards the textarea takes focus back so the keyboard (or
+   * post-send) flow keeps going. */
+  function transitionExpand(event: ComposerExpandEvent): void {
+    setExpandState((current) => reduceComposerExpand(current, event))
+    requestAnimationFrame(() => textareaRef.current?.focus())
+  }
+
+  function toggleExpand(): void {
+    transitionExpand('toggle')
   }
 
   function dispatch(): void {
@@ -277,6 +341,9 @@ export default function Composer({
     setCaret(0)
     setImages([])
     setMenu(null)
+    // 输入展开 (ticket 49), collapse path ③: the message is on its way, so
+    // the next turn starts from the resting composer.
+    if (expanded) transitionExpand('sent')
   }
 
   function handlePaste(event: ClipboardEvent<HTMLTextAreaElement>): void {
@@ -393,6 +460,24 @@ export default function Composer({
         onSelect={(e) => syncCaret(e.target as HTMLTextAreaElement)}
         onClick={(e) => syncCaret(e.target as HTMLTextAreaElement)}
       />
+
+      {/* 输入展开 (ticket 49): the operator-approved deviation from ZCode —
+          a persistent button at the card's top-right that opens the input
+          IN PLACE at about half the main zone, pushing the transcript down
+          (no overlay, no fullscreen). Icon-only with no shortcut, so the
+          tooltip shows only the short description (Tooltip discipline); the
+          icon flips to the collapse glyph while expanded. */}
+      <Tooltip label="Expand input">
+        <button
+          type="button"
+          className="composer-expand"
+          aria-label="Expand input"
+          aria-expanded={expanded}
+          onClick={toggleExpand}
+        >
+          {expanded ? <FoldIcon size={14} /> : <UnfoldIcon size={14} />}
+        </button>
+      </Tooltip>
 
       {images.length > 0 && (
         <div className="composer-attachments" aria-label="Attached images">
@@ -542,6 +627,23 @@ export default function Composer({
 
 function modelShortId(model: ModelRef): string {
   return model.modelId
+}
+
+/** 输入展开 (ticket 49): the height of the main zone the composer lives in
+ * — the chat view in-session, the empty state on New Task — so the
+ * expanded height is about HALF THAT ZONE regardless of which composer
+ * renders. Falls back to the window when no region matches (defensive;
+ * both surfaces always match today). */
+function mainRegionHeight(el: HTMLTextAreaElement | null): number {
+  const region = el?.closest('.chat-view, .empty-state')
+  if (region instanceof HTMLElement) return region.clientHeight
+  return typeof window === 'undefined' ? Number.NaN : window.innerHeight
+}
+
+/** 输入展开 (ticket 49): pin the textarea to the expanded projection — the
+ * one shared apply for the layout effect and the resize listener. */
+function applyExpandHeight(el: HTMLTextAreaElement | null): void {
+  if (el) el.style.height = `${composerExpandHeight(mainRegionHeight(el))}px`
 }
 
 function readFileAsDataUrl(file: File): Promise<string> {

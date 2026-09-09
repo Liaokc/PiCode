@@ -32,6 +32,7 @@ import { startContextMenuVisualIfEnabled, isolateContextMenuUserData } from './v
 import { startTraceVisualIfEnabled, isolateTraceUserData } from './visual-trace'
 import { startFoldVisualIfEnabled, isolateFoldUserData } from './visual-fold'
 import { startCodeblockVisualIfEnabled, isolateCodeblockUserData } from './visual-codeblock'
+import { startExpandVisualIfEnabled, isolateExpandUserData } from './visual-expand'
 import { startTreeVisualIfEnabled, isolateTreeUserData } from './visual-tree'
 import { startApprovalVisualIfEnabled } from './visual-approval'
 import { startUsageVisualIfEnabled } from './visual-usage'
@@ -67,6 +68,9 @@ isolateTraceUserData()
 // Ticket-39 group-fold harness reads the default 'projects' view from a
 // throwaway userData (no-op unless PICODE_VISUAL_FOLD=1).
 isolateFoldUserData()
+// Ticket-49 composer-expand harness — same throwaway-userData rule (no-op
+// unless PICODE_VISUAL_EXPAND=1).
+isolateExpandUserData()
 // Ticket-43 history-tree harness — same throwaway-userData rule (no-op
 // unless PICODE_VISUAL_TREE=1).
 isolateTreeUserData()
@@ -202,6 +206,8 @@ app.whenReady().then(() => {
   // Ticket-39 group-fold harness — same seeding constraint (12 fake
   // sessions land in the isolated store before the index reads it).
   startFoldVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  // Ticket-49 composer-expand harness — same seeding constraint.
+  startExpandVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-43 history-tree harness — same seeding constraint.
   startTreeVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-50 codeblock-label harness — contract-stream injection, no store writes.
