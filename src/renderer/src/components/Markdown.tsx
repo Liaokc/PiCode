@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import Tooltip from './Tooltip'
 import { CheckIcon, CloseIcon, CodeIcon, CopyIcon, ExpandArrowsIcon, EyeIcon, WrapTextIcon } from './icons'
-import { blockKey, codeLanguage, hastText, tableToMarkdown } from '../../../shared/markdown-blocks'
+import { blockKey, codeLanguageLabel, hastText, tableToMarkdown } from '../../../shared/markdown-blocks'
 
 /**
  * Markdown rendering for assistant text parts (screenshot 04: rich markdown
@@ -13,7 +13,8 @@ import { blockKey, codeLanguage, hastText, tableToMarkdown } from '../../../shar
  * the last rendered block (CSS ::after).
  *
  * Block chrome (ticket 16): fenced code blocks render as cards (language
- * label + wrap toggle + copy) and tables as containers with copy / preview /
+ * label — always present, untagged fences show 'text' per ticket 50 — plus
+ * wrap toggle + copy) and tables as containers with copy / preview /
  * expand controls above them, matching the ZCode baseline. The overrides are
  * module-scope so streaming deltas never change component identity, and all
  * per-block button state (copied ✓, wrapped, expanded) is lifted into a
@@ -98,7 +99,10 @@ interface PreProps extends ExtraProps {
 function CodeBlockCard({ node, children }: PreProps): JSX.Element {
   const ui = useBlockUi()
   const key = blockKey(node)
-  const language = codeLanguage(node)
+  // Ticket 50: untagged fences fall back to a 'text' label (ZCode same-shape
+  // `language?.trim() || 'text'`) — the chip is always rendered. The rest of
+  // the chrome (wrap/copy) is untouched and no file icon is added.
+  const language = codeLanguageLabel(node)
   const copied = key !== null && ui.copied.has(key)
   const wrapped = key !== null && ui.wrapped.has(key)
 
@@ -115,12 +119,10 @@ function CodeBlockCard({ node, children }: PreProps): JSX.Element {
   return (
     <div className="md-code-card">
       <div className="md-code-head">
-        {language !== null && (
-          <span className="md-code-lang">
-            <CodeIcon size={12} />
-            {language}
-          </span>
-        )}
+        <span className="md-code-lang">
+          <CodeIcon size={12} />
+          {language}
+        </span>
         <span className="md-code-tools">
           <Tooltip label="Wrap lines">
             <button

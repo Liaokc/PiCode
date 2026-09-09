@@ -3,6 +3,7 @@ import {
   blockKey,
   codeLanguage,
   codeLanguageFromClassName,
+  codeLanguageLabel,
   hastText,
   tableToMarkdown,
   type HastLike
@@ -43,6 +44,35 @@ describe('codeLanguage', () => {
     expect(codeLanguage(element('pre', [element('code', [text('x')])]))).toBeNull()
     expect(codeLanguage(element('pre', [text('not code')]))).toBeNull()
     expect(codeLanguage(undefined)).toBeNull()
+  })
+})
+
+describe('codeLanguageLabel decision table (Seam-1: ticket 50 untagged fallback)', () => {
+  const pre = (className?: unknown): HastLike =>
+    element('pre', [element('code', [text('x')], className === undefined ? {} : { className })])
+
+  const TABLE: Array<{ given: HastLike | undefined; label: string; why: string }> = [
+    { given: pre(['hljs', 'language-json']), label: 'json', why: 'a tagged fence keeps its language — zero regression' },
+    { given: pre('language-bash hljs'), label: 'bash', why: 'the plain-string class shape reads the same' },
+    { given: pre(), label: 'text', why: 'a bare fenced block falls back to text (ZCode same-shape)' },
+    { given: pre(['hljs']), label: 'text', why: 'a highlight class alone is not a language tag' },
+    { given: pre('language-'), label: 'text', why: 'the bare language- prefix is not a tag' },
+    { given: pre(['language-   ']), label: 'text', why: 'a whitespace-only token trims into the fallback' },
+    { given: element('pre', [text('not code')]), label: 'text', why: 'non-code shapes still get a label' },
+    { given: undefined, label: 'text', why: 'a missing node still gets a label' }
+  ]
+
+  it('always yields a display label: language when tagged, text otherwise', () => {
+    for (const row of TABLE) {
+      expect(codeLanguageLabel(row.given), row.why).toBe(row.label)
+    }
+  })
+
+  it('never returns null or an empty string, whatever the fence carries', () => {
+    for (const row of TABLE) {
+      const label = codeLanguageLabel(row.given)
+      expect(label.length, row.why).toBeGreaterThan(0)
+    }
   })
 })
 
