@@ -1,0 +1,69 @@
+/**
+ * Composer adaptive height (ticket 49, spec R2): two pure projections and
+ * the expand state machine. The component measures and renders; every
+ * decision lives here so the calibrated numbers stay testable without
+ * Electron (composer-density precedent).
+ *
+ *   自动增高 (auto-grow)  — the input's height follows its content, clamped
+ *     [74px, 160px] (ZCode calibration min-h-10/max-h-40 同型; 74 is
+ *     PiCode's measured one-line floor). Past the cap the textarea scrolls
+ *     internally.
+ *
+ *   输入展开 (Composer Expand) — an operator-approved deviation from ZCode
+ *     (ZCode has no expand button): the persistent top-right button opens
+ *     the input IN PLACE at about half the main area's height, clamped
+ *     [280px, 560px], pushing the transcript down (no overlay). Three ways
+ *     back: re-click, Esc, and a successful send.
+ */
+
+/** The auto-grow floor: the composer's resting one-line height. */
+export const COMPOSER_INPUT_MIN_PX = 74
+/** The auto-grow cap (ZCode-calibrated): growth stops, content scrolls inside. */
+export const COMPOSER_INPUT_MAX_PX = 160
+/** The expanded floor — a usable writing surface on the smallest windows. */
+export const COMPOSER_EXPAND_MIN_PX = 280
+/** The expanded cap — never swallows the main zone, however tall it is. */
+export const COMPOSER_EXPAND_MAX_PX = 560
+
+/**
+ * Content measurement → rendered input height, clamped [74, 160]. NaN —
+ * the one junk measurement — collapses to the floor so a broken reading
+ * can never blow up the composer; Infinity clamps honestly to the cap.
+ * Returns whole pixels: scrollHeight is integral, and subpixel heights
+ * render as fuzzy borders.
+ */
+export function composerAutoGrowHeight(contentPx: number): number {
+  if (Number.isNaN(contentPx)) return COMPOSER_INPUT_MIN_PX
+  return Math.round(Math.min(Math.max(contentPx, COMPOSER_INPUT_MIN_PX), COMPOSER_INPUT_MAX_PX))
+}
+
+/**
+ * Main-area measurement → expanded input height: about half the main zone,
+ * clamped [280, 560]. NaN collapses to the floor; Infinity clamps to the
+ * cap.
+ */
+export function composerExpandHeight(mainAreaPx: number): number {
+  if (Number.isNaN(mainAreaPx)) return COMPOSER_EXPAND_MIN_PX
+  return Math.round(Math.min(Math.max(mainAreaPx / 2, COMPOSER_EXPAND_MIN_PX), COMPOSER_EXPAND_MAX_PX))
+}
+
+/** The expand widget's two states (component-local, never persisted). */
+export type ComposerExpandState = 'collapsed' | 'expanded'
+
+/**
+ * What drives it: the button's toggle (the sole entry, and one of the three
+ * exits), Escape in the textarea (only when no menu owns the key first),
+ * and a successful send (dispatch actually handed the text to the session).
+ */
+export type ComposerExpandEvent = 'toggle' | 'escape' | 'sent'
+
+/** The full decision table: expanded only via the button; every other
+ * pairing collapses. The machine is total — no transition is undefined. */
+const EXPAND_TRANSITIONS: Readonly<Record<ComposerExpandState, Readonly<Record<ComposerExpandEvent, ComposerExpandState>>>> = {
+  collapsed: { toggle: 'expanded', escape: 'collapsed', sent: 'collapsed' },
+  expanded: { toggle: 'collapsed', escape: 'collapsed', sent: 'collapsed' }
+}
+
+export function reduceComposerExpand(state: ComposerExpandState, event: ComposerExpandEvent): ComposerExpandState {
+  return EXPAND_TRANSITIONS[state][event]
+}
