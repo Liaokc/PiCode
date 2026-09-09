@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)。
 
-**Status:** claimed
+**Status:** ready-for-human
 
 - [ ] 侦察清单入票 Comments；操作者在检查点明示拍板（留痕）
 - [ ] 内嵌依赖 = 0.85.1；typecheck / lint / vitest 全绿
@@ -27,3 +27,10 @@
 
   ③ 计划（待操作者拍板）：依赖精确锁 0.85.1 + npm install（必要时 ELECTRON_MIRROR），预期零源码改动；门禁 = typecheck / lint / vitest 全绿 + npm run smoke 全链（含互通冒烟 TUI 0.85.1 ↔ PiCode 同会话互续，按 dev-app serialization 与操作者协调时机）。
 - 2026-09-09 (checkpoint 拍板留痕): ①清单要点已播报操作者；另按指示将 51/52 基准结论放入票 51/52 Comments。**操作者明示「同意，进入③」**——本票从此进入实施：升锁 0.85.1 + 全门禁 + 互通冒烟。
+- 2026-09-09 (phase ③ implementation, t48): **commit `f97c979`**（branch t48-sdk-upgrade-0851，rebase 于 main edc0dc2 后零冲突）。实施记录：
+  - **升锁**：`@earendil-works/pi-coding-agent` 0.84.3 → 精确锁 `0.85.1`（无 `^`，ADR-0005 纪律）；侦察结论成立——源码零适配（renderer/shared 零接触）。
+  - **门禁**：typecheck 全绿；lint 0 errors（1 存量 warning，未改动树上同在）；vitest **1032/1032**（77 文件，含票 50 新增 2 个）；**npm run smoke 六阶段 ALL GREEN（159s，exit 0）**——build 2s / host contract 48s / pty 4s / usage 1s / **TUI↔SDK interop 双向 PASS（ADR-0005 门禁）** / electron app smoke 100s（90+ 断言含真剪贴板）。
+  - **必要适配（烟雾 harness，`src/main/smoke.ts` +18，交操作者裁量）**：macOS 15 在用户活跃使用另一 app 时拒绝焦点抢占并合并激活请求——阶段 6 ticket-44 真剪贴板阶段从会话上下文永远拿不到焦点（首跑套件+单跑+LaunchServices 启动三式均复现）。按票 47 先例（同类别 harness 稳健性微调、断言零弱化）两处 smoke-mode-only 修复：① 冒烟窗口挂全部 Space（含全屏之上，保证可见可点）；② ticket-44 焦点轮询每 100ms 重试抢占（用户停手一瞬即落焦）。修复后需操作者配合一次（约 30 秒勿动），随后全链 ALL GREEN。**若操作者不认可此改动可剥离，但阶段 6 将只能由操作者终端跑**。
+  - **code-review（两轴）**：Standards 无硬违规（2 条判断题：焦点抢重试形状与 withWindow 轮询轻微重复——谓词不同可接受；workspaces pin 未单独归因——保留已记）；Spec 全项达成（1 条范围标记：smoke.ts +18 归「必要适配」待确认）。
+  - **51/52 基准**：见两票 Comments（message_end 无 entry id / entry_appended 带完整 SessionEntry 不变 → 51 的 host 回读路线不变；resourceLoader/ModelRuntime 面不变 → 52 的 probe 扩展路线成立）。
+  - **发版注意**：0.85.0 为 SDK import 损坏版本（0.85.1 修复），任何场景不得锁 0.85.0。merge：`bash scripts/merge-ticket.sh 48`（实现会话不自行 merge）。
