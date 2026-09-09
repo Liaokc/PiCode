@@ -47,7 +47,7 @@ if [[ -f "$GD/MERGE_HEAD" ]]; then
   echo "  git -C $WT merge --continue | git -C $WT merge --abort" >&2; exit 1
 fi
 
-TICKET="$(git -C "$MAIN_ROOT" ls-files ".scratch/picode-1-3/issues/${NN}-*.md" ".scratch/picode-1-1/issues/${NN}-*.md" ".scratch/picode-1-0/issues/${NN}-*.md" | head -1)"
+TICKET="$(git -C "$MAIN_ROOT" ls-files ".scratch/picode-1-4/issues/${NN}-*.md" ".scratch/picode-1-3/issues/${NN}-*.md" ".scratch/picode-1-1/issues/${NN}-*.md" ".scratch/picode-1-0/issues/${NN}-*.md" | head -1)"
 if [[ -n "$TICKET" ]]; then
   STATUS="$(git -C "$MAIN_ROOT" show "main:$TICKET" | grep -m1 '^\*\*Status:\*\*' || true)"
   case "$STATUS" in
