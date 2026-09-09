@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)。
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [ ] 侦察清单入票 Comments；操作者在检查点明示拍板（留痕）
 - [ ] 内嵌依赖 = 0.85.1；typecheck / lint / vitest 全绿
@@ -34,3 +34,4 @@
   - **code-review（两轴）**：Standards 无硬违规（2 条判断题：焦点抢重试形状与 withWindow 轮询轻微重复——谓词不同可接受；workspaces pin 未单独归因——保留已记）；Spec 全项达成（1 条范围标记：smoke.ts +18 归「必要适配」待确认）。
   - **51/52 基准**：见两票 Comments（message_end 无 entry id / entry_appended 带完整 SessionEntry 不变 → 51 的 host 回读路线不变；resourceLoader/ModelRuntime 面不变 → 52 的 probe 扩展路线成立）。
   - **发版注意**：0.85.0 为 SDK import 损坏版本（0.85.1 修复），任何场景不得锁 0.85.0。merge：`bash scripts/merge-ticket.sh 48`（实现会话不自行 merge）。
+- 2026-09-09 (merge, T00): 合入 main —— merge sha `d71250e`（分支重写为 `dd38fef`）。验收口径：操作者明示「48 工单已验收」+ 票内检查点留痕（「同意，进入③」）+ 全门禁绿（实施会话报 smoke 六阶段 ALL GREEN exit 0，含互通冒烟双向 PASS）。smoke.ts +18 harness 适配随验收一并认可（操作者未要求剥离）。簿记 sync `e708488`（分支未携带 tracker，终态取自主工作区盘面，t50 同款惯例）。冲突处置：rebase/合并零冲突（实施会话已预 rebase 到 edc0dc2）。终态审计：package.json 精确锁 `0.85.1`（无 `^`），node_modules 实装 0.85.1（merge 后 npm install 同步——脚本内置验证跑在旧 0.84.3 模块上，已用真 0.85.1 重跑），lockfile 零 `0.85.0`、传递依赖 @earendil-works/chord@0.85.1 落锁，smoke.ts 焦点重试适配幸存，无冲突标记残留；**typecheck 绿 + 1032/1032 tests 绿**（77 文件，与升级前同数——侦察「drop-in」结论成立）。worktree 已清理。
