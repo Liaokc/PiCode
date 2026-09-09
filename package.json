@@ -41,7 +41,7 @@
     "perf:flame": "PICODE_PERF=1 npm run build && node scripts/perf/flame.mjs"
   },
   "dependencies": {
-    "@earendil-works/pi-coding-agent": "0.84.3",
+    "@earendil-works/pi-coding-agent": "0.85.1",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
     "highlight.js": "^11.12.0",
