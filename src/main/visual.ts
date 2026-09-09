@@ -386,16 +386,26 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       await capture(win, '2-settled')
       // Ticket 23 gate: settling folds the turn — the capture above must show
       // the collapsed "Worked · Ns ›" row with everything tucked inside, and
-      // both streamed text parts visible as one answer block outside.
+      // the answer block outside. Ticket 53: that answer is the LAST text
+      // block only — the first streamed text ("I'll start by checking…") is
+      // interim narration folded inside the container, and the tool card ran
+      // before the answer so it folds too.
       const settledSig = (await win.webContents.executeJavaScript(
         `(() => ({
           turns: document.querySelectorAll('.turn-container').length,
           turnsOpen: document.querySelectorAll('.turn-container-open').length,
           answers: document.querySelectorAll('.msg-assistant').length,
-          answerBlocks: document.querySelectorAll('.msg-assistant .md').length
+          answerBlocks: document.querySelectorAll('.msg-assistant .md').length,
+          narrationRows: document.querySelectorAll('.turn-narration-row').length
         }))()`
-      )) as { turns: number; turnsOpen: number; answers: number; answerBlocks: number }
-      if (settledSig.turns < 1 || settledSig.turnsOpen !== 0 || settledSig.answers !== 1 || settledSig.answerBlocks < 2) {
+      )) as { turns: number; turnsOpen: number; answers: number; answerBlocks: number; narrationRows: number }
+      if (
+        settledSig.turns < 1 ||
+        settledSig.turnsOpen !== 0 ||
+        settledSig.answers !== 1 ||
+        settledSig.answerBlocks !== 1 ||
+        settledSig.narrationRows !== 0
+      ) {
         throw new Error(`visual 2-settled: turn did not fold on settle ${JSON.stringify(settledSig)}`)
       }
       console.log(`VISUAL probe 2-settled: ${JSON.stringify(settledSig)}`)

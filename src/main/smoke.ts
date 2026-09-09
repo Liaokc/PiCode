@@ -69,6 +69,13 @@
  * proxy) returns the group to the default shape — shapes are memory-level,
  * never persisted.
  *
+ * Ticket 53 adds the answer-split stage (at the tail of the run, a settled
+ * structured replay injected through the contract stream — the visual-perf
+ * precedent, no model call): the settled long turn's answer is its LAST
+ * text block only, the earlier narration folds into the Worked container
+ * (hidden collapsed, work rows when opened) and the tool that ran after
+ * the answer stays visible below it, outside the fold.
+ *
  * Any missed step times out and exits non-zero. Progress logs as
  * `SMOKE <step>` lines on stdout. Not part of `npm test`.
  */
@@ -84,6 +91,7 @@ import { focusSessionFromNotification, type ApprovalNotice } from './notificatio
 import type { HostToParent, SessionScopedEvent } from '../shared/contract'
 import { FOLLOW_TAKEOVER_REJECTED_TOAST } from '../shared/sessions/group'
 import type { SessionContextActionService } from './sessions/context-actions'
+import { emitContractEvent } from './visual'
 
 const STEP_TIMEOUT_MS = 90_000
 const ABORT_AFTER_DELTAS = 3
@@ -3169,6 +3177,126 @@ export function startSmokeIfEnabled(
       await win.webContents.executeJavaScript(composerClearJs)
     })
     log('composer_expand_done')
+
+    // ---- ticket 53: turn answer split — a settled long turn shows its LAST
+    // text block as the answer; earlier narration folds into the Worked
+    // container (hidden collapsed, work rows when opened) and the tool that
+    // ran after the answer stays visible below it, outside the fold. Runs at
+    // the tail of the smoke as a settled structured replay injected through
+    // the contract stream (the visual-perf precedent: no model call, and the
+    // fake session is left active right before quit so no later stage can
+    // observe the focus switch).
+    log('answer_split_start')
+    {
+      const NARRATION_ONE = 'PICODE_AS_NARRATION_ONE: the root cause is confirmed'
+      const NARRATION_TWO = 'PICODE_AS_NARRATION_TWO: three problems, fixed one by one'
+      const ANSWER_TAIL = 'PICODE_AS_ANSWER: all four viewports pass, ready for review'
+      emitContractEvent({
+        type: 'session_created',
+        sessionId: 'smoke-answer-split',
+        cwd,
+        model: 'claude-opus-4-5',
+        resumed: true
+      })
+      emitContractEvent({
+        type: 'history_loaded',
+        items: [
+          { role: 'user', id: 'as-u1', text: 'Continue the layout fix.', timestamp: 't1', skillName: null },
+          {
+            role: 'assistant',
+            id: 'as-a1',
+            timestamp: 't2',
+            text: NARRATION_ONE,
+            parts: [{ kind: 'text', text: NARRATION_ONE }]
+          },
+          {
+            role: 'tool',
+            id: 'as-t1',
+            timestamp: 't3',
+            name: 'bash',
+            args: { command: 'npm run layout:probe' },
+            output: 'probe FAIL',
+            isError: false
+          },
+          {
+            role: 'assistant',
+            id: 'as-a2',
+            timestamp: 't4',
+            text: NARRATION_TWO,
+            parts: [
+              { kind: 'thinking', text: 're-plan the geometry', durationMs: null },
+              { kind: 'text', text: NARRATION_TWO }
+            ]
+          },
+          {
+            role: 'tool',
+            id: 'as-t2',
+            timestamp: 't5',
+            name: 'edit',
+            args: { path: 'src/shared/layout.ts' },
+            output: 'Patched',
+            isError: false
+          },
+          {
+            role: 'assistant',
+            id: 'as-a3',
+            timestamp: 't6',
+            text: ANSWER_TAIL,
+            parts: [{ kind: 'text', text: ANSWER_TAIL }]
+          },
+          {
+            role: 'tool',
+            id: 'as-t3',
+            timestamp: 't7',
+            name: 'bash',
+            args: { command: 'git status --short' },
+            output: 'M src/shared/layout.ts',
+            isError: false
+          }
+        ]
+      })
+      await withWindow(getWindow, async (win) => {
+        const sig = `(() => ({
+          turns: document.querySelectorAll('.turn-container').length,
+          open: document.querySelectorAll('.turn-container-open').length,
+          answerBlocks: document.querySelectorAll('.msg-assistant .md').length,
+          answerText: document.querySelector('.msg-assistant .md')?.textContent ?? '',
+          narration: document.querySelectorAll('.turn-narration-row').length,
+          afterTools: document.querySelectorAll('.turn-after-answer .tool-card').length,
+          foldedTools: document.querySelectorAll('.turn-container .tool-card').length
+        }))()`
+        // Settled + collapsed: exactly one answer block (the tail text), no
+        // narration visible, the trailing tool below the answer, nothing in
+        // the fold.
+        const settled = (await waitForProbe(
+          win,
+          `${sig}.turns === 1 && ${sig}.open === 0 && ${sig}.answerBlocks === 1 &&
+               ${sig}.narration === 0 && ${sig}.afterTools === 1 && ${sig}.foldedTools === 0 &&
+               ${sig}.answerText.includes('${ANSWER_TAIL}') &&
+               !${sig}.answerText.includes('${NARRATION_ONE}')`,
+          10_000
+        )) as boolean
+        if (!settled) {
+          const diag = (await win.webContents.executeJavaScript(sig).catch(() => 'unavailable')) as string
+          fail(`ticket-53 stage: the settled turn did not split to the tail block; DOM: ${diag}`)
+        }
+        log('answer_split_settled_ok')
+        // Open the fold: the narration rows surface as work rows; the answer
+        // and the after-answer tool stay put.
+        await openAllTurnContainers(win)
+        const opened = (await waitForProbe(
+          win,
+          `${sig}.open === 1 && ${sig}.narration === 2 && ${sig}.answerBlocks === 1 && ${sig}.afterTools === 1`,
+          10_000
+        )) as boolean
+        if (!opened) {
+          const diag = (await win.webContents.executeJavaScript(sig).catch(() => 'unavailable')) as string
+          fail(`ticket-53 stage: the opened container did not reveal the narration rows; DOM: ${diag}`)
+        }
+        log('answer_split_open_ok')
+      })
+    }
+    log('answer_split_done')
 
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
     const livePids = supervisor.hostPids

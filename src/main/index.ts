@@ -32,6 +32,7 @@ import { startContextMenuVisualIfEnabled, isolateContextMenuUserData } from './v
 import { startTraceVisualIfEnabled, isolateTraceUserData } from './visual-trace'
 import { startFoldVisualIfEnabled, isolateFoldUserData } from './visual-fold'
 import { startCodeblockVisualIfEnabled, isolateCodeblockUserData } from './visual-codeblock'
+import { startAnswerVisualIfEnabled, isolateAnswerUserData } from './visual-answer'
 import { startExpandVisualIfEnabled, isolateExpandUserData } from './visual-expand'
 import { startTreeVisualIfEnabled, isolateTreeUserData } from './visual-tree'
 import { startApprovalVisualIfEnabled } from './visual-approval'
@@ -77,6 +78,9 @@ isolateTreeUserData()
 // Ticket-50 codeblock-label harness — same throwaway-userData rule (no-op
 // unless PICODE_VISUAL_CODEBLOCK=1).
 isolateCodeblockUserData()
+// Ticket-53 answer-split harness — same throwaway-userData rule (no-op
+// unless PICODE_VISUAL_ANSWER=1).
+isolateAnswerUserData()
 
 // Ticket-13 hygiene, extended by ticket 31: the smoke drives the REAL
 // settings service too (panel recently closed round-trip), so it gets the
@@ -212,6 +216,8 @@ app.whenReady().then(() => {
   startTreeVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-50 codeblock-label harness — contract-stream injection, no store writes.
   startCodeblockVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  // Ticket-53 answer-split harness — settled-replay injection, same pattern.
+  startAnswerVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
 
   // Renderer → host relay (Seam-1: the only chat channel the renderer has).
   ipcMain.on('chat:to-host', (_event, message: ParentToHost) => {
