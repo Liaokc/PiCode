@@ -89,7 +89,7 @@ export default function FollowView({ title, items, live, onStop, onOpen }: Follo
                   onToggle={() => toggleTurn(turn.id)}
                 />
               )}
-              {turn.answer.length > 0 && <AnswerBlock turn={turn} />}
+              {turn.answer !== null && <AnswerBlock turn={turn} />}
             </div>
           ))}
         </div>

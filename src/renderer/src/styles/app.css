@@ -3570,6 +3570,30 @@ button.heat:hover {
   transform: rotate(180deg);
 }
 
+/* ---------- interim narration row (ticket 53: the model's text between
+   tool calls — folds with the container, reads as a work row when open) ---------- */
+
+.turn-narration-row {
+  margin: 2px 0;
+  padding: 2px 0 2px 20px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  user-select: text;
+}
+
+/* ---------- after-answer work rows (ticket 53: tools that ran after the
+   answer stay visible below it, outside the fold — ZCode rule) ---------- */
+
+.turn-after-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
 .thinking-row-body {
   margin: 6px 0 4px;
   padding: 2px 0 2px 20px;

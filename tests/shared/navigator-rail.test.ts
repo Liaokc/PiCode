@@ -97,7 +97,7 @@ describe('railAnchors (one tick per real user message, incl. steer/follow-up)', 
     expect(anchors[0].userText).toBe('Review my diff')
   })
 
-  it('joins multi-part answers into one reply preview and keeps answerless turns empty', () => {
+  it('previews the LAST text block as the reply and keeps answerless turns empty (ticket 53)', () => {
     const anchors = anchorsFor(
       USER('two parts'),
       { type: 'agent_start' },
@@ -111,7 +111,9 @@ describe('railAnchors (one tick per real user message, incl. steer/follow-up)', 
       USER('no reply yet'),
       { type: 'agent_start' }
     )
-    expect(anchors[0].replyText).toBe('Part one.\n\nPart two.')
+    // The bubble preview mirrors the transcript: the turn's answer is its
+    // last text block — the interim narration stays in the fold container.
+    expect(anchors[0].replyText).toBe('Part two.')
     expect(anchors[1].replyText).toBe('')
   })
 

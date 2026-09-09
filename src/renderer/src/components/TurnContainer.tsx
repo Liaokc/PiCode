@@ -1,10 +1,54 @@
 import { type JSX } from 'react'
-import type { TurnGroup } from '../../../shared/turn-collapse'
+import type { TurnGroup, TurnWorkItem } from '../../../shared/turn-collapse'
 import { useElapsedSeconds } from './use-elapsed-seconds'
 import { ChevronDownIcon, ChevronRightIcon, LoaderIcon, WandIcon } from './icons'
 import ApprovalPill from './ApprovalPill'
+import NarrationRow from './NarrationRow'
 import ThinkingRow from './ThinkingRow'
 import ToolCard from './ToolCard'
+
+interface TurnWorkRowsProps {
+  /** The items in transcript order — the container's fold body or the
+   * after-answer segment (ticket 53). */
+  items: readonly TurnWorkItem[]
+  /** Deep-link a file-arg tool call into the Preview tab (ticket 07). */
+  onOpenFile?: (path: string) => void
+  /** Deep-link a bash tool call into the Bridge panel (ticket 18 feedback). */
+  onShowInBridge?: (toolCallId: string) => void
+  /** Approval-gate handlers — LIVE-PATH ONLY. Surfaces without a gate
+   * (Live Follow, ticket 24) omit them; approval entries never occur there
+   * (the structured payload carries none), so the pill simply doesn't render. */
+  onApprove?: (toolCallId: string, remember: boolean) => void
+  onDeny?: (toolCallId: string, reason: string) => void
+}
+
+/**
+ * The work rows of a turn in transcript order — thinking, interim narration,
+ * tool cards, approval pills. Shared by the fold container body and the
+ * always-visible after-answer segment (ticket 53) so both render the same
+ * row shapes with the same handlers.
+ */
+export function TurnWorkRows({ items, onOpenFile, onShowInBridge, onApprove, onDeny }: TurnWorkRowsProps): JSX.Element {
+  return (
+    <>
+      {items.map((item) => {
+        switch (item.kind) {
+          case 'thinking':
+            return <ThinkingRow key={item.key} part={item.part} />
+          case 'narration':
+            return <NarrationRow key={item.key} text={item.text} />
+          case 'tool':
+            return <ToolCard key={item.key} entry={item.entry} onOpenFile={onOpenFile} onShowInBridge={onShowInBridge} />
+          case 'approval':
+            // Gate-less surfaces (follow) never carry approval entries;
+            // without handlers there is nothing to render.
+            if (onApprove === undefined || onDeny === undefined) return null
+            return <ApprovalPill key={item.key} entry={item.entry} onApprove={onApprove} onDeny={onDeny} />
+        }
+      })}
+    </>
+  )
+}
 
 interface TurnContainerProps {
   turn: TurnGroup
@@ -26,8 +70,9 @@ interface TurnContainerProps {
  * The per-turn fold container (ticket 23, ZCode evidence
  * `z-turn-collapse-expanded.png` / collapsed `已工作 24 秒 ›`): one
  * "Working · Ns" row per turn; opening it reveals that turn's skill marker,
- * thinking rows and tool cards. The answer text renders outside — the
- * settled transcript shows only messages and answers.
+ * thinking rows, interim narration (ticket 53) and tool cards. The answer —
+ * the turn's LAST text block (ticket 53) — renders outside; tools that ran
+ * after the answer render below it, outside the fold too.
  *
  * The header ticks seconds only for turns that actually streamed in this
  * view: replayed turns carry no recorded duration and degrade to a plain
@@ -81,19 +126,13 @@ export default function TurnContainer({
               <span className="skill-marker-name">{turn.skillName}</span>
             </div>
           )}
-          {turn.work.map((item) => {
-            switch (item.kind) {
-              case 'thinking':
-                return <ThinkingRow key={item.key} part={item.part} />
-              case 'tool':
-                return <ToolCard key={item.key} entry={item.entry} onOpenFile={onOpenFile} onShowInBridge={onShowInBridge} />
-              case 'approval':
-                // Gate-less surfaces (follow) never carry approval entries;
-                // without handlers there is nothing to render.
-                if (onApprove === undefined || onDeny === undefined) return null
-                return <ApprovalPill key={item.key} entry={item.entry} onApprove={onApprove} onDeny={onDeny} />
-            }
-          })}
+          <TurnWorkRows
+            items={turn.work}
+            onOpenFile={onOpenFile}
+            onShowInBridge={onShowInBridge}
+            onApprove={onApprove}
+            onDeny={onDeny}
+          />
         </div>
       )}
     </div>

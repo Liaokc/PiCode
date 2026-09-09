@@ -22,7 +22,9 @@ function fold(state: ChatState, ...actions: ChatAction[]): ChatState {
 
 const USER = (text: string): HostToParent => ({ type: 'user_message', text })
 
-/** One streamed thinking + tool + answer turn (not settled — no agent_end). */
+/** One streamed thinking + tool + answer turn (not settled — no agent_end).
+ * Ticket 53: the first text part is INTERIM NARRATION — the model's narration
+ * between tool calls; the last text part is the turn's answer. */
 function streamedWorkTurn(toolId = 'tc-1'): HostToParent[] {
   return [
     { type: 'agent_start' },
@@ -39,8 +41,8 @@ function streamedWorkTurn(toolId = 'tc-1'): HostToParent[] {
   ]
 }
 
-describe('turn grouping (groupTurns)', () => {
-  it('table: one streamed turn partitions into user / work (thinking + tool) / answer text', () => {
+describe('turn grouping (groupTurns) — ticket 53 answer split', () => {
+  it('table · last text block: the settled answer is the turn\u0027s LAST text part only', () => {
     const state = fold(initialChatState(), SESSION_CREATED, USER('fix the bug'), ...streamedWorkTurn())
     const turns = groupTurns(state.entries, state.agentRunning)
     expect(turns).toHaveLength(1)
@@ -48,12 +50,168 @@ describe('turn grouping (groupTurns)', () => {
     expect(turn.id).toBe('m0')
     expect(turn.user?.text).toBe('fix the bug')
     expect(turn.skillName).toBeNull()
-    expect(turn.work.map((w) => w.kind)).toEqual(['thinking', 'tool'])
-    expect(turn.answer.map((a) => a.text)).toEqual(['Running checks.', 'All green.'])
+    expect(turn.answer?.text).toBe('All green.')
     expect(turn.pendingApproval).toBe(false)
   })
 
-  it('table: each user message opens a new turn — the boundary is the user entry', () => {
+  it('table · interim narration: earlier text parts fold into the container in transcript order', () => {
+    const state = fold(initialChatState(), SESSION_CREATED, USER('fix the bug'), ...streamedWorkTurn())
+    const [turn] = groupTurns(state.entries, false)
+    expect(turn.work.map((w) => w.kind)).toEqual(['thinking', 'narration', 'tool'])
+    expect(turn.work[1]).toMatchObject({ kind: 'narration', entryId: 'm1', text: 'Running checks.' })
+    expect(turn.afterAnswer).toEqual([])
+    // Narration is foldable content: it alone justifies the container row.
+    expect(turn.hasWork).toBe(true)
+  })
+
+  it('table · narration-only split: two texts with no tools still fold the first one', () => {
+    const state = fold(
+      initialChatState(),
+      SESSION_CREATED,
+      USER('q'),
+      { type: 'agent_start' },
+      { type: 'message_start' },
+      { type: 'text_delta', delta: 'Halfway there.' },
+      { type: 'message_end' },
+      { type: 'message_start' },
+      { type: 'text_delta', delta: 'Done.' },
+      { type: 'message_end' },
+      { type: 'agent_end' }
+    )
+    const [turn] = groupTurns(state.entries, false)
+    expect(turn.work.map((w) => [w.kind, (w as { text?: string }).text])).toEqual([['narration', 'Halfway there.']])
+    expect(turn.answer?.text).toBe('Done.')
+    expect(turn.hasWork).toBe(true)
+  })
+
+  it('table · post-answer tools: a tool that ran after the final text stays visible below it, outside the fold', () => {
+    const state = fold(
+      initialChatState(),
+      SESSION_CREATED,
+      USER('deploy'),
+      { type: 'agent_start' },
+      { type: 'message_start' },
+      { type: 'text_delta', delta: 'Shipped.' },
+      { type: 'message_end' },
+      { type: 'tool_start', toolCallId: 'tc-after', name: 'bash', args: { command: 'git status' } },
+      { type: 'tool_end', toolCallId: 'tc-after', output: 'clean', isError: false },
+      { type: 'agent_end' }
+    )
+    const [turn] = groupTurns(state.entries, false)
+    expect(turn.answer?.text).toBe('Shipped.')
+    expect(turn.work).toEqual([])
+    expect(turn.afterAnswer.map((item) => item.kind)).toEqual(['tool'])
+    expect(turn.afterAnswer[0]).toMatchObject({ kind: 'tool', entry: { id: 'tc-after' } })
+    // The after-answer rows render without the container, so they do not
+    // make hasWork true (the container only folds what needs folding).
+    expect(turn.hasWork).toBe(false)
+  })
+
+  it('table · post-answer thinking stays folded: only TOOLS leave the container after the answer', () => {
+    const state = fold(
+      initialChatState(),
+      SESSION_CREATED,
+      USER('deploy'),
+      { type: 'agent_start' },
+      { type: 'message_start' },
+      { type: 'text_delta', delta: 'Shipped.' },
+      { type: 'message_end' },
+      { type: 'message_start' },
+      { type: 'thinking_delta', delta: 'verify once more' },
+      { type: 'thinking_end', durationMs: 300 },
+      { type: 'tool_start', toolCallId: 'tc-verify', name: 'bash', args: { command: 'git log' } },
+      { type: 'tool_end', toolCallId: 'tc-verify', output: 'ok', isError: false },
+      { type: 'agent_end' }
+    )
+    const [turn] = groupTurns(state.entries, false)
+    expect(turn.answer?.text).toBe('Shipped.')
+    expect(turn.work.map((w) => w.kind)).toEqual(['thinking'])
+    expect(turn.afterAnswer.map((item) => item.kind)).toEqual(['tool'])
+    expect(turn.hasWork).toBe(true)
+  })
+
+  it('table · transcript order survives the split: narration between tools rolls the tools back into work', () => {
+    const state = fold(
+      initialChatState(),
+      SESSION_CREATED,
+      USER('q'),
+      { type: 'agent_start' },
+      { type: 'message_start' },
+      { type: 'text_delta', delta: 'First look.' },
+      { type: 'message_end' },
+      { type: 'tool_start', toolCallId: 'tc-mid', name: 'bash', args: { command: 'ls' } },
+      { type: 'tool_end', toolCallId: 'tc-mid', output: 'files', isError: false },
+      { type: 'message_start' },
+      { type: 'text_delta', delta: 'Final answer.' },
+      { type: 'message_end' },
+      { type: 'agent_end' }
+    )
+    const [turn] = groupTurns(state.entries, false)
+    // The tool ran between the two texts — it belongs BEFORE the answer,
+    // inside the fold, after the narration it followed.
+    expect(turn.work.map((w) => w.kind)).toEqual(['narration', 'tool'])
+    expect(turn.work[0]).toMatchObject({ kind: 'narration', text: 'First look.' })
+    expect(turn.answer?.text).toBe('Final answer.')
+    expect(turn.afterAnswer).toEqual([])
+  })
+
+  it('table · streaming tail: the in-flight last text streams as the answer, earlier text already folded', () => {
+    const state = fold(
+      initialChatState(),
+      SESSION_CREATED,
+      USER('q'),
+      { type: 'agent_start' },
+      { type: 'message_start' },
+      { type: 'thinking_delta', delta: 'hmm' },
+      { type: 'text_delta', delta: 'part one.' },
+      { type: 'thinking_delta', delta: 'more' },
+      { type: 'text_delta', delta: 'part two' }
+    )
+    const [turn] = groupTurns(state.entries, true)
+    expect(turn.answer).toMatchObject({ text: 'part two', streaming: true })
+    expect(turn.work.map((w) => w.kind)).toEqual(['thinking', 'narration', 'thinking'])
+    expect(turn.work[1]).toMatchObject({ kind: 'narration', text: 'part one.' })
+  })
+
+  it('table · no-text turn: thinking and tools alone leave the answer null (no answer block)', () => {
+    const state = fold(
+      initialChatState(),
+      SESSION_CREATED,
+      USER('run it'),
+      { type: 'agent_start' },
+      { type: 'message_start' },
+      { type: 'thinking_delta', delta: 'just do it' },
+      { type: 'thinking_end', durationMs: 100 },
+      { type: 'tool_start', toolCallId: 'tc-quiet', name: 'bash', args: { command: 'true' } },
+      { type: 'tool_end', toolCallId: 'tc-quiet', output: '', isError: false },
+      { type: 'agent_end' }
+    )
+    const [turn] = groupTurns(state.entries, false)
+    expect(turn.answer).toBeNull()
+    expect(turn.afterAnswer).toEqual([])
+    expect(turn.work.map((w) => w.kind)).toEqual(['thinking', 'tool'])
+    expect(turn.hasWork).toBe(true)
+  })
+
+  it('table · errored turn: the partial tail text is still the answer, narration stays folded', () => {
+    const state = fold(
+      initialChatState(),
+      SESSION_CREATED,
+      USER('do it'),
+      { type: 'agent_start' },
+      { type: 'message_start' },
+      { type: 'text_delta', delta: 'Working on it.' },
+      { type: 'message_end' },
+      { type: 'message_start' },
+      { type: 'text_delta', delta: 'partial' },
+      { type: 'turn_error', message: 'model overloaded' }
+    )
+    const [turn] = groupTurns(state.entries, true)
+    expect(turn.answer).toMatchObject({ text: 'partial', streaming: false })
+    expect(turn.work.map((w) => w.kind)).toEqual(['narration'])
+  })
+
+  it('table · each user message opens a new turn — the boundary is the user entry', () => {
     const state = fold(
       initialChatState(),
       SESSION_CREATED,
@@ -69,8 +227,8 @@ describe('turn grouping (groupTurns)', () => {
     )
     const turns = groupTurns(state.entries, false)
     expect(turns.map((t) => t.id)).toEqual(['m0', 'm4'])
-    expect(turns[0].answer.map((a) => a.text)).toEqual(['Running checks.', 'All green.'])
-    expect(turns[1].answer.map((a) => a.text)).toEqual(['Second answer.'])
+    expect(turns[0].answer?.text).toBe('All green.')
+    expect(turns[1].answer?.text).toBe('Second answer.')
     expect(turns[1].work).toEqual([])
   })
 
@@ -81,6 +239,7 @@ describe('turn grouping (groupTurns)', () => {
     expect(turns[0].id).toBe(HEAD_TURN_ID)
     expect(turns[0].user).toBeNull()
     expect(turns[0].work.map((w) => w.kind)).toEqual(['tool'])
+    expect(turns[0].answer).toBeNull()
   })
 
   it('table: a sniffed skill marker rides on the turn of its user message', () => {
@@ -132,7 +291,7 @@ describe('turn grouping (groupTurns)', () => {
     expect(turns).toHaveLength(1)
     expect(turns[0].id).toBe('r-u1')
     expect(turns[0].work.map((w) => w.kind)).toEqual(['thinking', 'tool', 'thinking'])
-    expect(turns[0].answer.map((a) => a.text)).toEqual(['done'])
+    expect(turns[0].answer?.text).toBe('done')
   })
 
   it('table: only the last turn is live while the agent runs', () => {
@@ -151,7 +310,7 @@ describe('turn grouping (groupTurns)', () => {
     expect(turns.map((t) => t.live)).toEqual([false, true])
   })
 
-  it('table: answer parts carry their source entry id — the fork anchor pool', () => {
+  it('table: the answer carries its source entry id — the fork anchor (last text-bearing entry)', () => {
     const state = fold(
       initialChatState(),
       SESSION_CREATED,
@@ -160,28 +319,10 @@ describe('turn grouping (groupTurns)', () => {
       { type: 'agent_end' }
     )
     const [turn] = groupTurns(state.entries, false)
-    // Two text parts from two assistant entries; the LAST one is the fork
-    // anchor (forking there keeps the whole answer turn on the branch).
-    expect(turn.answer.map((a) => a.entryId)).toEqual(['m1', 'm3'])
-  })
-
-  it('table: the streaming flag lands only on the last text part of a live turn', () => {
-    const state = fold(
-      initialChatState(),
-      SESSION_CREATED,
-      USER('q'),
-      { type: 'agent_start' },
-      { type: 'message_start' },
-      { type: 'thinking_delta', delta: 'hmm' },
-      { type: 'text_delta', delta: 'part one.' },
-      { type: 'thinking_delta', delta: 'more' },
-      { type: 'text_delta', delta: 'part two' }
-    )
-    const [turn] = groupTurns(state.entries, true)
-    expect(turn.answer.map((a) => [a.text, a.streaming])).toEqual([
-      ['part one.', false],
-      ['part two', true]
-    ])
+    // Two text parts from two assistant entries; the answer is the LAST one,
+    // and its entry is the fork anchor (unchanged semantics, ticket 53 —
+    // forking there keeps the whole answer turn on the branch).
+    expect(turn.answer?.entryId).toBe('m3')
   })
 
   it('table: a pending approval keeps its turn flagged', () => {
@@ -219,7 +360,7 @@ describe('turn grouping (groupTurns)', () => {
     )
     const [turn] = groupTurns(state.entries, false)
     expect(turn.hasWork).toBe(false)
-    expect(turn.answer.map((a) => a.text)).toEqual(['Hello!'])
+    expect(turn.answer?.text).toBe('Hello!')
   })
 })
 
