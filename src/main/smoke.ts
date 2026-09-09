@@ -2824,16 +2824,19 @@ export function startSmokeIfEnabled(
       log('nav_rail_one_tick_hidden_ok')
 
       // Second real user message: the rail appears with exactly two ticks.
+      // The agent_start waiter registers BEFORE the send: a warm host with a
+      // fast model can land agent_start inside the executeJavaScript
+      // round-trip, and a waiter registered after the Enter would never see
+      // it (observed twice on glm-5.3-flash, 2026-09-09).
+      const navSecondStart = waitFor((e) => e.type === 'agent_start' && e.sessionId === navId, 'nav_rail second agent_start')
+      const navSecondEnd = waitFor((e) => e.type === 'agent_end' && e.sessionId === navId, 'nav_rail second agent_end')
       if (!(await win.webContents.executeJavaScript(composerTypeJs(NAV_2)).catch(() => false))) {
         fail('ticket-46 stage: composer textarea missing for the second nav prompt')
       }
       await new Promise((r) => setTimeout(r, 300))
       await win.webContents.executeJavaScript(composerKeyJs('Enter'))
-      await waitFor((e) => e.type === 'agent_start' && e.sessionId === navId, 'nav_rail second agent_start')
-      await waitFor(
-        (e) => e.type === 'agent_end' && e.sessionId === navId,
-        'nav_rail second agent_end'
-      )
+      await navSecondStart
+      await navSecondEnd
       if (!(await waitForProbe(win, RAIL_TICKS(2), 10_000))) {
         fail('ticket-46 stage: the rail never rendered with two ticks')
       }
@@ -3135,6 +3138,10 @@ export function startSmokeIfEnabled(
 
       // Collapse path ③: a successful send starts the next turn from the
       // resting composer. The button STAYS while the turn runs (persistent).
+      // The agent_end waiter registers BEFORE the send (warm host + fast
+      // model: the settled event can beat a late-registered waiter, the
+      // same race the ticket-46 stage hit on glm-5.3-flash).
+      const expandReplyEnd = waitFor((e) => e.type === 'agent_end' && e.sessionId === expandId, 'composer_expand reply agent_end')
       await clickExpand('.chat-dock')
       if (!(await waitForProbe(win, EXPANDED_FORMULA('.chat-view'), 5_000))) {
         fail('ticket-49 stage: the input never re-expanded for the send path')
@@ -3158,7 +3165,7 @@ export function startSmokeIfEnabled(
       log('composer_expand_send_collapse_ok')
 
       // Let the reply turn settle so the stage leaves a quiet session.
-      await waitFor((e) => e.type === 'agent_end' && e.sessionId === expandId, 'composer_expand reply agent_end')
+      await expandReplyEnd
       await win.webContents.executeJavaScript(composerClearJs)
     })
     log('composer_expand_done')
