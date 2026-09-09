@@ -40,6 +40,7 @@ import { traceVisualEnabled } from './visual-trace'
 import { foldVisualEnabled } from './visual-fold'
 import { codeblockVisualEnabled } from './visual-codeblock'
 import { expandVisualEnabled } from './visual-expand'
+import { answerVisualEnabled } from './visual-answer'
 import { ensureVisualProjectDir, ensureVisualStore, writeVisualSession } from './visual-store'
 import type { HostToParent } from '../shared/contract'
 
@@ -184,6 +185,8 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
   if (codeblockVisualEnabled()) return
   // And for the composer-expand harness (ticket 49).
   if (expandVisualEnabled()) return
+  // And for the answer-split harness (ticket 53).
+  if (answerVisualEnabled()) return
 
   // Deterministic sidebar content for the shots (ticket 20): the empty-state
   // frame must show a status dot (a session written by ANOTHER end — fresh
