@@ -43,6 +43,16 @@ export function codeLanguage(node: HastLike | undefined): string | null {
   return null
 }
 
+/**
+ * Display label of a code card's language chip (ticket 50): the fenced
+ * block's language, falling back to 'text' when the fence is untagged —
+ * the ZCode same-shape projection `language?.trim() || 'text'`. The label
+ * is always rendered; a whitespace-only token trims into the fallback.
+ */
+export function codeLanguageLabel(node: HastLike | undefined): string {
+  return codeLanguage(node)?.trim() || 'text'
+}
+
 /** Raw text content — depth-first concatenation of `text` values. */
 export function hastText(node: HastLike | undefined): string {
   if (node === undefined) return ''

@@ -31,6 +31,7 @@ import { startAccessVisualIfEnabled } from './visual-access'
 import { startContextMenuVisualIfEnabled, isolateContextMenuUserData } from './visual-context-menu'
 import { startTraceVisualIfEnabled, isolateTraceUserData } from './visual-trace'
 import { startFoldVisualIfEnabled, isolateFoldUserData } from './visual-fold'
+import { startCodeblockVisualIfEnabled, isolateCodeblockUserData } from './visual-codeblock'
 import { startTreeVisualIfEnabled, isolateTreeUserData } from './visual-tree'
 import { startApprovalVisualIfEnabled } from './visual-approval'
 import { startUsageVisualIfEnabled } from './visual-usage'
@@ -69,6 +70,9 @@ isolateFoldUserData()
 // Ticket-43 history-tree harness — same throwaway-userData rule (no-op
 // unless PICODE_VISUAL_TREE=1).
 isolateTreeUserData()
+// Ticket-50 codeblock-label harness — same throwaway-userData rule (no-op
+// unless PICODE_VISUAL_CODEBLOCK=1).
+isolateCodeblockUserData()
 
 // Ticket-13 hygiene, extended by ticket 31: the smoke drives the REAL
 // settings service too (panel recently closed round-trip), so it gets the
@@ -200,6 +204,8 @@ app.whenReady().then(() => {
   startFoldVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-43 history-tree harness — same seeding constraint.
   startTreeVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  // Ticket-50 codeblock-label harness — contract-stream injection, no store writes.
+  startCodeblockVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
 
   // Renderer → host relay (Seam-1: the only chat channel the renderer has).
   ipcMain.on('chat:to-host', (_event, message: ParentToHost) => {
