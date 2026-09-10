@@ -6,7 +6,7 @@
 
 **Blocked by:** 48（host 事件面以 0.85.1 为基准）。
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] 契约增量（事件 id 字段）additive 报备；旧载荷校验不破
 - [x] 新会话两条回合后点 Fork → 分叉成功（子会话 parentSession 正确、转录到 fork 点）、视图切到分叉会话
@@ -27,3 +27,4 @@
   - **electron smoke（fork_live 阶段，real model）**：新会话两回合（composer 驱动）→ 第三回合运行中点 Fork 断言零命令/零 toast/零公告（静默）→ 结算后点 Fork → 恰好一条 'Forked to a new session.' 成功 toast + 零错误 toast；parent 会话 user_message 观察者证零垃圾回合；子文件首行 `parentSession` 指向父文件且尾部 entry id === 父文件锚点 entry id（真实 id 分叉的磁盘实证）；侧栏子行 `sb-task-active` 证视图切换。waiter 先于发送布防（快模型可在后续 sleep 内跑完短回合——首跑在此超时过，已修）。
   - **门禁**：typecheck 全绿；lint 0 error（1 条 EmptyState 既有 warning）；vitest **1082/1082**（79 文件，+13）；`npm run smoke` **六阶段 ALL GREEN（167s）**，rebase（吃入 53 的 answer_split 阶段）后 electron smoke 复跑 2/2 通过（48+49 共存先例的 51+53 共存验证）。对照实验：pure main 上 scroll_stay 2/2 通过、本分支修复后 2/2 通过——yank 与 bg_approval 各出现过一次不可复现失败，判为模型时序 flake（两分支均见，非本票回归）。
   - **code-review（两轴）**：Standards 0 硬违规（5 条 judgement-call 均判可接受：三处 user_message 构造形状相近不抽、泛型监控缝服务测试缝、heldMessageEnd 模块级与既有 host 惯例一致、ack 过度清除取安全向、smoke waiter 先行有留痕）；Spec 6/6 验收达成，2 条范围外添加均已留痕（turn-collapse key 修正 + echo 延后时点——后者是 user_message 带真实 id 的必要条件）。未自行 merge——操作者执行 `bash scripts/merge-ticket.sh 51`。
+- 2026-09-09 (merge, T00): 合入 main —— merge sha `5f496f3`（分支重写 `5cf808b`）。验收口径：操作者明示「51 工单已验收」（实施会话门禁：vitest 1082 + smoke 六阶段 ALL GREEN 167s + rebase 后 electron smoke 复跑 2/2 + code-review Standards 0 硬违规 / Spec 6/6）。簿记 sync `b6dcda6`：分支自带 tracker 终态提交（53 同款），checkout 分支版本后 rebase 自动去重（"skipped previously applied commit e738f91"）。冲突处置：rebase/合并零冲突；**turn-collapse.ts 为 51/53 共同热点但非语义对撞**——51 基于含 53 的 main 开发（基点 0f52be6），53 的分割模型原样幸存、51 叠加 anchor/key 增量，无三方对撞。终态审计：新模块 live-entry-ids.ts + tests/main/live-entry-ids.test.ts 入库；contract.ts 增量纯 additive（user_message / message 终结事件可选 entryId，absent 回退合成 id 语义保留）；smoke.ts 四票区段共存（48 焦点重试 8 处 / 49 expand 56 处 / 53 answer_split 4 处 / 51 fork 57 处）；CONTEXT.md 无 rider（本票无词条）；无冲突标记残留；**typecheck 绿 + 1082/1082 tests 绿**（79 文件，净增 13 例）。worktree 已清理。
