@@ -68,4 +68,31 @@ describe('isAuthProbeReport', () => {
       isAuthProbeReport({ scannedAt: 1, error: null, providers: [], models: [{ providerId: 1, modelId: 'm', name: 'm' }] })
     ).toBe(false)
   })
+
+  // Ticket 52 (additive): the command-catalog slice is optional — reports
+  // from older probe hosts (field absent) stay valid; when present every
+  // row must carry a prompt/skill source.
+  it('accepts reports without the command catalog (old probe payloads)', () => {
+    expect(isAuthProbeReport({ scannedAt: 1, error: null, providers: [], models: [] })).toBe(true)
+  })
+
+  it('accepts a well-formed command catalog and rejects malformed rows', () => {
+    const base = { scannedAt: 1, error: null, providers: [], models: [] }
+    expect(
+      isAuthProbeReport({
+        ...base,
+        commands: [
+          { name: 'deploy', description: 'Ship it', argumentHint: '[env]', source: 'prompt' },
+          { name: 'review-pr', description: 'Review', source: 'skill' }
+        ]
+      })
+    ).toBe(true)
+    expect(isAuthProbeReport({ ...base, commands: 'nope' })).toBe(false)
+    expect(isAuthProbeReport({ ...base, commands: [{ name: 'x', description: 'x', source: 'builtin' }] })).toBe(false)
+    expect(isAuthProbeReport({ ...base, commands: [{ name: 1, description: 'x', source: 'prompt' }] })).toBe(false)
+    expect(isAuthProbeReport({ ...base, commands: [{ name: 'x', source: 'prompt' }] })).toBe(false)
+    expect(
+      isAuthProbeReport({ ...base, commands: [{ name: 'x', description: 'x', argumentHint: 3, source: 'prompt' }] })
+    ).toBe(false)
+  })
 })

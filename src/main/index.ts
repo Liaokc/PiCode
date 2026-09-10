@@ -19,6 +19,7 @@ import type { TracePayload } from '../shared/sessions/trace'
 import { SessionContextActionService } from './sessions/context-actions'
 import { SettingsService, type SettingsSnapshot } from './settings/service'
 import { runAuthProbeHost } from './settings/probe-runner'
+import { CommandCatalogService } from './settings/command-catalog'
 import { startSmokeIfEnabled, smokeEnabled, type SmokeHooks } from './smoke'
 import { startVisualIfEnabled } from './visual'
 import { startDensityVisualIfEnabled } from './visual-density'
@@ -46,6 +47,7 @@ import { createUsageService } from './usage/service'
 let supervisor: HostSupervisor | null = null
 let sessionIndex: SessionIndexService | null = null
 let terminalService: TerminalService | null = null
+let commandCatalog: CommandCatalogService | null = null
 
 // Ticket-19 visual harness: the hide/restore captures drive the REAL
 // settings service, so the multi-session visual run gets throwaway userData
@@ -154,6 +156,20 @@ app.whenReady().then(() => {
       ? Promise.resolve(fakeAuthReport())
       : settings.authReport(true)
   )
+
+  // New-task command catalog (ticket 52): the renderer reports the New Task
+  // chip's selected directory; the service debounces switches, probes each
+  // directory once (short-lived probe host, cwd-parametrized), caches, and
+  // pushes the catalog to every window. Same host-family child as the auth
+  // probe (ADR-0003: the SDK never loads in the main process).
+  const catalogService = new CommandCatalogService({
+    probe: (cwd) => runAuthProbeHost(hostEntry, { cwd }),
+    push: (payload) => broadcastChannel('chat:command-catalog', payload)
+  })
+  commandCatalog = catalogService
+  ipcMain.on('chat:new-task-cwd', (_event, cwd: unknown) => {
+    catalogService.request(typeof cwd === 'string' && cwd.trim() !== '' ? cwd : null)
+  })
 
   let smokeHooks: SmokeHooks | null = null
   let mainWindow: BrowserWindow | null = null
@@ -389,6 +405,7 @@ app.on('before-quit', () => {
   supervisor?.shutdownAll()
   sessionIndex?.stop()
   terminalService?.disposeAll()
+  commandCatalog?.dispose()
 })
 
 // ---- visual-QA fixtures (PICODE_FAKE_SETTINGS=1): deterministic settings

@@ -8,6 +8,7 @@ import type { ReviewResult } from '../shared/review/types'
 import type { PreviewResult } from '../shared/preview/types'
 import type { AuthProbeReport } from '../shared/auth-status'
 import type { AppPreferences } from '../shared/preferences'
+import type { NewTaskCommandCatalog } from '../shared/new-task-commands'
 import type { TerminalDataMessage, TerminalExitMessage } from '../shared/terminal/messages'
 import { shellDisplayName } from '../shared/terminal/shell-name'
 
@@ -47,7 +48,22 @@ contextBridge.exposeInMainWorld('picode', {
     },
     pickWorkingDirectory: (): Promise<string | null> => ipcRenderer.invoke('chat:pick-directory'),
     /** Pick image files for the composer (read in main, returned as base64). */
-    pickImages: (): Promise<ImageAttachment[]> => ipcRenderer.invoke('chat:pick-images')
+    pickImages: (): Promise<ImageAttachment[]> => ipcRenderer.invoke('chat:pick-images'),
+    /** Report the New Task chip's selected directory (ticket 52): main
+     * debounces, probes the directory's command catalog once, and pushes it
+     * to `onCommandCatalog`. null = no selection (global resources only). */
+    setNewTaskCwd: (cwd: string | null): void => {
+      ipcRenderer.send('chat:new-task-cwd', cwd)
+    },
+    /** Per-directory command catalog push (ticket 52), one payload per
+     * probed directory. */
+    onCommandCatalog: (listener: (payload: NewTaskCommandCatalog) => void): (() => void) => {
+      const wrapped = (_event: IpcRendererEvent, payload: NewTaskCommandCatalog): void => listener(payload)
+      ipcRenderer.on('chat:command-catalog', wrapped)
+      return () => {
+        ipcRenderer.removeListener('chat:command-catalog', wrapped)
+      }
+    }
   },
   sessions: {
     list: (): Promise<SessionSummary[]> => ipcRenderer.invoke('sessions:list'),

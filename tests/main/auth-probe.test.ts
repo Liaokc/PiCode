@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   collectAuthStatuses,
+  collectCommandCatalog,
   supportedThinkingLevels,
   type AuthProbeModels,
+  type ProbeResourceLoader,
   type StoredCredentialLike
 } from '../../src/host/auth-probe.ts'
 
@@ -117,5 +119,63 @@ describe('supportedThinkingLevels', () => {
     expect(
       supportedThinkingLevels({ id: 'm', reasoning: true, thinkingLevelMap: { max: 'max' } })
     ).toEqual(['off', 'minimal', 'low', 'medium', 'high', 'max'])
+  })
+})
+
+// Ticket 52: the resource-loader enumeration — prompt templates + skills
+// projected into raw catalog rows (no session machinery behind it).
+describe('collectCommandCatalog', () => {
+  it('projects loader prompts and skills into raw rows, order preserved', () => {
+    const loader: ProbeResourceLoader = {
+      getPrompts: () => ({
+        prompts: [
+          { name: 'deploy', description: 'Ship it', argumentHint: '[env]' },
+          { name: 'weekly', description: 'Weekly report' }
+        ]
+      }),
+      getSkills: () => ({
+        skills: [{ name: 'review-pr', description: 'Review a PR' }]
+      })
+    }
+    expect(collectCommandCatalog(loader)).toEqual([
+      { name: 'deploy', description: 'Ship it', argumentHint: '[env]', source: 'prompt' },
+      { name: 'weekly', description: 'Weekly report', source: 'prompt' },
+      { name: 'review-pr', description: 'Review a PR', source: 'skill' }
+    ])
+  })
+
+  it('stringifies non-string argument hints (YAML frontmatter delivers arrays)', () => {
+    const loader: ProbeResourceLoader = {
+      getPrompts: () => ({
+        prompts: [
+          // `argument-hint: [env]` parses as a one-element YAML array.
+          { name: 'deploy', description: 'Ship it', argumentHint: ['env'] as unknown as string },
+          { name: 'wait', description: 'Wait', argumentHint: 3 as unknown as string }
+        ]
+      }),
+      getSkills: () => ({ skills: [] })
+    }
+    expect(collectCommandCatalog(loader)).toEqual([
+      { name: 'deploy', description: 'Ship it', argumentHint: 'env', source: 'prompt' },
+      { name: 'wait', description: 'Wait', argumentHint: '3', source: 'prompt' }
+    ])
+  })
+
+  it('degrades to an empty catalog when the loader enumeration throws', () => {
+    const loader: ProbeResourceLoader = {
+      getPrompts: () => {
+        throw new Error('loader exploded')
+      },
+      getSkills: () => ({ skills: [] })
+    }
+    expect(collectCommandCatalog(loader)).toEqual([])
+  })
+
+  it('reports an empty catalog for an empty loader (no templates, no skills)', () => {
+    const loader: ProbeResourceLoader = {
+      getPrompts: () => ({ prompts: [] }),
+      getSkills: () => ({ skills: [] })
+    }
+    expect(collectCommandCatalog(loader)).toEqual([])
   })
 })

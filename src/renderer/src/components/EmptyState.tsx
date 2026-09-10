@@ -8,6 +8,7 @@ import {
   type NewTaskModelChoice
 } from '../../../shared/new-task-models'
 import { type ModelRef, type ProviderModels, type ThinkingLevel } from '../../../shared/contract'
+import { projectCommandMenu, type NewTaskCommandCatalog } from '../../../shared/new-task-commands'
 import { projectLabel } from '../../../shared/sessions/group'
 import { initialChatState } from '../../../shared/chat-reducer'
 import type { ImageAttachment } from '../../../shared/contract'
@@ -63,6 +64,13 @@ interface EmptyStateProps {
   thinkingIsDefault: boolean
   /** The model menu's empty-catalog hint (scanning / unconfigured / error). */
   modelMenuHint: string | null
+  /** Ticket 52: the command catalog for the CURRENTLY SELECTED project —
+   * null while the per-directory probe has not landed yet (the `/` menu is
+   * truthfully empty until it does). */
+  commandCatalog: NewTaskCommandCatalog | null
+  /** Ticket 52: report the chip's effective selection whenever it changes
+   * (mount included) — main probes that directory's command catalog. */
+  onSelectedProjectChange: (cwd: string | null) => void
   /** Start the task in the given project; null degrades to the system folder
    * picker. The model/thinking choices made here ride `create_session`'s
    * defaults (ticket 41). */
@@ -97,6 +105,8 @@ export default function EmptyState({
   modelIsDefault,
   thinkingIsDefault,
   modelMenuHint,
+  commandCatalog,
+  onSelectedProjectChange,
   onStart,
   onOpenFolder,
   composerApi
@@ -143,7 +153,12 @@ export default function EmptyState({
     availableLevels: [...shownLevels],
     modelIsDefault: modelPick === null && modelIsDefault && model !== null,
     thinkingIsDefault: thinkingPick === null && thinkingIsDefault,
-    modelMenuHint
+    modelMenuHint,
+    // Ticket 52: the `/` menu lists the REAL prompt templates + skills for
+    // the selected directory (no session-domain built-ins — the first
+    // message parses them). Inserting a row only fills the composer; the
+    // send path and SDK expansion are the in-session ones.
+    slashCommands: projectCommandMenu(commandCatalog)
   }
 
   // Round-2 feedback (ticket 29): the empty state degrades with the main
@@ -205,6 +220,12 @@ export default function EmptyState({
   const chipbarRef = useRef<HTMLDivElement>(null)
 
   const selected = override ?? defaultProject
+  // Ticket 52: the effective selection drives the command catalog — report
+  // every change (mount included) so main can probe the directory (debounced,
+  // cached) and push the menu rows back down.
+  useEffect(() => {
+    onSelectedProjectChange(selected)
+  }, [selected, onSelectedProjectChange])
   // The current choice is always visible and check-marked in the list — even
   // when it is only the last-used directory and not among the recents.
   const dropdownWorkspaces = useMemo(() => {

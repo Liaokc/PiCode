@@ -736,9 +736,14 @@ function boot(): void {
 if (process.argv[2] === '--auth-probe') {
   // Ticket 11 auth probe: a short-lived host-family process that reports the
   // read-only provider credential status for the settings window, then exits.
-  // No session machinery is booted on this path. The report is NOT a contract
-  // event — the supervisor validates it with isAuthProbeReport on arrival.
-  void runAuthProbe().then((report) => {
+  // No session machinery is booted on this path. Ticket 52: an optional cwd
+  // argument scopes the command-catalog enumeration (prompt templates +
+  // skills for that directory); without it the probe falls back to the home
+  // directory (global resources only). The report is NOT a contract event —
+  // the supervisor validates it with isAuthProbeReport on arrival.
+  const probeCwdArg = process.argv[3]
+  const probeCwd = typeof probeCwdArg === 'string' && probeCwdArg.trim() !== '' ? probeCwdArg : undefined
+  void runAuthProbe(probeCwd).then((report) => {
     process.send?.(report)
     // Give the IPC message a moment to flush before exiting.
     setTimeout(() => process.exit(0), 100).unref?.()
