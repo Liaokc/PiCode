@@ -162,8 +162,11 @@ export type SessionScopedEvent =
   | { type: 'fork_created'; sessionFile: string; cwd: string }
   /** A session command (navigate/fork/rename) failed; session stays usable. */
   | { type: 'session_command_error'; message: string }
-  /** Echo of a prompt accepted by the host, before the agent starts. */
-  | { type: 'user_message'; text: string }
+  /** Echo of a prompt accepted by the host, before the agent starts.
+   * `entryId` (ticket 51, additive): the real session entry id, present when
+   * the host relayed the message at its persistence moment; absent → the
+   * renderer falls back to its synthetic positional id. */
+  | { type: 'user_message'; text: string; entryId?: string }
   /** The agent began processing a run (one prompt, possibly many turns). */
   | { type: 'agent_start' }
   /** A new assistant message opened inside the running agent turn. */
@@ -180,8 +183,11 @@ export type SessionScopedEvent =
   | { type: 'tool_update'; toolCallId: string; partial: string }
   /** A tool call finished; `output` is the serialized final result and replaces any partials. */
   | { type: 'tool_end'; toolCallId: string; output: string; isError: boolean }
-  /** The currently open assistant message finished. */
-  | { type: 'message_end' }
+  /** The currently open assistant message finished. `entryId` (ticket 51,
+   * additive): the real session entry id of the finished message, read back
+   * when the host persisted it — the fork anchor depends on it; absent →
+   * synthetic id fallback (aborted-turn shapes). */
+  | { type: 'message_end'; entryId?: string }
   /** The agent run finished; streaming state must settle. */
   | { type: 'agent_end' }
   /** The turn failed (model/API/preflight error); partial output is preserved. */
