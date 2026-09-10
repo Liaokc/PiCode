@@ -38,6 +38,7 @@ import {
 import { toastReducer, type ToastLevel, type ToastList } from '../../shared/toast'
 import type { AccessMode, ImageAttachment, ThinkingLevel } from '../../shared/contract'
 import type { AuthProbeReport } from '../../shared/auth-status'
+import { selectCommandCatalog, type NewTaskCommandCatalog } from '../../shared/new-task-commands'
 import type { SessionSummary, TranscriptItem } from '../../shared/sessions/types'
 import TitleBar from './components/TitleBar'
 import Sidebar from './components/Sidebar'
@@ -1103,6 +1104,29 @@ export default function App(): JSX.Element {
     () => (settings.auth !== null ? projectNewTaskCatalog(settings.auth) : null),
     [settings.auth]
   )
+
+  // ---- ticket 52: the new-task empty state's command catalog ----
+  // One pushed catalog per probed directory (main debounces + caches; the
+  // probe host enumerates the resource loader for that cwd). The EmptyState
+  // reports its selection; the menu consumes the matching entry.
+  const [commandCatalogs, setCommandCatalogs] = useState<NewTaskCommandCatalog[]>([])
+  useEffect(() => {
+    return window.picode.chat.onCommandCatalog((payload) => {
+      setCommandCatalogs((prev) => {
+        const next = prev.filter((catalog) => catalog.cwd !== payload.cwd)
+        next.push(payload)
+        return next
+      })
+    })
+  }, [])
+  /** The EmptyState's effective selection (chain default or dropdown
+   * override — the component reports it). Drives which pushed catalog the
+   * menu consumes and what main probes (debounced, cached per directory). */
+  const [newTaskSelection, setNewTaskSelection] = useState<string | null>(null)
+  const handleNewTaskCwd = useCallback((cwd: string | null): void => {
+    setNewTaskSelection(cwd)
+    window.picode.chat.setNewTaskCwd(cwd)
+  }, [])
   const newTaskChip = useMemo(
     () =>
       resolveNewTaskModelChip({
@@ -1260,6 +1284,8 @@ export default function App(): JSX.Element {
                 modelIsDefault={newTaskChip.modelSource === 'pi-fallback'}
                 thinkingIsDefault={newTaskChip.thinkingSource === 'pi-fallback'}
                 modelMenuHint={newTaskModelMenuHint}
+                commandCatalog={selectCommandCatalog(commandCatalogs, newTaskSelection)}
+                onSelectedProjectChange={handleNewTaskCwd}
                 onStart={startTask}
                 onOpenFolder={() => window.picode.chat.pickWorkingDirectory()}
                 composerApi={composerApi}

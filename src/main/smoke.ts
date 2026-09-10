@@ -84,7 +84,7 @@ import os from 'node:os'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { app, clipboard, type BrowserWindow } from 'electron'
 import type { HostSupervisor } from './host-supervisor'
 import { focusSessionFromNotification, type ApprovalNotice } from './notifications'
@@ -3453,6 +3453,176 @@ export function startSmokeIfEnabled(
       log('fork_live_done')
     } finally {
       rmSync(forkProject, { recursive: true, force: true })
+    }
+
+    // ---- ticket 52: the new-task empty state's command catalog. Two seeded
+    // project directories (one with a real .pi prompt template + skill, one
+    // empty) drive the whole slice through the REAL channels: the chip
+    // dropdown's recents (seeded session files), the selection report → main
+    // probe → push pipeline, and the composer's `/` menu. The menu lists the
+    // seeded rows for dir A (and never /compact or the retired six), picking
+    // a row only INSERTS the command text (zero user_message across the
+    // window), and switching the selection to dir B re-probes so the seeded
+    // rows disappear — the menu follows the directory. ----
+    log('command_catalog_start')
+    const CATALOG_TEMPLATE = 'picode-smoke-template'
+    const CATALOG_SKILL = 'picode-smoke-skill'
+    const catalogDirA = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-catalog-a-'))
+    const catalogDirB = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-catalog-b-'))
+    const catalogStore = process.env['PICODE_SESSION_DIR']
+    if (!catalogStore) fail('ticket-52 stage: PICODE_SESSION_DIR is not set')
+    try {
+      // Project resources for dir A (the loader scans .pi/prompts +
+      // .pi/skills; frontmatter parses exactly like the pi TUI's).
+      mkdirSync(path.join(catalogDirA, '.pi', 'prompts'), { recursive: true })
+      writeFileSync(
+        path.join(catalogDirA, '.pi', 'prompts', `${CATALOG_TEMPLATE}.md`),
+        `---\ndescription: Seeded smoke template\nargument-hint: [env]\n---\nSeeded template body\n`
+      )
+      mkdirSync(path.join(catalogDirA, '.pi', 'skills', CATALOG_SKILL), { recursive: true })
+      writeFileSync(
+        path.join(catalogDirA, '.pi', 'skills', CATALOG_SKILL, 'SKILL.md'),
+        `---\nname: ${CATALOG_SKILL}\ndescription: Seeded smoke skill\n---\nSeeded skill body\n`
+      )
+      // Seed one session FILE per directory (the fold-stage pattern) so the
+      // chip dropdown lists both as recent workspaces. Distinct mtimes: dir B
+      // is newer, so it sorts first — clicking the dir A row is a real switch.
+      const seedCatalogSession = (id: string, cwd: string, ageMinutes: number): void => {
+        const stamp = new Date(Date.now() - ageMinutes * 60_000).toISOString()
+        const lines = [
+          JSON.stringify({ type: 'session', version: 3, id, timestamp: stamp, cwd }),
+          JSON.stringify({
+            type: 'message',
+            id: `${id}-u1`,
+            parentId: null,
+            timestamp: stamp,
+            message: { role: 'user', content: [{ type: 'text', text: `PICODE_CATALOG_52 seed for ${cwd}` }] }
+          })
+        ]
+        const file = path.join(catalogStore, `${id}.jsonl`)
+        writeFileSync(file, lines.join('\n') + '\n')
+        utimesSync(file, new Date(Date.now() - ageMinutes * 60_000), new Date(Date.now() - ageMinutes * 60_000))
+      }
+      seedCatalogSession('catalog52-a', catalogDirA, 20)
+      seedCatalogSession('catalog52-b', catalogDirB, 10)
+
+      await withWindow(getWindow, async (win) => {
+        const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+        const menuNamesJs = `[...document.querySelectorAll('.cmp-popover .cmp-cmd-name')].map((n) => n.textContent ?? '')`
+        const composerValueJs = `document.querySelector('.empty-state textarea.composer-input')?.value ?? ''`
+
+        // ① ⌘N opens the new-task empty state (the ticket-17 precedent).
+        await js(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', code: 'KeyN', metaKey: true, bubbles: true }))`)
+        if (!(await waitForProbe(win, `document.querySelector('.empty-state') !== null`, 10_000))) {
+          fail('ticket-52 stage: ⌘N never opened the new-task empty state')
+        }
+        log('command_catalog_empty_state_ok')
+
+        // ② Pick dir A in the chip dropdown → the selection report reaches
+        // main (debounced), the probe host enumerates dir A, and the push
+        // lands in the renderer. Wait until the seeded rows appear in the
+        // `/` menu.
+        await js(`document.querySelector('.newtask-chip')?.click(); true`)
+        const pickRowJs = (needle: string): string => `(() => {
+          const rows = [...document.querySelectorAll('.newtask-pop .newtask-row')]
+          const row = rows.find((r) => (r.querySelector('.newtask-row-label')?.textContent ?? '').includes(${JSON.stringify(needle)}))
+          if (!(row instanceof HTMLElement)) return false
+          row.click()
+          return true
+        })()`
+        if (!((await js(pickRowJs('catalog-a'))) as boolean)) {
+          fail('ticket-52 stage: the chip dropdown never listed the seeded dir A workspace')
+        }
+        // The query matches only the seeded resources (names are unique), so
+        // the poll is immune to a large global catalog outranking them.
+        const typeSeededQuery = async (): Promise<void> => {
+          await js(composerClearJs)
+          if (!(await js(composerTypeJs('/picode-smoke')).catch(() => false))) {
+            fail('ticket-52 stage: the empty-state composer textarea is missing')
+          }
+        }
+        await typeSeededQuery()
+        let appeared = false
+        for (let waited = 0; waited < 45_000; waited += 200) {
+          const names = (await js(menuNamesJs).catch(() => [])) as string[]
+          if (names.includes(`/${CATALOG_TEMPLATE}`) && names.includes(`/${CATALOG_SKILL}`)) {
+            appeared = true
+            break
+          }
+          await new Promise((r) => setTimeout(r, 200))
+        }
+        if (!appeared) fail('ticket-52 stage: the seeded project template/skill never reached the `/` menu')
+        log('command_catalog_rows_ok', `dirA=${CATALOG_TEMPLATE}+${CATALOG_SKILL}`)
+
+        // ③ Menu hygiene in the empty state: with the bare `/` menu (top rows
+        // of the whole catalog) neither /compact (session-domain) nor any of
+        // the six retired built-ins may appear.
+        await js(composerClearJs)
+        if (!(await js(composerTypeJs('/')).catch(() => false))) {
+          fail('ticket-52 stage: the empty-state composer disappeared before the hygiene check')
+        }
+        await new Promise((r) => setTimeout(r, 300))
+        const names = (await js(menuNamesJs).catch(() => [])) as string[]
+        for (const retired of ['/compact', '/new', '/tree', '/name', '/copy', '/model', '/thinking']) {
+          if (names.includes(retired)) fail(`ticket-52 stage: ${retired} must not be listed in the empty-state menu`)
+        }
+        log('command_catalog_exclusions_ok', `bareRows=${names.length}`)
+
+        // ④ Picking a row INSERTS the command text into the composer — zero
+        // messages may reach any session across the pick (stage-local
+        // observer, the ticket-38 negative-assertion precedent).
+        let leaked = 0
+        const onLeak = (event: Scoped): void => {
+          if (event.type === 'user_message') leaked++
+        }
+        observers.push(onLeak)
+        const pickCmdRowJs = (name: string): string => `(() => {
+          const rows = [...document.querySelectorAll('.cmp-popover .cmp-menu-row')]
+          const row = rows.find((r) => (r.querySelector('.cmp-cmd-name')?.textContent ?? '') === ${JSON.stringify(`/${name}`)})
+          if (!(row instanceof HTMLElement)) return false
+          row.click()
+          return true
+        })()`
+        await typeSeededQuery()
+        if (!((await js(pickCmdRowJs(CATALOG_TEMPLATE))) as boolean)) {
+          fail(`ticket-52 stage: the /${CATALOG_TEMPLATE} menu row is missing`)
+        }
+        await new Promise((r) => setTimeout(r, 2_500))
+        observers.splice(observers.indexOf(onLeak), 1)
+        if (leaked > 0) fail(`ticket-52 stage: picking a command row sent ${leaked} message(s) — insertion must not send`)
+        const inserted = (await js(composerValueJs).catch(() => '')) as string
+        if (inserted !== `/${CATALOG_TEMPLATE} `) {
+          fail(`ticket-52 stage: the pick never inserted the command text (composer holds ${JSON.stringify(inserted)})`)
+        }
+        log('command_catalog_insert_zero_send_ok')
+
+        // ⑤ Switch the selection to dir B (empty project): the menu re-probes
+        // and the seeded rows disappear — the menu follows the directory.
+        await js(`document.querySelector('.newtask-chip')?.click(); true`)
+        if (!((await js(pickRowJs('catalog-b'))) as boolean)) {
+          fail('ticket-52 stage: the chip dropdown never listed the seeded dir B workspace')
+        }
+        await typeSeededQuery()
+        let disappeared = false
+        for (let waited = 0; waited < 45_000; waited += 200) {
+          const after = (await js(menuNamesJs).catch(() => [])) as string[]
+          if (!after.includes(`/${CATALOG_TEMPLATE}`) && !after.includes(`/${CATALOG_SKILL}`)) {
+            disappeared = true
+            break
+          }
+          await new Promise((r) => setTimeout(r, 200))
+        }
+        if (!disappeared) fail('ticket-52 stage: the seeded rows survived the directory switch')
+        log('command_catalog_dir_switch_ok')
+
+        // Leave the surface clean: close the menu + composer draft.
+        await js(composerKeyJs('Escape'))
+        await js(composerClearJs)
+      })
+      log('command_catalog_done')
+    } finally {
+      rmSync(catalogDirA, { recursive: true, force: true })
+      rmSync(catalogDirB, { recursive: true, force: true })
     }
 
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).

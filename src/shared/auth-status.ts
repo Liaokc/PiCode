@@ -53,6 +53,22 @@ export interface AuthProbeReport {
   /** Model catalog for the default-model picker (id/name only, no pricing). */
   models: ModelCatalogEntry[]
   error: string | null
+  /**
+   * Ticket 52 (additive, operator-approved): the command catalog for the
+   * probed working directory — prompt templates + skills as raw rows, no
+   * session machinery behind it. Reports from older probes omit the field;
+   * consumers treat absence as "not enumerated". A probe run without a cwd
+   * argument (auth-only refresh) reports an empty array.
+   */
+  commands?: CommandCatalogRow[]
+}
+
+/** One raw row of the probe's command catalog (prompt template or skill). */
+export interface CommandCatalogRow {
+  name: string
+  description: string
+  argumentHint?: string
+  source: 'prompt' | 'skill'
 }
 
 /**
@@ -100,16 +116,35 @@ function isModelCatalogEntry(value: unknown): value is ModelCatalogEntry {
   )
 }
 
+const COMMAND_SOURCE_SET = new Set(['prompt', 'skill'])
+
+function isCommandCatalogRow(value: unknown): value is CommandCatalogRow {
+  if (typeof value !== 'object' || value === null) return false
+  const record = value as Record<string, unknown>
+  const hintOk = record['argumentHint'] === undefined || typeof record['argumentHint'] === 'string'
+  return (
+    typeof record['name'] === 'string' &&
+    typeof record['description'] === 'string' &&
+    hintOk &&
+    typeof record['source'] === 'string' &&
+    COMMAND_SOURCE_SET.has(record['source'])
+  )
+}
+
 /** Structural guard for reports arriving over IPC (probe child → main). */
 export function isAuthProbeReport(value: unknown): value is AuthProbeReport {
   if (typeof value !== 'object' || value === null) return false
   const record = value as Record<string, unknown>
+  const commands = record['commands']
+  const commandsOk =
+    commands === undefined || (Array.isArray(commands) && commands.every(isCommandCatalogRow))
   return (
     typeof record['scannedAt'] === 'number' &&
     (record['error'] === null || typeof record['error'] === 'string') &&
     Array.isArray(record['providers']) &&
     record['providers'].every(isProviderStatus) &&
     Array.isArray(record['models']) &&
-    record['models'].every(isModelCatalogEntry)
+    record['models'].every(isModelCatalogEntry) &&
+    commandsOk
   )
 }

@@ -1,13 +1,17 @@
-import type { AuthProbeReport, ModelCatalogEntry, ProviderAuthStatus } from '../shared/auth-status.ts'
+import type { AuthProbeReport, CommandCatalogRow, ModelCatalogEntry, ProviderAuthStatus } from '../shared/auth-status.ts'
 import type { ThinkingLevel } from '../shared/contract.ts'
+import { homedir } from 'node:os'
 
 /**
- * Auth-probe collector (ticket 11). The probe is a short-lived host-family
- * process (ADR-0003: the Pi SDK never loads in the renderer or the main
- * process) that enumerates the Pi provider registry read-only and reports
- * credential metadata — never secret values. This module keeps the pure
- * projection (`collectAuthStatuses`, injectable + fake-testable); the SDK
- * wiring lives in `runAuthProbe` at the host entry.
+ * Auth-probe collector (ticket 11, extended by ticket 52). The probe is a
+ * short-lived host-family process (ADR-0003: the Pi SDK never loads in the
+ * renderer or the main process) that enumerates the Pi provider registry
+ * read-only and reports credential metadata — never secret values — plus
+ * (ticket 52) the command catalog for one working directory: the resource
+ * loader's prompt templates + skills, no session machinery behind it. This
+ * module keeps the pure projections (`collectAuthStatuses`,
+ * `collectCommandCatalog`, injectable + fake-testable); the SDK wiring
+ * lives in `runAuthProbe` at the host entry.
  */
 
 /** Structural subset of pi-ai `Models` the probe needs. */
@@ -55,6 +59,49 @@ export interface StoredCredentialLike {
 }
 
 /**
+ * Structural subset of the SDK's `ResourceLoader` the probe enumerates
+ * (ticket 52): prompt templates + skills for one working directory — the
+ * same `getPrompts`/`getSkills` faces the live session's slash menu feeds
+ * from, so the empty-state menu matches the in-session one exactly.
+ */
+export interface ProbeResourceLoader {
+  getPrompts(): { prompts: Array<{ name: string; description: string; argumentHint?: string }> }
+  getSkills(): { skills: Array<{ name: string; description: string }> }
+}
+
+/**
+ * Project the resource loader's prompt templates + skills into the probe
+ * report's raw catalog rows (prompts first, then skills — the same order
+ * the in-session `buildSlashCommands` uses). Enumeration failures degrade
+ * to an empty catalog: the menu is truthfully empty, never a crash.
+ */
+export function collectCommandCatalog(loader: ProbeResourceLoader): CommandCatalogRow[] {
+  try {
+    const rows: CommandCatalogRow[] = loader.getPrompts().prompts.map((p) => ({
+      name: p.name,
+      description: p.description,
+      // Frontmatter YAML may deliver a non-string hint (e.g. `[env]` parses
+      // as a one-element array) even though the SDK types it string — the
+      // in-session menu renders it inline, so stringify the same way.
+      ...(p.argumentHint !== undefined ? { argumentHint: stringifyHint(p.argumentHint) } : {}),
+      source: 'prompt' as const
+    }))
+    for (const skill of loader.getSkills().skills) {
+      rows.push({ name: skill.name, description: skill.description, source: 'skill' })
+    }
+    return rows
+  } catch {
+    return []
+  }
+}
+
+/** YAML frontmatter values can be arrays/numbers; the menu renders hints
+ * inline via template literal, so non-strings stringify the same way. */
+function stringifyHint(hint: unknown): string {
+  return typeof hint === 'string' ? hint : String(hint)
+}
+
+/**
  * Project the provider registry into the read-only status rows: every
  * provider gets a row (configured or not) so the settings view can show the
  * "sign in from the Pi TUI" guidance where credentials are missing.
@@ -92,32 +139,42 @@ export async function collectAuthStatuses(
 }
 
 /**
- * SDK wiring for the probe host process: stand up a standalone ModelRuntime
- * (auth.json + models.json, no network refresh, no session machinery),
- * project the registry, and report. Never resolves secret values — only the
- * metadata the read-only status view shows.
+ * SDK wiring for the probe host process: stand up the cwd-bound session
+ * services (ticket 52 — the same factory a real session uses, so the
+ * resource loader sees exactly what a session in that directory would see;
+ * no AgentSession is created — infrastructure only), project the model
+ * registry and the resource catalog, and report. Never resolves secret
+ * values — only the metadata the read-only views show.
+ *
+ * `cwd` (ticket 52) scopes the command catalog: without it the probe falls
+ * back to the home directory (global resources only — no project-level
+ * `.pi/` resources can live there beyond the agent dir's own). Errors never
+ * throw — they surface as an error report the consumers can display.
  */
-export async function runAuthProbe(): Promise<AuthProbeReport> {
+export async function runAuthProbe(cwd?: string): Promise<AuthProbeReport> {
   try {
     const sdk = await import('@earendil-works/pi-coding-agent')
-    const runtime = await sdk.ModelRuntime.create()
-    return await collectAuthStatuses(
+    const services = await sdk.createAgentSessionServices({ cwd: cwd && cwd.trim() !== '' ? cwd : homedir() })
+    const report = await collectAuthStatuses(
       {
-        getProviders: () => runtime.getProviders().map((provider) => ({ id: provider.id })),
+        getProviders: () => services.modelRuntime.getProviders().map((provider) => ({ id: provider.id })),
         getProvider: (id) => {
-          const provider = runtime.getProvider(id)
+          const provider = services.modelRuntime.getProvider(id)
           return provider ? { name: provider.name } : undefined
         },
-        getModels: (id) => runtime.getModels(id),
-        checkAuth: (id) => runtime.checkAuth(id)
+        getModels: (id) => services.modelRuntime.getModels(id),
+        checkAuth: (id) => services.modelRuntime.checkAuth(id)
       },
       (id) => sdk.readStoredCredential(id)
     )
+    report.commands = collectCommandCatalog(services.resourceLoader)
+    return report
   } catch (err) {
     return {
       scannedAt: Date.now(),
       providers: [],
       models: [],
+      commands: [],
       error: err instanceof Error ? err.message : String(err)
     }
   }

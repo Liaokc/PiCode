@@ -7,6 +7,7 @@ import type { ReviewResult } from '../shared/review/types'
 import type { PreviewResult } from '../shared/preview/types'
 import type { AuthProbeReport } from '../shared/auth-status'
 import type { AppPreferences } from '../shared/preferences'
+import type { NewTaskCommandCatalog } from '../shared/new-task-commands'
 import type { UsageSnapshot } from '../../shared/usage/aggregate'
 import type { TerminalDataMessage, TerminalExitMessage } from '../../shared/terminal/messages'
 
@@ -26,6 +27,13 @@ interface PicodeChatBridge {
   pickWorkingDirectory(): Promise<string | null>
   /** Pick image files for the composer (read in main, returned as base64). */
   pickImages(): Promise<ImageAttachment[]>
+  /** Report the New Task chip's selected directory (ticket 52): main
+   * debounces, probes the directory's command catalog once, and pushes it
+   * to `onCommandCatalog`. null = no selection (global resources only). */
+  setNewTaskCwd(cwd: string | null): void
+  /** Per-directory command catalog push (ticket 52), one payload per
+   * probed directory. */
+  onCommandCatalog(listener: (payload: NewTaskCommandCatalog) => void): () => void
 }
 
 interface PicodeSessionsBridge {
