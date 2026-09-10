@@ -3522,6 +3522,10 @@ export function startSmokeIfEnabled(
         // main (debounced), the probe host enumerates dir A, and the push
         // lands in the renderer. Wait until the seeded rows appear in the
         // `/` menu.
+        // The dropdown rows load async (the session index round-trips over
+        // IPC), so the pick must WAIT for the row to render instead of
+        // racing it once — the full-chain run's renderer is busy (the
+        // ticket-47 focus-retry / ticket-49 waiter-first robustness class).
         await js(`document.querySelector('.newtask-chip')?.click(); true`)
         const pickRowJs = (needle: string): string => `(() => {
           const rows = [...document.querySelectorAll('.newtask-pop .newtask-row')]
@@ -3530,8 +3534,15 @@ export function startSmokeIfEnabled(
           row.click()
           return true
         })()`
-        if (!((await js(pickRowJs('catalog-a'))) as boolean)) {
+        const dropdownRowProbe = (needle: string): string => `(() => {
+          const rows = [...document.querySelectorAll('.newtask-pop .newtask-row')]
+          return rows.some((r) => (r.querySelector('.newtask-row-label')?.textContent ?? '').includes(${JSON.stringify(needle)}))
+        })()`
+        if (!(await waitForProbe(win, dropdownRowProbe('catalog-a'), 5_000))) {
           fail('ticket-52 stage: the chip dropdown never listed the seeded dir A workspace')
+        }
+        if (!((await js(pickRowJs('catalog-a'))) as boolean)) {
+          fail('ticket-52 stage: the seeded dir A workspace row disappeared before the pick')
         }
         // The query matches only the seeded resources (names are unique), so
         // the poll is immune to a large global catalog outranking them.
@@ -3583,9 +3594,19 @@ export function startSmokeIfEnabled(
           row.click()
           return true
         })()`
+        const pickCmdRowProbe = (name: string): string => `(() => {
+          const rows = [...document.querySelectorAll('.cmp-popover .cmp-menu-row')]
+          return rows.some((r) => (r.querySelector('.cmp-cmd-name')?.textContent ?? '') === ${JSON.stringify(`/${name}`)})
+        })()`
         await typeSeededQuery()
-        if (!((await js(pickCmdRowJs(CATALOG_TEMPLATE))) as boolean)) {
+        // The menu rows render on React's next commit after the input event —
+        // under full-chain load that commit lands late, so wait for the row
+        // (same one-shot-pick race as the dropdown picks above).
+        if (!(await waitForProbe(win, pickCmdRowProbe(CATALOG_TEMPLATE), 5_000))) {
           fail(`ticket-52 stage: the /${CATALOG_TEMPLATE} menu row is missing`)
+        }
+        if (!((await js(pickCmdRowJs(CATALOG_TEMPLATE))) as boolean)) {
+          fail(`ticket-52 stage: the /${CATALOG_TEMPLATE} menu row disappeared before the pick`)
         }
         await new Promise((r) => setTimeout(r, 2_500))
         observers.splice(observers.indexOf(onLeak), 1)
@@ -3598,9 +3619,14 @@ export function startSmokeIfEnabled(
 
         // ⑤ Switch the selection to dir B (empty project): the menu re-probes
         // and the seeded rows disappear — the menu follows the directory.
+        // Same async-row wait as the dir A pick: the dropdown's recents land
+        // over IPC, never race the click.
         await js(`document.querySelector('.newtask-chip')?.click(); true`)
-        if (!((await js(pickRowJs('catalog-b'))) as boolean)) {
+        if (!(await waitForProbe(win, dropdownRowProbe('catalog-b'), 5_000))) {
           fail('ticket-52 stage: the chip dropdown never listed the seeded dir B workspace')
+        }
+        if (!((await js(pickRowJs('catalog-b'))) as boolean)) {
+          fail('ticket-52 stage: the seeded dir B workspace row disappeared before the pick')
         }
         await typeSeededQuery()
         let disappeared = false
