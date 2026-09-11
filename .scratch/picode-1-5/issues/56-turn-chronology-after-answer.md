@@ -13,10 +13,10 @@
 - [x] 审批两态同位：挂起卡位置 = 批准后工具卡位置（同一槽位，零跳变）
 - [x] 常显段内 thinking 行渲染为折叠单行（Thought · Ns ›，可展开看全文），与容器内思考行同组件
 - [x] ChatView / FollowView 同规则零开关
-- [ ] electron smoke：脚本化 live 回合经审批闸门断言挂起/执行两态同位 + 工具后思考在正文下方（**阶段已实现并入库，验证被环境焦点争用阻塞**——见 Comments）
+- [x] electron smoke：脚本化 live 回合经审批闸门断言挂起/执行两态同位 + 工具后思考在正文下方
 - [x] visual harness：时序帧（对照 pi15-approval-above-answer / pi15-post-answer-thinking-misplaced 场景修复后形态）
 - [x] 跑 dev app / smoke / visual 前 ps 复核无其他 PiCode Electron/dev-app/smoke 进程；撞锁则等待重试不并跑
-- [x] typecheck / lint / vitest 全绿；code-review 双轴通过（electron smoke 项除外，见上）
+- [x] typecheck / lint / vitest 全绿；code-review 双轴通过
 
 **交接：** 完成后不自行 merge——操作者/合并会话执行 `bash scripts/merge-ticket.sh 56`。
 
@@ -30,7 +30,7 @@
   - **术语**：CONTEXT.md「常显段（After-Answer Segment）」入册（intake-grilling.md 草案全收）；「回合正文」改「正文之后的全部行入常显段」；「工作容器」补「容器体收纳正文**之前**的工作（正文后的行入常显段）」。
   - **electron smoke**：新 ticket-56 段（contract stream，无模型调用，`worked_container_done` 后）——① live 回合正文流式后闸门询问，断言挂起 pill 在正文下方（`.turn-after-answer` 内、`.turn-container` 内为零）；② approval_resolved + tool_start/end 复放宿主批准序列，几何断言 pill→tool 同槽（±2px，实测 297→297px 零跳变，同一段内子索引不变）；③ 工具后 thinking 在段内 tool 下方（idx 1）且默认折叠、点击展开全文；④ agent_end 落定后段组成与顺序不变、无行回爬容器。另修订两处既有 fold-purity 探针（follow 结构化回合 + takeover 重放审计）：票 23「折叠期零可见行」改为票 56 语义（`.turn-container .thinking-row === 0` + 段内 2 tool 卡含 1 error 卡 + 1 折叠 thinking 行）——该两处旧探针编码了被本票修订的「thinking 全折叠」规则。
   - **visual harness**：`PICODE_VISUAL_CHRONOLOGY=1`（`npm run visual:chronology`），断言式（违规 exit 1）——tc1 挂起 pill 正文下方帧 / tc2 工具卡同槽帧（几何断言）/ tc3 工具后 thinking 在 tool 下折叠单行帧 / tc4 落定组成顺序帧，对照 pi15-approval-above-answer 与 pi15-post-answer-thinking-misplaced 修复后形态；基座 visual harness 让位（visual.ts stand-down 先例）；全 4 帧 13:16 实跑通过，PNG 入库。
-  - **⚠ electron smoke 验证被环境阻塞（非代码阻塞）**：烟囱链在 ticket-44 真剪贴板阶段要求真实窗口焦点（document.hasFocus），macOS 15 协作激活在操作者持续使用其它应用时拒绝焦点窃取（烟囱自注："denies a focus steal while the user is actively typing"）。实施会话 13 次运行（含两次手动 + 一个 10 连重试器，每次带 1s System Events frontmost 敲门）全部卡在票 44 焦点闸门——前置最前应用实测 Chrome → 企业微信（操作者持续使用中，疑似会议）；单测探针（/tmp focustest-probe）证实焦点在操作者交互间歇能落地（3.5s 窗口）但烟囱到达票 44 的 10s 窗口未逢间歇。**阻塞点在本票改动之前的阶段，与本票文件零因果**（票 56 段为纯 contract-stream 注入；visual harness 同通道实跑全绿）。待操作者空出机器 3 分钟后 `npm run smoke:electron` 复跑即验（ALL GREEN 照惯例全链复跑）。
-  - **gate 状态**：typecheck 绿；lint 0 error（EmptyState 预存 warning 非本票）；vitest 1128/1128；code-review 双轴（无子代理通道，实施会话自审两轴分离报告）——Standards：readSlot 探针多余 userGesture 实参 + settle 注释措辞两处已修（e1c8dac），其余遵循先例（每 visual-harness 独立文件与工具函数按 14 个既有 harness 惯例豁免 Duplicated Code 判定）；Spec：9 验收项逐条对照无缺漏、无范围蔓延（pendingApproval 收窄为两态同槽验收项的必要推论，已在注释与本 Comments 论证）。
+  - **✅ electron smoke 复跑全绿（14:22，操作者切换应用后重试即过）**：前述 13 次运行均卡票 44 真剪贴板焦点闸门（操作者持续使用 Chrome/企业微信，macOS 15 协作激活拒绝窃取——非本票因果，探针证实交互间歇焦点能落地）；操作者切回 Chrome 后再次重试，焦点闸门即过、全链 ALL GREEN：148 个 `_ok` 标记、0 FAIL，票 56 段五步全过——`turn_chronology_pill_below_answer_ok` / `turn_chronology_two_states_one_slot_ok top 293 → 293`（零跳变实测）/ `turn_chronology_thinking_below_ok` / `turn_chronology_settled_same_position_ok` / `turn_chronology_done`。烟囱尾部 `multi_shutdown_no_orphans_ok 13 hosts`、`done`。
+  - **gate 终态**：typecheck 绿；lint 0 error；vitest 1128/1128；electron smoke ALL GREEN；visual:chronology 4 帧全过；code-review 双轴完成（发现两处已修 e1c8dac）。
   - **ps 自查**：每次应用通道前执行；期间曾发现一次残留 Electron 主进程（票 44 fail 路径 app.exit 后）已 kill；通道零并跑。
-  - **交接给合并会话**：完成后不自行 merge——操作者/合并会话执行 `bash scripts/merge-ticket.sh 56`；electron smoke 复跑通过后再 merge（或由操作者裁决验收）。
+  - **交接给合并会话**：完成后不自行 merge——操作者/合并会话执行 `bash scripts/merge-ticket.sh 56`。
