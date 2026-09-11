@@ -3,8 +3,19 @@ import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import Tooltip from './Tooltip'
+import DiagramCard from './DiagramCard'
 import { CheckIcon, CloseIcon, CodeIcon, CopyIcon, ExpandArrowsIcon, EyeIcon, WrapTextIcon } from './icons'
-import { blockKey, codeLanguageLabel, hastText, tableToMarkdown } from '../../../shared/markdown-blocks'
+import {
+  blockKey,
+  codeLanguage,
+  codeLanguageLabel,
+  fenceCardKind,
+  hastText,
+  isFenceClosed,
+  isMermaidLanguage,
+  tableToMarkdown,
+  type MermaidParseVerdict
+} from '../../../shared/markdown-blocks'
 
 /**
  * Markdown rendering for assistant text parts (screenshot 04: rich markdown
@@ -28,7 +39,7 @@ import { blockKey, codeLanguageLabel, hastText, tableToMarkdown } from '../../..
 const COPIED_FEEDBACK_MS = 1500
 
 /** Per-block UI state, keyed by `blockKey` (start position). */
-interface BlockUiState {
+export interface BlockUiState {
   copied: ReadonlySet<string>
   wrapped: ReadonlySet<string>
   expanded: ReadonlySet<string>
@@ -93,6 +104,69 @@ function useBlockUiStore(): BlockUiState {
 
 interface PreProps extends ExtraProps {
   children?: ReactNode
+}
+
+/**
+ * The full markdown text of the current stream (ticket 59): the mermaid
+ * fence's closed-vs-streaming projection consumes it — the hast tree alone
+ * cannot distinguish a fence closed at EOF from one still streaming. One
+ * provider per Markdown instance; the value changes per streaming delta,
+ * which only matters while a fence is still open.
+ */
+const MarkdownTextContext: Context<string> = createContext('')
+
+/**
+ * Mermaid fence card (ticket 59): decides the fence's card kind from the
+ * three facts — language, closed-in-text, parse verdict — and renders the
+ * matching card. The parse runs only once the fence is closed, against the
+ * lazily-imported mermaid chunk family (zero main-package bytes until then).
+ * While streaming, pending, or after a parse failure the fence keeps the
+ * plain source card — the lang chip renders as usual and no error toast
+ * pops (operator ruling Q7).
+ */
+function MermaidFenceCard({ node, children }: PreProps): JSX.Element {
+  const ui = useBlockUi()
+  const text = useContext(MarkdownTextContext)
+  const source = hastText(node)
+  const closed = isFenceClosed(text, node?.position?.start?.offset)
+  const [verdict, setVerdict] = useState<{ source: string; ok: boolean } | null>(null)
+  // The projection reads the verdict only while the fence is closed and only
+  // for the exact source it was produced from — a stale verdict degrades to
+  // pending without any effect-setState cascade.
+  const parseOk: MermaidParseVerdict =
+    closed && verdict !== null && verdict.source === source ? verdict.ok : null
+
+  useEffect(() => {
+    if (!closed) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const api = await import('./mermaid-api')
+        const ok = await api.parseMermaid(source)
+        if (!cancelled) setVerdict({ source, ok })
+      } catch {
+        if (!cancelled) setVerdict({ source, ok: false })
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [closed, source])
+
+  const fallback = <CodeBlockCard node={node}>{children}</CodeBlockCard>
+  if (fenceCardKind({ lang: codeLanguage(node), closed, parseOk }) === 'source') return fallback
+  return <DiagramCard source={source} blockKey={blockKey(node)} ui={ui} fallback={fallback} />
+}
+
+/**
+ * The `pre` override (ticket 59): mermaid-tagged fences route to the
+ * diagram-card machinery, every other fence keeps the plain code card.
+ * Module scope — the component identity must never change between renders,
+ * or streaming deltas would remount every card.
+ */
+function FenceCard(props: PreProps): JSX.Element {
+  if (isMermaidLanguage(codeLanguage(props.node))) return <MermaidFenceCard {...props} />
+  return <CodeBlockCard {...props} />
 }
 
 /** Header row of a code card: language label left, wrap + copy right. */
@@ -268,7 +342,7 @@ function TableCard({ node, children }: TableProps): JSX.Element {
 // Module scope: the override component identities must never change between
 // renders, or streaming deltas would remount every card (state flicker).
 const components: Components = {
-  pre: CodeBlockCard,
+  pre: FenceCard,
   table: TableCard
 }
 
@@ -281,13 +355,15 @@ function MarkdownImpl({
 }): JSX.Element {
   const store = useBlockUiStore()
   return (
-    <BlockUiContext.Provider value={store}>
-      <div className={streaming ? 'md md-streaming' : 'md'}>
-        <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={components}>
-          {text}
-        </ReactMarkdown>
-      </div>
-    </BlockUiContext.Provider>
+    <MarkdownTextContext.Provider value={text}>
+      <BlockUiContext.Provider value={store}>
+        <div className={streaming ? 'md md-streaming' : 'md'}>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={components}>
+            {text}
+          </ReactMarkdown>
+        </div>
+      </BlockUiContext.Provider>
+    </MarkdownTextContext.Provider>
   )
 }
 

@@ -533,3 +533,45 @@ export function ImageIcon({ size, className }: IconProps): JSX.Element {
     </svg>
   )
 }
+
+/** Diagram-card download control (ticket 59): arrow into a tray glyph. */
+export function DownloadIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M12 3.5v11" />
+      <path d="m7 10 5 5 5-5" />
+      <path d="M4.5 20.5h15" />
+    </svg>
+  )
+}
+
+/** Diagram-card fullscreen control (ticket 59): four corner brackets. */
+export function FullscreenIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M4 9.5V4h5.5" />
+      <path d="M20 9.5V4h-5.5" />
+      <path d="M4 14.5V20h5.5" />
+      <path d="M20 14.5V20h-5.5" />
+    </svg>
+  )
+}
+
+/** Diagram zoom-out control (ticket 59): plain minus. */
+export function MinusIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M5 12h14" />
+    </svg>
+  )
+}
+
+/** Diagram zoom-reset control (ticket 59): crosshair / fit glyph. */
+export function TargetIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <circle cx="12" cy="12" r="3.2" />
+      <path d="M12 3v3.5M12 17.5V21M3 12h3.5M17.5 12H21" />
+    </svg>
+  )
+}

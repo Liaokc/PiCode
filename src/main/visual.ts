@@ -39,6 +39,7 @@ import { terminalVisualEnabled } from './visual-terminal'
 import { traceVisualEnabled } from './visual-trace'
 import { foldVisualEnabled } from './visual-fold'
 import { codeblockVisualEnabled } from './visual-codeblock'
+import { mermaidVisualEnabled } from './visual-mermaid'
 import { expandVisualEnabled } from './visual-expand'
 import { answerVisualEnabled } from './visual-answer'
 import { workedVisualEnabled } from './visual-worked-container'
@@ -185,6 +186,8 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
   if (foldVisualEnabled()) return
   // And for the codeblock-label harness (ticket 50).
   if (codeblockVisualEnabled()) return
+  // And for the mermaid diagram-card harness (ticket 59).
+  if (mermaidVisualEnabled()) return
   // And for the composer-expand harness (ticket 49).
   if (expandVisualEnabled()) return
   // And for the answer-split harness (ticket 53).

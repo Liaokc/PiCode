@@ -142,6 +142,10 @@ _Avoid_: 中间结果；思考（thinking 是另一类 work item）。
 每个回合（有用户气泡）必有的一行容器（票 55）：live 显 "Working · Ns"（首个工作项出现前的静默期即常驻），落定收起为 "Worked · Ns"（回放回合无时长，票 14 规则只显 "Worked"）；容器体收纳正文**之前**的思考/工具/审批/过程叙述（正文后的行入常显段，票 56）；零工作项回合体为空且不可展开（无 chevron、点击无响应——可展开 ⇔ 体非空）；常驻不消失——落定后仍在。**操作者批准的 ZCode 偏离**：ZCode 零工作回合不渲染容器（bundle 实证 `u ? … : null`），操作者裁决常驻——「正文输出也算 work 阶段，容器不允许消失」。
 _Avoid_: 折叠条（强调折叠丢了常驻语义）；进度条（不表达进度）；折叠容器（体空时无折叠语义）。
 
+**图卡（Diagram Card）**：
+mermaid 围栏闭合且解析成功后渲染的图形卡（票 59，ZCode streamdown 管线同型）：小写 mono mermaid 标签头 + 右上操作钮组（download SVG/PNG/MMD 下拉、copy 源码、fullscreen）+ 渲染体 panZoom（滚轮缩放、拖拽平移、角部缩放控件）；fullscreen 为根层浮层、Esc 退；渲染主题用 mermaid 库默认浅色（深色全应用范围外）。**操作者批准的 ZCode 偏离**：ZCode 取证为 sticky 钮组，但卡片被转录滚动卷走时 sticky 头行悬停叠在自家图内容上——操作者拍板头行随卡滚走、不钉住。流式未闭合（mermaid 需全文）与解析失败均回退为代码卡——lang 标签照常、不弹错误 toast；mermaid 依赖按图型懒加载分片（动态 import），主包零增量。
+_Avoid_: 代码卡（回退态才是代码卡）；预览（是正式渲染非浮层预览）。
+
 ## Constraints（词汇化的边界）
 
 **红线**：
