@@ -489,3 +489,38 @@ drilldown 零回归。
 merge，提示操作者 bash scripts/merge-ticket.sh 65）→ Status 改 ready-for-human
 + Comments 记 sha。跑应用通道前 ps 自查（票内验收项）。
 ```
+
+---
+
+## T66 — 基座 visual harness fork-toast ACK 修复（追加链，无阻塞 · 2026-09-11 立票）
+
+```bash
+cd ~/PiCode
+git worktree add .worktrees/wt-66-fork-toast-ack-announce -b t66-fork-toast-ack-announce main
+cd .worktrees/wt-66-fork-toast-ack-announce && npm install
+```
+
+```text
+/implement .scratch/picode-1-5/issues/66-fork-toast-ack-announce.md
+
+规矩：CONTEXT.md 是术语权威；1.5 总 spec 在 .scratch/picode-1-5/spec.md。
+你当前在 worktree 分支 t66-fork-toast-ack-announce。
+
+核心：基座 visual:transcript 的 2d 段恢复 PASS——fork 点击后由 harness 补发一条
+新 id 的 session_created 公告（票 51 的 ACK 链路兑现：公告 scopeId ≠ fork 目标
+id → toast "Forked to a new session."）；因公告会切焦点并重置 chat
+（applyAnnouncement 语义——ADR-0006「announcement = now looking at it」），
+fork 段（点击 + toast 断言 + 清场等待）迁移到 3-expanded 密度帧之后、
+ticket-14 replay 公告之前——2e/3-expanded 在未切焦点的 settled 转录上拍摄，
+帧名 2d 保留，其余帧零改动零重拍。其后 ticket-14 replay 本就重新 announce，
+焦点自然回轨。
+
+边界：diff 仅 src/main/visual.ts（基座段，additive 纪律）；零契约增量；
+app/renderer/契约零改动（票 51 ACK 语义原样）；侧栏确定性布景不受影响
+（合成公告无磁盘文件，索引进不出）——electron 层验证或注释论证留痕。
+
+流程：Status→claimed → 实现全验收项（含 visual:transcript 全链跑通、2d 恢复
+PASS 且后续段零回归）→ code-review → 提交当前分支（不自行 merge，提示操作者
+bash scripts/merge-ticket.sh 66）→ Status 改 ready-for-human + Comments 记 sha。
+跑 visual:transcript 前 ps 自查（票内验收项铁律）。
+```
