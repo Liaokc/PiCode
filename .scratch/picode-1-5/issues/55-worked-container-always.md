@@ -6,7 +6,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] 回合分组投影修订：有用户气泡回合必有容器 + 空体标志（表驱动：零工作 live / 零工作落定 / 零工作回放 / 有工作各态 / HEAD 回合维持现状）
 - [x] 空体不可展开：无 chevron、点击无响应、aria-disabled；有工作项时 chevron 与展开行为照旧（可展开 ⇔ 体非空）
@@ -29,3 +29,9 @@
   - **electron smoke**：新 ticket-55 段（contract stream 注入，无模型调用）——回放零工作行 "Worked" 无时长、点击惰性（点击后 400ms 复核不开）、live 静默期 "Working" 行在、落定行常驻带时长、**带工作 live 回合折叠重开计时不归零**（1s→2s 连续——容器本体不因折叠卸载的直接证据）；五步全过。首跑在该段之后撞票 52 command_catalog 段（"/picode-smoke-template menu row is missing"）——与本票改动无因果（本段完成后才进入该段；该段自身 bareRows=0 显示 catalog 在 ②③ 间已空，属其既有 race 类，见 40c4160 返工史）；另两次分别撞票 25 deny reason 回传尾字 'y' 与一次 provider turn_error（host 层模型调用失败）——三处均为真实模型调用套件的既有 timing/provider flake（各在其余跑次全绿），复跑全链 ALL GREEN。ps 自查在每次 app 通道前执行，零撞锁。
   - **visual harness**：`PICODE_VISUAL_WORKED=1`（`npm run visual:worked`），断言式（违规 exit 1）——wc1 回放零工作落定帧 / wc2 live 静默帧（"Working · 1s" 惰性行）/ wc3 落定帧（"Worked · 2s" 常驻 + 回放 "Worked" 对照），对照 pi15-empty-worked-container 双半帧。基座 visual harness 在本 gate 置位时让位（首跑曾同窗竞争致基座 0*.png 帧被污染，已 `git checkout` 还原基线帧并给 visual.ts 补 stand-down——两帧集零交集）。
   - **交接给合并会话**：`.scratch/picode-1-5/`（spec/intake/issues 54、56–62）尚无 main 基线（fcb1dbc 先例的 baseline commit 未发生）——本分支只提交了本票文件 55；merge 前建议操作者/合并会话先在 main 提交 1.5 tracker 基线（或把本票文件按 e07367a「sync terminal state」惯例先同步进 main），否则 merge-script:50 的 ready-for-human 闸门对本票跳过（ls-files 查不到）。scripts/merge-ticket.sh 的 picode-1-5 路径补充系操作者待办，本分支未代劳（root worktree 已有未提交的同款改动）。
+- 2026-09-11 (merge, T00 合并会话): **merged as 3a05644**（merge --no-ff；分支 feat 提交 rebase 后为 2973a17；分支 tracker 提交 e5c01a4 rebase 时自动去重——"patch contents already upstream"，v1.4 同路径先例应验）。
+  - **验收口径**：操作者 2026-09-11 于 wt-55 dev 目检后明示「55 工单已验收」；脚本门禁 typecheck 绿 + vitest **1113/1113（81 文件）**。
+  - **冲突处置**：零冲突。rebase 干净（fa6404d 与 main 簿记提交零交叠）、ort 合并干净。合并前簿记三连：1.5 tracker 基线入库 5b8218e（spec/intake/波次表/12 票 + 门禁脚本 picode-1-5 路径，操作者 2026-09-10 授权）、规划期对比帧 2af3f8f（pi15-*.png ×11）、本票终态 sync 44ac1d3——交接项全部闭环。
+  - **wt-55 未跟踪草稿甄别**：11 个规划期草稿，8 个与 main 逐字节一致、3 个（spec/波次表/54 票）为追加链（63–65）前的严格旧稿（54 票还是 Status: claimed 建票稿）——零独有内容，git clean 清除后脚本放行。
+  - **终态审计**：CONTEXT.md 词条（L129 含 ZCode 偏离双记录）、ChatView/FollowView `turn.hasContainer`、TurnContainer `expandable = turn.hasWork`（Q12=A 注释在位）、turn-collapse.ts hasContainer 投影、smoke ticket-55 段、`visual:worked` 脚本、wc1–wc3 帧——全部在 main 幸存；无冲突标记残留。
+  - **清理**：worktree 已 remove、分支已删。**解锁**：56（回合时间序，W2）——ChatView 基座已更新，t54 rebase 时对撞面预判见主报。
