@@ -40,6 +40,7 @@
     "visual:worked": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_WORKED=1 electron .",
     "visual:chronology": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_CHRONOLOGY=1 electron .",
     "visual:cwd": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_CWD=1 electron .",
+    "visual:rail-stack": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_RAIL_STACK=1 electron .",
     "visual:expand": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_EXPAND=1 electron .",
     "visual:tree": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_TREE=1 electron .",
     "visual:layout": "npm run build && node scripts/smoke/layout-captures.mjs",

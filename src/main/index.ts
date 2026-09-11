@@ -37,6 +37,7 @@ import { startAnswerVisualIfEnabled, isolateAnswerUserData } from './visual-answ
 import { startMermaidVisualIfEnabled, isolateMermaidUserData } from './visual-mermaid'
 import { startWorkedVisualIfEnabled, isolateWorkedUserData } from './visual-worked-container'
 import { startChronologyVisualIfEnabled, isolateChronologyUserData } from './visual-chronology'
+import { startRailStackVisualIfEnabled, isolateRailStackUserData } from './visual-rail-stack'
 import { startExpandVisualIfEnabled, isolateExpandUserData } from './visual-expand'
 import { startTreeVisualIfEnabled, isolateTreeUserData } from './visual-tree'
 import { startApprovalVisualIfEnabled } from './visual-approval'
@@ -101,6 +102,10 @@ isolateWorkedUserData()
 // Ticket-56 turn-chronology harness — same throwaway-userData rule (no-op
 // unless PICODE_VISUAL_CHRONOLOGY=1).
 isolateChronologyUserData()
+
+// Ticket-62 rail-stacking harness — same throwaway-userData rule (no-op
+// unless PICODE_VISUAL_RAIL_STACK=1).
+isolateRailStackUserData()
 
 // Ticket-13 hygiene, extended by ticket 31: the smoke drives the REAL
 // settings service too (panel recently closed round-trip), so it gets the
@@ -260,6 +265,9 @@ app.whenReady().then(() => {
   startWorkedVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-56 turn-chronology harness — live turn past the approval gate.
   startChronologyVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  // Ticket-62 rail-stacking harness — same seeding constraint (it seeds an
+  // isolated store before the index reads PICODE_SESSION_DIR).
+  startRailStackVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
 
   // Renderer → host relay (Seam-1: the only chat channel the renderer has).
   ipcMain.on('chat:to-host', (_event, message: ParentToHost) => {

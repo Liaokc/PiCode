@@ -198,6 +198,8 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
   if (chronologyVisualEnabled()) return
   // And for the ghost-cwd harness (ticket 54).
   if (process.env['PICODE_VISUAL_CWD'] === '1') return
+  // And for the rail-stacking harness (ticket 62).
+  if (process.env['PICODE_VISUAL_RAIL_STACK'] === '1') return
 
   // Deterministic sidebar content for the shots (ticket 20): the empty-state
   // frame must show a status dot (a session written by ANOTHER end — fresh
