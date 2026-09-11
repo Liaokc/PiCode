@@ -347,7 +347,7 @@ describe('turn grouping (groupTurns) — ticket 53 answer split', () => {
     expect(resolved.pendingApproval).toBe(false)
   })
 
-  it('table: a plain question/answer turn has no work — no container', () => {
+  it('table: a plain question/answer turn has no foldable work — but still owns its container (ticket 55)', () => {
     const state = fold(
       initialChatState(),
       SESSION_CREATED,
@@ -360,7 +360,109 @@ describe('turn grouping (groupTurns) — ticket 53 answer split', () => {
     )
     const [turn] = groupTurns(state.entries, false)
     expect(turn.hasWork).toBe(false)
+    expect(turn.hasContainer).toBe(true)
     expect(turn.answer?.text).toBe('Hello!')
+  })
+})
+
+describe('worked container presence (groupTurns) — ticket 55, operator-approved ZCode deviation', () => {
+  it('table · zero-work live: the silent-period turn owns its container before the first work item exists', () => {
+    // The user message is echoed, the agent started, nothing streamed yet —
+    // exactly the interval the old `(hasWork || live)` shell covered with a
+    // row that vanished on settle. The container is now unconditional.
+    const state = fold(initialChatState(), SESSION_CREATED, USER('hello?'), { type: 'agent_start' })
+    const [turn] = groupTurns(state.entries, state.agentRunning)
+    expect(turn.user).not.toBeNull()
+    expect(turn.live).toBe(true)
+    expect(turn.answer).toBeNull()
+    expect(turn.hasWork).toBe(false) // empty body…
+    expect(turn.hasContainer).toBe(true) // …but the row is there
+  })
+
+  it('table · zero-work settled: the streamed pure-text turn keeps its container after settling', () => {
+    const state = fold(
+      initialChatState(),
+      SESSION_CREATED,
+      USER('hi'),
+      { type: 'agent_start' },
+      { type: 'message_start' },
+      { type: 'text_delta', delta: 'Hello!' },
+      { type: 'message_end' },
+      { type: 'agent_end' }
+    )
+    const [turn] = groupTurns(state.entries, state.agentRunning)
+    expect(turn.live).toBe(false)
+    expect(turn.hasWork).toBe(false)
+    expect(turn.hasContainer).toBe(true)
+    expect(turn.answer?.text).toBe('Hello!')
+  })
+
+  it('table · zero-work replay: a replayed pure-text turn owns the same container (FollowView shares the model)', () => {
+    const items: TranscriptItem[] = [
+      { role: 'user', id: 'r-u1', text: 'hello', timestamp: 't1', skillName: null },
+      {
+        role: 'assistant',
+        id: 'r-a1',
+        timestamp: 't2',
+        text: 'Hello!',
+        parts: [{ kind: 'text', text: 'Hello!' }]
+      }
+    ]
+    const state = fold(initialChatState(), SESSION_CREATED, { type: 'history_loaded', items })
+    const [turn] = groupTurns(state.entries, false)
+    expect(turn.hasWork).toBe(false)
+    expect(turn.hasContainer).toBe(true)
+  })
+
+  it('table · with-work states: streamed and settled work turns keep their containers (ticket 23 unchanged)', () => {
+    const liveState = fold(initialChatState(), SESSION_CREATED, USER('fix the bug'), { type: 'agent_start' }, ...streamedWorkTurn())
+    const [live] = groupTurns(liveState.entries, liveState.agentRunning)
+    expect(live.live).toBe(true)
+    expect(live.hasWork).toBe(true)
+    expect(live.hasContainer).toBe(true)
+
+    const settledState = fold(liveState, { type: 'agent_end' })
+    const [settled] = groupTurns(settledState.entries, settledState.agentRunning)
+    expect(settled.live).toBe(false)
+    expect(settled.hasWork).toBe(true)
+    expect(settled.hasContainer).toBe(true)
+  })
+
+  it('table · HEAD turn status quo: a head segment with foldable work renders; an empty head segment does not', () => {
+    // With work (entries before the first user message): renders, as before.
+    const withWork = fold(initialChatState(), SESSION_CREATED, { type: 'tool_start', toolCallId: 'tc-x', name: 'bash', args: {} })
+    const [head] = groupTurns(withWork.entries, false)
+    expect(head.user).toBeNull()
+    expect(head.hasWork).toBe(true)
+    expect(head.hasContainer).toBe(true)
+
+    // Defensive empty head (an assistant entry with no parts): nothing to
+    // fold, not live — no row, exactly the ticket-23 behavior.
+    const [emptyHead] = groupTurns([{ role: 'assistant', id: 'm0', parts: [], streaming: false }], false)
+    expect(emptyHead.id).toBe(HEAD_TURN_ID)
+    expect(emptyHead.hasWork).toBe(false)
+    expect(emptyHead.hasContainer).toBe(false)
+  })
+
+  it('table · skill-only turn: the marker row is body content — the container stays expandable', () => {
+    const state = fold(
+      initialChatState(),
+      SESSION_CREATED,
+      USER('<skill name="grilling" location="~/.pi/agent/skills/grilling/SKILL.md">\nGrill it.\n</skill>\nGo')
+    )
+    const [turn] = groupTurns(state.entries, false)
+    expect(turn.skillName).toBe('grilling')
+    expect(turn.work).toEqual([])
+    expect(turn.hasWork).toBe(true) // body non-empty (the marker row)…
+    expect(turn.hasContainer).toBe(true) // …and the row, like every turn
+  })
+
+  it('table · live HEAD turn keeps the ticket-23 live-shell behavior', () => {
+    const state = fold(initialChatState(), SESSION_CREATED, { type: 'tool_start', toolCallId: 'tc-x', name: 'bash', args: {} })
+    const [head] = groupTurns(state.entries, true)
+    expect(head.user).toBeNull()
+    expect(head.live).toBe(true)
+    expect(head.hasContainer).toBe(true)
   })
 })
 

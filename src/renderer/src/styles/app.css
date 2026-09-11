@@ -3459,6 +3459,17 @@ button.heat:hover {
   color: var(--text-primary);
 }
 
+/* Ticket 55: an empty-body container is inert — no hover affordance, no
+   pointer cursor (the click is a no-op; affordance would lie). */
+.turn-container-header[aria-disabled='true'] {
+  cursor: default;
+}
+
+.turn-container-header[aria-disabled='true']:hover {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
 .turn-container-icon {
   color: var(--text-faint);
 }

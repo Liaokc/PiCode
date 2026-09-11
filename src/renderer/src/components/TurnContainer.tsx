@@ -67,12 +67,19 @@ interface TurnContainerProps {
 }
 
 /**
- * The per-turn fold container (ticket 23, ZCode evidence
- * `z-turn-collapse-expanded.png` / collapsed `已工作 24 秒 ›`): one
- * "Working · Ns" row per turn; opening it reveals that turn's skill marker,
- * thinking rows, interim narration (ticket 53) and tool cards. The answer —
- * the turn's LAST text block (ticket 53) — renders outside; tools that ran
- * after the answer render below it, outside the fold too.
+ * The per-turn Worked container (ticket 23, ZCode evidence
+ * `z-turn-collapse-expanded.png` / collapsed `已工作 24 秒 ›`; permanence
+ * revised by ticket 55): one "Working · Ns" row per turn; opening it reveals
+ * that turn's skill marker, thinking rows, interim narration (ticket 53) and
+ * tool cards. The answer — the turn's LAST text block (ticket 53) — renders
+ * outside; tools that ran after the answer render below it, outside the fold
+ * too.
+ *
+ * Ticket 55: EVERY turn with a user bubble owns this row — live
+ * "Working · Ns" from the silent period (before the first work item) on,
+ * settled "Worked · Ns"; the row never disappears. A zero-work turn's body
+ * is empty, so the row is bare and INERT: no chevron, click no-op,
+ * aria-disabled — expandable ⇔ body non-empty (Q12 ruling A).
  *
  * The header ticks seconds only for turns that actually streamed in this
  * view: replayed turns carry no recorded duration and degrade to a plain
@@ -93,15 +100,22 @@ export default function TurnContainer({
   // tick and degrade to a duration-less row (same rule as replayed thinking,
   // ticket 14 — the session file records no turn duration).
   const timed = turn.live || seconds > 0
+  // Ticket 55: 可展开 ⇔ 体非空. The container itself is mounted across folds
+  // (only the body unmounts), so the header timer survives folding and
+  // reopening without resetting.
+  const expandable = turn.hasWork
 
   return (
-    <div className={`turn-container${open ? ' turn-container-open' : ''}`}>
+    <div className={`turn-container${expandable && open ? ' turn-container-open' : ''}`}>
       <button
         type="button"
         className="turn-container-header"
-        onClick={onToggle}
-        aria-expanded={open}
-        aria-label={open ? 'Hide this turn\u2019s work' : 'Show this turn\u2019s work'}
+        onClick={expandable ? onToggle : undefined}
+        aria-disabled={expandable ? undefined : true}
+        aria-expanded={expandable ? open : undefined}
+        aria-label={
+          expandable ? (open ? 'Hide this turn\u2019s work' : 'Show this turn\u2019s work') : undefined
+        }
       >
         {turn.live && <LoaderIcon size={13} className="turn-container-icon spin" />}
         <span className="turn-container-label">{turn.live ? 'Working' : 'Worked'}</span>
@@ -111,13 +125,14 @@ export default function TurnContainer({
             <span className="turn-container-duration">{Math.max(seconds, 1)}s</span>
           </>
         )}
-        {open ? (
-          <ChevronDownIcon size={13} className="turn-container-chevron" />
-        ) : (
-          <ChevronRightIcon size={13} className="turn-container-chevron" />
-        )}
+        {expandable &&
+          (open ? (
+            <ChevronDownIcon size={13} className="turn-container-chevron" />
+          ) : (
+            <ChevronRightIcon size={13} className="turn-container-chevron" />
+          ))}
       </button>
-      {open && (
+      {expandable && open && (
         <div className="turn-container-body">
           {turn.skillName !== null && (
             <div className="skill-marker-row">
