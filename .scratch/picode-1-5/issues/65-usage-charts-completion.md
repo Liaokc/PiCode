@@ -6,7 +6,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] 钳制纯函数：smoothPath 控制点钳制进 [top, baseline]——尖峰两侧不过冲破底（表驱动：0→峰值→0 序列路径逐段 y ≥ baseline；平坦零序列仍为平线）
 - [x] 双区间风格统一：7 天与 30 天同一插值/钳制参数——视觉语言一致（对照帧并排评审）
@@ -35,3 +35,8 @@
   - code-review 双轴通过：Spec 10/10 验收项全落（0 缺口 0 scope creep）；Standards 0 违规（2 判断项：hover 派发片段在 smoke.ts 与 visual-usage.ts 双层各存一份——仓内双层 harness 自包含惯例；右缘翻转以半宽阈值启发式而非卡片实测宽——对齐 ZCode 同型行为）。typecheck/lint/vitest 全绿。
   - **交接**：未自行 merge——操作者/合并会话执行 `bash scripts/merge-ticket.sh 65`。
 - 2026-09-11 (operator deviation, pre-merge review): 操作者看帧后拍板「线条和圆环的颜色太亮了，用浅色系」——**对 ZCode 锚点帧的显式偏离**（票 59 先例：操作者裁决优先于实拍参照）。实现：`MODEL_PALETTE` 同色相从 Tailwind 500 档降到 400 档（#60a5fa/#4ade80/#c084fc/#f87171/#fb923c/#2dd4bf/#facc15/#a78bfa/#f472b6/#94a3b8），单点出口 `modelColor` 全覆盖（趋势线/圆环弧/图例点/hover 交点点），热力图自有蓝色刻度不动。9 帧全部重生成（u3–u9 含 hover 形态不变）；像素采样对照验证四条弧一致变浅（如蓝弧 #3b82f6→#60a5fa 同点采样 rgb(35,119,238)→rgb(75,155,244)，粗弧的残余视觉浓度属面积效应 + PNG iCCP 编码偏移，非旧色残留）。typecheck/lint/vitest 全绿（1165）。若还要更浅一档（Tailwind 300）改同一数组即可。实现 commit **0aad055**（9 帧重生成入库）。
+- 2026-09-11 (merge, T00 合并会话): **merged as 69b2f35**（merge --no-ff；分支三提交 rebase 后落 main）。
+  - **验收口径**：操作者 2026-09-11 明示「65 已验收」；脚本门禁 typecheck 绿 + vitest **1187/1187（82 文件）**（1175 → 净增 +12：usage-charts 钳制/hover 推导表驱动）。
+  - **冲突处置**：2 处，均例行——① rebase 4fef625 时 smoke.ts **双方各追加完整段**（HEAD=ticket-60 段 254 行 vs 分支=ticket-65 段 149 行，同落 59 段之后）→ 追加区段双方保留（先 60 后 65，与合并时序一致，python 脚本拼接零丢失，两段 start 标记共存验证）；② tracker 提交对撞票文件 → 取 main 侧 sync 终态。
+  - **终态审计**：钳制纯函数（Catmull-Rom 控制点钳制进 [top, baseline]，1.3 R11 根因修复注释在位）+ usage hover 白卡 + 双区间风格统一；u6–u9 四帧 + visual-usage 扩展入库；smoke 两段共存、无标记残留。
+  - **清理**：worktree 已 remove、分支已删。65 无下游票。
