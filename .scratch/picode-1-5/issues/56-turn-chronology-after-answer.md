@@ -6,7 +6,7 @@
 
 **Blocked by:** 55（同文件强串行：回合分组纯模型 + 容器渲染条件——55 先改投影基座，本票在其上扩展分割规则）。
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] 分割决策表扩展（表驱动）：lastText 后 thinking/approval → 常显段；lastText 前 work 归容器不变；更早文本 → 过程叙述不变
 - [x] 降级重划分：新文本块流式开始时旧答案降级过程叙述归容器、常显段清空——决策表覆盖
@@ -34,3 +34,8 @@
   - **gate 终态**：typecheck 绿；lint 0 error；vitest 1128/1128；electron smoke ALL GREEN；visual:chronology 4 帧全过；code-review 双轴完成（发现两处已修 e1c8dac）。
   - **ps 自查**：每次应用通道前执行；期间曾发现一次残留 Electron 主进程（票 44 fail 路径 app.exit 后）已 kill；通道零并跑。
   - **交接给合并会话**：完成后不自行 merge——操作者/合并会话执行 `bash scripts/merge-ticket.sh 56`。
+- 2026-09-11 (merge, T00 合并会话): **merged as 68be7c1**（merge --no-ff；分支四提交 rebase 后 feat=53f56f5 + review-fix + 两 tracker 提交）。
+  - **验收口径**：操作者 2026-09-11 明示「56 已验收」（dev 目检完成）；脚本门禁 typecheck 绿 + vitest **1128/1128（81 文件）**，与分支侧报告一致（54/55 后 1122 → 净增 +6，表驱动 7 例含票 53 语义改写）。
+  - **冲突处置**：仅一处——rebase 9a09549 时**本票文件自身**对撞（main 侧 sync 984e7fa 已是分支终态）→ 例行 tracker 状态对撞，取 main 侧（HEAD），分支重放后票文件与 main 逐字节一致（合并前 diff 验证 TICKET-IDENTICAL）。**零代码冲突**：turn-collapse.ts（splitTurn 扩展 vs 55 hasContainer）、ChatView（56 渲染接入 vs 54 横幅 L238 / 55 条件 L272）、CONTEXT.md（三词条共域）、smoke.ts（三票阶段共存）全部自动合并。
+  - **终态审计**：「常显段（After-Answer Segment）」词条 L133 在位；55「工作容器」词条按 56 语义修订在位（正文之前的行归容器 L142）；splitTurn afterAnswer 投影在位；tc1–tc4 帧 + visual-chronology.ts + chronology 守卫在位；smoke 54/55/56 三段共存；无冲突标记残留。
+  - **清理**：worktree 已 remove、分支已删（was 3a47669）。56 无下游阻塞票。
