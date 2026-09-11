@@ -2433,6 +2433,63 @@ button.heat:hover {
   white-space: nowrap;
 }
 
+/* trend hover chrome (ticket 65, ZCode z13-usage-trend-hover anchor) */
+
+.trend-guide {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+  pointer-events: none;
+}
+
+.trend-hover-dot {
+  stroke: var(--bg-card);
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+
+.trend-tooltip {
+  position: absolute;
+  top: 10px;
+  z-index: 6;
+  min-width: 190px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(30, 30, 25, 0.1);
+  padding: 9px 12px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.trend-tooltip-head {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 5px;
+}
+
+.trend-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.trend-tooltip-model {
+  color: var(--text-primary);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trend-tooltip-tokens {
+  margin-left: auto;
+  padding-left: 14px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
 /* donut */
 
 .donut-row {
@@ -2440,6 +2497,52 @@ button.heat:hover {
   align-items: center;
   gap: 36px;
   padding: 8px 6px 4px;
+}
+
+.donut-wrap {
+  position: relative;
+  flex: none;
+}
+
+/* donut hover white card (ticket 65, ZCode z13-usage-donut-hover anchor) */
+
+.donut-tooltip {
+  position: absolute;
+  z-index: 6;
+  background: var(--bg-card);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(30, 30, 25, 0.1);
+  padding: 8px 12px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.donut-tooltip-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.donut-tooltip-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 12px;
+  margin-top: 3px;
+}
+
+.donut-tooltip-tokens {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.donut-tooltip-share {
+  color: var(--text-primary);
+  font-weight: 500;
 }
 
 .donut-svg {

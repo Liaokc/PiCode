@@ -6,9 +6,14 @@
  *
  *   u1-usage-overview  — headline cards + Token activity heatmap (daily)
  *   u2-usage-weekly    — heatmap toggled to Weekly
- *   u3-usage-trend     — time range + per-model daily trend chart
+ *   u3-usage-trend     — time range + per-model daily trend chart (30d,
+ *                        curves clamped into the plot band — ticket 65)
  *   u4-usage-donut     — model usage donut with legend shares
  *   u5-usage-drilldown — drill-down panel after picking an active day
+ *   u6-usage-trend-hover — 30d trend hover: guide line + dots + white card
+ *   u7-usage-trend-7d  — 7-day trend (same interpolation/clamp as 30d)
+ *   u8-usage-trend-7d-hover — 7d hover white card (ZCode z13 anchor form)
+ *   u9-usage-donut-hover — donut arc hover white card (ZCode z13 anchor form)
  *
  * PNGs land in $PICODE_VISUAL_OUT (default: <cwd>/.scratch/visual/). Not part
  * of `npm test`; a human compares them against the reference screenshots.
@@ -76,6 +81,40 @@ async function scrollTo(webContents: WebContents, selector: string): Promise<boo
   )
 }
 
+/** Dispatch a real-bubbling mousemove at a fractional position of an element
+ * (React's delegated listeners treat it exactly like a native move). */
+async function hoverAt(webContents: WebContents, selector: string, fx: number, fy: number): Promise<boolean> {
+  return execute<boolean>(
+    webContents,
+    `(() => {
+      const el = document.querySelector(${JSON.stringify(selector)})
+      if (!el) return false
+      const r = el.getBoundingClientRect()
+      el.dispatchEvent(new MouseEvent('mousemove', {
+        bubbles: true,
+        clientX: r.left + r.width * ${fx},
+        clientY: r.top + r.height * ${fy}
+      }))
+      return true
+    })()`
+  )
+}
+
+/** Leave an element with the pointer (mouseout with a body relatedTarget +
+ * the non-bubbling mouseleave — the ticket-46 unhover recipe). */
+async function unhover(webContents: WebContents, selector: string): Promise<boolean> {
+  return execute<boolean>(
+    webContents,
+    `(() => {
+      const el = document.querySelector(${JSON.stringify(selector)})
+      if (!el) return false
+      el.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }))
+      el.dispatchEvent(new MouseEvent('mouseleave', { relatedTarget: document.body }))
+      return true
+    })()`
+  )
+}
+
 async function capture(win: BrowserWindow, name: string): Promise<void> {
   const png = await win.webContents.capturePage()
   const file = path.join(outDir(), `${name}.png`)
@@ -87,7 +126,9 @@ async function capture(win: BrowserWindow, name: string): Promise<void> {
       heatCells: document.querySelectorAll('.heat').length,
       series: document.querySelectorAll('.trend-legend-item').length,
       donutSlices: document.querySelectorAll('.donut-legend-row').length,
-      drilldown: document.querySelectorAll('.drilldown').length
+      drilldown: document.querySelectorAll('.drilldown').length,
+      trendTooltip: document.querySelectorAll('.trend-tooltip').length,
+      donutTooltip: document.querySelectorAll('.donut-tooltip').length
     }))()`
   )
   console.log(`VISUAL captured ${file} ${JSON.stringify(sig)}`)
@@ -165,6 +206,76 @@ export function startUsageVisualIfEnabled(getWindow: () => BrowserWindow | null)
       if (!drilldown) throw new Error('usage visual: drill-down panel never opened')
       await sleep(400)
       await capture(win, 'u5-usage-drilldown')
+
+      // ---- ticket 65: hover frames (ZCode z13-usage-* anchors) -------------
+      // Close the drill-down, then hover the trend chart: the white-card
+      // tooltip with guide line + intersection dots must appear.
+      if (!(await click(wc, '.dd-close'))) throw new Error('usage visual: drill-down close button missing')
+      await sleep(300)
+
+      await scrollTo(wc, '.range-row')
+      await sleep(300)
+      if (!(await hoverAt(wc, '.trend-svg', 0.8, 0.5))) throw new Error('usage visual: trend svg missing for hover')
+      let trendTip = false
+      for (let waited = 0; waited < 5_000 && !trendTip; waited += 200) {
+        trendTip = await execute<boolean>(
+          wc,
+          `document.querySelectorAll('.trend-tooltip').length > 0 && document.querySelectorAll('.trend-guide').length > 0`
+        )
+        if (!trendTip) await sleep(200)
+      }
+      if (!trendTip) throw new Error('usage visual: trend hover never opened the white-card tooltip')
+      await sleep(300)
+      await capture(win, 'u6-usage-trend-hover')
+      await unhover(wc, '.trend-svg')
+      await sleep(300)
+
+      // The 7-day range must speak the same visual language (same
+      // interpolation + clamp) — captured for the side-by-side review.
+      if (!(await clickSeg(wc, 'Trend time range', 'Last 7 days'))) throw new Error('usage visual: 7d seg missing')
+      await sleep(400)
+      await capture(win, 'u7-usage-trend-7d')
+      if (!(await hoverAt(wc, '.trend-svg', 0.5, 0.5))) throw new Error('usage visual: trend svg missing for 7d hover')
+      let trendTip7 = false
+      for (let waited = 0; waited < 5_000 && !trendTip7; waited += 200) {
+        trendTip7 = await execute<boolean>(wc, `document.querySelectorAll('.trend-tooltip').length > 0`)
+        if (!trendTip7) await sleep(200)
+      }
+      if (!trendTip7) throw new Error('usage visual: 7d trend hover never opened the tooltip')
+      await sleep(300)
+      await capture(win, 'u8-usage-trend-7d-hover')
+      await unhover(wc, '.trend-svg')
+      await sleep(300)
+
+      // Donut hover: move over the first arc (twelve o'clock sits on the
+      // ring) — the white card with model · tokens · share must appear.
+      await scrollTo(wc, '.donut-row')
+      await sleep(300)
+      const donutHovered = await execute<boolean>(
+        wc,
+        `(() => {
+          const svg = document.querySelector('.donut-svg')
+          const arc = document.querySelector('.donut-arc[data-model]')
+          if (!svg || !arc) return false
+          const r = svg.getBoundingClientRect()
+          arc.dispatchEvent(new MouseEvent('mousemove', {
+            bubbles: true,
+            clientX: r.left + r.width * 0.5,
+            clientY: r.top + r.height * (22 / 180)
+          }))
+          return true
+        })()`
+      )
+      if (!donutHovered) throw new Error('usage visual: no donut arc to hover')
+      let donutTip = false
+      for (let waited = 0; waited < 5_000 && !donutTip; waited += 200) {
+        donutTip = await execute<boolean>(wc, `document.querySelectorAll('.donut-tooltip').length > 0`)
+        if (!donutTip) await sleep(200)
+      }
+      if (!donutTip) throw new Error('usage visual: donut hover never opened the white-card tooltip')
+      await sleep(300)
+      await capture(win, 'u9-usage-donut-hover')
+      await unhover(wc, '.donut-svg')
 
       console.log('VISUAL usage done')
       app.exit(0)

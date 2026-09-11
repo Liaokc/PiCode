@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
+  donutHoverCard,
   donutSlices,
   heatmapGrid,
   modelColor,
   niceCeil,
   statCards,
   trendChart,
+  trendHoverCard,
+  trendSnapAt,
+  type ModelUsageSlice,
   type TrendView
 } from '../../src/shared/usage/charts.ts'
 import { buildUsageSnapshot, foldSessionFile } from '../../src/shared/usage/aggregate.ts'
@@ -240,5 +244,134 @@ describe('modelColor', () => {
   it('walks the palette and wraps around', () => {
     expect(modelColor(0)).toBe(modelColor(10))
     expect(modelColor(1)).not.toBe(modelColor(0))
+  })
+})
+
+// --- trend curve clamping (ticket 65, 1.3 R11) ------------------------------------
+
+/** Every y coordinate in a chart path: the strict 'M x y C x y, x y, x y …'
+ * grammar puts y at each odd position of the number stream. */
+function pathYs(path: string): number[] {
+  const nums = path
+    .split(/[\s,]+/)
+    .filter((tok) => /^-?\d+(\.\d+)?$/.test(tok))
+    .map(Number)
+  return nums.filter((_, i) => i % 2 === 1)
+}
+
+describe('trendChart curve clamping (control points stay in band)', () => {
+  const BOX = { width: 700, height: 280 }
+  const clampView = (tokens: number[], rangeDays: 7 | 30 = 7): TrendView => ({
+    rangeDays,
+    dates: tokens.map((_, i) => `2026-08-${String(i + 1).padStart(2, '0')}`),
+    series: [{ model: 'm', tokens }]
+  })
+
+  it('keeps a 0→peak→0 spike inside the plot band — the curve never breaks the baseline', () => {
+    const geo = trendChart(clampView([0, 0, 0, 900, 0, 0, 0]), BOX)
+    expect(geo.band).toEqual({ top: 14, baseline: 254 })
+    const ys = pathYs(geo.series[0].path)
+    expect(ys.length).toBeGreaterThan(0)
+    for (const y of ys) {
+      expect(y).toBeGreaterThanOrEqual(geo.band.top)
+      expect(y).toBeLessThanOrEqual(geo.band.baseline)
+    }
+  })
+
+  it('survives the valley after a peak (p2 on the baseline, p3 above p1 — charts.ts:222)', () => {
+    const geo = trendChart(clampView([900, 0, 0, 500, 0]), BOX)
+    for (const y of pathYs(geo.series[0].path)) {
+      expect(y).toBeGreaterThanOrEqual(geo.band.top)
+      expect(y).toBeLessThanOrEqual(geo.band.baseline)
+    }
+  })
+
+  it('renders a flat zero series as a flat baseline line (no clamp wiggle)', () => {
+    const geo = trendChart(clampView([0, 0, 0, 0, 0, 0, 0]), BOX)
+    const ys = pathYs(geo.series[0].path)
+    expect(ys.length).toBeGreaterThan(0)
+    expect(ys.every((y) => y === 254)).toBe(true)
+  })
+
+  it('passes through the day anchors — clamping reshapes controls, not the data', () => {
+    const geo = trendChart(clampView([0, 0, 0, 900, 0, 0, 0]), BOX)
+    const path = geo.series[0].path
+    expect(path.startsWith('M 12 254')).toBe(true)
+    expect(path.endsWith(`688 ${geo.series[0].points[6].y}`)).toBe(true)
+  })
+
+  it('unifies 7-day and 30-day styling — identical y geometry for identical tokens', () => {
+    const tokens7 = [0, 0, 0, 900, 0, 0, 0]
+    const geo7 = trendChart(clampView(tokens7, 7), BOX)
+    const geo30 = trendChart(clampView([...tokens7, ...new Array(23).fill(0)], 30), BOX)
+    // y positions depend only on the values and the shared band — never on
+    // the range, so both intervals speak the same visual language. The 30-day
+    // path covers the same 7 shared days in its first M + 6 segments (18 ys);
+    // its extra flat days may only add baseline-level ys.
+    const ys7 = pathYs(geo7.series[0].path)
+    const ys30 = pathYs(geo30.series[0].path)
+    expect(ys30.slice(0, ys7.length)).toEqual(ys7)
+    expect(ys30.slice(ys7.length).every((y) => y === geo30.band.baseline)).toBe(true)
+  })
+})
+
+describe('trendSnapAt (shared drill-down click / hover nearest-day mapping)', () => {
+  it('matches the drill-down click mapping it replaces', () => {
+    const count = 7
+    const step = (700 - 24) / (count - 1)
+    for (let x = 0; x <= 700; x += 13) {
+      const legacy = Math.min(count - 1, Math.max(0, Math.round((x - 12) / step)))
+      expect(trendSnapAt(x, count, 700).index).toBe(legacy)
+    }
+  })
+
+  it('snaps to the day anchors and clamps outside the padding', () => {
+    expect(trendSnapAt(12, 7, 700)).toEqual({ index: 0, x: 12 })
+    expect(trendSnapAt(688, 7, 700)).toEqual({ index: 6, x: 688 })
+    expect(trendSnapAt(-80, 7, 700).index).toBe(0)
+    expect(trendSnapAt(1_200, 7, 700).index).toBe(6)
+    expect(trendSnapAt(340, 1, 700)).toEqual({ index: 0, x: 12 })
+    expect(trendSnapAt(340, 0, 700).index).toBe(0)
+  })
+})
+
+describe('trendHoverCard (hover seam: index → white-card content)', () => {
+  it('derives date, per-model rows in series order, and the day total', () => {
+    expect(trendHoverCard(trendView, 4)).toEqual({
+      date: '2026-08-26',
+      rows: [
+        { model: 'm2', color: modelColor(0), tokens: 50 },
+        { model: 'm1', color: modelColor(1), tokens: 200 }
+      ],
+      total: 250
+    })
+  })
+
+  it('omits zero-token models from the card (ZCode form)', () => {
+    expect(trendHoverCard(trendView, 5)).toEqual({
+      date: '2026-08-27',
+      rows: [{ model: 'm2', color: modelColor(0), tokens: 400 }],
+      total: 400
+    })
+  })
+
+  it('returns null past the data (empty view has no hover)', () => {
+    expect(trendHoverCard({ rangeDays: 7, dates: [], series: [] }, 0)).toBeNull()
+    expect(trendHoverCard(trendView, 7)).toBeNull()
+  })
+})
+
+describe('donutHoverCard (hover seam: model → white-card content)', () => {
+  const slices: ModelUsageSlice[] = [
+    { model: 'a', tokens: 750, cost: { amountUsd: 1, estimated: true }, share: 0.75 },
+    { model: 'b', tokens: 250, cost: { amountUsd: 1, estimated: true }, share: 0.25 }
+  ]
+
+  it('derives model, color, tokens, share for a hovered arc', () => {
+    expect(donutHoverCard(slices, 'b')).toEqual({ model: 'b', color: modelColor(1), tokens: 250, share: 0.25 })
+  })
+
+  it('returns null for an unknown model', () => {
+    expect(donutHoverCard(slices, 'zzz')).toBeNull()
   })
 })

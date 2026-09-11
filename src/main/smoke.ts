@@ -4611,6 +4611,155 @@ export function startSmokeIfEnabled(
       })
     }
     log('codecard_table_done')
+    // ---- ticket 65: usage charts — curve clamping + hover white cards ----
+    // Runs with PICODE_FAKE_USAGE=1 (run-all stage env + electron-smoke
+    // wrapper): the usage IPC serves the deterministic fixture, so the
+    // Usage page renders real charts. Stages:
+    // ① the settings shell opens onto the Usage page (cards + trend);
+    // ② hovering the trend chart pops the ZCode white card (guide line +
+    //    intersection dots + date · per-model tokens · total);
+    // ③ leaving the chart hides the chrome again;
+    // ④ hovering a donut arc pops its card (model · tokens · share);
+    // ⑤ the trend click STILL opens the drill-down (zero click regression).
+    log('usage_hover_start')
+    await withWindow(getWindow, async (win) => {
+      const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+      const hoverAt = (selector: string, fx: number, fy: number): Promise<unknown> =>
+        js(`(() => {
+          const el = document.querySelector(${JSON.stringify(selector)})
+          if (!el) return false
+          const r = el.getBoundingClientRect()
+          el.dispatchEvent(new MouseEvent('mousemove', {
+            bubbles: true,
+            clientX: r.left + r.width * ${fx},
+            clientY: r.top + r.height * ${fy}
+          }))
+          return true
+        })()`)
+      const unhover = (selector: string): Promise<unknown> =>
+        js(`(() => {
+          const el = document.querySelector(${JSON.stringify(selector)})
+          if (!el) return false
+          el.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }))
+          el.dispatchEvent(new MouseEvent('mouseleave', { relatedTarget: document.body }))
+          return true
+        })()`)
+
+      // ① Open the settings shell — the Usage section is the initial one.
+      const opened = (await js(
+        `(() => {
+          const btn = document.querySelector('button[aria-label="Settings"]')
+          if (!(btn instanceof HTMLElement)) return false
+          btn.click()
+          return true
+        })()`
+      )) as boolean
+      if (!opened) fail('ticket-65 stage: the settings gear button is missing')
+      const usageReady = await waitForProbe(
+        win,
+        `document.querySelectorAll('.stat-card').length >= 5 && document.querySelectorAll('.trend-legend-item').length > 0`,
+        15_000
+      )
+      if (!usageReady) fail('ticket-65 stage: the usage page never rendered cards + trend (fake usage fixture missing?)')
+      log('usage_page_open_ok')
+
+      // ② Trend hover: the white card with guide + dots must appear.
+      await hoverAt('.trend-svg', 0.8, 0.5)
+      const trendTip = await waitForProbe(
+        win,
+        `(() => {
+          const tip = document.querySelector('.trend-tooltip')
+          return tip !== null
+            && document.querySelectorAll('.trend-guide').length === 1
+            && document.querySelectorAll('.trend-hover-dot').length > 0
+            && document.querySelectorAll('.trend-tooltip-row').length > 0
+            && (tip.textContent ?? '').includes('tokens')
+        })()`,
+        5_000
+      )
+      if (!trendTip) fail('ticket-65 stage: trend hover never opened the white-card tooltip with guide + dots')
+      log('usage_trend_hover_ok')
+
+      // ③ Leaving the chart hides the chrome again.
+      await unhover('.trend-svg')
+      if (!(await waitForProbe(win, `document.querySelector('.trend-tooltip') === null`, 5_000))) {
+        fail('ticket-65 stage: the trend tooltip never hid after the pointer left')
+      }
+      log('usage_trend_unhover_ok')
+
+      // ④ Donut hover: move over the first arc (twelve o'clock is on the
+      // ring) — the card with model · tokens · share must appear, then hide.
+      const donutHovered = (await js(
+        `(() => {
+          const svg = document.querySelector('.donut-svg')
+          const arc = document.querySelector('.donut-arc[data-model]')
+          if (!svg || !arc) return false
+          const r = svg.getBoundingClientRect()
+          arc.dispatchEvent(new MouseEvent('mousemove', {
+            bubbles: true,
+            clientX: r.left + r.width * 0.5,
+            clientY: r.top + r.height * (22 / 180)
+          }))
+          return true
+        })()`
+      )) as boolean
+      if (!donutHovered) fail('ticket-65 stage: no donut arc to hover')
+      const donutTip = await waitForProbe(
+        win,
+        `(() => {
+          const tip = document.querySelector('.donut-tooltip')
+          return tip !== null && (tip.textContent ?? '').includes('%') && (tip.textContent ?? '').includes('tokens')
+        })()`,
+        5_000
+      )
+      if (!donutTip) fail('ticket-65 stage: donut hover never opened the white-card tooltip')
+      await unhover('.donut-svg')
+      if (!(await waitForProbe(win, `document.querySelector('.donut-tooltip') === null`, 5_000))) {
+        fail('ticket-65 stage: the donut tooltip never hid after the pointer left')
+      }
+      log('usage_donut_hover_ok')
+
+      // ⑤ Click regression: the trend click still opens the drill-down.
+      const clicked = (await js(
+        `(() => {
+          const svg = document.querySelector('.trend-svg')
+          if (!svg) return false
+          const r = svg.getBoundingClientRect()
+          svg.dispatchEvent(new MouseEvent('click', {
+            bubbles: true,
+            clientX: r.left + r.width * 0.8,
+            clientY: r.top + r.height * 0.5
+          }))
+          return true
+        })()`
+      )) as boolean
+      if (!clicked) fail('ticket-65 stage: the trend svg is missing for the drill-down click')
+      if (!(await waitForProbe(win, `document.querySelectorAll('.drilldown').length > 0`, 5_000))) {
+        fail('ticket-65 stage: the trend click no longer opens the drill-down (regression)')
+      }
+      log('usage_drilldown_click_ok')
+
+      // Leave the shell clean: close the drill-down, back to the workspace.
+      await js(
+        `(() => {
+          const close = document.querySelector('.dd-close')
+          if (close instanceof HTMLElement) close.click()
+          return true
+        })()`
+      )
+      await js(
+        `(() => {
+          const back = document.querySelector('.settings-back')
+          if (back instanceof HTMLElement) back.click()
+          return true
+        })()`
+      )
+      if (!(await waitForProbe(win, `document.querySelectorAll('.stat-card').length === 0`, 5_000))) {
+        fail('ticket-65 stage: leaving the settings shell never returned to the workspace')
+      }
+      log('usage_hover_done')
+    })
+    log('usage_hover_stage_done')
 
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
     const livePids = supervisor.hostPids

@@ -193,10 +193,19 @@ export interface TrendXtick {
   x: number
 }
 
+export interface TrendPlotBand {
+  /** SVG y of the scale maximum (curves may rise exactly this high). */
+  top: number
+  /** SVG y of value 0 — the zero baseline curves must never break. */
+  baseline: number
+}
+
 export interface TrendChartGeometry {
   gridlines: TrendGridline[]
   xTicks: TrendXtick[]
   series: TrendSeries[]
+  /** The y band the curves occupy; hover chrome (guide line) spans it. */
+  band: TrendPlotBand
 }
 
 export interface TrendBox {
@@ -219,9 +228,17 @@ export function niceCeil(v: number): number {
   return 10 * magnitude
 }
 
-function smoothPath(points: TrendPoint[]): string {
+/** Catmull-Rom → cubic Bézier with control points clamped into the plot
+ * band. Raw control y values escape [top, baseline] whenever a segment runs
+ * into a flat stretch beside a slope (c2y = p2.y − (p3.y − p1.y)/6 with p2 on
+ * the baseline and p3 above p1 — the 1.3 R11 root cause at charts.ts:222),
+ * and the curve overshoots past the zero baseline. Anchors already sit inside
+ * the band, so clamping just the two control points pins every segment inside
+ * it (Bézier convex-hull property) — a shape-preserving minimal fix. */
+function smoothPath(points: TrendPoint[], band: TrendPlotBand): string {
   if (points.length === 0) return ''
   if (points.length === 1) return `M ${round2(points[0].x)} ${round2(points[0].y)}`
+  const clampY = (y: number): number => Math.min(band.baseline, Math.max(band.top, y))
   let path = `M ${round2(points[0].x)} ${round2(points[0].y)}`
   for (let i = 0; i < points.length - 1; i++) {
     const p0 = points[Math.max(i - 1, 0)]
@@ -229,18 +246,72 @@ function smoothPath(points: TrendPoint[]): string {
     const p2 = points[i + 1]
     const p3 = points[Math.min(i + 2, points.length - 1)]
     const c1x = p1.x + (p2.x - p0.x) / 6
-    const c1y = p1.y + (p2.y - p0.y) / 6
+    const c1y = clampY(p1.y + (p2.y - p0.y) / 6)
     const c2x = p2.x - (p3.x - p1.x) / 6
-    const c2y = p2.y - (p3.y - p1.y) / 6
+    const c2y = clampY(p2.y - (p3.y - p1.y) / 6)
     path += ` C ${round2(c1x)} ${round2(c1y)}, ${round2(c2x)} ${round2(c2y)}, ${round2(p2.x)} ${round2(p2.y)}`
   }
   return path
 }
 
+/** Nearest-day snap shared by the drill-down click and the hover chrome:
+ * chart-space x → { index, x } where x is the snapped day's anchor coordinate
+ * (the guide line and the intersection dots share it). */
+export function trendSnapAt(x: number, count: number, width: number): { index: number; x: number } {
+  const step = (width - TREND_PAD.l - TREND_PAD.r) / Math.max(1, count - 1)
+  const index = Math.min(Math.max(0, count - 1), Math.max(0, Math.round((x - TREND_PAD.l) / step)))
+  return { index, x: round2(TREND_PAD.l + index * step) }
+}
+
+export interface TrendHoverRow {
+  model: string
+  color: string
+  tokens: number
+}
+
+export interface TrendHoverCard {
+  date: string
+  /** Nonzero models of the day, in series order (ZCode omits the zeros). */
+  rows: TrendHoverRow[]
+  total: number
+}
+
+/** White-card content for the hovered day index: date · per-model tokens ·
+ * total. Null past the data (an empty view has no hover). */
+export function trendHoverCard(view: TrendView, index: number): TrendHoverCard | null {
+  const date = view.dates[index]
+  if (date === undefined) return null
+  let total = 0
+  const rows: TrendHoverRow[] = []
+  view.series.forEach((series, si) => {
+    const tokens = series.tokens[index] ?? 0
+    total += tokens
+    if (tokens > 0) rows.push({ model: series.model, color: modelColor(si), tokens })
+  })
+  return { date, rows, total }
+}
+
+export interface DonutHoverCard {
+  model: string
+  color: string
+  tokens: number
+  share: number
+}
+
+/** White-card content for the hovered donut arc: model · tokens · share.
+ * Null when no slice carries the model. */
+export function donutHoverCard(slices: ModelUsageSlice[], model: string): DonutHoverCard | null {
+  const index = slices.findIndex((slice) => slice.model === model)
+  if (index < 0) return null
+  const slice = slices[index]
+  return { model: slice.model, color: modelColor(index), tokens: slice.tokens, share: slice.share }
+}
+
 /** Map a TrendView onto SVG coordinates inside the given box. */
 export function trendChart(view: TrendView, box: TrendBox): TrendChartGeometry {
   const n = view.dates.length
-  if (n === 0) return { gridlines: [], xTicks: [], series: [] }
+  const band: TrendPlotBand = { top: TREND_PAD.t, baseline: box.height - TREND_PAD.b }
+  if (n === 0) return { gridlines: [], xTicks: [], series: [], band }
 
   const innerW = box.width - TREND_PAD.l - TREND_PAD.r
   const innerH = box.height - TREND_PAD.t - TREND_PAD.b
@@ -267,10 +338,10 @@ export function trendChart(view: TrendView, box: TrendBox): TrendChartGeometry {
 
   const series: TrendSeries[] = view.series.map((s, si) => {
     const points = s.tokens.map((value, i) => ({ x: round2(xAt(i)), y: round2(yAt(value)), value }))
-    return { model: s.model, color: modelColor(si), points, path: smoothPath(points) }
+    return { model: s.model, color: modelColor(si), points, path: smoothPath(points, band) }
   })
 
-  return { gridlines, xTicks, series }
+  return { gridlines, xTicks, series, band }
 }
 
 // --- donut ------------------------------------------------------------------------
