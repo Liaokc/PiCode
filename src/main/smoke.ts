@@ -4561,7 +4561,9 @@ export function startSmokeIfEnabled(
         sig = (await waitForProbe(
           win,
           `(() => {
-             const btn = document.querySelector('.msg-assistant .md-table-tools button[aria-label="Expand table"]')
+             // After the click the button's aria-label reads Collapse table
+             // (the pressed state) — query the pressed label, not the old one.
+             const btn = document.querySelector('.msg-assistant .md-table-tools button[aria-label="Collapse table"]')
              return btn !== null && btn.getAttribute('aria-pressed') === 'true' &&
                document.querySelector('.msg-assistant .md-table-scroll-expanded') !== null
            })()`,
