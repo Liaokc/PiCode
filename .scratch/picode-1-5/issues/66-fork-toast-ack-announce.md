@@ -6,7 +6,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [ ] fork 段注入：点击 fork 后 emit 一条 `session_created`，**新 id**（不复用被 fork 会话 id 'visual-session'、不伪造任何已存在 id——建议 `visual-forked` 类命名 + 注释说明「公告 id 恒为新 id，票 51 ACK 语义」）；cwd/model 字段与既有合成公告同风格（真实 tmpdir 纪律沿 visual.ts 既有分支）
 - [ ] 段位次调整：fork 点击 + toast 断言 + toast 清场等待 relocates 到 3-expanded 密度帧捕获之后、ticket-14 replay 公告之前——2e/3-expanded 帧在未切焦点的 settled 转录上拍摄，内容与既有 PASS 形态一致；帧名 2d 保留
@@ -27,3 +27,9 @@
   **验收逐项**：① 注入 ✓——harness 在 startVisualIfEnabled 内注册 `chat:to-host` 监听器（登记序先于 main/index.ts 自身的分发监听器，ipcMain 按登记序同步触发——次序不变式注释留痕）：fork_session('visual-session') 过境 main 时同步 emit `session_created('visual-forked')`，确定性先于宿主缺失 error；新 id 注释（恒为新 id、不复用 'visual-session'、不撞 'visual-replay'/'visual-preview'/'visual-navigator'）与 cwd/model 同风格（真实 tmpdir 纪律沿既有分支）均在。**实现与票面「点击后 emit」的一处偏差说明**：emit 点在监听器内（fork 命令过境时）而非 harness 异步流里——否则 `session_command_error`（清 forkAckRef + error toast）先于公告到达，ACK 永不兑现（本票核实的追加事实，取证见 58 会话未覆盖的 IPC 定序：渲染进程 click → 命令过境 main → supervisor error，公告必须在 error 前 post）。效果等价「点击后补发」且帧序不变。② 段位次 ✓——fork 点击 + toast 断言 + 清场等待迁至 3-expanded 之后、ticket-14 replay 公告之前，帧名 2d 保留，2e 注释同步改写。③ ACK 断言 ✓——toast 文本含 'Forked'（probe toast: 2——成功 toast 在上、宿主缺失 error 在下，与既有 2d-fork-toast.png 双 toast 形态一致：error toast 是宿主缺失 fork 的不变语义，票 51 未改它）；焦点切至新 id 断言（公告即焦点切换：.msg-user/.turn-container 归零）；replay 公告带回焦点断言（3b-refocused：users=2 + 首条 'Investigate the flaky auth test'）。④ 零契约增量、零 app/renderer 改动 ✓——代码 diff 仅 src/main/visual.ts（+138/−38）；仅用既有事件/命令类型（监听既有内部通道非契约面）；票 51 forkAckRef 链路原样。⑤ 侧栏 ✓——electron 层面验证（probe sidebarRows === 1）+ 监听器注释论证双留痕。⑥ 全链 ✓——`npm run visual:transcript` 全链跑通 exit 0（跑前 ps 复核：无 PiCode Electron/dev-app/smoke 进程），2d 恢复 PASS，2e/3-expanded/3b-replayed/3c/4*/5*/6/7/8/9* 全段零回归。⑦ typecheck / eslint（0 error）/ vitest（82 files / 1175 tests）全绿。
 
   **实施期两笔票面外必改（同文件内，code-review 双轴通过）**：(a) 基座流探针与票 60 渲染器对账——代码卡 +download（3 钮/卡）、表格 +CSV/TSV（5 钮/表）、4b tips 7→11；1b/2b/4b 六处计数过时系「2d 失败阻断全链重验」的结构性后果（基座帧自票 53 era 起冻结 71 提交），不改则全链在 1b 即断、早于 2d；(b) 29 张基座帧全部重拍入库（票面预期「其余帧零变化」不可达——上次全链 PASS 早于票 60 渲染器演进，任何全链 run 必然全量重拍；像素差异来自 54–62/65 的渲染器演进而非本 diff；各段探针全过即「零回归」判据）。2d 新帧：双 toast 卡片主体与既有 PASS 形态一致，背景为公告焦点切换后的空白新会话视图（ACK 语义固有，无 branch 徽章 = 新会话正确形态）。
+- 2026-09-11 (merge, T00 合并会话): **merged as 4970898**（merge --no-ff；分支 rebase 后 feat=5299c0c'，tracker 提交自动去重）。
+  - **验收口径**：操作者 2026-09-11 明示「66 已验收」；脚本门禁 typecheck 绿 + vitest **1187/1187（82 文件）**（harness 票基线未变）；分支侧 visual:transcript 全链 exit 0（2d 恢复 PASS、全段零回归）。
+  - **冲突处置**：**零冲突**（66 基点已含 60/65，仅触 visual.ts 基座段）。
+  - **终态审计**：监听器 + visual-forked 新 id 公告（登记序不变式注释留痕）；段迁移在位（2d → 3-expanded 之后、3b-refocused 焦点带回断言）；app/renderer 零改动确认（diff 无 renderer 文件，票 51 ACK 语义原样）；29 张基座帧全量重拍入库（基座链 71 提交冻结后首次全链恢复的自然产物，各段探针全过为零回归判据）。
+  - **闭环**：58 会话移交的基座 2d fork-toast 回归就此修复（v1.5 批内闭环）。
+  - **清理**：worktree 已 remove、分支已删。66 无下游票。
