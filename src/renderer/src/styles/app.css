@@ -1128,7 +1128,12 @@ kbd {
   border: none;
   outline: none;
   background: transparent;
-  padding: 16px 18px 4px;
+  /* Ticket 58 遮盖修复: the right padding reserves the expand button's
+     top-right zone (right offset 8 + width 26 + margin ≈ 44) — the first
+     line and the caret wrap before the button, collapsed and expanded
+     alike (the expanded input is the same textarea); the button's
+     approved position and chrome are untouched. */
+  padding: 16px 44px 4px 18px;
   font-size: 14px;
   line-height: 1.5;
   color: var(--text-primary);
