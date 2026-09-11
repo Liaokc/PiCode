@@ -277,6 +277,10 @@ export default function ChatView({
                     too. Zero-work turns render a bare, non-expandable row. */
                   <TurnContainer
                     turn={turn}
+                    /* Ticket 56: pendingApproval counts only pills inside the
+                       fold — a pending pill below the answer never forces the
+                       container (it is already visible; forcing it would slam
+                       the fold shut on decision, jumping the two-state slot). */
                     open={chat.expandedTurns.has(turn.id) || turn.pendingApproval}
                     onToggle={() => onToggleTurn(turn.id)}
                     onOpenFile={onOpenFile}

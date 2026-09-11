@@ -107,7 +107,7 @@ describe('turn grouping (groupTurns) — ticket 53 answer split', () => {
     expect(turn.hasWork).toBe(false)
   })
 
-  it('table · post-answer thinking stays folded: only TOOLS leave the container after the answer', () => {
+  it('table · post-answer thinking joins the segment: ALL rows after the last text stay visible below it (ticket 56 revises the ticket-53 Q11a cut)', () => {
     const state = fold(
       initialChatState(),
       SESSION_CREATED,
@@ -125,9 +125,37 @@ describe('turn grouping (groupTurns) — ticket 53 answer split', () => {
     )
     const [turn] = groupTurns(state.entries, false)
     expect(turn.answer?.text).toBe('Shipped.')
-    expect(turn.work.map((w) => w.kind)).toEqual(['thinking'])
-    expect(turn.afterAnswer.map((item) => item.kind)).toEqual(['tool'])
-    expect(turn.hasWork).toBe(true)
+    // The thinking and the tool came after the answer — both render below it,
+    // in transcript order (ZCode assistantFollowingRows shape). Nothing crawls
+    // back into the container.
+    expect(turn.afterAnswer.map((item) => item.kind)).toEqual(['thinking', 'tool'])
+    expect(turn.work).toEqual([])
+    expect(turn.hasWork).toBe(false)
+  })
+
+  it('table · post-answer segment holds transcript order: a thinking block after a post-answer tool renders BELOW the tool', () => {
+    // pi15-post-answer-thinking-misplaced, fixed shape: answer → tool result →
+    // the model's next thinking. The thinking renders after the tool, below
+    // the answer — never back in the container, never above the answer.
+    const state = fold(
+      initialChatState(),
+      SESSION_CREATED,
+      USER('check the deploy'),
+      { type: 'agent_start' },
+      { type: 'message_start' },
+      { type: 'text_delta', delta: 'Deployed.' },
+      { type: 'message_end' },
+      { type: 'tool_start', toolCallId: 'tc-check', name: 'bash', args: { command: 'curl health' } },
+      { type: 'tool_end', toolCallId: 'tc-check', output: '200 OK', isError: false },
+      { type: 'message_start' },
+      { type: 'thinking_delta', delta: 'the health check passed, wrap up' },
+      { type: 'thinking_end', durationMs: 4800 },
+      { type: 'agent_end' }
+    )
+    const [turn] = groupTurns(state.entries, false)
+    expect(turn.answer?.text).toBe('Deployed.')
+    expect(turn.afterAnswer.map((item) => item.kind)).toEqual(['tool', 'thinking'])
+    expect(turn.work).toEqual([])
   })
 
   it('table · transcript order survives the split: narration between tools rolls the tools back into work', () => {
@@ -325,6 +353,58 @@ describe('turn grouping (groupTurns) — ticket 53 answer split', () => {
     expect(turn.answer?.entryId).toBe('m3')
   })
 
+  it('table · demotion re-split: a new text block demotes the old answer to narration, rolls the segment back and CLEARS it (ticket 53 rule, reaffirmed)', () => {
+    // Stream to an answer with a post-answer tool (the segment holds it),
+    // then let a NEW text block start streaming: the old answer is 中途的正文
+    // — it must fold into the container as narration, the tool that entered
+    // the segment rolls back into the fold, and the segment clears.
+    const withSegment = fold(
+      initialChatState(),
+      SESSION_CREATED,
+      USER('iterate'),
+      { type: 'agent_start' },
+      { type: 'message_start' },
+      { type: 'text_delta', delta: 'First cut.' },
+      { type: 'message_end' },
+      { type: 'tool_start', toolCallId: 'tc-mid2', name: 'bash', args: { command: 'ls' } },
+      { type: 'tool_end', toolCallId: 'tc-mid2', output: 'files', isError: false }
+    )
+    const [before] = groupTurns(withSegment.entries, true)
+    expect(before.answer?.text).toBe('First cut.')
+    expect(before.afterAnswer.map((item) => item.kind)).toEqual(['tool'])
+
+    const demoted = fold(withSegment, { type: 'message_start' }, { type: 'text_delta', delta: 'Second cut' })
+    const [turn] = groupTurns(demoted.entries, true)
+    expect(turn.answer).toMatchObject({ text: 'Second cut', streaming: true })
+    expect(turn.work.map((w) => [w.kind, (w as { text?: string }).text ?? (w as { entry?: { id: string } }).entry?.id])).toEqual([
+      ['narration', 'First cut.'],
+      ['tool', 'tc-mid2']
+    ])
+    expect(turn.afterAnswer).toEqual([])
+  })
+
+  it('table · demotion re-split: a pending pill rolled back into the fold re-engages the auto-open', () => {
+    const withPill = fold(
+      initialChatState(),
+      SESSION_CREATED,
+      USER('course correct'),
+      { type: 'agent_start' },
+      { type: 'message_start' },
+      { type: 'text_delta', delta: 'Replanning.' },
+      { type: 'message_end' },
+      { type: 'approval_required', toolCallId: 'tc-roll', toolName: 'bash', args: { command: 'reset' } }
+    )
+    const [inSegment] = groupTurns(withPill.entries, true)
+    expect(inSegment.pendingApproval).toBe(false)
+    const demoted = fold(withPill, { type: 'message_start' }, { type: 'text_delta', delta: 'New plan' })
+    const [turn] = groupTurns(demoted.entries, true)
+    // The pill now precedes the (new) answer — it is fold content again, so
+    // the fold must open for it exactly like a pre-answer gate ask.
+    expect(turn.work.map((w) => w.kind)).toEqual(['narration', 'approval'])
+    expect(turn.afterAnswer).toEqual([])
+    expect(turn.pendingApproval).toBe(true)
+  })
+
   it('table: a pending approval keeps its turn flagged', () => {
     const state = fold(
       initialChatState(),
@@ -345,6 +425,80 @@ describe('turn grouping (groupTurns) — ticket 53 answer split', () => {
       false
     )
     expect(resolved.pendingApproval).toBe(false)
+  })
+
+  it('table · pending approval AFTER the answer parks in the after-answer segment — its tool\'s future slot (ticket 56)', () => {
+    // pi15-approval-above-answer, fixed shape: the gate asks after the answer
+    // streamed. The pill renders below the answer — the exact slot its tool
+    // card will occupy — never folded back above the answer.
+    const state = fold(
+      initialChatState(),
+      SESSION_CREATED,
+      USER('ship it'),
+      { type: 'agent_start' },
+      { type: 'message_start' },
+      { type: 'text_delta', delta: 'Ready to deploy.' },
+      { type: 'message_end' },
+      { type: 'approval_required', toolCallId: 'tc-gate', toolName: 'bash', args: { command: 'deploy' } }
+    )
+    const [turn] = groupTurns(state.entries, true)
+    expect(turn.answer?.text).toBe('Ready to deploy.')
+    expect(turn.afterAnswer.map((item) => item.kind)).toEqual(['approval'])
+    expect(turn.afterAnswer[0]).toMatchObject({ kind: 'approval', entry: { id: 'tc-gate', state: 'pending' } })
+    expect(turn.work).toEqual([])
+    // The pill renders below the answer without the fold — a pending pill in
+    // the segment must not force the container open (and could not keep it
+    // open across the decision without a layout jump).
+    expect(turn.pendingApproval).toBe(false)
+    expect(turn.hasWork).toBe(false)
+  })
+
+  it('table · approval two states, one slot: the approved pill converts IN PLACE to the tool card — no re-sort', () => {
+    // The host sequence after a real approve: approval_resolved(approved),
+    // then tool_start (the reducer converts the pill at the SAME entry
+    // index). The segment slot holds first the pill, then the card.
+    const pending = fold(
+      initialChatState(),
+      SESSION_CREATED,
+      USER('ship it'),
+      { type: 'agent_start' },
+      { type: 'message_start' },
+      { type: 'text_delta', delta: 'Ready to deploy.' },
+      { type: 'message_end' },
+      { type: 'approval_required', toolCallId: 'tc-gate', toolName: 'bash', args: { command: 'deploy' } }
+    )
+    const resolved = fold(pending, { type: 'approval_resolved', toolCallId: 'tc-gate', approved: true, reason: null })
+    const [resolvedTurn] = groupTurns(resolved.entries, true)
+    expect(resolvedTurn.afterAnswer).toHaveLength(1)
+    expect(resolvedTurn.afterAnswer[0]).toMatchObject({ kind: 'approval', entry: { id: 'tc-gate', state: 'approved' } })
+
+    const executed = fold(
+      resolved,
+      { type: 'tool_start', toolCallId: 'tc-gate', name: 'bash', args: { command: 'deploy' } },
+      { type: 'tool_end', toolCallId: 'tc-gate', output: 'deployed', isError: false }
+    )
+    const [executedTurn] = groupTurns(executed.entries, true)
+    // Same single slot below the answer: the pill became the tool card. The
+    // segment neither grew a duplicate row nor reordered.
+    expect(executedTurn.afterAnswer).toHaveLength(1)
+    expect(executedTurn.afterAnswer[0]).toMatchObject({ kind: 'tool', entry: { id: 'tc-gate', state: 'done' } })
+    expect(executedTurn.work).toEqual([])
+    expect(executedTurn.answer?.text).toBe('Ready to deploy.')
+  })
+
+  it('table · pending approval BEFORE the answer stays foldable work — the fold auto-opens for it', () => {
+    const state = fold(
+      initialChatState(),
+      SESSION_CREATED,
+      USER('deploy it'),
+      { type: 'agent_start' },
+      { type: 'approval_required', toolCallId: 'tc-early', toolName: 'bash', args: { command: 'deploy' } }
+    )
+    const [turn] = groupTurns(state.entries, true)
+    expect(turn.work.map((w) => w.kind)).toEqual(['approval'])
+    expect(turn.afterAnswer).toEqual([])
+    // No answer yet — the pill lives inside the fold, so the fold opens.
+    expect(turn.pendingApproval).toBe(true)
   })
 
   it('table: a plain question/answer turn has no foldable work — but still owns its container (ticket 55)', () => {

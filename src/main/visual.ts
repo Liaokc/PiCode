@@ -42,6 +42,7 @@ import { codeblockVisualEnabled } from './visual-codeblock'
 import { expandVisualEnabled } from './visual-expand'
 import { answerVisualEnabled } from './visual-answer'
 import { workedVisualEnabled } from './visual-worked-container'
+import { chronologyVisualEnabled } from './visual-chronology'
 import { ensureVisualProjectDir, ensureVisualStore, writeVisualSession } from './visual-store'
 import type { HostToParent } from '../shared/contract'
 
@@ -190,6 +191,8 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
   if (answerVisualEnabled()) return
   // And for the worked-container harness (ticket 55).
   if (workedVisualEnabled()) return
+  // And for the turn-chronology harness (ticket 56).
+  if (chronologyVisualEnabled()) return
   // And for the ghost-cwd harness (ticket 54).
   if (process.env['PICODE_VISUAL_CWD'] === '1') return
 

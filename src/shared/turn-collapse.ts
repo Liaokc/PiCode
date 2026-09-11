@@ -1,18 +1,26 @@
 /**
- * Turn-collapse model (ticket 23, split rules revised by ticket 53, container
- * permanence revised by ticket 55): the transcript folds each turn's work —
- * thinking rows, interim narration, tool cards, approval pills, skill marker
- * — into a single "Working · Ns" / "Worked · Ns" container row. ZCode-evidence
- * behavior with ONE operator-approved deviation (ticket 55):
+ * Turn-collapse model (ticket 23, split rules revised by tickets 53 and 56,
+ * container permanence by ticket 55): the transcript folds each turn's
+ * pre-answer work — thinking rows, interim narration, tool cards, approval
+ * pills, skill marker — into a single "Working · Ns" / "Worked · Ns"
+ * container row. ZCode-evidence behavior with ONE operator-approved deviation
+ * (ticket 55):
  *
  *   - turn boundary = the user message; everything after it (thinking, tools,
  *     approvals, assistant text) belongs to that turn;
  *   - the turn's ANSWER is its LAST text part — a positional rule, not a
  *     semantic one (ticket 53, ZCode `latestAssistantTextRow` alignment).
  *     Earlier text parts are INTERIM NARRATION and fold into the container;
- *   - tools that ran AFTER the answer stay visible below it, in transcript
- *     order (ticket 53, Q11a) — they never fold. Post-answer thinking and
- *     approvals stay container content (ticket 23 behavior unchanged);
+ *   - EVERY row after the answer — tool, thinking or approval — joins the
+ *     always-visible after-answer segment (常显段) below the answer, in
+ *     transcript order, live and settled at the same position (ticket 56
+ *     revises ticket 53's tools-only Q11a cut to the ZCode
+ *     `assistantFollowingRows` shape). The pending approval parks in the
+ *     segment at the very slot its tool card will occupy; the reducer
+ *     converts the pill in place, so the two states share one slot — zero
+ *     jump. A new text block re-splits: the old answer demotes to narration,
+ *     segment rows roll back into the container, the segment clears
+ *     (中途的正文不能是最后的正文 — ticket 53 rule, operator reaffirmed);
  *   - EVERY turn with a user bubble owns its container row — live
  *     "Working · Ns" from the silent period on, settled "Worked · Ns",
  *     replayed "Worked" (ticket 14 rule). ZCode drops the row for zero-work
@@ -85,23 +93,31 @@ export interface TurnGroup {
   /** Bubble display text: the raw user message with the skill prologue
    * stripped (raw text stays on the entry — display-only derivation). */
   userText: string
-  /** Thinking rows, interim narration, tool cards and approval pills —
-   * hidden while collapsed. Post-answer thinking/approvals fold here too:
-   * only TOOLS leave the container after the answer (ticket 53). */
+  /** Thinking rows, interim narration, tool cards and approval pills that
+   * precede the answer — hidden while collapsed (ticket 56: post-answer rows
+   * no longer fold here; they join the after-answer segment). */
   work: TurnWorkItem[]
   /** The turn's answer: its last text part, or null when the turn produced
    * no assistant text. At most one — 有且仅有一个 (ticket 53). */
   answer: TurnAnswerPart | null
-  /** Tool cards that ran after the answer — always visible below it, in
-   * transcript order (ticket 53, ZCode rule). */
+  /** The always-visible AFTER-ANSWER SEGMENT (常显段, ticket 56): every
+   * non-text row that came after the answer — tools, thinking, approvals —
+   * in transcript order, rendered below the answer, live and settled at the
+   * same position. The pending approval parks here at the slot its tool
+   * card will convert into (zero jump). Empty when the turn ends on its
+   * answer or produces no text at all. */
   afterAnswer: TurnWorkItem[]
   /** The turn currently streaming: container renders expanded and ticking. */
   live: boolean
-  /** A pending approval inside this turn keeps the container open. */
+  /** A pending approval INSIDE the container body keeps it open (auto-open).
+   * A pending pill in the after-answer segment never forces the fold: it is
+   * already visible below the answer, and opening the fold for it would slam
+   * it shut again the moment the decision resolves — a jump across the very
+   * slot the pill↔card pair must share (ticket 56). */
   pendingApproval: boolean
   /** The container BODY holds foldable content: the skill marker or at least
    * one work item (after-answer rows don't count — they render without the
-   * container). Doubles as the ticket-55 empty-body flag: 可展开 ⇔ hasWork
+   * container, ticket 56). Doubles as the ticket-55 empty-body flag: 可展开 ⇔ hasWork
    * — a zero-work turn's container is a bare, non-expandable row. */
   hasWork: boolean
   /** The container ROW renders at all (ticket 55, operator-approved ZCode
@@ -127,7 +143,6 @@ interface TurnDraft {
   skillName: string | null
   userText: string
   raw: RawItem[]
-  pendingApproval: boolean
   /** Ordinal for the next assistant part inside this turn. Part keys are
    * POSITIONAL (turn id + ordinal), never the owning entry's id: the
    * ticket-51 real-id backfill rewrites an assistant entry's id at
@@ -138,12 +153,20 @@ interface TurnDraft {
 }
 
 /**
- * The ticket-53 split decision table, applied to one turn's raw items in
- * transcript order. The LAST text item becomes the answer; earlier text
- * items become narration work; tools after that text become the
- * always-visible afterAnswer segment; everything else (thinking, approvals,
- * pre-answer tools) stays foldable work — including thinking that streamed
- * after the answer (only tool rows are the 常显 segment, per spec Q11a).
+ * The split decision table (ticket 53, revised by ticket 56), applied to one
+ * turn's raw items in transcript order. The LAST text item becomes the
+ * answer; earlier text items become narration work; EVERY non-text row after
+ * that text — tool, thinking or approval — joins the always-visible
+ * after-answer segment (常显段, ZCode assistantFollowingRows shape — ticket 56
+ * widens ticket 53's tools-only Q11a cut); everything before it stays
+ * foldable work.
+ *
+ * The table re-splits on every call, which IS the demotion rule (ticket 53,
+ * reaffirmed by the operator): the moment a new text block starts streaming,
+ * lastText moves to it — the old answer becomes narration, rows that had
+ * entered the segment roll back into the container, and the segment itself
+ * clears (nothing trails the new, still-streaming tail). 中途的正文不能是
+ * 最后的正文 — time order holds at every instant.
  */
 function splitTurn(raw: RawItem[]): Pick<TurnGroup, 'work' | 'answer' | 'afterAnswer'> {
   const lastText = raw.findLastIndex((item) => item.kind === 'text')
@@ -161,7 +184,7 @@ function splitTurn(raw: RawItem[]): Pick<TurnGroup, 'work' | 'answer' | 'afterAn
     }
     // lastText === -1 (no text at all) leaves everything in the fold —
     // afterAnswer is defined only relative to an existing answer.
-    if (lastText !== -1 && index > lastText && item.kind === 'tool') {
+    if (lastText !== -1 && index > lastText) {
       afterAnswer.push(item)
       return
     }
@@ -186,7 +209,6 @@ export function groupTurns(entries: ChatEntry[], agentRunning: boolean): TurnGro
         skillName: entry.skillName,
         userText: stripSkillPrologue(entry.text, entry.skillName),
         raw: [],
-        pendingApproval: false,
         nextPartIndex: 0
       }
       drafts.push(current)
@@ -199,7 +221,6 @@ export function groupTurns(entries: ChatEntry[], agentRunning: boolean): TurnGro
         skillName: null,
         userText: '',
         raw: [],
-        pendingApproval: false,
         nextPartIndex: 0
       }
       drafts.push(current)
@@ -228,7 +249,6 @@ export function groupTurns(entries: ChatEntry[], agentRunning: boolean): TurnGro
         break
       case 'approval':
         draft.raw.push({ kind: 'approval', key: entry.id, entry })
-        if (entry.state === 'pending') draft.pendingApproval = true
         break
     }
   }
@@ -244,7 +264,12 @@ export function groupTurns(entries: ChatEntry[], agentRunning: boolean): TurnGro
       answer,
       afterAnswer,
       live: false,
-      pendingApproval: draft.pendingApproval,
+      // Ticket 56: only a pill INSIDE the fold keeps it open. A pending pill
+      // in the after-answer segment renders below the answer and must not
+      // force the container — otherwise the fold (opened for the pill) would
+      // slam shut the moment the decision resolves, jumping the very slot
+      // the two-state pill↔card pair must share.
+      pendingApproval: work.some((item) => item.kind === 'approval' && item.entry.state === 'pending'),
       hasWork: draft.skillName !== null || work.length > 0,
       hasContainer: draft.user !== null || draft.skillName !== null || work.length > 0
     }
