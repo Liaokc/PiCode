@@ -35,6 +35,7 @@ import { startFoldVisualIfEnabled, isolateFoldUserData } from './visual-fold'
 import { startCodeblockVisualIfEnabled, isolateCodeblockUserData } from './visual-codeblock'
 import { startAnswerVisualIfEnabled, isolateAnswerUserData } from './visual-answer'
 import { startMermaidVisualIfEnabled, isolateMermaidUserData } from './visual-mermaid'
+import { startCodeCardVisualIfEnabled, isolateCodeCardUserData } from './visual-codecard'
 import { startWorkedVisualIfEnabled, isolateWorkedUserData } from './visual-worked-container'
 import { startChronologyVisualIfEnabled, isolateChronologyUserData } from './visual-chronology'
 import { startRailStackVisualIfEnabled, isolateRailStackUserData } from './visual-rail-stack'
@@ -95,6 +96,9 @@ isolateAnswerUserData()
 // Ticket-59 mermaid diagram-card harness — same throwaway-userData rule
 // (no-op unless PICODE_VISUAL_MERMAID=1).
 isolateMermaidUserData()
+// Ticket-60 code-card line-number harness — same throwaway-userData rule
+// (no-op unless PICODE_VISUAL_CODECARD=1).
+isolateCodeCardUserData()
 
 // Ticket-55 worked-container harness — same throwaway-userData rule (no-op
 // unless PICODE_VISUAL_WORKED=1).
@@ -264,6 +268,8 @@ app.whenReady().then(() => {
   startCodeblockVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-59 mermaid diagram-card harness — live contract-stream injection.
   startMermaidVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  // Ticket-60 code-card line-number harness — live contract-stream injection.
+  startCodeCardVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-53 answer-split harness — settled-replay injection, same pattern.
   startAnswerVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-55 worked-container harness — settled-replay + live injection.
