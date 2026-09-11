@@ -6,7 +6,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 - [ ] 设置窗：标题栏齿轮钮 + ⌘, 打开/关闭（Esc 亦关）；左侧节导航（Skills / Packages 两节，Packages 节由 64 交付——本票留导航占位）；窗口无模态、不影响主窗会话
 - [ ] 技能枚举扩展：probe 报告增技能来源维度（user dir / package / project + 所在路径；additive 报备）；列表以 Pi 实际加载面为准
@@ -23,6 +23,14 @@
 **交接：** 完成后不自行 merge——操作者/合并会话执行 `bash scripts/merge-ticket.sh 63`。
 
 ## Comments
+
+- 2026-09-11 (claim): 实施会话认领（worktree wt-63-settings-window-skills / 分支 t63-settings-window-skills）。开工前 ps 复核：无其他 PiCode Electron/dev-app/smoke 进程在跑（仅无关应用 ZCode/Postman/ChatGPT）。
+- 2026-09-11 (done): 全验收项通过，提交 **407a79c**（分支 t63-settings-window-skills，未自行 merge——请操作者/合并会话执行 `bash scripts/merge-ticket.sh 63`）。
+  - Gates：typecheck 双 tsconfig 绿；eslint 0 error（EmptyState 1 条 pre-existing warning，非本票）；vitest 1244 全绿（新增 4 文件 55 测试：Seam-1 skills-management 32 / pi-settings-editor 14 / skills-service 9）；electron smoke 全绿（含 ticket-63 stage：⌘, 开合 / 齿轮 toggle / 技能列表真枚举 / 启停写 sandbox settings.json ±pattern / 删链接保真身字节级 / Esc 关）；visual 2 帧（s5-settings-skills / s6-settings-packages，对照 .scratch/visual）。
+  - Additive 报备：AuthProbeReport 增 skills/skillsError/skillsScannedAt/skillsCwd（旧载荷照常过守卫）；IPC settings:skills/-toggle/-delete/-reveal；keymap Comma 行；ShellUiAction toggle-settings；SettingsSection skills/packages + Agent Resources 导航组；PICODE_PI_AGENT_DIR（烟雾沙箱专用）。运行期实测探针枚举 72 行（沙箱 3 行 + 本机 ~/.agents SSOT），包 resolve 用 onMissing:'skip' 严格只读（绝不自动安装）。
+  - 术语 rider：「设置窗（Settings Window）」已入 CONTEXT.md。
+  - 注意：烟雾跑前 ps 复核每轮都做；一次撞 wt-65 dev-app 在跑，等待其退出后重试（未并跑）。
+- 2026-09-11 (rebase onto main)：main 已前进（60/65/66 已并入，65 的 stage 也动 settings shell）——已在分支内预先 rebase 并解两处 additive 冲突（electron-smoke.mjs env 行双变量共存；smoke.ts 双 stage 顺序保留：60/65 后接 63）。重验：typecheck 绿 / vitest 1244 全绿 / 合并后 electron smoke ALL GREEN（60+65+63 三段同跑，13 hosts 零孤儿）。原提交 788c9d0 已重写为 407a79c + tracker 36a8ba8。
 
 - 2026-09-11 (requirements intake): 建票（mgmt 追加需求，Q3=Q4=Q9=Q10=A）。波次：独立链（与 54–62 零文件交集），可即刻开工。**64 blocked by 本票**（同窗口文件）。术语 rider：「设置窗（Settings Window）」入 CONTEXT.md。契约增量：probe 报告技能来源维度（additive，实施时报备）。
 - 2026-09-11 (release scope): 操作者拍板「全部赶 v1.5.0」——本票纳入 v1.5.0 发布范围，与 54–62 同批验收。
