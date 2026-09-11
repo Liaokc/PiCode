@@ -33,3 +33,6 @@
   - **ps 自查**：每次应用通道前执行；visual 复跑时捕获到 wt-58 worktree 曾有存活 Electron（无干扰，隔离 store）——后续通道零并跑。
   - **package-lock**：mermaid 12.0.0 依赖树入 lock——合并时 T00 按既定分级处置。
   - **交接给合并会话**：完成后不自行 merge——操作者/合并会话执行 `bash scripts/merge-ticket.sh 59`。票 60（强串行于本票，同文件 Markdown 块投影与卡组件）现可开工。
+- 2026-09-11 (operator decisions, post-review @ 15046f7): 操作者对 mm1/mm3 帧两项复核拍板：
+  - **① mm1 箭头不直 → A 维持现状（零改动）**：对照实验实锤根因——同一份 mermaid 12.0.0 离线渲染，种子源码里 Start↔Gate 存在双向边（A→B 与 B -->|no| A），dagre 对反向边各自横移端口、折线绕行（路径数据：双向边 `M75.5,57…Q…L72.3,107.5…` vs 单向边 `M97.5,57L97.5,93` 纯直段）；我们管线对几何零干预（SVG 原样注入），ZCode 同库同型同形状。帧如实反映库行为。
+  - **② mm3 sticky 头行悬停叠图 → 修复**：ZCode 取证的 sticky 钮组形态在卡片被转录卷走时头行钉住、叠在自家图内容上，操作者判为缺陷——去掉 `.md-diagram-head` 的 sticky（头行随卡滚走，与其它块头一致）。**操作者批准的 ZCode 偏离**已记入 CONTEXT.md「图卡」词条。全门复跑绿（typecheck / lint / vitest 1131 / visual:mermaid 全探针，mm1/mm2/mm3 三帧重生成）。
