@@ -6,7 +6,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [ ] 设置窗：标题栏齿轮钮 + ⌘, 打开/关闭（Esc 亦关）；左侧节导航（Skills / Packages 两节，Packages 节由 64 交付——本票留导航占位）；窗口无模态、不影响主窗会话
 - [ ] 技能枚举扩展：probe 报告增技能来源维度（user dir / package / project + 所在路径；additive 报备）；列表以 Pi 实际加载面为准
@@ -34,3 +34,8 @@
 
 - 2026-09-11 (requirements intake): 建票（mgmt 追加需求，Q3=Q4=Q9=Q10=A）。波次：独立链（与 54–62 零文件交集），可即刻开工。**64 blocked by 本票**（同窗口文件）。术语 rider：「设置窗（Settings Window）」入 CONTEXT.md。契约增量：probe 报告技能来源维度（additive，实施时报备）。
 - 2026-09-11 (release scope): 操作者拍板「全部赶 v1.5.0」——本票纳入 v1.5.0 发布范围，与 54–62 同批验收。
+- 2026-09-11 (merge, T00 合并会话): **merged as 1edbaeb**（merge --no-ff；分支四提交 rebase 后落 main：feat=407a79c'，两笔 tracker 提交一撞票文件取 main 侧、一自动去重，帧提交干净重放）。
+  - **验收口径**：操作者 2026-09-11 明示「63 已验收」；脚本门禁 typecheck 绿 + vitest **1244/1244（85 文件）**（1187 → 净增 +57：skills-management 32 / pi-settings-editor 14 / skills-service 9 等 4 新套件）；分支侧已预 rebase 并预验证（60/65/63 三 stage 同跑 ALL GREEN、13 hosts 零孤儿）——会话间协作先例。
+  - **冲突处置**：2 处均例行 tracker 对撞（feat 携带 claimed 中间态 → 取 main 侧 ready-for-human 终态；tracker 提交重放对齐）——零代码冲突；rebase 记录（f0076b6 信息）留存 git 历史。
+  - **终态审计**：AuthProbeReport skills* additive 字段 + IPC settings:skills/* + keymap Comma + ShellUiAction toggle-settings 全部在位；「设置窗」词条 L145（Packages 节留 64 衔接）；**2794d9c 范围增补项落地**（lstat 判型 L34 / 悬链标注失效 L61 / 主侧删除复核 L136）；smoke ticket-63 段；PackagesSection placeholder = 64 挂点就绪；无冲突标记残留。
+  - **清理**：worktree 已 remove、分支已删。**解锁：64（Packages 管理，末张票）。**
