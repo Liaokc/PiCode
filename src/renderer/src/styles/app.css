@@ -4391,7 +4391,6 @@ button.heat:hover {
   top: 0;
   bottom: 0;
   width: 48px;
-  z-index: 5;
   display: flex;
   justify-content: center;
   opacity: 1;
@@ -4399,6 +4398,21 @@ button.heat:hover {
   transition:
     opacity 150ms ease-out,
     transform 150ms ease-out;
+  /* Ticket 62: the rail must NOT carry a z-index of its own. The sidebar is
+     a stacking context (z-index: 1, holding the empty-state watermark
+     below the panes), so the nine-item row context menu (z-index: 80) is
+     trapped in the sidebar's subtree and compares at the sidebar's
+     root-level slot — any rail z ≥ 1 beats that slot and paints over the
+     menu wherever it extends past the pane edge (pi15-rail-over-context-menu;
+     menu portal to body was rejected, Q9=A). With NO z-index the rail
+     paints in the positioned/auto band: above the static transcript, below
+     the whole sidebar subtree (menu included) — the sidebar side is restored
+     above the rail as a whole. `isolation` (belt to the show/hide transform's
+     own context) keeps the rail atomic so the hover bubble's z-index stays
+     internal instead of leaking to the root context. Root-level overlays
+     (tooltip, palette, the fixed md-table preview backdrop) are untouched —
+     they still compare at the root, above both subtrees. */
+  isolation: isolate;
 }
 
 .nav-rail-hidden {
