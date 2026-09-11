@@ -255,43 +255,70 @@ export default function DiagramCard({ source, blockKey, ui, fallback }: DiagramC
 
   const copied = blockKey !== null && ui.copied.has(blockKey)
 
-  const downloadMenu = (
-    <Tooltip label="Download">
-      <button
-        type="button"
-        className="md-block-btn"
-        aria-label="Download diagram"
-        aria-haspopup="menu"
-        aria-expanded={menu !== null}
-        onClick={() => setMenu((prev) => (prev === null ? 'inline' : null))}
-      >
-        <DownloadIcon size={13} />
-      </button>
-    </Tooltip>
-  )
-
-  const copyButton = (
-    <Tooltip label="Copy">
-      <button type="button" className="md-block-btn" aria-label="Copy diagram source" onClick={() => void copySource()}>
-        {copied ? <CheckIcon size={13} className="md-copy-copied" /> : <CopyIcon size={13} />}
-      </button>
-    </Tooltip>
-  )
-
-  const fullscreenButton = (
-    <Tooltip label="Fullscreen">
-      <button
-        type="button"
-        className="md-block-btn"
-        aria-label="Open diagram fullscreen"
-        onClick={() => {
-          setMenu(null)
-          setFullscreen(true)
-        }}
-      >
-        <FullscreenIcon size={13} />
-      </button>
-    </Tooltip>
+  /** The header + action group, shared by the inline card and the
+   * fullscreen overlay — same chip, same controls; the fullscreen surface
+   * swaps the expand button for a close one and owns its menu surface. */
+  const header = (surface: 'inline' | 'fullscreen', onClose?: () => void): JSX.Element => (
+    <div className={surface === 'inline' ? 'md-diagram-head' : 'md-diagram-head md-diagram-fs-head'}>
+      <span className="md-code-lang">
+        <CodeIcon size={12} />
+        mermaid
+      </span>
+      <span className="md-diagram-tools">
+        <span className="md-diagram-download" ref={surface === 'inline' ? inlineMenuRef : fsMenuRef}>
+          <Tooltip label="Download">
+            <button
+              type="button"
+              className="md-block-btn"
+              aria-label="Download diagram"
+              aria-haspopup="menu"
+              aria-expanded={menu === surface}
+              onClick={() => setMenu((prev) => (prev === surface ? null : surface))}
+            >
+              <DownloadIcon size={13} />
+            </button>
+          </Tooltip>
+          {menu === surface && <div className="md-diagram-menu">{menuItems}</div>}
+        </span>
+        <Tooltip label="Copy">
+          <button
+            type="button"
+            className="md-block-btn"
+            aria-label="Copy diagram source"
+            onClick={() => void copySource()}
+          >
+            {copied ? <CheckIcon size={13} className="md-copy-copied" /> : <CopyIcon size={13} />}
+          </button>
+        </Tooltip>
+        {onClose === undefined ? (
+          <Tooltip label="Fullscreen">
+            <button
+              type="button"
+              className="md-block-btn"
+              aria-label="Open diagram fullscreen"
+              onClick={() => {
+                setMenu(null)
+                setFullscreen(true)
+              }}
+            >
+              <FullscreenIcon size={13} />
+            </button>
+          </Tooltip>
+        ) : (
+          <Tooltip label="Close fullscreen">
+            <button
+              type="button"
+              className="md-block-btn"
+              aria-label="Close diagram fullscreen"
+              autoFocus
+              onClick={onClose}
+            >
+              <CloseIcon size={14} />
+            </button>
+          </Tooltip>
+        )}
+      </span>
+    </div>
   )
 
   const menuItems = (
@@ -310,60 +337,13 @@ export default function DiagramCard({ source, blockKey, ui, fallback }: DiagramC
 
   return (
     <div className="md-diagram-card">
-      <div className="md-diagram-head">
-        <span className="md-code-lang">
-          <CodeIcon size={12} />
-          mermaid
-        </span>
-        <span className="md-diagram-tools">
-          <span className="md-diagram-download" ref={inlineMenuRef}>
-            {downloadMenu}
-            {menu === 'inline' && <div className="md-diagram-menu">{menuItems}</div>}
-          </span>
-          {copyButton}
-          {fullscreenButton}
-        </span>
-      </div>
+      {header('inline')}
       <DiagramCanvas svg={svg} />
 
       {fullscreen &&
         createPortal(
           <div className="md-diagram-fs" role="dialog" aria-modal="true" aria-label="Diagram fullscreen">
-            <div className="md-diagram-head md-diagram-fs-head">
-              <span className="md-code-lang">
-                <CodeIcon size={12} />
-                mermaid
-              </span>
-              <span className="md-diagram-tools">
-                <span className="md-diagram-download" ref={fsMenuRef}>
-                  <Tooltip label="Download">
-                    <button
-                      type="button"
-                      className="md-block-btn"
-                      aria-label="Download diagram"
-                      aria-haspopup="menu"
-                      aria-expanded={menu !== null}
-                      onClick={() => setMenu((prev) => (prev === 'fullscreen' ? null : 'fullscreen'))}
-                    >
-                      <DownloadIcon size={13} />
-                    </button>
-                  </Tooltip>
-                  {menu === 'fullscreen' && <div className="md-diagram-menu">{menuItems}</div>}
-                </span>
-                {copyButton}
-                <Tooltip label="Close fullscreen">
-                  <button
-                    type="button"
-                    className="md-block-btn"
-                    aria-label="Close diagram fullscreen"
-                    autoFocus
-                    onClick={() => setFullscreen(false)}
-                  >
-                    <CloseIcon size={14} />
-                  </button>
-                </Tooltip>
-              </span>
-            </div>
+            {header('fullscreen', () => setFullscreen(false))}
             <DiagramCanvas svg={svg} />
           </div>,
           document.body
