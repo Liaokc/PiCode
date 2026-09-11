@@ -143,7 +143,7 @@ _Avoid_: 中间结果；思考（thinking 是另一类 work item）。
 _Avoid_: 折叠条（强调折叠丢了常驻语义）；进度条（不表达进度）；折叠容器（体空时无折叠语义）。
 
 **图卡（Diagram Card）**：
-mermaid 围栏闭合且解析成功后渲染的图形卡（票 59，ZCode streamdown 管线同型）：小写 mono mermaid 标签头 + 右上 sticky 操作钮组（download SVG/PNG/MMD 下拉、copy 源码、fullscreen）+ 渲染体 panZoom（滚轮缩放、拖拽平移、角部缩放控件）；fullscreen 为根层浮层、Esc 退；渲染主题用 mermaid 库默认浅色（深色全应用范围外）。流式未闭合（mermaid 需全文）与解析失败均回退为代码卡——lang 标签照常、不弹错误 toast；mermaid 依赖按图型懒加载分片（动态 import），主包零增量。
+mermaid 围栏闭合且解析成功后渲染的图形卡（票 59，ZCode streamdown 管线同型）：小写 mono mermaid 标签头 + 右上操作钮组（download SVG/PNG/MMD 下拉、copy 源码、fullscreen）+ 渲染体 panZoom（滚轮缩放、拖拽平移、角部缩放控件）；fullscreen 为根层浮层、Esc 退；渲染主题用 mermaid 库默认浅色（深色全应用范围外）。**操作者批准的 ZCode 偏离**：ZCode 取证为 sticky 钮组，但卡片被转录滚动卷走时 sticky 头行悬停叠在自家图内容上——操作者拍板头行随卡滚走、不钉住。流式未闭合（mermaid 需全文）与解析失败均回退为代码卡——lang 标签照常、不弹错误 toast；mermaid 依赖按图型懒加载分片（动态 import），主包零增量。
 _Avoid_: 代码卡（回退态才是代码卡）；预览（是正式渲染非浮层预览）。
 
 ## Constraints（词汇化的边界）

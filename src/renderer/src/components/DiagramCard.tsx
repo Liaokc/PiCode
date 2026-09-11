@@ -1,11 +1,14 @@
 /**
  * Diagram card (ticket 59, spec R4): the rendered body of a closed,
  * successfully-parsing mermaid fence — ZCode's evidenced shape. Header = the
- * same lowercase mono language chip (mermaid) with a sticky top-right action
- * group: download (SVG / PNG / MMD menu), copy source, fullscreen. Body = a
- * pan/zoom viewport over the rendered SVG (wheel zoom, drag pan, corner
- * controls). Fullscreen is a ROOT-LEVEL overlay (fixed inset-0, portal to
- * document.body) closed by Esc — not an in-flow expansion.
+ * same lowercase mono language chip (mermaid) with a top-right action group
+ * that scrolls with the card (operator deviation from ZCode's sticky
+ * evidence — the pinned head hovered over the card's own diagram while the
+ * transcript scrolled; recorded in CONTEXT.md): download (SVG / PNG / MMD
+ * menu), copy source, fullscreen. Body = a pan/zoom viewport over the
+ * rendered SVG (wheel zoom, drag pan, corner controls). Fullscreen is a
+ * ROOT-LEVEL overlay (fixed inset-0, portal to document.body) closed by
+ * Esc — not an in-flow expansion.
  *
  * The mermaid package itself lives behind the dynamically-imported
  * `mermaid-api` module: this component stays in the main bundle while the

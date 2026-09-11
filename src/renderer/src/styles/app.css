@@ -4147,12 +4147,10 @@ button.heat:hover {
   margin: 0 0 16px;
 }
 
-/* Sticky head: with a tall diagram the action group stays reachable while
-   the card scrolls past the top of the transcript viewport. */
+/* 头行随卡滚动（票 59，操作者裁决的 ZCode 偏离）：ZCode 取证为 sticky 钮组，
+   但卡片被转录滚动卷走时 sticky 头会悬停叠在自家图内容上——操作者拍板随卡
+   滚走，头行不钉住。 */
 .md-diagram-head {
-  position: sticky;
-  top: 0;
-  z-index: 2;
   display: flex;
   align-items: center;
   gap: 6px;
