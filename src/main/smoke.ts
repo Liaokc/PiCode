@@ -4174,6 +4174,190 @@ export function startSmokeIfEnabled(
       rmSync(catalogDirB, { recursive: true, force: true })
     }
 
+    // ---- ticket 59: mermaid diagram cards — a settled structured replay
+    // (the ticket-53/55 precedent: contract-stream injection, no model call)
+    // seeded with THREE mermaid fences: a valid closed flowchart (must render
+    // a diagram card with the full action group + pan/zoom controls), a
+    // broken closed fence (parse failure → source-card fallback with the
+    // mermaid label intact, no error toast), and an unclosed fence at the
+    // text tail (the streaming shape → source card). The diagram card's
+    // copy-source must round-trip the raw fence text through the real
+    // pasteboard, the download menu must offer SVG/PNG/MMD, and fullscreen
+    // must open as a root-level overlay and close on Esc. ----
+    log('mermaid_diagram_start')
+    {
+      const GOOD = 'flowchart TD\n  A[Start] --> B{Gate}\n  B -->|yes| C[Done]\n  B -->|no| A'
+      // A lexer-level mermaid syntax error — fails identically in any
+      // environment (the dangling-edge shape would actually parse).
+      const BAD = 'flowchart TD\n  A --> B {'
+      const UNCLOSED = 'flowchart TD\n  A --> B'
+      const ANSWER_TEXT = [
+        'The deploy flow:\n\n```mermaid\n' + GOOD + '\n```\n\n',
+        'A broken definition falls back to source:\n\n```mermaid\n' + BAD + '\n```\n\n',
+        'And one still streaming:\n\n```mermaid\n' + UNCLOSED
+      ].join('')
+      emitContractEvent({
+        type: 'session_created',
+        sessionId: 'smoke-mermaid',
+        cwd,
+        model: 'claude-opus-4-5',
+        resumed: true
+      })
+      emitContractEvent({
+        type: 'history_loaded',
+        items: [
+          { role: 'user', id: 'mm-u1', text: 'Draw the deploy flow.', timestamp: 't1', skillName: null },
+          {
+            role: 'assistant',
+            id: 'mm-a1',
+            timestamp: 't2',
+            text: ANSWER_TEXT,
+            parts: [{ kind: 'text', text: ANSWER_TEXT }]
+          }
+        ]
+      })
+      await withWindow(getWindow, async (win) => {
+        const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+        // ① The diagram card renders (the mermaid chunk family loads lazily
+        // on this first closed fence — give it a generous budget) with the
+        // rendered svg, the lowercase chip and the full action group.
+        const cardSig = `(() => ({
+          cards: document.querySelectorAll('.md-diagram-card').length,
+          svgs: document.querySelectorAll('.md-diagram-card .md-diagram-canvas svg').length,
+          chip: document.querySelector('.md-diagram-card .md-code-lang')?.textContent ?? '',
+          download: document.querySelectorAll('.md-diagram-card button[aria-label="Download diagram"]').length,
+          copy: document.querySelectorAll('.md-diagram-card button[aria-label="Copy diagram source"]').length,
+          fullscreen: document.querySelectorAll('.md-diagram-card button[aria-label="Open diagram fullscreen"]').length,
+          zoom: document.querySelectorAll('.md-diagram-card button[aria-label="Zoom in"], .md-diagram-card button[aria-label="Zoom out"], .md-diagram-card button[aria-label="Reset zoom"]').length
+        }))()`
+        let sig = (await waitForProbe(
+          win,
+          `(() => { const s = ${cardSig}; return s.cards === 1 && s.svgs === 1 && s.chip === 'mermaid' &&
+               s.download === 1 && s.copy === 1 && s.fullscreen === 1 && s.zoom === 3 })()`,
+          15_000
+        )) as boolean
+        if (!sig) {
+          const diag = (await js(cardSig).catch(() => 'unavailable')) as string
+          fail(`ticket-59 stage: the diagram card never rendered; DOM: ${diag}`)
+        }
+        log('mermaid_card_rendered_ok')
+
+        // ② The two fallbacks: broken (parse failure) and unclosed
+        // (streaming shape) stay source cards with the mermaid label — and
+        // no error toast pops (operator ruling Q7).
+        const fallbackSig = `(() => ({
+          cards: [...document.querySelectorAll('.md-code-card')].filter((c) => c.querySelector('.md-code-lang')?.textContent === 'mermaid').length,
+          diagrams: document.querySelectorAll('.md-diagram-card').length,
+          toasts: [...document.querySelectorAll('.toast-message')].filter((n) => /mermaid|parse|diagram/i.test(n.textContent ?? '')).length
+        }))()`
+        sig = (await waitForProbe(
+          win,
+          `(() => { const s = ${fallbackSig}; return s.cards === 2 && s.diagrams === 1 && s.toasts === 0 })()`,
+          5_000
+        )) as boolean
+        if (!sig) {
+          const diag = (await js(fallbackSig).catch(() => 'unavailable')) as string
+          fail(`ticket-59 stage: the mermaid fallbacks are wrong; DOM: ${diag}`)
+        }
+        log('mermaid_fallbacks_ok')
+
+        // ③ The download menu: open it, assert the three formats, close on
+        // Escape.
+        await js(
+          `(() => {
+            const btn = document.querySelector('.md-diagram-card button[aria-label="Download diagram"]')
+            if (!(btn instanceof HTMLElement)) return false
+            btn.click()
+            return true
+          })()`
+        )
+        sig = (await waitForProbe(
+          win,
+          `(() => {
+            const items = [...document.querySelectorAll('.md-diagram-menu .md-diagram-menu-item')].map((n) => n.textContent ?? '')
+            return items.join('|') === 'Download SVG|Download PNG|Download MMD'
+          })()`,
+          3_000
+        )) as boolean
+        if (!sig) fail('ticket-59 stage: the download menu never offered SVG/PNG/MMD')
+        log('mermaid_download_menu_ok')
+        await js(`(() => { document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); return true })()`)
+        const menuClosed = (await js(`document.querySelectorAll('.md-diagram-menu').length === 0`)) as boolean
+        if (!menuClosed) fail('ticket-59 stage: Escape did not close the download menu')
+
+        // ④ Copy source through the REAL pasteboard: focus for real (the
+        // navigator.clipboard rejects while unfocused — ticket-44 dance),
+        // park a sentinel, click, poll until the exact fence text lands.
+        win.show()
+        win.focus()
+        app.focus({ steal: true })
+        let focused = false
+        for (let waited = 0; waited < 10_000 && !focused; waited += 100) {
+          focused = (await js('document.hasFocus()')) === true
+          if (!focused) {
+            if (!win.isFocused()) app.focus({ steal: true })
+            await new Promise((r) => setTimeout(r, 100))
+          }
+        }
+        if (!focused) fail('ticket-59 stage: the window never took focus for the real-clipboard click')
+        const previous = await clipboard.readText()
+        try {
+          await clipboard.writeText('PICODE_CLIPBOARD_SENTINEL_59')
+          const clicked = (await js(
+            `(() => {
+              const btn = document.querySelector('.md-diagram-card button[aria-label="Copy diagram source"]')
+              if (!(btn instanceof HTMLElement)) return false
+              btn.click()
+              return true
+            })()`
+          )) as boolean
+          if (!clicked) fail('ticket-59 stage: the copy-source button is missing')
+          let got = ''
+          for (let waited = 0; waited < 5_000; waited += 100) {
+            got = await clipboard.readText()
+            // The markdown pipeline (rehype-highlight) normalizes the code
+            // text with one trailing newline — the copy payload carries
+            // exactly that.
+            if (got === GOOD + '\n') break
+            await new Promise((r) => setTimeout(r, 100))
+          }
+          if (got !== GOOD + '\n') {
+            fail(`ticket-59 stage: clipboard never carried the exact fence source (got ${JSON.stringify(got)})`)
+          }
+          log('mermaid_copy_source_ok')
+        } finally {
+          await clipboard.writeText(previous) // leave the operator's pasteboard as found
+        }
+
+        // ⑤ Fullscreen: a ROOT-level overlay (a direct body child, not
+        // inside the transcript) that Esc closes.
+        await js(
+          `(() => {
+            const btn = document.querySelector('.md-diagram-card button[aria-label="Open diagram fullscreen"]')
+            if (!(btn instanceof HTMLElement)) return false
+            btn.click()
+            return true
+          })()`
+        )
+        sig = (await waitForProbe(
+          win,
+          `(() => {
+            const overlay = document.querySelector('body > .md-diagram-fs')
+            return overlay !== null && overlay.getAttribute('role') === 'dialog' &&
+              overlay.querySelectorAll('.md-diagram-canvas svg').length === 1
+          })()`,
+          3_000
+        )) as boolean
+        if (!sig) fail('ticket-59 stage: fullscreen never opened as a root-level overlay')
+        log('mermaid_fullscreen_open_ok')
+        await js(`(() => { document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); return true })()`)
+        sig = (await waitForProbe(win, `document.querySelector('body > .md-diagram-fs') === null`, 3_000)) as boolean
+        if (!sig) fail('ticket-59 stage: Escape did not close the fullscreen overlay')
+        log('mermaid_fullscreen_esc_ok')
+      })
+    }
+    log('mermaid_diagram_done')
+
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
     const livePids = supervisor.hostPids
     if (livePids.length < 2) fail(`expected at least 2 live hosts before quit, saw ${livePids.length}`)

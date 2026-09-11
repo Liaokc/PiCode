@@ -34,6 +34,7 @@ import { startTraceVisualIfEnabled, isolateTraceUserData } from './visual-trace'
 import { startFoldVisualIfEnabled, isolateFoldUserData } from './visual-fold'
 import { startCodeblockVisualIfEnabled, isolateCodeblockUserData } from './visual-codeblock'
 import { startAnswerVisualIfEnabled, isolateAnswerUserData } from './visual-answer'
+import { startMermaidVisualIfEnabled, isolateMermaidUserData } from './visual-mermaid'
 import { startWorkedVisualIfEnabled, isolateWorkedUserData } from './visual-worked-container'
 import { startChronologyVisualIfEnabled, isolateChronologyUserData } from './visual-chronology'
 import { startExpandVisualIfEnabled, isolateExpandUserData } from './visual-expand'
@@ -89,6 +90,9 @@ isolateCodeblockUserData()
 // Ticket-53 answer-split harness — same throwaway-userData rule (no-op
 // unless PICODE_VISUAL_ANSWER=1).
 isolateAnswerUserData()
+// Ticket-59 mermaid diagram-card harness — same throwaway-userData rule
+// (no-op unless PICODE_VISUAL_MERMAID=1).
+isolateMermaidUserData()
 
 // Ticket-55 worked-container harness — same throwaway-userData rule (no-op
 // unless PICODE_VISUAL_WORKED=1).
@@ -248,6 +252,8 @@ app.whenReady().then(() => {
   startTreeVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-50 codeblock-label harness — contract-stream injection, no store writes.
   startCodeblockVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  // Ticket-59 mermaid diagram-card harness — live contract-stream injection.
+  startMermaidVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-53 answer-split harness — settled-replay injection, same pattern.
   startAnswerVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-55 worked-container harness — settled-replay + live injection.

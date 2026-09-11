@@ -118,3 +118,78 @@ function headerWidth(rows: HastLike[], cellsOf: (row: HastLike) => string[]): nu
   for (const row of rows) width = Math.max(width, cellsOf(row).length)
   return width
 }
+
+// ---- fence card kind (ticket 59: mermaid diagram cards) ----
+// The fenced block's card kind is a pure projection over three facts: the
+// fence language, whether the fence is CLOSED in the current text (a
+// streaming fence is still open — mermaid needs the full text before it can
+// parse), and the async parse verdict. Only the closed + parse-ok mermaid
+// fence renders as a diagram card; every other shape keeps the plain source
+// card (lang chip unchanged, no error toast).
+
+/** Card kind of a fenced block: rendered diagram vs plain source code. */
+export type FenceCardKind = 'diagram' | 'source'
+
+/** Mermaid parse verdict: `null` while not yet attempted (streaming or the
+ * parse round-trip is still in flight). */
+export type MermaidParseVerdict = boolean | null
+
+/** Whether the fence's language tag is mermaid (trimmed, case-insensitive —
+ * info strings arrive as typed, and every case routes to the same family). */
+export function isMermaidLanguage(lang: string | null): boolean {
+  return lang?.trim().toLowerCase() === 'mermaid'
+}
+
+/** Escapes a string for literal use inside a RegExp. */
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * Whether the fenced code block that opens at `startOffset` in `text` is
+ * closed — i.e. the text already carries a legal closing fence after the
+ * opening line. During streaming the closing fence has not arrived yet, so
+ * this is the closed-vs-streaming projection the diagram-card gate consumes.
+ *
+ * CommonMark rules, enough of them for fences: the closing marker repeats
+ * the opening character (backticks vs tildes never cross) and is at least as
+ * long; up to three leading spaces are allowed on fence lines; the first
+ * closing marker wins (fence content is literal). The `pre` element's hast
+ * position starts exactly at the opening marker.
+ *
+ * Degrades to `false` (the safe source-card answer) without position data or
+ * for an out-of-range offset; a non-fence offset reads as closed (no
+ * streaming ambiguity).
+ */
+export function isFenceClosed(text: string, startOffset: number | undefined): boolean {
+  if (startOffset === undefined || startOffset < 0 || startOffset >= text.length) return false
+  const rest = text.slice(startOffset)
+  const opening = /^[ \t]{0,3}(`{3,}|~{3,})/.exec(rest)
+  if (opening === null) return true
+  const marker = opening[1] ?? '```'
+  const closing = new RegExp(`^[ \\t]{0,3}${escapeRegExp(marker[0] ?? '`')}{${marker.length},}[ \\t]*$`, 'm')
+  // Skip the opening line itself, then the first legal closing marker wins.
+  const afterOpening = rest.slice(rest.indexOf('\n') + 1)
+  return closing.test(afterOpening)
+}
+
+/** The three facts the fence-card projection consumes. */
+export interface FenceKindInput {
+  /** The fence's language tag (`null` when untagged). */
+  lang: string | null
+  /** Whether the fence is closed in the current text (see `isFenceClosed`). */
+  closed: boolean
+  /** The async parse verdict (`null` while pending — never trusted when open). */
+  parseOk: MermaidParseVerdict
+}
+
+/**
+ * The fenced block's card kind (ticket 59, the ZCode-evidenced projection):
+ * exactly a closed, mermaid-tagged fence with a successful parse renders as
+ * a diagram card. Streaming (unclosed) fences and parse failures keep the
+ * plain source card — the lang chip renders as usual and no error toast
+ * pops (operator ruling Q7).
+ */
+export function fenceCardKind(input: FenceKindInput): FenceCardKind {
+  return isMermaidLanguage(input.lang) && input.closed && input.parseOk === true ? 'diagram' : 'source'
+}

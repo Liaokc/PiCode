@@ -4127,6 +4127,148 @@ button.heat:hover {
   padding: 0 20px 20px;
 }
 
+/* ---------- diagram cards (ticket 59: mermaid fences) ----------
+   ZCode baseline: a closed, parse-ok mermaid fence renders as a card with
+   the same lowercase mono language chip and a sticky top-right action group
+   (download SVG/PNG/MMD menu, copy source, fullscreen); the body is a
+   pan/zoom viewport over the rendered SVG; fullscreen is a root-level
+   overlay (Esc exits). Theme: the mermaid library default (light) — the
+   dark theme is an app-wide topic, out of scope. */
+
+.md-diagram-card {
+  position: relative;
+  margin: 0 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-card);
+}
+
+.md .md-diagram-card {
+  margin: 0 0 16px;
+}
+
+/* Sticky head: with a tall diagram the action group stays reachable while
+   the card scrolls past the top of the transcript viewport. */
+.md-diagram-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 8px 8px 14px;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  border-radius: 12px 12px 0 0;
+}
+
+.md-diagram-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.md-diagram-download {
+  position: relative;
+  display: inline-flex;
+}
+
+.md-diagram-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 10;
+  min-width: 158px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 36px rgba(30, 30, 25, 0.14);
+}
+
+.md-diagram-menu-item {
+  padding: 6px 10px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  text-align: left;
+  color: var(--text-primary);
+}
+
+.md-diagram-menu-item:hover {
+  background: var(--bg-hover);
+}
+
+.md-diagram-menu-item:focus-visible {
+  outline: 1.5px solid var(--accent-orange);
+  outline-offset: -1.5px;
+}
+
+.md-diagram-viewport {
+  position: relative;
+  overflow: hidden;
+  border-radius: 0 0 12px 12px;
+  height: clamp(220px, 40vh, 480px);
+  cursor: grab;
+  touch-action: none;
+}
+
+.md-diagram-viewport:active {
+  cursor: grabbing;
+}
+
+.md-diagram-canvas {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 100%;
+  padding: 14px;
+  box-sizing: border-box;
+  transform-origin: center center;
+  will-change: transform;
+}
+
+.md-diagram-canvas svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.md-diagram-zoom {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+}
+
+/* Root-level fullscreen overlay (ticket 59): fixed inset-0, own stacking
+   context — the menu z-values inside are local to it. */
+.md-diagram-fs {
+  position: fixed;
+  inset: 0;
+  z-index: 85;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-main);
+}
+
+.md-diagram-fs .md-diagram-head {
+  border-radius: 0;
+}
+
+.md-diagram-fs .md-diagram-viewport {
+  flex: 1;
+  height: auto;
+  border-radius: 0;
+}
+
 /* highlight.js tokens — light github-like palette calibrated to the app */
 .hljs-comment,
 .hljs-quote {

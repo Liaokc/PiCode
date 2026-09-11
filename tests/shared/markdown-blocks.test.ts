@@ -4,7 +4,10 @@ import {
   codeLanguage,
   codeLanguageFromClassName,
   codeLanguageLabel,
+  fenceCardKind,
   hastText,
+  isFenceClosed,
+  isMermaidLanguage,
   tableToMarkdown,
   type HastLike
 } from '../../src/shared/markdown-blocks'
@@ -143,5 +146,162 @@ describe('tableToMarkdown', () => {
     expect(tableToMarkdown(undefined)).toBe('')
     expect(tableToMarkdown(element('div'))).toBe('')
     expect(tableToMarkdown(element('table'))).toBe('')
+  })
+})
+
+describe('isMermaidLanguage (ticket 59: fence lang gate)', () => {
+  const TABLE: Array<{ given: string | null; mermaid: boolean; why: string }> = [
+    { given: 'mermaid', mermaid: true, why: 'the exact tag routes to the diagram machinery' },
+    { given: '  mermaid  ', mermaid: true, why: 'whitespace around the info token trims away' },
+    { given: 'MERMAID', mermaid: true, why: 'info tokens are case-insensitive in practice' },
+    { given: 'mermaidx', mermaid: false, why: 'a superstring is not the tag' },
+    { given: 'typescript', mermaid: false, why: 'every other language keeps the plain code card' },
+    { given: 'text', mermaid: false, why: 'the untagged fallback label is not mermaid' },
+    { given: null, mermaid: false, why: 'a missing tag is not mermaid' }
+  ]
+
+  it('accepts only the mermaid tag (trimmed, case-insensitive)', () => {
+    for (const row of TABLE) {
+      expect(isMermaidLanguage(row.given), row.why).toBe(row.mermaid)
+    }
+  })
+})
+
+describe('isFenceClosed (ticket 59: streaming-vs-closed projection)', () => {
+  const TABLE: Array<{ given: string; offset: number | undefined; closed: boolean; why: string }> = [
+    {
+      given: '```mermaid\nflowchart TD\n  A --> B\n```\n\ndone.',
+      offset: 0,
+      closed: true,
+      why: 'a fence closed mid-document is closed'
+    },
+    {
+      given: '```mermaid\nflowchart TD\n  A --> B\n```',
+      offset: 0,
+      closed: true,
+      why: 'a fence closed at EOF is closed (no trailing newline needed)'
+    },
+    {
+      given: '```mermaid\nflowchart TD\n  A --> B',
+      offset: 0,
+      closed: false,
+      why: 'EOF inside the fence = the streaming shape — open'
+    },
+    {
+      given: '```mermaid\nflowchart TD\n  A --> B\n``',
+      offset: 0,
+      closed: false,
+      why: 'a partially-streamed closing marker does not close (needs the full marker)'
+    },
+    {
+      given: '```mermaid\nflowchart TD\n  A --> B\n```\n```mermaid\n  C --> D',
+      offset: 0,
+      closed: true,
+      why: 'the FIRST closing fence closes; later content (even a new open fence) is irrelevant'
+    },
+    {
+      given: '~~~mermaid\nflowchart TD\n~~~',
+      offset: 0,
+      closed: true,
+      why: 'tilde fences close on their own marker'
+    },
+    {
+      given: '~~~mermaid\nflowchart TD\n```',
+      offset: 0,
+      closed: false,
+      why: 'backticks do not close a tilde fence'
+    },
+    {
+      given: '````mermaid\nflowchart TD\n```\n````',
+      offset: 0,
+      closed: true,
+      why: 'a 4-backtick fence closes on 4+ backticks (3 inside are content)'
+    },
+    {
+      given: '   ```mermaid\nflowchart TD\n   ```',
+      offset: 0,
+      closed: true,
+      why: 'indented (≤3 spaces) fences close like bare ones'
+    },
+    {
+      given: '```mermaid title=x\nflowchart TD\n```',
+      offset: 0,
+      closed: true,
+      why: 'an info string with extra tokens still reads as one fence'
+    },
+    {
+      given: 'not a fence at all',
+      offset: 0,
+      closed: true,
+      why: 'a non-fence offset has no streaming ambiguity — closed'
+    },
+    {
+      given: '```mermaid\nflowchart TD\n```',
+      offset: undefined,
+      closed: false,
+      why: 'no position data degrades to the safe (source-card) answer'
+    },
+    {
+      given: '```mermaid\nflowchart TD\n```',
+      offset: 999,
+      closed: false,
+      why: 'an out-of-range offset degrades to the safe answer too'
+    }
+  ]
+
+  it('projects the closed/streaming state of the fence opening at the offset', () => {
+    for (const row of TABLE) {
+      expect(isFenceClosed(row.given, row.offset), row.why).toBe(row.closed)
+    }
+  })
+})
+
+describe('fenceCardKind decision table (Seam-1: ticket 59 diagram vs source)', () => {
+  const TABLE: Array<{
+    given: { lang: string | null; closed: boolean; parseOk: boolean | null }
+    kind: 'diagram' | 'source'
+    why: string
+  }> = [
+    {
+      given: { lang: 'mermaid', closed: true, parseOk: true },
+      kind: 'diagram',
+      why: 'closed + parse success → the diagram card'
+    },
+    {
+      given: { lang: 'mermaid', closed: true, parseOk: false },
+      kind: 'source',
+      why: 'parse failure falls back to the source card (lang chip unchanged, no toast)'
+    },
+    {
+      given: { lang: 'mermaid', closed: true, parseOk: null },
+      kind: 'source',
+      why: 'parse still in flight → source card until the verdict lands'
+    },
+    {
+      given: { lang: 'mermaid', closed: false, parseOk: null },
+      kind: 'source',
+      why: 'streaming (unclosed) fences show source — mermaid needs the full text'
+    },
+    {
+      given: { lang: 'mermaid', closed: false, parseOk: true },
+      kind: 'source',
+      why: 'defensive: a parse verdict is never trusted while the fence is open'
+    },
+    {
+      given: { lang: 'typescript', closed: true, parseOk: true },
+      kind: 'source',
+      why: 'non-mermaid fences never become diagrams'
+    },
+    {
+      given: { lang: null, closed: true, parseOk: true },
+      kind: 'source',
+      why: 'untagged fences never become diagrams'
+    }
+  ]
+
+  it('routes exactly the closed + parse-ok mermaid fence to the diagram card', () => {
+    for (const row of TABLE) {
+      expect(fenceCardKind(row.given), row.why).toBe(row.kind)
+    }
   })
 })
