@@ -35,6 +35,7 @@ import { startFoldVisualIfEnabled, isolateFoldUserData } from './visual-fold'
 import { startCodeblockVisualIfEnabled, isolateCodeblockUserData } from './visual-codeblock'
 import { startAnswerVisualIfEnabled, isolateAnswerUserData } from './visual-answer'
 import { startWorkedVisualIfEnabled, isolateWorkedUserData } from './visual-worked-container'
+import { startChronologyVisualIfEnabled, isolateChronologyUserData } from './visual-chronology'
 import { startExpandVisualIfEnabled, isolateExpandUserData } from './visual-expand'
 import { startTreeVisualIfEnabled, isolateTreeUserData } from './visual-tree'
 import { startApprovalVisualIfEnabled } from './visual-approval'
@@ -92,6 +93,10 @@ isolateAnswerUserData()
 // Ticket-55 worked-container harness — same throwaway-userData rule (no-op
 // unless PICODE_VISUAL_WORKED=1).
 isolateWorkedUserData()
+
+// Ticket-56 turn-chronology harness — same throwaway-userData rule (no-op
+// unless PICODE_VISUAL_CHRONOLOGY=1).
+isolateChronologyUserData()
 
 // Ticket-13 hygiene, extended by ticket 31: the smoke drives the REAL
 // settings service too (panel recently closed round-trip), so it gets the
@@ -247,6 +252,8 @@ app.whenReady().then(() => {
   startAnswerVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-55 worked-container harness — settled-replay + live injection.
   startWorkedVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  // Ticket-56 turn-chronology harness — live turn past the approval gate.
+  startChronologyVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
 
   // Renderer → host relay (Seam-1: the only chat channel the renderer has).
   ipcMain.on('chat:to-host', (_event, message: ParentToHost) => {

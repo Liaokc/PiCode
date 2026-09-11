@@ -25,8 +25,11 @@ interface TurnWorkRowsProps {
 /**
  * The work rows of a turn in transcript order — thinking, interim narration,
  * tool cards, approval pills. Shared by the fold container body and the
- * always-visible after-answer segment (ticket 53) so both render the same
- * row shapes with the same handlers.
+ * always-visible after-answer segment (tickets 53/56 — the segment carries
+ * every row kind since ticket 56) so both render the same row shapes with
+ * the same handlers. Post-answer thinking renders as the same collapsed
+ * ThinkingRow the fold uses; a pending pill in the segment shows the same
+ * controls a fold pill always had.
  */
 export function TurnWorkRows({ items, onOpenFile, onShowInBridge, onApprove, onDeny }: TurnWorkRowsProps): JSX.Element {
   return (
@@ -72,8 +75,8 @@ interface TurnContainerProps {
  * revised by ticket 55): one "Working · Ns" row per turn; opening it reveals
  * that turn's skill marker, thinking rows, interim narration (ticket 53) and
  * tool cards. The answer — the turn's LAST text block (ticket 53) — renders
- * outside; tools that ran after the answer render below it, outside the fold
- * too.
+ * outside; every row that ran after the answer joins the always-visible
+ * after-answer segment below it, outside the fold too (ticket 56).
  *
  * Ticket 55: EVERY turn with a user bubble owns this row — live
  * "Working · Ns" from the silent period (before the first work item) on,
