@@ -1,19 +1,26 @@
-import { createContext, memo, useCallback, useContext, useEffect, useRef, useState, type Context, type Dispatch, type JSX, type ReactNode, type RefObject, type SetStateAction } from 'react'
+import { createContext, memo, useCallback, useContext, useEffect, useRef, useState, type CSSProperties, type Context, type Dispatch, type JSX, type ReactNode, type RefObject, type SetStateAction } from 'react'
 import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import rehypeHighlight from 'rehype-highlight'
 import Tooltip from './Tooltip'
 import DiagramCard from './DiagramCard'
-import { CheckIcon, CloseIcon, CodeIcon, CopyIcon, ExpandArrowsIcon, EyeIcon, WrapTextIcon } from './icons'
+import { downloadBlob } from './download'
+import { CheckIcon, CloseIcon, CodeIcon, CopyIcon, DownloadIcon, ExpandArrowsIcon, EyeIcon, WrapTextIcon } from './icons'
 import {
   blockKey,
+  codeBody,
+  codeFileName,
   codeLanguage,
   codeLanguageLabel,
+  codeLineNumbers,
   fenceCardKind,
+  fenceMetaOfNode,
   hastText,
   isFenceClosed,
   isMermaidLanguage,
+  tableToCsv,
   tableToMarkdown,
+  tableToTsv,
   type MermaidParseVerdict
 } from '../../../shared/markdown-blocks'
 
@@ -26,7 +33,10 @@ import {
  * Block chrome (ticket 16): fenced code blocks render as cards (language
  * label — always present, untagged fences show 'text' per ticket 50 — plus
  * wrap toggle + copy) and tables as containers with copy / preview /
- * expand controls above them, matching the ZCode baseline. The overrides are
+ * expand controls above them, matching the ZCode baseline. Ticket 60
+ * completes the ZCode-evidenced family: code cards gain always-on line
+ * numbers (`noLineNumbers` meta off-switch, `startLine=N` count shift) and
+ * a download button; tables gain copy-as-CSV/TSV. The overrides are
  * module-scope so streaming deltas never change component identity, and all
  * per-block button state (copied ✓, wrapped, expanded) is lifted into a
  * context keyed by the block's start position — a re-parse that remounts a
@@ -64,6 +74,20 @@ function useBlockUi(): BlockUiState {
   const ui = useContext(BlockUiContext)
   if (ui === null) throw new Error('block chrome used outside Markdown')
   return ui
+}
+
+/**
+ * Clipboard write + the block's ✓ feedback — the one copy shape every
+ * copy-family button shares (code card, table markdown, table CSV/TSV).
+ * A clipboard failure leaves the card as-is (no error surface, ticket 16).
+ */
+async function copyWithFeedback(ui: BlockUiState, stateKey: string | null, text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text)
+    if (stateKey !== null) ui.markCopied(stateKey)
+  } catch {
+    // Clipboard unavailable — leave the card as-is.
+  }
 }
 
 /** Per-Markdown-instance block-state store (survives child remounts). */
@@ -169,25 +193,51 @@ function FenceCard(props: PreProps): JSX.Element {
   return <CodeBlockCard {...props} />
 }
 
-/** Header row of a code card: language label left, wrap + copy right. */
-function CodeBlockCard({ node, children }: PreProps): JSX.Element {
+/**
+ * Header row of a code card: language label left, wrap + download + copy
+ * right.
+ *
+ * Ticket 60 (ZCode evidence): line numbers are ON by default — `noLineNumbers`
+ * in the fence meta turns the gutter off, `startLine=N` shifts the count —
+ * and a download button sits beside copy, deriving the file extension from
+ * the fence language. Every visual-density change here is operator-approved.
+ *
+ * The highlighted body is rebuilt from the hast per logical line
+ * (`codeBody`) so each line carries its number in-flow: numbers stay glued
+ * to their line while wrapping, selection skips them (user-select: none)
+ * and the copy payload stays the raw source.
+ */
+function CodeBlockCard({ node }: PreProps): JSX.Element {
   const ui = useBlockUi()
   const key = blockKey(node)
   // Ticket 50: untagged fences fall back to a 'text' label (ZCode same-shape
-  // `language?.trim() || 'text'`) — the chip is always rendered. The rest of
-  // the chrome (wrap/copy) is untouched and no file icon is added.
+  // `language?.trim() || 'text'`) — the chip is always rendered. No file icon
+  // is added to the chip (Q8 minimal alignment stands).
   const language = codeLanguageLabel(node)
   const copied = key !== null && ui.copied.has(key)
   const wrapped = key !== null && ui.wrapped.has(key)
+  const body = codeBody(node)
+  const numbers = codeLineNumbers(fenceMetaOfNode(node), body.lines.length)
+  // One gutter width per card (the largest number's digits, min 2) keeps the
+  // code column flush across lines.
+  const gutterWidth =
+    numbers !== null && numbers.length > 0 ? String(numbers[numbers.length - 1] ?? '').length : 2
+  const preClass = [
+    'md-code-pre',
+    numbers !== null ? 'md-code-pre-numbered' : '',
+    wrapped ? 'md-code-pre-wrapped' : ''
+  ]
+    .filter(Boolean)
+    .join(' ')
 
   async function copy(): Promise<void> {
     if (node === undefined) return
-    try {
-      await navigator.clipboard.writeText(hastText(node))
-      if (key !== null) ui.markCopied(key)
-    } catch {
-      // Clipboard unavailable — leave the card as-is.
-    }
+    await copyWithFeedback(ui, key, hastText(node))
+  }
+
+  function download(): void {
+    if (node === undefined) return
+    downloadBlob(new Blob([hastText(node)], { type: 'text/plain;charset=utf-8' }), codeFileName(codeLanguage(node)))
   }
 
   return (
@@ -212,6 +262,11 @@ function CodeBlockCard({ node, children }: PreProps): JSX.Element {
               <WrapTextIcon size={13} />
             </button>
           </Tooltip>
+          <Tooltip label="Download">
+            <button type="button" className="md-block-btn" aria-label="Download code" onClick={download}>
+              <DownloadIcon size={13} />
+            </button>
+          </Tooltip>
           <Tooltip label="Copy">
             <button
               type="button"
@@ -224,7 +279,30 @@ function CodeBlockCard({ node, children }: PreProps): JSX.Element {
           </Tooltip>
         </span>
       </div>
-      <pre className={wrapped ? 'md-code-pre md-code-pre-wrapped' : 'md-code-pre'}>{children}</pre>
+      <pre className={preClass} style={numbers !== null ? ({ '--md-lineno-w': `${Math.max(2, gutterWidth)}ch` } as CSSProperties) : undefined}>
+        <code className={body.className}>
+          {body.lines.map((tokens, line) => (
+            <span className="md-code-line" key={line}>
+              {numbers !== null && (
+                <span aria-hidden className="md-code-lineno">
+                  {numbers[line]}
+                </span>
+              )}
+              {tokens.length === 0
+                ? '\u200b'
+                : tokens.map((token, i) =>
+                    token.className === null ? (
+                      token.text
+                    ) : (
+                      <span className={token.className} key={i}>
+                        {token.text}
+                      </span>
+                    )
+                  )}
+            </span>
+          ))}
+        </code>
+      </pre>
     </div>
   )
 }
@@ -233,12 +311,19 @@ interface TableProps extends ExtraProps {
   children?: ReactNode
 }
 
-/** Table container: always-visible copy / preview / expand controls above the card. */
+/**
+ * Table container: always-visible copy family / preview / expand controls
+ * above the card. Ticket 60 completes the ZCode copyTable family — copy
+ * (markdown), copy as CSV, copy as TSV — with preview and expand untouched
+ * (zero regression); each copy button reports its own ✓.
+ */
 function TableCard({ node, children }: TableProps): JSX.Element {
   const ui = useBlockUi()
   const key = blockKey(node)
   const [previewing, setPreviewing] = useState(false)
   const copied = key !== null && ui.copied.has(key)
+  const copiedCsv = key !== null && ui.copied.has(`${key}:csv`)
+  const copiedTsv = key !== null && ui.copied.has(`${key}:tsv`)
   const expanded = key !== null && ui.expanded.has(key)
 
   // Escape closes the preview from anywhere (the backdrop never holds focus).
@@ -252,12 +337,14 @@ function TableCard({ node, children }: TableProps): JSX.Element {
   }, [previewing])
 
   async function copy(): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(tableToMarkdown(node))
-      if (key !== null) ui.markCopied(key)
-    } catch {
-      // Clipboard unavailable — leave the card as-is.
-    }
+    await copyWithFeedback(ui, key, tableToMarkdown(node))
+  }
+
+  // The three copy-family buttons report their ✓ independently: the
+  // delimited formats key on a composite (`<block>:csv|tsv`) — the plain
+  // key space (line:column, numeric) can never collide with it.
+  async function copyDelimited(format: 'csv' | 'tsv'): Promise<void> {
+    await copyWithFeedback(ui, key === null ? null : `${key}:${format}`, format === 'csv' ? tableToCsv(node) : tableToTsv(node))
   }
 
   return (
@@ -266,6 +353,26 @@ function TableCard({ node, children }: TableProps): JSX.Element {
         <Tooltip label="Copy">
           <button type="button" className="md-block-btn" aria-label="Copy table" onClick={() => void copy()}>
             {copied ? <CheckIcon size={13} className="md-copy-copied" /> : <CopyIcon size={13} />}
+          </button>
+        </Tooltip>
+        <Tooltip label="Copy as CSV">
+          <button
+            type="button"
+            className="md-block-btn md-block-btn-text"
+            aria-label="Copy table as CSV"
+            onClick={() => void copyDelimited('csv')}
+          >
+            {copiedCsv ? <CheckIcon size={13} className="md-copy-copied" /> : 'CSV'}
+          </button>
+        </Tooltip>
+        <Tooltip label="Copy as TSV">
+          <button
+            type="button"
+            className="md-block-btn md-block-btn-text"
+            aria-label="Copy table as TSV"
+            onClick={() => void copyDelimited('tsv')}
+          >
+            {copiedTsv ? <CheckIcon size={13} className="md-copy-copied" /> : 'TSV'}
           </button>
         </Tooltip>
         <Tooltip label={previewing ? 'Close table preview' : 'Preview table'}>

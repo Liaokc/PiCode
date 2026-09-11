@@ -4044,6 +4044,52 @@ button.heat:hover {
   overflow-x: hidden;
 }
 
+/* ---- ticket 60: code-card line numbers (default on) ----
+   ZCode baseline: the gutter is part of the card — every logical line is a
+   block carrying its number in-flow, so numbers stay glued to their line
+   under the wrap toggle and mouse selection skips them. The hanging indent
+   (padding-left + negative text-indent) keeps wrapped continuation lines
+   inside the code column, never under the numbers. --md-lineno-w is set per
+   card from the largest number's digit count so the code column stays
+   flush. noLineNumbers (fence meta) drops the class: no gutter, plain
+   blocks, identical text flow. */
+.md .md-code-card pre code {
+  display: block;
+}
+
+.md-code-line {
+  display: block;
+}
+
+.md-code-pre-numbered {
+  --md-lineno-gap: 1.25ch;
+}
+
+.md-code-pre-numbered .md-code-line {
+  padding-left: calc(var(--md-lineno-w, 2ch) + var(--md-lineno-gap));
+  text-indent: calc(-1 * (var(--md-lineno-w, 2ch) + var(--md-lineno-gap)));
+}
+
+.md-code-lineno {
+  display: inline-block;
+  min-width: var(--md-lineno-w, 2ch);
+  margin-right: var(--md-lineno-gap);
+  text-align: right;
+  color: var(--text-faint);
+  user-select: none;
+}
+
+/* ticket 60: the copyTable family's CSV/TSV entries — same small button
+   shape, but a tiny text chip instead of an icon (the format is the label). */
+.md-block-btn-text {
+  width: auto;
+  padding: 0 7px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
 .md-table-wrap {
   margin: 0 0 12px;
 }

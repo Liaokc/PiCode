@@ -37,6 +37,7 @@
     "visual:codeblock": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_CODEBLOCK=1 electron .",
     "visual:answer": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_ANSWER=1 electron .",
     "visual:mermaid": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_MERMAID=1 electron .",
+    "visual:codecard": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_CODECARD=1 electron .",
     "visual:worked": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_WORKED=1 electron .",
     "visual:chronology": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_CHRONOLOGY=1 electron .",
     "visual:thinking": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_THINKING=1 electron .",

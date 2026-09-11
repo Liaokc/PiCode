@@ -12,9 +12,10 @@
  *      `.scratch/compare/pi14-untagged-codeblocks.png`.
  *   2. Tagged fences keep their exact language ('typescript', 'json') —
  *      zero regression.
- *   3. The card chrome is untouched: every card still carries exactly the
- *      wrap + copy controls, and each label chip holds only the existing
- *      code glyph — no file icon added (Q8 minimal alignment).
+ *   3. The card chrome: every card carries exactly the wrap + download +
+ *      copy controls (ticket 60 added download beside copy; the operator
+ *      approved the density change), and each label chip holds only the
+ *      existing code glyph — no file icon added (Q8 minimal alignment).
  *
  * Seeding: the transcript is injected through the contract stream (one live
  * turn, one text part with four fenced blocks: two tagged, two bare). An
@@ -156,7 +157,9 @@ export function startCodeblockVisualIfEnabled(getWindow: () => BrowserWindow | n
         problems.push(`labels ${JSON.stringify(sig.labels)} !== ${JSON.stringify(EXPECTED_LABELS)}`)
       }
       for (const [i, buttons] of sig.buttons.entries()) {
-        if (buttons !== 2) problems.push(`card ${i}: ${buttons} chrome buttons (expected wrap + copy = 2)`)
+        // ticket 60: wrap + download + copy = 3 (was 2 before the download
+        // button joined the chrome).
+        if (buttons !== 3) problems.push(`card ${i}: ${buttons} chrome buttons (expected wrap + download + copy = 3)`)
       }
       for (const [i, glyphs] of sig.iconGlyphs.entries()) {
         if (glyphs !== 1) problems.push(`card ${i}: ${glyphs} icon glyphs in the label (expected exactly the code glyph)`)

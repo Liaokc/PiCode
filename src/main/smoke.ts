@@ -4358,6 +4358,260 @@ export function startSmokeIfEnabled(
     }
     log('mermaid_diagram_done')
 
+    // ---- ticket 60: code-card line numbers + download, table CSV/TSV. A
+    // settled structured replay (the ticket-59 precedent: contract-stream
+    // injection, no model call) seeded with three code fences — a plain
+    // typescript fence (the default-on gutter), a `js startLine=41` slice
+    // (the shifted count) and a `text noLineNumbers` block (the gutter off
+    // switch) — plus a GFM table for the completed copyTable family.
+    // Assertions: the per-card gutter projection (values included), the
+    // download button on every code card + a REAL download through
+    // will-download carrying the language-derived filename, the copy family
+    // payloads through the real pasteboard (markdown zero-regression + CSV
+    // + TSV), and preview/expand still working. ----
+    log('codecard_table_start')
+    {
+      const TS_CODE = [
+        'export function parseRegistration(body: unknown): Registration {',
+        '  const { email, password } = RegistrationSchema.parse(body)',
+        '  return { email: email.trim().toLowerCase(), password: assertStrongPassword(password) }',
+        '}'
+      ].join('\n')
+      const JS_CODE = ['const gate = (n) => n > 3', 'const done = gate(4)', 'console.log(done)'].join('\n')
+      const PLAIN_CODE = ['2026-09-10 09:00 boot', '2026-09-10 09:01 ready'].join('\n')
+      const TABLE_MD = ['| Name | Note |', '| --- | --- |', '| pi, code | say "hi" |', '| plain | two words |'].join('\n')
+      const ANSWER_TEXT = [
+        'The registrar:\n\n```typescript\n' + TS_CODE + '\n```\n\n',
+        'A file slice keeps its true numbering:\n\n```js startLine=41\n' + JS_CODE + '\n```\n\n',
+        'A model-intended minimal block:\n\n```text noLineNumbers\n' + PLAIN_CODE + '\n```\n\n',
+        'And the table:\n\n' + TABLE_MD + '\n'
+      ].join('')
+      // The exact copy-family payloads (rawCellText flattening + RFC 4180
+      // quoting; a quote-bearing field quotes in TSV too).
+      const EXPECT_MD = ['| Name | Note |', '| --- | --- |', '| pi, code | say "hi" |', '| plain | two words |'].join('\n')
+      const EXPECT_CSV = ['Name,Note', '"pi, code","say ""hi"""', 'plain,two words'].join('\n')
+      const EXPECT_TSV = ['Name\tNote', 'pi, code\t"say ""hi"""', 'plain\ttwo words'].join('\n')
+
+      emitContractEvent({
+        type: 'session_created',
+        sessionId: 'smoke-codecard',
+        cwd,
+        model: 'claude-opus-4-5',
+        resumed: true
+      })
+      emitContractEvent({
+        type: 'history_loaded',
+        items: [
+          { role: 'user', id: 'cc-u1', text: 'Show the registrar code and the table.', timestamp: 't1', skillName: null },
+          {
+            role: 'assistant',
+            id: 'cc-a1',
+            timestamp: 't2',
+            text: ANSWER_TEXT,
+            parts: [{ kind: 'text', text: ANSWER_TEXT }]
+          }
+        ]
+      })
+      await withWindow(getWindow, async (win) => {
+        const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+
+        // ① The gutter projection per card, in stream order: default-on
+        // numbers 1..4, the startLine=41 shift, and the noLineNumbers card
+        // with NO gutter at all. Every code card carries the download
+        // button beside copy.
+        const gutterSig = `(() => ({
+          cards: [...document.querySelectorAll('.msg-assistant .md-code-card')].map((card) => ({
+            linenos: [...card.querySelectorAll('.md-code-lineno')].map((el) => el.textContent ?? ''),
+            numbered: card.querySelector('pre')?.classList.contains('md-code-pre-numbered') ?? false,
+            download: card.querySelectorAll('button[aria-label="Download code"]').length,
+            copy: card.querySelectorAll('button[aria-label="Copy code"]').length,
+            wrap: card.querySelectorAll('button[aria-label="Wrap lines"]').length
+          }))
+        }))()`
+        let sig = (await waitForProbe(
+          win,
+          `(() => { const s = ${gutterSig};
+             return s.cards.length === 3 &&
+               JSON.stringify(s.cards[0].linenos) === JSON.stringify(['1','2','3','4']) && s.cards[0].numbered &&
+               JSON.stringify(s.cards[1].linenos) === JSON.stringify(['41','42','43']) && s.cards[1].numbered &&
+               s.cards[2].linenos.length === 0 && !s.cards[2].numbered &&
+               s.cards.every((c) => c.download === 1 && c.copy === 1 && c.wrap === 1) })()`,
+          10_000
+        )) as boolean
+        if (!sig) {
+          const diag = (await js(gutterSig).catch(() => 'unavailable')) as string
+          fail(`ticket-60 stage: the line-number gutter projection is wrong; DOM: ${diag}`)
+        }
+        log('codecard_linenos_ok')
+
+        // ② The table tools row: the completed copyTable family — the
+        // markdown copy / preview / expand trio zero-regressed, CSV + TSV
+        // added.
+        const toolsSig = `(() => ({
+          count: document.querySelectorAll('.msg-assistant .md-table-tools button').length,
+          labels: [...document.querySelectorAll('.msg-assistant .md-table-tools button')].map((b) => b.getAttribute('aria-label'))
+        }))()`
+        sig = (await waitForProbe(
+          win,
+          `(() => { const s = ${toolsSig};
+             return s.count === 5 &&
+               JSON.stringify(s.labels) === JSON.stringify(['Copy table', 'Copy table as CSV', 'Copy table as TSV', 'Preview table', 'Expand table']) })()`,
+          10_000
+        )) as boolean
+        if (!sig) {
+          const diag = (await js(toolsSig).catch(() => 'unavailable')) as string
+          fail(`ticket-60 stage: the table tools row is wrong; DOM: ${diag}`)
+        }
+        log('table_tools_row_ok')
+
+        // ③ The copy family through the REAL pasteboard: focus for real
+        // (the navigator.clipboard rejects while unfocused — ticket-44
+        // dance), then per format: park a sentinel, click, poll for the
+        // exact payload.
+        win.show()
+        win.focus()
+        app.focus({ steal: true })
+        let focused = false
+        for (let waited = 0; waited < 10_000 && !focused; waited += 100) {
+          focused = (await js('document.hasFocus()')) === true
+          if (!focused) {
+            if (!win.isFocused()) app.focus({ steal: true })
+            await new Promise((r) => setTimeout(r, 100))
+          }
+        }
+        if (!focused) fail('ticket-60 stage: the window never took focus for the real-clipboard clicks')
+        const previous = await clipboard.readText()
+        try {
+          const clickCopy = async (ariaLabel: string): Promise<void> => {
+            const clicked = (await js(
+              `(() => {
+                 const btn = [...document.querySelectorAll('.msg-assistant .md-table-tools button')].find((b) => b.getAttribute('aria-label') === ${JSON.stringify(ariaLabel)})
+                 if (!(btn instanceof HTMLElement)) return false
+                 btn.click()
+                 return true
+               })()`
+            )) as boolean
+            if (!clicked) fail(`ticket-60 stage: the ${ariaLabel} button is missing`)
+          }
+          const expectPayload = async (expected: string, why: string): Promise<void> => {
+            let got = ''
+            for (let waited = 0; waited < 5_000; waited += 100) {
+              got = await clipboard.readText()
+              if (got === expected) break
+              await new Promise((r) => setTimeout(r, 100))
+            }
+            if (got !== expected) fail(`ticket-60 stage: ${why} (got ${JSON.stringify(got)})`)
+          }
+          await clipboard.writeText('PICODE_CLIPBOARD_SENTINEL_60')
+          await clickCopy('Copy table')
+          await expectPayload(EXPECT_MD, 'copy-as-Markdown never carried the exact table')
+          log('table_copy_markdown_ok')
+          await clipboard.writeText('PICODE_CLIPBOARD_SENTINEL_60')
+          await clickCopy('Copy table as CSV')
+          await expectPayload(EXPECT_CSV, 'copy-as-CSV never carried the exact table')
+          log('table_copy_csv_ok')
+          await clipboard.writeText('PICODE_CLIPBOARD_SENTINEL_60')
+          await clickCopy('Copy table as TSV')
+          await expectPayload(EXPECT_TSV, 'copy-as-TSV never carried the exact table')
+          log('table_copy_tsv_ok')
+        } finally {
+          await clipboard.writeText(previous) // leave the operator's pasteboard as found
+        }
+
+        // ④ Preview + expand zero-regression: the preview dialog opens over
+        // the backdrop and closes, the expand toggle flips aria-pressed and
+        // widens the scroll container.
+        await js(
+          `(() => {
+             const btn = document.querySelector('.msg-assistant .md-table-tools button[aria-label="Preview table"]')
+             if (!(btn instanceof HTMLElement)) return false
+             btn.click()
+             return true
+           })()`
+        )
+        sig = (await waitForProbe(
+          win,
+          `(() => {
+             const dialog = document.querySelector('.md-table-preview[role="dialog"]')
+             const tables = dialog ? dialog.querySelectorAll('table').length : 0
+             return dialog !== null && tables === 1
+           })()`,
+          3_000
+        )) as boolean
+        if (!sig) fail('ticket-60 stage: the table preview never opened')
+        await js(
+          `(() => {
+             const btn = document.querySelector('.md-table-preview button[aria-label="Close table preview"]')
+             if (!(btn instanceof HTMLElement)) return false
+             btn.click()
+             return true
+           })()`
+        )
+        sig = (await waitForProbe(win, `document.querySelector('.md-table-preview') === null`, 3_000)) as boolean
+        if (!sig) fail('ticket-60 stage: the table preview never closed')
+        log('table_preview_ok')
+        await js(
+          `(() => {
+             const btn = document.querySelector('.msg-assistant .md-table-tools button[aria-label="Expand table"]')
+             if (!(btn instanceof HTMLElement)) return false
+             btn.click()
+             return true
+           })()`
+        )
+        sig = (await waitForProbe(
+          win,
+          `(() => {
+             // After the click the button's aria-label reads Collapse table
+             // (the pressed state) — query the pressed label, not the old one.
+             const btn = document.querySelector('.msg-assistant .md-table-tools button[aria-label="Collapse table"]')
+             return btn !== null && btn.getAttribute('aria-pressed') === 'true' &&
+               document.querySelector('.msg-assistant .md-table-scroll-expanded') !== null
+           })()`,
+          3_000
+        )) as boolean
+        if (!sig) fail('ticket-60 stage: the table expand toggle never flipped')
+        log('table_expand_ok')
+
+        // ⑤ Download: a REAL download — will-download fires in the main
+        // process with the language-derived filename (cancelled immediately,
+        // nothing lands on disk) while the renderer stash proves the blob
+        // carries the exact code text.
+        const download = { fired: false, filename: '' }
+        win.webContents.session.once('will-download', (event, item) => {
+          download.fired = true
+          download.filename = item.getFilename()
+          event.preventDefault() // smoke: capture and cancel — no disk writes
+        })
+        await js(
+          `(() => {
+             window.__dlBlob = null
+             const original = URL.createObjectURL.bind(URL)
+             URL.createObjectURL = (blob) => { window.__dlBlob = blob; return original(blob) }
+             const btn = document.querySelectorAll('.msg-assistant .md-code-card button[aria-label="Download code"]')[0]
+             if (!(btn instanceof HTMLElement)) return false
+             btn.click()
+             return true
+           })()`
+        )
+        let fired = false
+        for (let waited = 0; waited < 5_000 && !fired; waited += 100) {
+          fired = download.fired
+          if (!fired) await new Promise((r) => setTimeout(r, 100))
+        }
+        if (!fired || download.filename !== 'snippet.ts') {
+          fail(`ticket-60 stage: the download never fired with the derived filename (fired=${download.fired} filename=${download.filename})`)
+        }
+        const blobText = (await js(`window.__dlBlob instanceof Blob ? window.__dlBlob.text() : ''`)) as string
+        // rehype-highlight normalizes the code text with one trailing
+        // newline — the payload carries exactly that (ticket-59 precedent).
+        if (blobText !== TS_CODE + '\n') {
+          fail(`ticket-60 stage: the download blob never carried the exact code text (got ${JSON.stringify(blobText)})`)
+        }
+        log('codecard_download_ok')
+      })
+    }
+    log('codecard_table_done')
+
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
     const livePids = supervisor.hostPids
     if (livePids.length < 2) fail(`expected at least 2 live hosts before quit, saw ${livePids.length}`)
