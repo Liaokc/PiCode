@@ -6,17 +6,24 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
-- [ ] 时长推导纯函数（表驱动）：同一开始时间戳重挂载不重置 / durationMs 冻结优先 / 回放块无时长降级（既有票 14 规则回归零变化）
-- [ ] 思考部分流式开始时记开始时间戳（reducer 侧 additive 字段，缺席回退现行为）
-- [ ] 箭头：收起 ›、展开 ⌄（与 TurnContainer 同型；live 态 Thinking 与落定态 Thought 一致）
-- [ ] visual harness：思考行收起/展开两态帧（含折叠容器重开场景计时连续）
-- [ ] 跑 dev app / smoke / visual 前 ps 复核无其他 PiCode Electron/dev-app/smoke 进程；撞锁则等待重试不并跑
-- [ ] typecheck / lint / vitest 全绿；code-review 双轴通过
+- [x] 时长推导纯函数（表驱动）：同一开始时间戳重挂载不重置 / durationMs 冻结优先 / 回放块无时长降级（既有票 14 规则回归零变化）
+- [x] 思考部分流式开始时记开始时间戳（reducer 侧 additive 字段，缺席回退现行为）
+- [x] 箭头：收起 ›、展开 ⌄（与 TurnContainer 同型；live 态 Thinking 与落定态 Thought 一致）
+- [x] visual harness：思考行收起/展开两态帧（含折叠容器重开场景计时连续）
+- [x] 跑 dev app / smoke / visual 前 ps 复核无其他 PiCode Electron/dev-app/smoke 进程；撞锁则等待重试不并跑
+- [x] typecheck / lint / vitest 全绿；code-review 双轴通过
 
 **交接：** 完成后不自行 merge——操作者/合并会话执行 `bash scripts/merge-ticket.sh 61`。
 
 ## Comments
 
 - 2026-09-10 (requirements intake): 建票（spec R7，Q14=A；箭头无取舍随票修）。波次 W1。独立小票（缺陷，双症一票）。
+- 2026-09-11 (implementation): 完成于 `t61-thinking-row-fixes`，commit **bd6fdb6**。实现要点：
+  - 时间戳来源：dispatch 边界（App.tsx `stampThinkingStart`）在 `thinking_delta` action 上盖 `receivedAtMs`（包装 `session_event` 则盖内层）——Seam-1 reducer 纯度保持（只拷贝，不读钟；头注已同步）。契约事件类型零改动——additive 全部落在 chat-reducer 缝上（下条报备）。
+  - **Additive 增量报备（横切项 49）**：① `ThinkingPart.startedAtMs?: number | null`（缺席/null = 无锚 → 视图回退本地 tick；回放块永不携带）；② `ChatAction` 事件侧分布化携带可选 `receivedAtMs`（仅 reducer 缝类型，非 IPC contract；所有既有 dispatch 字面量照常通过）。`contract.ts` 未动（R1 仍是唯一 contract 票）。
+  - 派生纯函数 `shared/thinking-duration.ts`（7 行决策表）：durationMs 冻结优先 → 盖章流式 (now − startedAt) → 无章回退本地 tick → 落定无时长不显（票 14 零回归）。旧代码 streaming 优先于 durationMs 与新表在可达状态上行为相同（reducer 不变量使二者互斥）。
+  - 箭头：ThinkingRow 随态交换 ChevronRight/ChevronDown（同 TurnContainer）；CSS 旋转基准仅余 `.tool-card-open`（ToolCard 票外保留）。
+  - 视觉通道：`npm run visual:thinking`（PICODE_VISUAL_THINKING=1）断言式 harness —— th1 收起 › / th2 展开 ⌄ / th3 冻结 Thought·42s 三帧 + 折叠重开连续性探针 **2s → 5s**（重置会读 ~1s）；跑前 ps 复核无并跑进程。
+  - code-review 双轴通过：Spec 6/6（0 缺口 0 scope creep）；Standards 0 违规（1 判断项：chevron 交换与 TurnContainer 同构，属仓内既有惯例，不抽取）。typecheck/lint/vitest 全绿（82 文件 1150 测试）。
