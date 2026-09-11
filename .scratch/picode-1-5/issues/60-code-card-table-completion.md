@@ -6,7 +6,7 @@
 
 **Blocked by:** 59（同文件串行：Markdown 块投影与卡组件——59 先引入图卡投影基座，本票在其上补代码卡/表格能力）。
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [ ] 行号投影表驱动：默认开 / noLineNumbers 关 / startLine=N 平移计数（含与既有 wrap/copy chrome 共存）
 - [ ] download 钮：按语言推导扩展名存文件；与既有 copy 钮并排
@@ -33,3 +33,9 @@
   - **gate 终态**：typecheck 绿；lint 0 error（EmptyState 既有 warning 非本票）；vitest 1159/1159；smoke ALL GREEN；visual 三套（codecard/codeblock/mermaid）全绿；**code-review 双轴完成**——Standards 抓出 copy 反馈形状三处重复（Duplicated Code）→ 86be20a 收敛为单一 `copyWithFeedback` + 复合 key 约定注释；Spec 八验收项逐条对上，零 scope creep。
   - **ps 自查**：每次应用通道（smoke ×3、visual ×3）前执行，全程零并跑。
   - **交接给合并会话**：完成后不自行 merge——操作者/合并会话执行 `bash scripts/merge-ticket.sh 60`。注意 root 拉 main 后需 `npm install` 同步（59 的 mermaid 依赖先例）。
+- 2026-09-11 (merge, T00 合并会话): **merged as 2940753**（merge --no-ff；分支八提交 rebase 后落 main：claimed 簿记提交对撞票文件 → 例行取 main 侧 sync 终态；9918d28 tracker 提交自动去重；3 feat + 2 fix/refactor + 帧提交干净重放）。
+  - **验收口径**：操作者 2026-09-11 明示「60 已验收」；脚本门禁 typecheck 绿 + vitest **1175/1175（82 文件）**（1153 → 净增 +22，markdown-blocks +251 行表驱动）；electron smoke ALL GREEN、visual 三套（codecard/codeblock/mermaid）全绿均为分支侧记录。
+  - **冲突处置**：仅票文件 tracker 对撞一处（例行）；**markdown-blocks/Markdown.tsx 与 59 同文件串行零冲突**（60 建在 59 基座上的强串行纪律生效）；package-lock 零冲突（无新依赖）。
+  - **终态审计**：投影扩展在位（parseFenceMeta/tableToCsv+Tsv/codeLineNumbers/startLine L180–204）；download.ts 去重（DiagramCard/Markdown 同源 downloadBlob）；smoke ticket-60 段；cc1 新帧 + cb1/mm1/mm3 有意重生成。
+  - **0 号帧甄别**：0-empty-state/0a-newtask-dropdown 为 658b98c 帧提交顺带重拍的基座帧（跑基座 harness 整链产物，0 号帧在已知失效的 2d 段之前、内容 PASS 有效，无更近覆盖重拍）→ 按证据规则入库保留；66 修 2d 后基座全链恢复时自然再验。
+  - **清理**：worktree 已 remove、分支已删。**解锁：64（Packages 管理）仍等 63；60 无下游票。**
