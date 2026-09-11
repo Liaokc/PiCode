@@ -19,6 +19,7 @@ import { initialBridgeFeedState, projectBridgeFeed } from '../../shared/bridge/f
 import { terminalFontStack } from '../../shared/terminal/font'
 import { detectNerdFont } from './terminal/probe-font'
 import { isSessionLive, decideFollowTakeover, FOLLOW_TAKEOVER_REJECTED_TOAST } from '../../shared/sessions/group'
+import { cwdRowState, CWD_MISSING_ROW_TOAST } from '../../shared/sessions/cwd-liveness'
 import {
   baselineReadStates,
   markSessionRead,
@@ -27,6 +28,7 @@ import {
   type ReadStates
 } from '../../shared/sessions/unread'
 import type { SessionRowAction } from '../../shared/sessions/context-menu'
+import { excludeDimmedRows } from '../../shared/task-search'
 import { sessionDefaultsFromPreferences, DEFAULT_PREFERENCES, setSessionArchived, toggleHiddenGroup, type AppPreferences } from '../../shared/preferences'
 import { recentProjects, resolveNewTaskProject } from '../../shared/new-task'
 import {
@@ -810,6 +812,14 @@ export default function App(): JSX.Element {
   }
 
   function handleOpenSession(summary: SessionSummary): void {
+    // Gray row (ticket 54, Dimmed Row): a session whose cwd is gone with no
+    // live host here is a pure display state — the click EXPLAINS and never
+    // resumes (resume on a deleted cwd makes the host exit(1)). The guard is
+    // first so it covers every path: sidebar rows, ⌘K picks, any caller.
+    if (cwdRowState(summary.cwdMissing === true, inAppIds.has(summary.id)) === 'dimmed') {
+      notify(CWD_MISSING_ROW_TOAST, 'info')
+      return
+    }
     if (summary.id === focusedId) {
       // Already the focused view — leave Follow mode, if any.
       stopFollowing()
@@ -1191,6 +1201,16 @@ export default function App(): JSX.Element {
    * folder name; null hides the chip when no session is focused. */
   const sessionLabel = focused?.name ?? chat.session?.cwd.split('/').pop() ?? null
 
+  /** CWD banner fact (ticket 54, CWD Banner): the focused session's view
+   * carries the persistent warning while ITS working directory is gone AND
+   * its host is still alive in this app (a live host with a dead cwd is
+   * exactly the 活豁免 state). Purely derived — the index's 2s cwd stat flips
+   * the flag, the projection follows; no dismiss state exists anywhere. */
+  const focusedCwdMissing =
+    focusedId !== null &&
+    inAppIds.has(focusedId) &&
+    sessions.find((s) => s.id === focusedId)?.cwdMissing === true
+
   /** Pane-motion projection (ticket 40, Seam-1): each pane's open/close
    * variable carries the ANIMATED size (0px when closed) while the content
    * variable keeps the pane's real size, so pane content clips instead of
@@ -1294,6 +1314,7 @@ export default function App(): JSX.Element {
               <ChatView
                 chat={chat}
                 creating={creating}
+                cwdMissing={focusedCwdMissing}
                 tree={tree}
                 branch={focused?.branch ?? null}
                 treeOpen={treeOpen}
@@ -1338,7 +1359,7 @@ export default function App(): JSX.Element {
       </div>
       {searchOpen && (
         <TaskSearchPalette
-          sessions={sessions}
+          sessions={excludeDimmedRows(sessions, inAppIds)}
           onOpenSession={handleOpenSession}
           onClose={() => setSearchOpen(false)}
         />

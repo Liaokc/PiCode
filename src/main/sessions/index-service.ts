@@ -19,7 +19,7 @@ import {
   parseSessionLines,
   summarizeSession
 } from '../../shared/sessions/parse.ts'
-import { filterDeadCwd } from '../../shared/sessions/cwd-liveness.ts'
+import { withCwdMissing } from '../../shared/sessions/cwd-liveness.ts'
 import { buildTracePayload, type TracePayload } from '../../shared/sessions/trace.ts'
 import type { FollowUpdate, SessionSummary, TranscriptItem } from '../../shared/sessions/types'
 
@@ -34,10 +34,6 @@ export interface SessionIndexOptions {
   onTraceUpdate?: (payload: TracePayload) => void
   /** Poll interval; defaults to 2s. */
   pollMs?: number
-  /** Session ids with a live host in this app (ticket 42): exempt from the
-   * cwd-liveness filter — a running session whose cwd was deleted mid-run
-   * stays listed (registry/sidebar) instead of dropping out of the index. */
-  liveSessionIds?: () => ReadonlySet<string>
 }
 
 interface CacheState {
@@ -66,21 +62,21 @@ export class SessionIndexService {
   private readonly traceFollows = new Map<string, number>()
   private timer: NodeJS.Timeout | null = null
   private scanning = false
-  /** Last scan's injected stat results (cwd → is a live directory) and the
-   * exemption set (ticket 42) — both feed the index-changed signature so a
-   * directory appearing/vanishing (or a host starting/stopping) fires
+  /** Last scan's injected stat results (cwd → is a live directory) — part
+   * of the index-changed signature so a directory appearing/vanishing fires
    * onIndexChanged even when no session file changed. */
   private cwdAlive = new Map<string, boolean>()
-  private exemptIds = new Set<string>()
 
   constructor(opts: SessionIndexOptions) {
     this.opts = opts
   }
 
   /** All sessions across all project dirs, unchanged files served from cache.
-   * cwd-liveness filtered (ticket 42): sessions whose working directory is
-   * gone are physically unreachable (resume would crash the host) and never
-   * reach the sidebar or ⌘K; in-app live host sessions are exempt. Session
+   * cwd-liveness annotated (ticket 54): every session stays listed; one whose
+   * working directory is gone carries `cwdMissing: true` (the gray-row/banner
+   * fact — resume must never target it, the host would exit(1)). The flag is
+   * applied at LIST time, not in the cache: the cached summaries keep their
+   * pre-54 shape and the flag always reflects the CURRENT scan. Session
    * files are never touched by any of this. */
   async list(): Promise<SessionSummary[]> {
     const paths = await this.listSessionFiles()
@@ -91,8 +87,7 @@ export class SessionIndexService {
     }
     const all = [...this.cache.values()].map((state) => state.summary).sort((a, b) => b.modifiedAt - a.modifiedAt)
     this.cwdAlive = await this.statCwds(all)
-    this.exemptIds = new Set(this.opts.liveSessionIds?.() ?? [])
-    return filterDeadCwd(all, (cwd) => this.cwdAlive.get(cwd) === true, this.exemptIds)
+    return withCwdMissing(all, (cwd) => this.cwdAlive.get(cwd) === true)
   }
 
   /**
@@ -224,14 +219,11 @@ export class SessionIndexService {
     for (const [file, state] of [...this.cache.entries()].sort()) {
       signature += `${file}:${state.mtimeMs}:${state.size};`
     }
-    // cwd liveness + exemptions are part of the index's identity (ticket 42):
-    // a directory appearing/vanishing (or a host binding coming/going) must
-    // fire onIndexChanged even when no session file changed.
+    // cwd liveness is part of the index's identity (ticket 42): a directory
+    // appearing/vanishing must fire onIndexChanged even when no session file
+    // changed — the flip is what flips the cwdMissing flags downstream.
     for (const [cwd, alive] of [...this.cwdAlive.entries()].sort()) {
       signature += `${cwd}:${alive ? '1' : '0'};`
-    }
-    for (const id of [...this.exemptIds].sort()) {
-      signature += `x:${id};`
     }
     return signature
   }

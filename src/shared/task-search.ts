@@ -7,6 +7,7 @@
  */
 import { fuzzyScore } from './composer/fuzzy.ts'
 import { projectLabel } from './sessions/group.ts'
+import { cwdRowState } from './sessions/cwd-liveness.ts'
 import type { SessionSummary } from './sessions/types.ts'
 
 export const TASK_SEARCH_LIMIT = 10
@@ -41,4 +42,18 @@ export function nextSelectionIndex(current: number, delta: number, count: number
   if (count === 0) return 0
   const next = (current + delta) % count
   return next < 0 ? next + count : next
+}
+
+/** ⌘K offers actionable targets only (ticket 54): a dimmed row — a session
+ * whose cwd is gone with NO live host in this app — is display-only and
+ * must not be offered for opening (resume on a deleted cwd makes the host
+ * exit(1)). Sessions with a live host keep their entry: switching to one is
+ * a pure focus change. The dimmed predicate is cwdRowState's — one source
+ * of truth for the gray row; an old payload without the additive field is
+ * untouched. */
+export function excludeDimmedRows<T extends { id: string; cwdMissing?: boolean }>(
+  sessions: readonly T[],
+  liveIds: ReadonlySet<string>
+): T[] {
+  return sessions.filter((s) => cwdRowState(s.cwdMissing === true, liveIds.has(s.id)) !== 'dimmed')
 }

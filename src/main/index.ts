@@ -40,6 +40,7 @@ import { startTreeVisualIfEnabled, isolateTreeUserData } from './visual-tree'
 import { startApprovalVisualIfEnabled } from './visual-approval'
 import { startUsageVisualIfEnabled } from './visual-usage'
 import { startPerfIfEnabled } from './visual-perf'
+import { startCwdVisualIfEnabled, isolateCwdVisualUserData } from './visual-cwd'
 import { fakeUsageSnapshot } from '../shared/usage/fixture'
 import { TerminalService, type TerminalDataMessage, type TerminalExitMessage } from './terminal/service'
 import { nodePtyFactory } from './terminal/node-pty-factory'
@@ -58,6 +59,9 @@ isolateVisualUserData()
 // the pin preference) — throwaway userData for it too (no-op unless
 // PICODE_VISUAL_ROW_GEOMETRY=1).
 isolateRowGeometryUserData()
+// Ticket-54 ghost-cwd visual harness: throwaway userData too (no-op unless
+// PICODE_VISUAL_CWD=1).
+isolateCwdVisualUserData()
 // Ticket-33 filter-dropdown harness drives the REAL preferences (dropdown
 // choices + pin) — throwaway userData for it too (no-op unless
 // PICODE_VISUAL_FILTER=1).
@@ -224,6 +228,8 @@ app.whenReady().then(() => {
   startFilterVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-35 context-menu/archive harness — same seeding constraint.
   startContextMenuVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  // Ticket-54 ghost-cwd harness — seeds its own dead/alive store pair.
+  startCwdVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-37 trace tool-surfaces harness — same seeding constraint.
   startTraceVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-38 access-menu harness — renderer-only injection, no store writes.
@@ -352,10 +358,7 @@ app.whenReady().then(() => {
     onFollowUpdate: (update: FollowUpdate) => broadcastChannel('sessions:follow-update', update),
     // Trace-tab live follow (ticket 37): the rebuilt payload after the
     // traced file changed size — same push semantics as the transcript tail.
-    onTraceUpdate: (payload: TracePayload) => broadcastChannel('sessions:trace-update', payload),
-    // cwd-liveness exemption (ticket 42): sessions with a live host in this
-    // app stay listed even when their cwd was deleted mid-run.
-    liveSessionIds: () => supervisor?.liveSessionIds() ?? new Set<string>()
+    onTraceUpdate: (payload: TracePayload) => broadcastChannel('sessions:trace-update', payload)
   })
   ipcMain.handle('sessions:list', () => sessionIndex?.list())
   ipcMain.handle('sessions:rename', (_event, file: string, name: string) => {

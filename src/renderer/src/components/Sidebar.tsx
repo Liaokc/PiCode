@@ -21,13 +21,14 @@ import {
   type SessionSort,
   type SessionView
 } from '../../../shared/sessions/group'
-import { sessionMenuGroups, type SessionMenuAction, type SessionRowAction } from '../../../shared/sessions/context-menu'
+import { sessionMenuGroups, grayRowMenuGroups, type SessionMenuAction, type SessionRowAction } from '../../../shared/sessions/context-menu'
 import {
   groupFoldReducer,
   initialFoldState,
   showMoreControl,
   visibleRowCount
 } from '../../../shared/sessions/fold-model'
+import { cwdRowState } from '../../../shared/sessions/cwd-liveness'
 import { sidebarDotState, sidebarRowState, type SidebarDotState } from '../../../shared/session-registry'
 import { useNowTick } from './use-now'
 import Tooltip from './Tooltip'
@@ -145,6 +146,7 @@ function TaskItem({
   now,
   selected,
   dot,
+  dimmed,
   pinned,
   renaming,
   draft,
@@ -165,6 +167,11 @@ function TaskItem({
   /** Fixed-slot dot state (ticket 20 + 25 + 28): orange / animated / green /
    * indigo unread / empty slot. */
   dot: SidebarDotState
+  /** Gray row (ticket 54, Dimmed Row): the session's cwd is gone and no
+   * host lives in this app. Pure display state — the row dims, a "cwd
+   * missing" meta explains, and the click is intercepted upstream (App
+   * answers with the explanation toast; zero resume). */
+  dimmed: boolean
   pinned: boolean
   /** Controlled inline rename (ticket 35): WHICH row is renaming and the
    * draft live in the sidebar, so the context menu's Rename task enters the
@@ -193,7 +200,7 @@ function TaskItem({
 
   return (
     <div
-      className={cls}
+      className={dimmed ? `${cls} sb-task-dimmed` : cls}
       data-file={session.file}
       onClick={onOpen}
       onDoubleClick={onRenameStart}
@@ -245,6 +252,9 @@ function TaskItem({
       ) : (
         <span className="sb-task-title">{session.title}</span>
       )}
+      {/* Gray-row meta (ticket 54): the factual note where the row explains
+          itself — no tooltip, no modal; the click toast carries the rest. */}
+      {dimmed && <span className="sb-task-cwd-meta">cwd missing</span>}
       {/* Fixed-width time slot (ticket 34): hover fades ONLY the text —
           the slot itself never resizes, so nothing in the row shifts. */}
       <span className="sb-task-time">{relativeTime(session.modifiedAt, now)}</span>
@@ -505,6 +515,14 @@ export default function Sidebar({
     )
   }
 
+  /** Gray row (ticket 54, Dimmed Row): the session's cwd is gone and no
+   * host lives in this app (the warning state — cwd gone but a live host —
+   * keeps the row normal; its banner shows in the session view instead).
+   * Status-dot vocabulary untouched: dimming is row opacity + meta. */
+  function dimmedFor(s: SessionSummary): boolean {
+    return cwdRowState(s.cwdMissing === true, inAppIds.has(s.id)) === 'dimmed'
+  }
+
   // Ticket 40: the sidebar STAYS MOUNTED while closed — the closed end
   // state (size 0 + opacity 0 + pointer-events/visibility) is styled via
   // [data-closed], and the open/close run is a width/opacity transition of
@@ -671,6 +689,7 @@ export default function Sidebar({
                 now={now}
                 selected={sidebarRowState(activeSessionId, followedFile, s.id, s.file) === 'selected'}
                 dot={dotFor(s)}
+                dimmed={dimmedFor(s)}
                 pinned
                 renaming={renamingFile === s.file}
                 draft={renameDraft}
@@ -788,6 +807,7 @@ export default function Sidebar({
                       now={now}
                       selected={sidebarRowState(activeSessionId, followedFile, s.id, s.file) === 'selected'}
                       dot={dotFor(s)}
+                      dimmed={dimmedFor(s)}
                       pinned={false}
                       renaming={renamingFile === s.file}
                       draft={renameDraft}
@@ -831,6 +851,7 @@ export default function Sidebar({
                 now={now}
                 selected={sidebarRowState(activeSessionId, followedFile, s.id, s.file) === 'selected'}
                 dot={dotFor(s)}
+                dimmed={dimmedFor(s)}
                 pinned={false}
                 renaming={renamingFile === s.file}
                 draft={renameDraft}
@@ -868,7 +889,7 @@ export default function Sidebar({
           aria-label="Task actions"
           style={{ left: menu.x, top: menu.y }}
         >
-          {sessionMenuGroups(pinnedIds.has(menu.session.id), unreadIds.has(menu.session.id)).map((group, gi) => (
+          {(dimmedFor(menu.session) ? grayRowMenuGroups() : sessionMenuGroups(pinnedIds.has(menu.session.id), unreadIds.has(menu.session.id))).map((group, gi) => (
             <div key={gi} className="sb-context-group">
               {group.map((entry) => (
                 <button

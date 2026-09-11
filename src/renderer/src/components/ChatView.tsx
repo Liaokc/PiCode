@@ -15,6 +15,11 @@ import { ChevronDownIcon, GitBranchIcon, PencilIcon } from './icons'
 interface ChatViewProps {
   chat: ChatState
   creating: boolean
+  /** CWD Banner fact (ticket 54): true while THIS session's working
+   * directory is gone and its host is still alive in this app. Purely
+   * derived — no dismiss state exists; the banner appears/vanishes with the
+   * flag (the index's 2s cwd stat), and only ever in this session's view. */
+  cwdMissing?: boolean
   /** Latest tree payload from the host (null until the first one arrives). */
   tree: SessionTreePayload | null
   /** Read-only git branch of the focused session's workspace (ticket 21);
@@ -49,6 +54,7 @@ interface ChatViewProps {
 export default function ChatView({
   chat,
   creating,
+  cwdMissing = false,
   tree,
   branch,
   treeOpen,
@@ -229,6 +235,20 @@ export default function ChatView({
         </button>
         {treeOpen && <TreePanel tree={tree} onNavigate={onNavigateTree} onFork={onFork} onClose={onCloseTree} />}
       </div>
+      {cwdMissing && (
+        /* Ticket 54, CWD Banner: persistent warning at the top of the
+           infected session's view — the three facts, no dismiss button (a
+           critical fact cannot be accidentally hidden), gone the moment the
+           directory is back (pure derived projection, no state). */
+        <div className="cwd-banner" role="status" aria-label="Working directory missing">
+          <div className="cwd-banner-title">Working directory missing</div>
+          <ul className="cwd-banner-facts">
+            <li>The session keeps running.</li>
+            <li>File tools will fail until the directory is restored.</li>
+            <li>After the session exits, it cannot be reopened from that directory.</li>
+          </ul>
+        </div>
+      )}
       <div className="chat-body">
         <div ref={scrollRef} className="chat-scroll" onScroll={handleScroll}>
           <div className="chat-thread">

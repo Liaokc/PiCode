@@ -26,6 +26,12 @@ export interface SessionSummary {
   createdAt: number | null
   /** Number of message entries (any role). */
   messageCount: number
+  /** Ticket 54 (additive contract field): true when the session's working
+   * directory did not exist at the last index scan. ABSENT (undefined) on
+   * sessions with a living cwd — the exact pre-54 payload shape — so old
+   * payloads and consumers keep validating. Consumers must test
+   * `cwdMissing === true`, never truthiness of the field's absence. */
+  cwdMissing?: boolean
 }
 
 /** A thinking or text part of a replayed assistant message (ticket 14).
