@@ -76,6 +76,20 @@ function useBlockUi(): BlockUiState {
   return ui
 }
 
+/**
+ * Clipboard write + the block's ✓ feedback — the one copy shape every
+ * copy-family button shares (code card, table markdown, table CSV/TSV).
+ * A clipboard failure leaves the card as-is (no error surface, ticket 16).
+ */
+async function copyWithFeedback(ui: BlockUiState, stateKey: string | null, text: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(text)
+    if (stateKey !== null) ui.markCopied(stateKey)
+  } catch {
+    // Clipboard unavailable — leave the card as-is.
+  }
+}
+
 /** Per-Markdown-instance block-state store (survives child remounts). */
 function useBlockUiStore(): BlockUiState {
   const [copied, setCopied] = useState<ReadonlySet<string>>(new Set())
@@ -218,12 +232,7 @@ function CodeBlockCard({ node }: PreProps): JSX.Element {
 
   async function copy(): Promise<void> {
     if (node === undefined) return
-    try {
-      await navigator.clipboard.writeText(hastText(node))
-      if (key !== null) ui.markCopied(key)
-    } catch {
-      // Clipboard unavailable — leave the card as-is.
-    }
+    await copyWithFeedback(ui, key, hastText(node))
   }
 
   function download(): void {
@@ -328,21 +337,14 @@ function TableCard({ node, children }: TableProps): JSX.Element {
   }, [previewing])
 
   async function copy(): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(tableToMarkdown(node))
-      if (key !== null) ui.markCopied(key)
-    } catch {
-      // Clipboard unavailable — leave the card as-is.
-    }
+    await copyWithFeedback(ui, key, tableToMarkdown(node))
   }
 
+  // The three copy-family buttons report their ✓ independently: the
+  // delimited formats key on a composite (`<block>:csv|tsv`) — the plain
+  // key space (line:column, numeric) can never collide with it.
   async function copyDelimited(format: 'csv' | 'tsv'): Promise<void> {
-    try {
-      await navigator.clipboard.writeText(format === 'csv' ? tableToCsv(node) : tableToTsv(node))
-      if (key !== null) ui.markCopied(`${key}:${format}`)
-    } catch {
-      // Clipboard unavailable — leave the card as-is.
-    }
+    await copyWithFeedback(ui, key === null ? null : `${key}:${format}`, format === 'csv' ? tableToCsv(node) : tableToTsv(node))
   }
 
   return (
