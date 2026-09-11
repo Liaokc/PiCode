@@ -3298,6 +3298,162 @@ export function startSmokeIfEnabled(
     }
     log('answer_split_done')
 
+    // ---- ticket 55: worked container permanence — EVERY turn with a user
+    // bubble owns its container row (operator-approved ZCode deviation). A
+    // zero-work turn (pure-text answer) shows the row through the WHOLE
+    // lifecycle — live "Working · Ns" from the silent period on, settled
+    // "Worked · Ns", replayed "Worked" (ticket 14 rule) — and an empty body
+    // is NOT expandable: no chevron, click no-op, aria-disabled. Runs as a
+    // structured replay + a contract-stream live turn (no model call), right
+    // after the answer-split stage for the same reasons.
+    log('worked_container_start')
+    {
+      emitContractEvent({
+        type: 'session_created',
+        sessionId: 'smoke-worked-container',
+        cwd,
+        model: 'claude-opus-4-5',
+        resumed: true
+      })
+      emitContractEvent({
+        type: 'history_loaded',
+        items: [
+          { role: 'user', id: 'wc-u1', text: 'Say hi.', timestamp: 't1', skillName: null },
+          {
+            role: 'assistant',
+            id: 'wc-a1',
+            timestamp: 't2',
+            text: 'Hello!',
+            parts: [{ kind: 'text', text: 'Hello!' }]
+          }
+        ]
+      })
+      await withWindow(getWindow, async (win) => {
+        const sig = `(() => ({
+          turns: document.querySelectorAll('.turn-container').length,
+          open: document.querySelectorAll('.turn-container-open').length,
+          chevrons: document.querySelectorAll('.turn-container-chevron').length,
+          durations: document.querySelectorAll('.turn-container-duration').length,
+          labels: [...document.querySelectorAll('.turn-container-label')].map((el) => el.textContent ?? ''),
+          inert: [...document.querySelectorAll('.turn-container-header')].map((el) => el.getAttribute('aria-disabled') === 'true'),
+          users: document.querySelectorAll('.msg-user').length,
+          answers: document.querySelectorAll('.msg-assistant .md').length
+        }))()`
+        // Replayed zero-work turn: the row exists, bare and inert — "Worked"
+        // with no duration (the ticket-14 rule), no chevron, no way to open.
+        const replayed = (await waitForProbe(
+          win,
+          `${sig}.turns === 1 && ${sig}.open === 0 && ${sig}.chevrons === 0 && ${sig}.durations === 0 &&
+           ${sig}.labels.join() === 'Worked' && ${sig}.inert.join() === 'true' && ${sig}.answers === 1`,
+          10_000
+        )) as boolean
+        if (!replayed) {
+          const diag = (await win.webContents.executeJavaScript(sig).catch(() => 'unavailable')) as string
+          fail(`ticket-55 stage: the replayed zero-work turn lost its container; DOM: ${diag}`)
+        }
+        log('worked_container_replayed_ok')
+
+        // The inert header must not open on click (Q12 ruling A: expandable
+        // ⇔ body non-empty) — click, hold a beat, re-check the closed state.
+        await win.webContents.executeJavaScript(
+          `(() => { const el = document.querySelector('.turn-container-header'); if (el instanceof HTMLElement) el.click(); return true })()`
+        )
+        await new Promise((r) => setTimeout(r, 400))
+        const stillClosed = (await win.webContents
+          .executeJavaScript(`${sig}.open === 0 && ${sig}.turns === 1`)
+          .catch(() => false)) as boolean
+        if (!stillClosed) fail('ticket-55 stage: the empty container opened on click (must stay inert)')
+        log('worked_container_inert_ok')
+
+        // Live zero-work turn: the container shows up in the SILENT PERIOD —
+        // before any part streams (the live half of pi15-empty-worked-container).
+        emitContractEvent({ type: 'user_message', text: 'PICODE_WC_LIVE_MARKER' })
+        emitContractEvent({ type: 'agent_start' })
+        const silent = (await waitForProbe(
+          win,
+          `${sig}.turns === 2 && ${sig}.users === 2 && ${sig}.labels.join() === 'Worked,Working' &&
+           ${sig}.open === 0 && ${sig}.chevrons === 0 && ${sig}.inert.join() === 'true,true'`,
+          10_000
+        )) as boolean
+        if (!silent) {
+          const diag = (await win.webContents.executeJavaScript(sig).catch(() => 'unavailable')) as string
+          fail(`ticket-55 stage: the silent period lost its Working container; DOM: ${diag}`)
+        }
+        log('worked_container_live_silent_ok')
+
+        // Stream the pure-text answer, hold past the 1s tick so the container
+        // timer earns its duration, then settle: the row must PERSIST — the
+        // exact disappearance the pi15-empty-worked-container frame captured.
+        emitContractEvent({ type: 'message_start' })
+        emitContractEvent({ type: 'text_delta', delta: 'Hello live!' })
+        emitContractEvent({ type: 'message_end' })
+        await new Promise((r) => setTimeout(r, 1200))
+        emitContractEvent({ type: 'agent_end' })
+        const settled = (await waitForProbe(
+          win,
+          `${sig}.turns === 2 && ${sig}.labels.join() === 'Worked,Worked' && ${sig}.durations === 1 &&
+           ${sig}.open === 0 && ${sig}.chevrons === 0 && ${sig}.answers === 2 && ${sig}.inert.join() === 'true,true'`,
+          10_000
+        )) as boolean
+        if (!settled) {
+          const diag = (await win.webContents.executeJavaScript(sig).catch(() => 'unavailable')) as string
+          fail(`ticket-55 stage: the settled zero-work turn did not keep its Worked row; DOM: ${diag}`)
+        }
+        log('worked_container_settled_ok')
+
+        // Container-level timer across a fold/reopen (acceptance: 折叠重开
+        // Working·Ns 连续不归零 — the container body unmounts, the container
+        // itself never does, so the header count must keep running). A THIRD,
+        // WITH-WORK live turn makes the row expandable; fold it mid-run,
+        // reopen it, and the ticked seconds must have ADVANCED, not reset.
+        emitContractEvent({ type: 'user_message', text: 'PICODE_WC_FOLD_MARKER' })
+        emitContractEvent({ type: 'agent_start' })
+        emitContractEvent({ type: 'message_start' })
+        emitContractEvent({ type: 'thinking_delta', delta: 'plan the work' })
+        const liveWorked = (await waitForProbe(
+          win,
+          `${sig}.turns === 3 && ${sig}.users === 3 && ${sig}.open === 1 && ${sig}.chevrons === 1 &&
+           ${sig}.labels.join() === 'Worked,Worked,Working' && ${sig}.inert.join() === 'true,true,false'`,
+          10_000
+        )) as boolean
+        if (!liveWorked) {
+          const diag = (await win.webContents.executeJavaScript(sig).catch(() => 'unavailable')) as string
+          fail(`ticket-55 stage: the with-work live turn did not render an expandable container; DOM: ${diag}`)
+        }
+        await new Promise((r) => setTimeout(r, 1200))
+        const beforeFold = (await win.webContents
+          .executeJavaScript(`parseInt(document.querySelectorAll('.turn-container-duration')[1]?.textContent ?? '0', 10)`)
+          .catch(() => 0)) as number
+        if (beforeFold < 1) fail(`ticket-55 stage: the live container timer never ticked (saw ${beforeFold}s)`)
+        // Fold the live turn (manual mid-stream collapse — the reducer path).
+        await win.webContents.executeJavaScript(
+          `(() => { const hs = document.querySelectorAll('.turn-container-header'); const el = hs[2]; if (el instanceof HTMLElement) el.click(); return true })()`
+        )
+        const folded = (await waitForProbe(win, `${sig}.open === 0 && ${sig}.turns === 3`, 10_000)) as boolean
+        if (!folded) fail('ticket-55 stage: the with-work live turn did not fold on click')
+        await new Promise((r) => setTimeout(r, 1200))
+        await win.webContents.executeJavaScript(
+          `(() => { const hs = document.querySelectorAll('.turn-container-header'); const el = hs[2]; if (el instanceof HTMLElement) el.click(); return true })()`
+        )
+        const reopened = (await waitForProbe(win, `${sig}.open === 1 && ${sig}.turns === 3`, 10_000)) as boolean
+        if (!reopened) fail('ticket-55 stage: the folded live turn did not reopen on click')
+        const afterReopen = (await win.webContents
+          .executeJavaScript(`parseInt(document.querySelectorAll('.turn-container-duration')[1]?.textContent ?? '0', 10)`)
+          .catch(() => 0)) as number
+        // ≥ beforeFold + 1: the count kept running across the fold. A reset
+        // (container remounted on fold) would land at 0–1s — far below.
+        if (afterReopen < beforeFold + 1) {
+          fail(`ticket-55 stage: the container timer reset across fold/reopen (${beforeFold}s → ${afterReopen}s)`)
+        }
+        log('worked_container_timer_fold_ok', `${beforeFold}s → ${afterReopen}s`)
+        // Settle the third turn so the stage leaves a quiet session.
+        emitContractEvent({ type: 'thinking_end', durationMs: 1500 })
+        emitContractEvent({ type: 'message_end' })
+        emitContractEvent({ type: 'agent_end' })
+      })
+    }
+    log('worked_container_done')
+
     // ---- ticket 51: live-path fork — real entry ids + toast ack regime.
     // A brand-new session (never resumed) takes two real turns; forking the
     // settled answer must land (the anchor is now the REAL session entry id

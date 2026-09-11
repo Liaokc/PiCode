@@ -41,6 +41,7 @@ import { foldVisualEnabled } from './visual-fold'
 import { codeblockVisualEnabled } from './visual-codeblock'
 import { expandVisualEnabled } from './visual-expand'
 import { answerVisualEnabled } from './visual-answer'
+import { workedVisualEnabled } from './visual-worked-container'
 import { ensureVisualProjectDir, ensureVisualStore, writeVisualSession } from './visual-store'
 import type { HostToParent } from '../shared/contract'
 
@@ -187,6 +188,8 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
   if (expandVisualEnabled()) return
   // And for the answer-split harness (ticket 53).
   if (answerVisualEnabled()) return
+  // And for the worked-container harness (ticket 55).
+  if (workedVisualEnabled()) return
 
   // Deterministic sidebar content for the shots (ticket 20): the empty-state
   // frame must show a status dot (a session written by ANOTHER end — fresh

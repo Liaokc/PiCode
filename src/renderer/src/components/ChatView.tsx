@@ -249,7 +249,12 @@ export default function ChatView({
                     <MessageActions text={turn.userText} showTime={false} />
                   </div>
                 )}
-                {(turn.hasWork || turn.live) && (
+                {turn.hasContainer && (
+                  /* Ticket 55: the container row is unconditional for turns
+                    with a user bubble (operator-approved ZCode deviation —
+                    the old `(hasWork || turn.live)` empty-shell condition is
+                    gone); the head segment's status quo lives in the model
+                    too. Zero-work turns render a bare, non-expandable row. */
                   <TurnContainer
                     turn={turn}
                     open={chat.expandedTurns.has(turn.id) || turn.pendingApproval}

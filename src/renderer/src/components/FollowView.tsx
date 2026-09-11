@@ -82,7 +82,9 @@ export default function FollowView({ title, items, live, onStop, onOpen }: Follo
           {turns.map((turn) => (
             <div key={turn.id}>
               {turn.user !== null && <div className="msg msg-user">{turn.userText}</div>}
-              {turn.hasWork && (
+              {turn.hasContainer && (
+                /* Ticket 55: same projection as the chat view, zero switches
+                  — replayed pure-text turns own their "Worked" row too. */
                 <TurnContainer
                   turn={turn}
                   open={openTurns.has(turn.id)}

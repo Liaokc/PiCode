@@ -1,8 +1,9 @@
 /**
- * Turn-collapse model (ticket 23, split rules revised by ticket 53): the
- * settled transcript folds each turn's work — thinking rows, interim
- * narration, tool cards, approval pills, skill marker — into a single
- * "Working · Ns" container row. ZCode-evidence behavior:
+ * Turn-collapse model (ticket 23, split rules revised by ticket 53, container
+ * permanence revised by ticket 55): the transcript folds each turn's work —
+ * thinking rows, interim narration, tool cards, approval pills, skill marker
+ * — into a single "Working · Ns" / "Worked · Ns" container row. ZCode-evidence
+ * behavior with ONE operator-approved deviation (ticket 55):
  *
  *   - turn boundary = the user message; everything after it (thinking, tools,
  *     approvals, assistant text) belongs to that turn;
@@ -12,6 +13,14 @@
  *   - tools that ran AFTER the answer stay visible below it, in transcript
  *     order (ticket 53, Q11a) — they never fold. Post-answer thinking and
  *     approvals stay container content (ticket 23 behavior unchanged);
+ *   - EVERY turn with a user bubble owns its container row — live
+ *     "Working · Ns" from the silent period on, settled "Worked · Ns",
+ *     replayed "Worked" (ticket 14 rule). ZCode drops the row for zero-work
+ *     turns (bundle `u ? … : null`); the operator ruled the row permanent —
+ *     the answer text itself counts as the work phase. A zero-work turn's
+ *     container body is EMPTY and NOT expandable (可展开 ⇔ 体非空, Q12 = A);
+ *   - the head segment (entries before the first user message) keeps the
+ *     ticket-23 status quo: renders only with foldable work or while live;
  *   - the live turn streams expanded with real-time scroll and auto-collapses
  *     when the run settles (auto-collapse on agent_end);
  *   - a turn that ended in `turn_error` stays expanded (exception);
@@ -90,10 +99,17 @@ export interface TurnGroup {
   live: boolean
   /** A pending approval inside this turn keeps the container open. */
   pendingApproval: boolean
-  /** The container row renders at all only when there is something to fold
-   * (skill marker or foldable work — after-answer rows don't count: they
-   * render without the container). */
+  /** The container BODY holds foldable content: the skill marker or at least
+   * one work item (after-answer rows don't count — they render without the
+   * container). Doubles as the ticket-55 empty-body flag: 可展开 ⇔ hasWork
+   * — a zero-work turn's container is a bare, non-expandable row. */
   hasWork: boolean
+  /** The container ROW renders at all (ticket 55, operator-approved ZCode
+   * deviation — ZCode drops the row for zero-work turns, the operator ruled
+   * the row permanent: "正文输出也算 work 阶段"). EVERY turn with a user
+   * bubble owns one; the defensive head segment keeps the ticket-23 status
+   * quo (renders only with foldable work or while live). */
+  hasContainer: boolean
 }
 
 /** One transcript item before the positional split — the raw material the
@@ -229,9 +245,16 @@ export function groupTurns(entries: ChatEntry[], agentRunning: boolean): TurnGro
       afterAnswer,
       live: false,
       pendingApproval: draft.pendingApproval,
-      hasWork: draft.skillName !== null || work.length > 0
+      hasWork: draft.skillName !== null || work.length > 0,
+      hasContainer: draft.user !== null || draft.skillName !== null || work.length > 0
     }
   })
-  if (agentRunning && groups.length > 0) groups[groups.length - 1].live = true
+  if (agentRunning && groups.length > 0) {
+    const last = groups[groups.length - 1]
+    last.live = true
+    // A streaming turn keeps its container row even when nothing has streamed
+    // into it yet — the head segment included (ticket-23 live shell stands).
+    last.hasContainer = true
+  }
   return groups
 }
