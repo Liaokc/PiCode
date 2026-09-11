@@ -41,13 +41,20 @@ SESSIONS_BEFORE=$(session_file_count)
 smoke_store_base="${TMPDIR:-/tmp}"
 SMOKE_SESSIONS_STORE="$(mktemp -d "${smoke_store_base%/}/picode-smoke-sessions-XXXXXXXX")"
 export PICODE_SESSION_DIR="$SMOKE_SESSIONS_STORE"
+# Ticket 63: a throwaway agent dir for the skills-management stage — the
+# stage seeds its sandbox skills/settings there and cleans up afterwards;
+# the operator's real ~/.pi/agent is never read-written by the smoke.
+SMOKE_PI_AGENT_DIR="$(mktemp -d "${smoke_store_base%/}/picode-smoke-piagent-XXXXXXXX")"
+export PICODE_PI_AGENT_DIR="$SMOKE_PI_AGENT_DIR"
 cleanup() {
   rm -rf "$SMOKE_SESSIONS_STORE"
+  rm -rf "$SMOKE_PI_AGENT_DIR"
 }
 trap cleanup EXIT
 
 echo "SMOKE session hygiene: real store=$REAL_SESSIONS_DIR ($SESSIONS_BEFORE session files)"
 echo "SMOKE session hygiene: isolated store=$SMOKE_SESSIONS_STORE"
+echo "SMOKE skills hygiene: isolated agent dir=$SMOKE_PI_AGENT_DIR"
 
 STEPS=(
   "build:npm run build"

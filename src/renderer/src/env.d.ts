@@ -8,6 +8,7 @@ import type { PreviewResult } from '../shared/preview/types'
 import type { AuthProbeReport } from '../shared/auth-status'
 import type { AppPreferences } from '../shared/preferences'
 import type { NewTaskCommandCatalog } from '../shared/new-task-commands'
+import type { SkillsReport } from '../shared/skills-management'
 import type { UsageSnapshot } from '../../shared/usage/aggregate'
 import type { TerminalDataMessage, TerminalExitMessage } from '../../shared/terminal/messages'
 
@@ -100,6 +101,15 @@ interface PicodeSettingsBridge {
   set(patch: Partial<AppPreferences>): Promise<AppPreferences>
   /** Force a fresh read-only auth probe (host-family child, ADR-0003). */
   refreshAuth(): Promise<AuthProbeReport>
+  /** Skills-section enumeration for one directory (ticket 63; null = the
+   * global face). `force` re-probes instead of serving the cache. */
+  listSkills(cwd: string | null, force: boolean): Promise<SkillsReport>
+  /** Per-skill toggle — writes Pi's settings.json in pi-config format. */
+  toggleSkill(row: unknown, enable: boolean): Promise<{ ok: boolean; error?: string }>
+  /** Delete one entry under ~/.pi/agent/skills (link targets untouched). */
+  deleteSkillEntry(entryPath: string): Promise<{ ok: boolean; error?: string }>
+  /** Read-only Finder reveal of the row's skill file. */
+  revealSkill(target: string): Promise<boolean>
 }
 
 declare global {

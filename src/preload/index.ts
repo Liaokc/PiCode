@@ -9,6 +9,7 @@ import type { PreviewResult } from '../shared/preview/types'
 import type { AuthProbeReport } from '../shared/auth-status'
 import type { AppPreferences } from '../shared/preferences'
 import type { NewTaskCommandCatalog } from '../shared/new-task-commands'
+import type { SkillsReport } from '../shared/skills-management'
 import type { TerminalDataMessage, TerminalExitMessage } from '../shared/terminal/messages'
 import { shellDisplayName } from '../shared/terminal/shell-name'
 
@@ -126,7 +127,19 @@ contextBridge.exposeInMainWorld('picode', {
     set: (patch: Partial<AppPreferences>): Promise<AppPreferences> =>
       ipcRenderer.invoke('settings:set', patch),
     /** Force a fresh read-only auth probe (host-family child, ADR-0003). */
-    refreshAuth: (): Promise<AuthProbeReport> => ipcRenderer.invoke('settings:refresh-auth')
+    refreshAuth: (): Promise<AuthProbeReport> => ipcRenderer.invoke('settings:refresh-auth'),
+    /** Skills-section enumeration for one directory (ticket 63; null = the
+     * global face). `force` re-probes instead of serving the cache. */
+    listSkills: (cwd: string | null, force: boolean): Promise<SkillsReport> =>
+      ipcRenderer.invoke('settings:skills', cwd, force),
+    /** Per-skill toggle — writes Pi's settings.json in pi-config format. */
+    toggleSkill: (row: unknown, enable: boolean): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('settings:skills-toggle', row, enable),
+    /** Delete one entry under ~/.pi/agent/skills (link targets untouched). */
+    deleteSkillEntry: (entryPath: string): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('settings:skills-delete', entryPath),
+    /** Read-only Finder reveal of the row's skill file. */
+    revealSkill: (target: string): Promise<boolean> => ipcRenderer.invoke('settings:skills-reveal', target)
   },
   review: {
     /** Collect a workspace-vs-HEAD diff snapshot for the given directory. */

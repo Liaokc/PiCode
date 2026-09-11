@@ -1,6 +1,15 @@
 import type { AuthProbeReport, CommandCatalogRow, ModelCatalogEntry, ProviderAuthStatus } from '../shared/auth-status.ts'
 import type { ThinkingLevel } from '../shared/contract.ts'
+import {
+  buildSkillCatalogRow,
+  isUnderPiSkillsDir,
+  peekSkillIdentity,
+  type SkillCatalogRow,
+  type SkillEntryKind
+} from '../shared/skills-management.ts'
 import { homedir } from 'node:os'
+import { readdirSync, readFileSync, lstatSync, realpathSync, statSync } from 'node:fs'
+import path from 'node:path'
 
 /**
  * Auth-probe collector (ticket 11, extended by ticket 52). The probe is a
@@ -101,6 +110,189 @@ function stringifyHint(hint: unknown): string {
   return typeof hint === 'string' ? hint : String(hint)
 }
 
+// ---- ticket 63: skills enumeration (Pi's actual loading surface) ----
+
+/** Structural subset of the SDK's ResolvedResource rows the enumeration needs. */
+interface ResolvedSkillRow {
+  path: string
+  enabled: boolean
+  metadata: { source: string; scope: string; origin: string; baseDir?: string }
+}
+
+interface PackageManagerLike {
+  resolve(onMissing: (source: string) => Promise<'skip'>): Promise<{ skills: ResolvedSkillRow[] }>
+}
+
+/** The probe receives the SDK class dynamically (ESM-only package); the
+ * structural ctor type keeps this module's surface SDK-free. The
+ * settingsManager slot is the services' REAL SettingsManager — declared as
+ * the opaque structural bound so the host module never names the SDK type. */
+interface SettingsManagerLike {
+  getGlobalSettings(): unknown
+}
+
+type PackageManagerCtor = new (options: {
+  cwd: string
+  agentDir: string
+  settingsManager: SettingsManagerLike
+}) => PackageManagerLike
+
+/** Adapt the SDK's DefaultPackageManager to the structural ctor type: the
+ * settingsManager passed here IS the services' real SettingsManager — the
+ * `never` slot above only widens the dynamic-import value so the cast is
+ * explicit at the single seam where the SDK enters. */
+function asPackageManagerCtor(value: unknown): PackageManagerCtor {
+  return value as PackageManagerCtor
+}
+
+/** The effective user skills dir (~/.pi/agent/skills) for the probe's agent dir. */
+export function piSkillsDirFor(agentDir: string): string {
+  return path.join(agentDir, 'skills')
+}
+
+/**
+ * Enumerate the skill universe for the probed cwd (ticket 63):
+ *
+ * - `PackageManager.resolve('skip' on missing)` returns EVERY discovered
+ *   entry — user dir (incl. symlinks), `~/.agents/skills`, trusted project
+ *   dirs, package installs — each with its enabled flag and source metadata.
+ *   The onMissing:'skip' handler keeps the pass strictly read-only (no
+ *   auto-install of uninstalled packages).
+ * - `resourceLoader.getSkills()` is the loaded face: identity (name /
+ *   description) comes from there when present, else a frontmatter peek.
+ * - A dangling-link scan of ~/.pi/agent/skills adds rows for broken links
+ *   (real path deleted elsewhere) so the list can mark them — never hide.
+ *
+ * Failures degrade to an error report, never a throw.
+ */
+export async function collectSkillCatalog(
+  services: {
+    cwd: string
+    agentDir: string
+    settingsManager: SettingsManagerLike
+    resourceLoader: { getSkills(): { skills: Array<{ name: string; description: string; filePath: string }> } }
+  },
+  PackageManager: PackageManagerCtor
+): Promise<{ rows: SkillCatalogRow[]; error: string | null }> {
+  const piSkillsDir = piSkillsDirFor(services.agentDir)
+  try {
+    const packageManager = new PackageManager({
+      cwd: services.cwd,
+      agentDir: services.agentDir,
+      settingsManager: services.settingsManager
+    })
+    const resolved = await packageManager.resolve(async () => 'skip')
+    const loaded = new Map(services.resourceLoader.getSkills().skills.map((s) => [s.filePath, s]))
+    const rows: SkillCatalogRow[] = resolved.skills.map((resource) => {
+      const entry = classifyEntry(resource.path, piSkillsDir)
+      const loadedSkill = loaded.get(resource.path)
+      const frontmatter = loadedSkill === undefined ? peekFile(resource.path) : null
+      return buildSkillCatalogRow(
+        {
+          path: resource.path,
+          enabled: resource.enabled,
+          scope: resource.metadata.scope,
+          origin: resource.metadata.origin,
+          source: resource.metadata.source,
+          baseDir: resource.metadata.baseDir ?? null
+        },
+        {
+          loaded: loadedSkill ?? null,
+          frontmatter,
+          entryPath: entry.entryPath,
+          entryKind: entry.entryKind,
+          realPath: entry.realPath,
+          broken: entry.broken
+        }
+      )
+    })
+    // Dangling links under the pi skills dir that resolve() silently skips:
+    // every depth-1 symlink entry whose target is gone becomes a marked row.
+    const seen = new Set(rows.map((r) => r.entryPath ?? r.path))
+    for (const dangling of scanDanglingLinks(piSkillsDir)) {
+      if (seen.has(dangling)) continue
+      rows.push(
+        buildSkillCatalogRow(
+          {
+            path: dangling,
+            enabled: false,
+            scope: 'user',
+            origin: 'top-level',
+            source: 'auto',
+            baseDir: services.agentDir
+          },
+          { entryPath: dangling, entryKind: 'symlink', realPath: null, broken: true }
+        )
+      )
+    }
+    return { rows, error: null }
+  } catch (err) {
+    return { rows: [], error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+/** lstat classification of the deletable ENTRY for a row under the pi skills
+ * dir; null (and no realPath) for rows elsewhere. Live links carry the
+ * realpath of their content — the SSOT directory a delete must NOT touch. */
+function classifyEntry(
+  resourcePath: string,
+  piSkillsDir: string
+): { entryPath: string | null; entryKind: SkillEntryKind; realPath: string | null; broken: boolean } {
+  if (!isUnderPiSkillsDir(resourcePath, piSkillsDir)) {
+    return { entryPath: null, entryKind: null, realPath: null, broken: false }
+  }
+  const entry = resourcePath.endsWith('/SKILL.md') ? path.dirname(resourcePath) : resourcePath
+  try {
+    const stats = lstatSync(entry)
+    if (stats.isSymbolicLink()) {
+      // Link (live or dangling): the delete is an unlink of the link itself.
+      let realPath: string | null = null
+      try {
+        realPath = realpathSync(resourcePath)
+      } catch {
+        // Dangling — the target is gone; keep the link row, mark it broken.
+        return { entryPath: entry, entryKind: 'symlink', realPath: null, broken: true }
+      }
+      return { entryPath: entry, entryKind: 'symlink', realPath, broken: false }
+    }
+    if (stats.isDirectory()) return { entryPath: entry, entryKind: 'real-dir', realPath: null, broken: false }
+    if (stats.isFile()) return { entryPath: entry, entryKind: 'real-file', realPath: null, broken: false }
+    return { entryPath: entry, entryKind: null, realPath: null, broken: false }
+  } catch {
+    // lstat failed (entry vanished between resolve and classify): report it
+    // as a broken link only when the row itself is also unreadable.
+    return { entryPath: entry, entryKind: null, realPath: null, broken: false }
+  }
+}
+
+/** Depth-1 symlinks under the skills dir whose target no longer exists. */
+function scanDanglingLinks(piSkillsDir: string): string[] {
+  try {
+    return readdirSync(piSkillsDir, { withFileTypes: true })
+      .filter((entry) => entry.isSymbolicLink())
+      .map((entry) => path.join(piSkillsDir, entry.name))
+      .filter((link) => {
+        try {
+          statSync(link)
+          return false
+        } catch {
+          return true
+        }
+      })
+  } catch {
+    return []
+  }
+}
+
+/** Best-effort frontmatter peek for rows Pi did not load. */
+function peekFile(filePath: string): { name: string | null; description: string | null } | null {
+  try {
+    return peekSkillIdentity(readFileSync(filePath, 'utf-8'))
+  } catch {
+    return null
+  }
+}
+
 /**
  * Project the provider registry into the read-only status rows: every
  * provider gets a row (configured or not) so the settings view can show the
@@ -151,10 +343,13 @@ export async function collectAuthStatuses(
  * `.pi/` resources can live there beyond the agent dir's own). Errors never
  * throw — they surface as an error report the consumers can display.
  */
-export async function runAuthProbe(cwd?: string): Promise<AuthProbeReport> {
+export async function runAuthProbe(cwd?: string, agentDir?: string): Promise<AuthProbeReport> {
   try {
     const sdk = await import('@earendil-works/pi-coding-agent')
-    const services = await sdk.createAgentSessionServices({ cwd: cwd && cwd.trim() !== '' ? cwd : homedir() })
+    const services = await sdk.createAgentSessionServices({
+      cwd: cwd && cwd.trim() !== '' ? cwd : homedir(),
+      ...(agentDir !== undefined && agentDir.trim() !== '' ? { agentDir } : {})
+    })
     const report = await collectAuthStatuses(
       {
         getProviders: () => services.modelRuntime.getProviders().map((provider) => ({ id: provider.id })),
@@ -168,6 +363,12 @@ export async function runAuthProbe(cwd?: string): Promise<AuthProbeReport> {
       (id) => sdk.readStoredCredential(id)
     )
     report.commands = collectCommandCatalog(services.resourceLoader)
+    // Ticket 63: the Skills-section enumeration rides the same probe report.
+    const skills = await collectSkillCatalog(services, asPackageManagerCtor(sdk.DefaultPackageManager))
+    report.skills = skills.rows
+    report.skillsError = skills.error
+    report.skillsScannedAt = Date.now()
+    report.skillsCwd = cwd && cwd.trim() !== '' ? cwd : null
     return report
   } catch (err) {
     return {

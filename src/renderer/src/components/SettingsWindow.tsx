@@ -14,7 +14,9 @@ import UsagePage from '../usage/UsagePage'
 import GeneralSection from './settings/GeneralSection'
 import AppearanceSection from './settings/AppearanceSection'
 import ModelsSection from './settings/ModelsSection'
-import { BarChartIcon, ChevronLeftIcon, CubeIcon, PaletteIcon, SlidersIcon } from './icons'
+import { BarChartIcon, BoxesIcon, ChevronLeftIcon, CubeIcon, PaletteIcon, SlidersIcon, SparklesIcon } from './icons'
+import SkillsSection from './settings/SkillsSection'
+import PackagesSection from './settings/PackagesSection'
 
 interface SettingsWindowProps {
   /** Shell-level actions (back to workspace). */
@@ -27,6 +29,9 @@ interface SettingsWindowProps {
   authScanning: boolean
   onSetPreferences: (patch: Partial<AppPreferences>) => void
   onRefreshAuth: () => void
+  /** Ticket 63: the cwd scoping the Skills enumeration — the focused
+   * session's workspace; null = the home directory's global face. */
+  skillsCwd: string | null
 }
 
 function SectionIcon({ section }: { section: SettingsSection }): JSX.Element {
@@ -37,6 +42,10 @@ function SectionIcon({ section }: { section: SettingsSection }): JSX.Element {
       return <PaletteIcon />
     case 'models':
       return <CubeIcon />
+    case 'skills':
+      return <SparklesIcon />
+    case 'packages':
+      return <BoxesIcon />
     case 'usage':
       return <BarChartIcon />
   }
@@ -56,7 +65,8 @@ export default function SettingsWindow({
   auth,
   authScanning,
   onSetPreferences,
-  onRefreshAuth
+  onRefreshAuth,
+  skillsCwd
 }: SettingsWindowProps): JSX.Element {
   const [ui, dispatch] = useReducer(settingsUiReducer, undefined, initialSettingsUiState)
   const { snapshot, error } = useUsageSnapshot()
@@ -105,6 +115,8 @@ export default function SettingsWindow({
             onRefreshAuth={onRefreshAuth}
           />
         )}
+        {ui.section === 'skills' && <SkillsSection cwd={skillsCwd} />}
+        {ui.section === 'packages' && <PackagesSection />}
         {ui.section === 'usage' && (
           <UsagePage
             snapshot={snapshot}

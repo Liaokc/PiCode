@@ -15,11 +15,15 @@ import { isAuthProbeReport, type AuthProbeReport } from '../../shared/auth-statu
 export interface AuthProbeHostOptions {
   timeoutMs?: number
   cwd?: string | null
+  /** Ticket 63: agent-dir override for the skills enumeration (smoke/harness
+   * sandbox); forwarded as the probe host's optional third argument. */
+  agentDir?: string | null
 }
 
 export function runAuthProbeHost(hostEntryPath: string, options: AuthProbeHostOptions = {}): Promise<AuthProbeReport> {
   const timeoutMs = options.timeoutMs ?? 15_000
   const args = options.cwd ? ['--auth-probe', options.cwd] : ['--auth-probe']
+  if (options.agentDir && options.agentDir.trim() !== '') args.push(options.agentDir)
   return new Promise((resolve) => {
     let settled = false
     let child: ChildProcess | null = null

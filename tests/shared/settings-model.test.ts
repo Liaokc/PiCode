@@ -9,6 +9,9 @@ describe('settings nav (cropped from ZCode)', () => {
   it('offers exactly General/Appearance/Models plus the Data & Statistics group', () => {
     expect(SETTINGS_NAV).toEqual([
       { label: 'General', sections: ['general', 'appearance', 'models'] },
+      // Ticket 63: the Agent Resources group — Skills delivered here,
+      // Packages reserved as a nav slot for ticket 64.
+      { label: 'Agent Resources', sections: ['skills', 'packages'] },
       { label: 'Data & Statistics', sections: ['usage'] }
     ])
   })

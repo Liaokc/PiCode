@@ -7,6 +7,9 @@
  *   2. Models section — default model/thinking + provider sign-in list
  *   3. General section — startup preferences
  *   4. Appearance section — theme placeholder
+ *   5. Skills section (ticket 63) — the full state vocabulary: source
+ *      badges, disabled row, broken link, per-skill switches
+ *   6. Packages placeholder (ticket 63 nav slot, ticket 64 delivers)
  *
  * PNGs land in $PICODE_VISUAL_OUT (default: <cwd>/.scratch/visual/). Not part
  * of `npm test`; a human compares them against the reference screenshots.
@@ -89,10 +92,12 @@ export function startSettingsVisualIfEnabled(getWindow: () => BrowserWindow | nu
       const wc = win.webContents
       await sleep(600)
 
-      // 1. ⌘K palette — opened exactly the way the keybinding does it.
+      // 1. ⌘K palette — opened exactly the way the keybinding does it
+      // (the physical-code chord the ticket-27 table resolves; the keycap
+      // dispatch needs `code`, not just the derived character).
       await wc.executeJavaScript(
         `(() => {
-          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true, cancelable: true }))
+          window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyK', key: 'k', metaKey: true, cancelable: true }))
           return true
         })()`
       )
@@ -150,6 +155,18 @@ export function startSettingsVisualIfEnabled(getWindow: () => BrowserWindow | nu
       if (!(await clickNavItem(wc, 'Appearance'))) throw new Error('settings visual: Appearance nav item missing')
       await sleep(300)
       await capture(win, 's4-settings-appearance')
+
+      // 5. Skills section (ticket 63): the fake-settings fixture serves a
+      // deterministic enumeration — every badge + a broken link + a
+      // disabled row — so the frame shows the whole state vocabulary.
+      if (!(await clickNavItem(wc, 'Skills'))) throw new Error('settings visual: Skills nav item missing')
+      await sleep(400)
+      await capture(win, 's5-settings-skills')
+
+      // 6. Packages placeholder (nav slot for ticket 64).
+      if (!(await clickNavItem(wc, 'Packages'))) throw new Error('settings visual: Packages nav item missing')
+      await sleep(300)
+      await capture(win, 's6-settings-packages')
 
       console.log('VISUAL settings done')
       app.exit(0)

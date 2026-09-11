@@ -20,6 +20,7 @@ import { SessionContextActionService } from './sessions/context-actions'
 import { SettingsService, type SettingsSnapshot } from './settings/service'
 import { runAuthProbeHost } from './settings/probe-runner'
 import { CommandCatalogService } from './settings/command-catalog'
+import { SkillsService, type SkillActionOutcome } from './settings/skills-service'
 import { startSmokeIfEnabled, smokeEnabled, type SmokeHooks } from './smoke'
 import { startVisualIfEnabled } from './visual'
 import { startDensityVisualIfEnabled } from './visual-density'
@@ -47,6 +48,7 @@ import { startUsageVisualIfEnabled } from './visual-usage'
 import { startPerfIfEnabled } from './visual-perf'
 import { startCwdVisualIfEnabled, isolateCwdVisualUserData } from './visual-cwd'
 import { fakeUsageSnapshot } from '../shared/usage/fixture'
+import type { SkillCatalogRow, SkillsReport } from '../shared/skills-management'
 import { TerminalService, type TerminalDataMessage, type TerminalExitMessage } from './terminal/service'
 import { nodePtyFactory } from './terminal/node-pty-factory'
 import { createUsageService } from './usage/service'
@@ -189,6 +191,11 @@ app.whenReady().then(() => {
       : settings.authReport(true)
   )
 
+  // Ticket 63: the Skills section rides the same fake-settings switch —
+  // the deterministic fixture below serves the visual harness and never
+  // touches the real probe or settings.json (toggles/deletes resolve ok
+  // without I/O); the real branch is the SkillsService further down.
+
   // New-task command catalog (ticket 52): the renderer reports the New Task
   // chip's selected directory; the service debounces switches, probes each
   // directory once (short-lived probe host, cwd-parametrized), caches, and
@@ -201,6 +208,43 @@ app.whenReady().then(() => {
   commandCatalog = catalogService
   ipcMain.on('chat:new-task-cwd', (_event, cwd: unknown) => {
     catalogService.request(typeof cwd === 'string' && cwd.trim() !== '' ? cwd : null)
+  })
+
+  // Skills management (ticket 63): the settings window's Skills section —
+  // read side enumerates Pi's loading surface per directory (probe host,
+  // cached); the toggle/delete writes go through the strictly-scoped
+  // pi-settings editor (deletes never touch symlink targets).
+  const skills = new SkillsService({ probe: (cwd, agentDir) => runAuthProbeHost(hostEntry, { cwd, agentDir }) })
+  ipcMain.handle('settings:skills', (_event, cwd: unknown, force: unknown): Promise<SkillsReport> => {
+    if (fakeSettings) return Promise.resolve(fakeSkillsReport())
+    const dir = typeof cwd === 'string' && cwd.trim() !== '' ? cwd : null
+    return skills.listSkills(dir, force === true)
+  })
+  ipcMain.handle('settings:skills-toggle', (_event, rawRow: unknown, enable: unknown): Promise<SkillActionOutcome> => {
+    if (fakeSettings) return Promise.resolve({ ok: true })
+    if (typeof rawRow !== 'object' || rawRow === null || typeof enable !== 'boolean') {
+      return Promise.resolve({ ok: false, error: 'Malformed toggle request.' })
+    }
+    return skills.toggleSkill(rawRow as SkillCatalogRow, enable)
+  })
+  ipcMain.handle('settings:skills-delete', (_event, entryPath: unknown): Promise<SkillActionOutcome> => {
+    if (fakeSettings) return Promise.resolve({ ok: true })
+    if (typeof entryPath !== 'string' || entryPath.trim() === '') {
+      return Promise.resolve({ ok: false, error: 'Malformed delete request.' })
+    }
+    return skills.deleteSkillEntry(entryPath)
+  })
+  ipcMain.handle('settings:skills-reveal', (_event, target: unknown): boolean => {
+    // Read-only reveal of the row's skill file (falls back to the skills
+    // dir for broken rows, whose path no longer exists).
+    if (fakeSettings) return true
+    if (typeof target !== 'string' || target.trim() === '') return false
+    try {
+      shell.showItemInFolder(target)
+      return true
+    } catch {
+      return false
+    }
   })
 
   let smokeHooks: SmokeHooks | null = null
@@ -492,4 +536,83 @@ function fakeAuthReport(): AuthProbeReport {
       { providerId: 'zai', name: 'Z.ai', modelCount: 4, authType: null, source: null, oauthExpiresAt: null }
     ]
   }
+}
+
+/** Deterministic Skills-section fixture (PICODE_FAKE_SETTINGS=1, ticket 63):
+ * every source badge + a broken link + a disabled row, so the visual frames
+ * show the whole state vocabulary. Never touches the real machine. */
+function fakeSkillsReport(): SkillsReport {
+  const rows: SkillCatalogRow[] = [
+    {
+      path: '/Users/demo/.pi/agent/skills/alpha-testing/SKILL.md',
+      entryPath: '/Users/demo/.pi/agent/skills/alpha-testing',
+      entryKind: 'symlink',
+      realPath: '/Users/demo/.agents/skills/alpha-testing',
+      name: 'alpha-testing',
+      description: 'Run the alpha test suite against a fixture project and summarize failures.',
+      enabled: true,
+      scope: 'user',
+      origin: 'top-level',
+      source: 'auto',
+      baseDir: '/Users/demo/.pi/agent',
+      broken: false
+    },
+    {
+      path: '/Users/demo/.pi/agent/skills/cron-scheduler/SKILL.md',
+      entryPath: '/Users/demo/.pi/agent/skills/cron-scheduler',
+      entryKind: 'real-dir',
+      realPath: null,
+      name: 'cron-scheduler',
+      description: 'Schedule recurring prompts and inspect their run history.',
+      enabled: false,
+      scope: 'user',
+      origin: 'top-level',
+      source: 'auto',
+      baseDir: '/Users/demo/.pi/agent',
+      broken: false
+    },
+    {
+      path: '/Users/demo/.pi/agent/skills/old-workflow',
+      entryPath: '/Users/demo/.pi/agent/skills/old-workflow',
+      entryKind: 'symlink',
+      realPath: null,
+      name: 'old-workflow',
+      description: null,
+      enabled: false,
+      scope: 'user',
+      origin: 'top-level',
+      source: 'auto',
+      baseDir: '/Users/demo/.pi/agent',
+      broken: true
+    },
+    {
+      path: '/install/pi-clipboard/skills/clipboard-lint/SKILL.md',
+      entryPath: null,
+      entryKind: null,
+      realPath: null,
+      name: 'clipboard-lint',
+      description: 'Lint clipboard-handling code for privacy leaks before commits.',
+      enabled: true,
+      scope: 'user',
+      origin: 'package',
+      source: 'npm:@demo/pi-clipboard',
+      baseDir: '/install/pi-clipboard',
+      broken: false
+    },
+    {
+      path: '/Users/demo/Projects/api/.pi/skills/api-review/SKILL.md',
+      entryPath: null,
+      entryKind: null,
+      realPath: null,
+      name: 'api-review',
+      description: 'Review API changes against the team design checklist.',
+      enabled: true,
+      scope: 'project',
+      origin: 'top-level',
+      source: 'auto',
+      baseDir: '/Users/demo/Projects/api/.pi',
+      broken: false
+    }
+  ]
+  return { cwd: null, scannedAt: Date.now(), rows, error: null }
 }

@@ -1939,6 +1939,275 @@ kbd {
   color: var(--text-secondary);
 }
 
+/* ---------- settings · Skills section (ticket 63) ---------- */
+
+.settings-skills-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.settings-skills-count {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.settings-skills-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  font-size: 11.5px;
+  color: var(--text-primary);
+}
+
+.settings-skills-refresh:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+
+.settings-skills-refresh:disabled {
+  opacity: 0.55;
+}
+
+.settings-skills-error {
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+}
+
+.settings-skills-empty {
+  padding: 24px 0;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.settings-skills-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.skill-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 4px;
+}
+
+.skill-row + .skill-row {
+  border-top: 1px solid var(--border);
+}
+
+.skill-row-broken {
+  opacity: 0.62;
+}
+
+.skill-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.skill-row-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.skill-row-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.skill-badge {
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 1.5px 7px;
+  border-radius: 999px;
+  background: var(--bg-active);
+  color: var(--text-secondary);
+  flex: none;
+}
+
+.skill-badge-package {
+  background: var(--bg-inset);
+  color: var(--text-primary);
+}
+
+.skill-badge-project {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.skill-badge-broken {
+  background: var(--accent-orange);
+  color: #ffffff;
+}
+
+.skill-badge-off {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.skill-row-description {
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-row-path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-row-package {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.skill-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+.skill-row-btn {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  color: var(--text-secondary);
+}
+
+.skill-row-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.skill-row-btn:disabled {
+  opacity: 0.5;
+}
+
+.skill-row-danger:hover:not(:disabled) {
+  color: var(--accent-orange);
+}
+
+/* the per-skill toggle switch (pi-config-backed enable state) */
+.skill-switch {
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--bg-active);
+  position: relative;
+  margin-left: 4px;
+  transition: background 0.15s ease;
+  flex: none;
+}
+
+.skill-switch:disabled {
+  opacity: 0.5;
+}
+
+.skill-switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.skill-switch-on {
+  background: var(--accent-orange);
+}
+
+.skill-switch-on .skill-switch-knob {
+  transform: translateX(14px);
+  background: #ffffff;
+}
+
+/* the inline delete confirmation (type-split copy, ZCode semantics) */
+.skill-confirm {
+  position: absolute;
+  right: 0;
+  top: calc(100% - 6px);
+  z-index: 30;
+  width: min(380px, 90%);
+  padding: 11px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
+}
+
+.skill-confirm-copy {
+  font-size: 12px;
+  color: var(--text-primary);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.skill-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.skill-confirm-cancel {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.skill-confirm-cancel:hover {
+  background: var(--bg-hover);
+}
+
+.skill-confirm-delete {
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 7px;
+  background: var(--accent-orange);
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+.skill-confirm-delete:hover {
+  filter: brightness(1.06);
+}
+
 .settings-note-error {
   background: #fdf2ec;
   color: #a33f1b;

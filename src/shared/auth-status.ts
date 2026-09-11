@@ -9,6 +9,7 @@
  */
 
 import type { ThinkingLevel } from './contract.ts'
+import { isSkillsReport, type SkillsReport } from './skills-management.ts'
 
 export type AuthMethod = 'api_key' | 'oauth'
 
@@ -61,6 +62,19 @@ export interface AuthProbeReport {
    * argument (auth-only refresh) reports an empty array.
    */
   commands?: CommandCatalogRow[]
+  /**
+   * Ticket 63 (additive, operator-approved): the Skills-section enumeration
+   * for the probed working directory — every skill entry Pi discovers (user
+   * dir incl. symlinks, package-provided, trusted project) with its source
+   * dimensions and enabled state. Reports from older probes omit the field;
+   * consumers treat absence as "not enumerated".
+   */
+  skills?: SkillsReport['rows']
+  /** Error of the skills enumeration alone (the auth/commands report stays
+   * usable when only the skills pass fails). null = clean. */
+  skillsError?: string | null
+  skillsScannedAt?: number
+  skillsCwd?: string | null
 }
 
 /** One raw row of the probe's command catalog (prompt template or skill). */
@@ -138,6 +152,16 @@ export function isAuthProbeReport(value: unknown): value is AuthProbeReport {
   const commands = record['commands']
   const commandsOk =
     commands === undefined || (Array.isArray(commands) && commands.every(isCommandCatalogRow))
+  // Ticket 63: the skills block rides the same report; all-or-nothing per
+  // field so a partial skills enumeration degrades to "not enumerated".
+  const skillsOk =
+    record['skills'] === undefined ||
+    isSkillsReport({
+      cwd: record['skillsCwd'] ?? null,
+      scannedAt: typeof record['skillsScannedAt'] === 'number' ? record['skillsScannedAt'] : 0,
+      rows: record['skills'],
+      error: record['skillsError'] ?? null
+    })
   return (
     typeof record['scannedAt'] === 'number' &&
     (record['error'] === null || typeof record['error'] === 'string') &&
@@ -145,6 +169,7 @@ export function isAuthProbeReport(value: unknown): value is AuthProbeReport {
     record['providers'].every(isProviderStatus) &&
     Array.isArray(record['models']) &&
     record['models'].every(isModelCatalogEntry) &&
-    commandsOk
+    commandsOk &&
+    skillsOk
   )
 }
