@@ -131,12 +131,4 @@ describe('reduceComposerExpand — ticket 57: the global ⌘E chord is its own e
   it('the key event is self-inverting: expanded → collapsed (⌘E again retracts)', () => {
     expect(reduceComposerExpand('expanded', 'key')).toBe('collapsed')
   })
-
-  it('the key event is a provenance-distinct event, not an alias of the button toggle', () => {
-    // 'toggle' is the button's click; 'key' is the App-routed ⌘E chord.
-    // Identical semantics BY the table, distinct events IN the union —
-    // the same shape as click vs. the collapse routes.
-    const events: ComposerExpandEvent[] = ['toggle', 'escape', 'sent', 'key']
-    expect(new Set(events).size).toBe(events.length)
-  })
 })

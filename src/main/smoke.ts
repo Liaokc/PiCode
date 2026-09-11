@@ -83,7 +83,8 @@
  * ⌘E keycap only (Tooltip discipline).
  *
  * Any missed step times out and exits non-zero. Progress logs as
- * `SMOKE <step>` lines on stdout. Not part of `npm test`. */
+ * `SMOKE <step>` lines on stdout. Not part of `npm test`.
+ */
 
 import os from 'node:os'
 import { randomUUID } from 'node:crypto'
