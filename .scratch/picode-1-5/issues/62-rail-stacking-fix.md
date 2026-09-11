@@ -6,16 +6,17 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
-- [ ] 右键菜单打开时九项完整可见、可点击，无 tick 穿透（对照 pi15-rail-over-context-menu 场景）
-- [ ] 主区子树整体压侧栏之下不引入新回归：轨道悬停气泡、回底钮（z:10）、根层 tooltip / 各浮层行为不变
-- [ ] visual harness：菜单压轨帧（修复后形态，对照 pi15-rail-over-context-menu）
-- [ ] 跑 dev app / smoke / visual 前 ps 复核无其他 PiCode Electron/dev-app/smoke 进程；撞锁则等待重试不并跑
-- [ ] typecheck / lint / vitest 全绿；code-review 双轴通过
+- [x] 右键菜单打开时九项完整可见、可点击，无 tick 穿透（对照 pi15-rail-over-context-menu 场景）
+- [x] 主区子树整体压侧栏之下不引入新回归：轨道悬停气泡、回底钮（z:10）、根层 tooltip / 各浮层行为不变
+- [x] visual harness：菜单压轨帧（修复后形态，对照 pi15-rail-over-context-menu）
+- [x] 跑 dev app / smoke / visual 前 ps 复核无其他 PiCode Electron/dev-app/smoke 进程；撞锁则等待重试不并跑
+- [x] typecheck / lint / vitest 全绿；code-review 双轴通过
 
 **交接：** 完成后不自行 merge——操作者/合并会话执行 `bash scripts/merge-ticket.sh 62`。
 
 ## Comments
 
 - 2026-09-10 (requirements intake): 建票（spec R6，Q9=A）。波次 W1。纯 CSS 级小票（缺陷，票 46 交付即有——层叠上下文未在当时暴露）。
+- 2026-09-11 (implementation, t62-rail-stacking-fix @ cfd22f8): **修法取「等效 z-index 方案」而非字面 chat-body isolation**——取证发现 `.md-table-preview-backdrop`（z:90、fixed、全屏灯箱）在 Markdown.tsx 原位渲染于 chat-body 内：若对 chat-body 加 isolation，灯箱被困侧栏之下（titlebar/侧栏穿透），违反「各浮层行为不变」。z 阶梯全查：根上下文无任何元素 z 值落在 0–5 区间 → 拆掉 `.nav-rail` 的 z:5（降入 positioned/auto 带）+ `isolation: isolate`（保轨内悬停气泡不外泄）恰好只改变「轨道 ↔ 侧栏子树」这一对比较，其余全部浮层两两关系不变。导航轨区段内改动（不碰 58 输入区段）。**验收证据**：新增 `npm run visual:rail-stack`（PICODE_VISUAL_RAIL_STACK=1，`src/main/visual-rail-stack.ts`）——修复前 RED（九项在 menu∩rail 交点全部输给 tick 束，复现 pi15 帧），修复后 GREEN（九项按 ZCode 序完整、逐项 elementFromPoint 可点、交点全部菜单胜出）；回归面同 harness 钉死：tick 仍压转录、悬停气泡淡入（rs2 帧）、回底钮 z:10 淡入可命中（rs3 帧）；对照帧归档 `.scratch/compare/t62-menu-over-rail.png`。跑 visual 前 ps 复核无其他 PiCode Electron/dev-app/smoke 进程。typecheck / lint（0 error，EmptyState.tsx 1 条既有 warning 非本票文件）/ vitest 81 文件 1134 用例全绿。code-review 双轴：Standards 0 硬违规（1 判断项：harness 自含 helper 复制，10+ 既有 harness 同型先例）；Spec 0 缺失 0 蔓延（等效方案偏离已如上记录）。**交接：不自行 merge——操作者/合并会话执行 `bash scripts/merge-ticket.sh 62`。**
