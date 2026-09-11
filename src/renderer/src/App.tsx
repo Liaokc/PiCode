@@ -437,9 +437,9 @@ export default function App(): JSX.Element {
 
   // ---- global keybindings (ticket 27, shared/keymap.ts): ⌘N new task,
   // ⌘K task search, ⌘B left sidebar, ⌥⌘B side panel, ⌘J terminal dock,
-  // ⌥⌘J bridge dock, ⌘E composer expand (ticket 57) — resolved
-  // table-driven by PHYSICAL event.code, so the ⌥⌘ chords survive macOS
-  // Option rewriting the character (⌥B → "∫").
+  // ⌥⌘J bridge dock, ⌘E composer expand (ticket 57), ⌘, settings toggle
+  // (ticket 63) — resolved table-driven by PHYSICAL event.code, so the ⌥⌘
+  // chords survive macOS Option rewriting the character (⌥B → "∫").
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
       const action = resolveKeybinding(event)
@@ -474,6 +474,11 @@ export default function App(): JSX.Element {
           // machine (Seam-1) owns the state change.
           window.dispatchEvent(new Event(TOGGLE_EXPAND_EVENT))
           break
+        case 'toggle-settings':
+          // Ticket 63: ⌘, opens the settings window from the workspace and
+          // closes it from inside — one self-inverting shell action.
+          dispatch({ type: 'toggle-settings' })
+          break
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -482,17 +487,22 @@ export default function App(): JSX.Element {
 
   // Escape leaves the new-task state (ticket 17) — except inside the
   // composer, the chip dropdown, and the ⌘K palette, where Escape closes
-  // menus/overlays locally.
+  // menus/overlays locally. Ticket 63: Escape also closes the settings
+  // window (the ⌘, / gear's companion close path) with the same guards.
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
       if (event.key !== 'Escape' || event.defaultPrevented) return
       const target = event.target
-      if (target instanceof Element && target.closest('.composer, .newtask-pop, .palette-overlay')) return
+      if (target instanceof Element && target.closest('.composer, .newtask-pop, .palette-overlay, .skill-confirm')) return
+      if (ui.view === 'settings') {
+        dispatch({ type: 'back-to-workspace' })
+        return
+      }
       setNewTaskOpen(false)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [])
+  }, [ui.view])
 
   // Honest liveness: the Live Follow badge and its Open control (ticket 24)
   // must flip when a watched session goes quiet even if no file changes —
@@ -1219,6 +1229,7 @@ export default function App(): JSX.Element {
           authScanning={settings.authScanning}
           onSetPreferences={handleSetPreferences}
           onRefreshAuth={handleRefreshAuth}
+          skillsCwd={chat.session?.cwd ?? null}
         />
         <TooltipHost />
       </div>

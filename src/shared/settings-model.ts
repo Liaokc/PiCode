@@ -6,16 +6,19 @@
  */
 import type { HeatmapMode } from './usage/charts.ts'
 
-export type SettingsSection = 'general' | 'appearance' | 'models' | 'usage'
+export type SettingsSection = 'general' | 'appearance' | 'models' | 'skills' | 'packages' | 'usage'
 
 export interface SettingsNavGroup {
   label: string
   sections: SettingsSection[]
 }
 
-/** Cropped from ZCode's nav groups; unused ZCode entries are intentionally absent. */
+/** Cropped from ZCode's nav groups; unused ZCode entries are intentionally absent.
+ * Ticket 63 adds the Agent Resources group: Skills (this ticket) and Packages
+ * (ticket 64 delivers the section; the nav slot already exists). */
 export const SETTINGS_NAV: readonly SettingsNavGroup[] = [
   { label: 'General', sections: ['general', 'appearance', 'models'] },
+  { label: 'Agent Resources', sections: ['skills', 'packages'] },
   { label: 'Data & Statistics', sections: ['usage'] }
 ]
 
@@ -23,6 +26,8 @@ export const SETTINGS_SECTION_LABELS: Record<SettingsSection, string> = {
   general: 'General',
   appearance: 'Appearance',
   models: 'Models',
+  skills: 'Skills',
+  packages: 'Packages',
   usage: 'Usage'
 }
 

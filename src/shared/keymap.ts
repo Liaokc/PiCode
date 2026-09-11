@@ -12,6 +12,8 @@
  * ⌥⌘J toggles the Bridge dock. ⌘N / ⌘K keep their pre-27 bindings.
  * Ticket 57 adds ⌘E: toggle the focused composer's expanded input (both
  * surfaces share the component; the App shell routes the action).
+ * Ticket 63 adds ⌘,: toggle the settings window (titlebar gear + Esc close
+ * alongside).
  */
 
 /** Actions the global chords dispatch; names mirror the reducer actions
@@ -24,6 +26,7 @@ export type KeybindingAction =
   | { type: 'toggle-terminal-panel' }
   | { type: 'toggle-bridge-panel' }
   | { type: 'toggle-composer-expand' }
+  | { type: 'toggle-settings' }
 
 /** Minimal shape of a KeyboardEvent the resolver reads. `key` exists on
  * real events but is deliberately NOT read — character judgment is exactly
@@ -53,7 +56,9 @@ export const KEYBINDINGS: readonly Chord[] = [
   { code: 'KeyJ', alt: true, action: { type: 'toggle-bridge-panel' } },
   { code: 'KeyB', alt: false, action: { type: 'toggle-sidebar' } },
   { code: 'KeyB', alt: true, action: { type: 'toggle-side-panel' } },
-  { code: 'KeyE', alt: false, action: { type: 'toggle-composer-expand' } }
+  { code: 'KeyE', alt: false, action: { type: 'toggle-composer-expand' } },
+  // Ticket 63: ⌘, opens/closes the settings window (ZCode muscle memory).
+  { code: 'Comma', alt: false, action: { type: 'toggle-settings' } }
 ]
 
 /** Resolve a keydown to its global action, or null when it is not one of

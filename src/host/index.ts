@@ -739,11 +739,15 @@ if (process.argv[2] === '--auth-probe') {
   // No session machinery is booted on this path. Ticket 52: an optional cwd
   // argument scopes the command-catalog enumeration (prompt templates +
   // skills for that directory); without it the probe falls back to the home
-  // directory (global resources only). The report is NOT a contract event —
-  // the supervisor validates it with isAuthProbeReport on arrival.
+  // directory (global resources only). Ticket 63: an optional agentDir
+  // argument scopes the SKILLS enumeration (sandbox override for smokes —
+  // session hosts never take this argument). The report is NOT a contract
+  // event — the supervisor validates it with isAuthProbeReport on arrival.
   const probeCwdArg = process.argv[3]
   const probeCwd = typeof probeCwdArg === 'string' && probeCwdArg.trim() !== '' ? probeCwdArg : undefined
-  void runAuthProbe(probeCwd).then((report) => {
+  const probeAgentDirArg = process.argv[4]
+  const probeAgentDir = typeof probeAgentDirArg === 'string' && probeAgentDirArg.trim() !== '' ? probeAgentDirArg : undefined
+  void runAuthProbe(probeCwd, probeAgentDir).then((report) => {
     process.send?.(report)
     // Give the IPC message a moment to flush before exiting.
     setTimeout(() => process.exit(0), 100).unref?.()

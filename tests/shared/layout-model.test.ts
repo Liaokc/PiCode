@@ -129,6 +129,15 @@ describe('shellUiReducer', () => {
     expect(toggle({ type: 'back-to-workspace' })(back)).toEqual(back)
   })
 
+  it('toggle-settings is the self-inverting ⌘, action (ticket 63)', () => {
+    const opened = toggle({ type: 'toggle-settings' })(initialShellUiState())
+    expect(opened.view).toBe('settings')
+    expect(toggle({ type: 'toggle-settings' })(opened).view).toBe('workspace')
+    // Open settings explicitly, then the toggle closes from the settings view.
+    const settings = toggle({ type: 'open-settings' })(initialShellUiState())
+    expect(toggle({ type: 'toggle-settings' })(settings).view).toBe('workspace')
+  })
+
   it('never mutates the previous state', () => {
     const frozen: Readonly<ShellUiState> = Object.freeze(initialShellUiState())
     expect(() => shellUiReducer(frozen, { type: 'toggle-side-panel' })).not.toThrow()

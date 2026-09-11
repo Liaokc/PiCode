@@ -350,6 +350,19 @@ export function CubeIcon({ size, className }: IconProps): JSX.Element {
   )
 }
 
+export function BoxesIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M7.5 11.5 3 14v5l4.5 2.5L12 19v-5Z" />
+      <path d="M3.3 13.8 7.5 16l4.2-2.2M7.5 16v5.2" />
+      <path d="M16.5 11.5 12 14v5l4.5 2.5L21 19v-5Z" />
+      <path d="m12.3 13.8 4.2 2.2 4.2-2.2M16.5 16v5.2" />
+      <path d="m12 2.5-4.5 2.5v5L12 12.5l4.5-2.5V5Z" />
+      <path d="M7.8 5.3 12 7.5l4.2-2.2M12 7.5v5" />
+    </svg>
+  )
+}
+
 export function BarChartIcon({ size, className }: IconProps): JSX.Element {
   return (
     <svg {...svgProps(size, className)}>

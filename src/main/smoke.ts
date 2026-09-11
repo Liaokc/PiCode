@@ -90,7 +90,7 @@ import os from 'node:os'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { app, clipboard, type BrowserWindow } from 'electron'
 import type { HostSupervisor } from './host-supervisor'
 import { focusSessionFromNotification, type ApprovalNotice } from './notifications'
@@ -4761,6 +4761,239 @@ export function startSmokeIfEnabled(
     })
     log('usage_hover_stage_done')
 
+    // ---- ticket 63: the settings window + Skills management ----
+    // ⌘, (physical Comma) toggles the settings window; the Skills section
+    // lists Pi's REAL loading surface for a sandbox agent dir (the probe
+    // child enumerates it through the actual SDK package manager): a real
+    // directory skill, a symlinked skill, and a dangling link. The toggle
+    // writes the pi-config-format override into the SANDBOX settings.json,
+    // and deleting the link unlinks ONLY the link — the real directory it
+    // points at survives byte-for-byte (the ticket's data-safety line).
+    log('settings_skills_start')
+    {
+      const sandboxAgent = process.env['PICODE_PI_AGENT_DIR']
+      if (sandboxAgent === undefined || sandboxAgent.trim() === '') {
+        fail('ticket-63 stage: PICODE_PI_AGENT_DIR is not set — the skills stage refuses to touch the real agent dir')
+      }
+      const agentDir = sandboxAgent!
+      const sandboxSettings = path.join(agentDir, 'settings.json')
+      const sandboxSkills = path.join(agentDir, 'skills')
+      // Seed the sandbox: one real dir skill, one symlinked skill pointing
+      // at a REAL directory OUTSIDE the skills dir (the SSOT), one dangling
+      // link. Unique names so the operator's real ~/.agents rows can't blur
+      // the assertions.
+      const REAL_NAME = 'picode-smoke-real'
+      const LINK_NAME = 'picode-smoke-link'
+      const DANGLING_NAME = 'picode-smoke-dangling'
+      const LINK_TARGET = path.join(agentDir, 'ssot', LINK_NAME)
+      // The exact bytes the link's target must still carry after the delete
+      // (byte-for-byte survival is the red-line assertion).
+      const LINK_TARGET_CONTENT = '---\nname: picode-smoke-link\ndescription: The smoke sandbox linked skill.\n---\nbody'
+      mkdirSync(path.join(sandboxSkills, REAL_NAME), { recursive: true })
+      writeFileSync(
+        path.join(sandboxSkills, REAL_NAME, 'SKILL.md'),
+        '---\nname: picode-smoke-real\ndescription: The smoke sandbox real-directory skill.\n---\nbody'
+      )
+      mkdirSync(path.join(LINK_TARGET), { recursive: true })
+      writeFileSync(path.join(LINK_TARGET, 'SKILL.md'), LINK_TARGET_CONTENT)
+      symlinkSync(LINK_TARGET, path.join(sandboxSkills, LINK_NAME))
+      symlinkSync(path.join(agentDir, 'vanished-target'), path.join(sandboxSkills, DANGLING_NAME))
+      // The toggle writes land here — seed the document so the poll below
+      // reads a file from the very first probe.
+      writeFileSync(sandboxSettings, JSON.stringify({}))
+      try {
+        await withWindow(getWindow, async (win) => {
+          const js = (script: string) => win.webContents.executeJavaScript(script)
+
+          // ① ⌘, opens the settings window (physical Comma chord → the
+          // keymap table → the shell reducer).
+          await js(`(() => {
+            window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Comma', key: ',', metaKey: true, cancelable: true }))
+            return true
+          })()`)
+          let opened = false
+          for (let waited = 0; waited < 5_000 && !opened; waited += 100) {
+            opened = (await js(`document.querySelector('.settings-shell') !== null && document.querySelector('.titlebar-title')?.textContent === 'Settings'`).catch(() => false)) as boolean
+            if (!opened) await new Promise((r) => setTimeout(r, 100))
+          }
+          if (!opened) fail('ticket-63 stage: ⌘, never opened the settings window')
+          log('settings_open_cmdcomma_ok')
+
+          // ② The titlebar gear toggles it closed again (and ⌘, reopens).
+          if (!(await js(`(() => {
+            const gear = document.querySelector('button[aria-label="Close settings"]')
+            if (!(gear instanceof HTMLElement)) return false
+            gear.click()
+            return true
+          })()`).catch(() => false))) fail('ticket-63 stage: the titlebar gear is missing in the settings view')
+          let gearClosed = false
+          for (let waited = 0; waited < 5_000 && !gearClosed; waited += 100) {
+            gearClosed = (await js(`document.querySelector('.settings-shell') === null`).catch(() => false)) as boolean
+            if (!gearClosed) await new Promise((r) => setTimeout(r, 100))
+          }
+          if (!gearClosed) fail('ticket-63 stage: the gear never closed the settings window')
+          log('settings_gear_toggle_ok')
+          await js(`(() => {
+            window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Comma', key: ',', metaKey: true, cancelable: true }))
+            return true
+          })()`)
+          let reopened = false
+          for (let waited = 0; waited < 5_000 && !reopened; waited += 100) {
+            reopened = (await js(`document.querySelector('.settings-shell') !== null`).catch(() => false)) as boolean
+            if (!reopened) await new Promise((r) => setTimeout(r, 100))
+          }
+          if (!reopened) fail('ticket-63 stage: ⌘, never reopened the settings window')
+          log('settings_reopen_ok')
+
+          // ③ The Skills section lists the sandbox's real loading surface
+          // (the probe child + the SDK package manager do the enumeration).
+          if (!(await js(`(() => {
+            const item = [...document.querySelectorAll('.settings-item')].find((el) => el.textContent?.trim() === 'Skills')
+            if (!(item instanceof HTMLElement)) return false
+            item.click()
+            return true
+          })()`).catch(() => false))) fail('ticket-63 stage: the Skills nav item is missing')
+          const rowSig = (name: string): string => `(() => {
+            const row = document.querySelector('.skill-row[data-skill-name="${name}"]')
+            if (!(row instanceof HTMLElement)) return null
+            const toggle = row.querySelector('.skill-switch')
+            return {
+              present: true,
+              enabled: toggle?.getAttribute('aria-checked') ?? null,
+              toggleDisabled: toggle?.hasAttribute('disabled') ?? false,
+              deleteBtn: row.querySelector('button[aria-label^="Delete "]') !== null,
+              badges: [...row.querySelectorAll('.skill-badge')].map((b) => b.textContent ?? ''),
+              desc: row.querySelector('.skill-row-description')?.textContent ?? null
+            }
+          })()`
+          type RowSig = { present: boolean; enabled: string | null; toggleDisabled: boolean; deleteBtn: boolean; badges: string[]; desc: string | null } | null
+          let realRow: RowSig = null
+          let linkRow: RowSig = null
+          let danglingRow: RowSig = null
+          for (let waited = 0; waited < 45_000; waited += 250) {
+            const r = (await js(rowSig(REAL_NAME)).catch(() => null)) as RowSig
+            const l = (await js(rowSig(LINK_NAME)).catch(() => null)) as RowSig
+            const d = (await js(rowSig(DANGLING_NAME)).catch(() => null)) as RowSig
+            if (r !== null && l !== null && d !== null) {
+              realRow = r
+              linkRow = l
+              danglingRow = d
+              break
+            }
+            await new Promise((res) => setTimeout(res, 250))
+          }
+          if (realRow === null || linkRow === null || danglingRow === null) {
+            fail(`ticket-63 stage: the sandbox skill rows never appeared (real=${realRow !== null} link=${linkRow !== null} dangling=${danglingRow !== null})`)
+          }
+          if (realRow!.enabled !== 'true' || linkRow!.enabled !== 'true') fail('ticket-63 stage: the live sandbox rows are not marked enabled')
+          if (!realRow!.deleteBtn || !linkRow!.deleteBtn) fail('ticket-63 stage: the deletable sandbox rows lost their delete buttons')
+          if (danglingRow!.toggleDisabled !== true || danglingRow!.enabled !== 'false') fail('ticket-63 stage: the dangling link is not disabled and locked')
+          if (!danglingRow!.badges.some((b) => b.toLowerCase().includes('broken'))) fail('ticket-63 stage: the dangling link is not marked broken')
+          if (!danglingRow!.deleteBtn) fail('ticket-63 stage: the dangling link lost its delete button')
+          log('skills_rows_probed_ok', `real+link+dangling`)
+
+          // ④ Toggle the real-dir skill OFF — the switch flips AND the
+          // sandbox settings.json gains the pi-config exclusion.
+          if (!(await js(`(() => {
+            const row = document.querySelector('.skill-row[data-skill-name="${REAL_NAME}"] .skill-switch')
+            if (!(row instanceof HTMLElement)) return false
+            row.click()
+            return true
+          })()`).catch(() => false))) fail('ticket-63 stage: the real-dir skill toggle is missing')
+          const skillsPattern = `-skills/${REAL_NAME}/SKILL.md`
+          let disableWritten = false
+          for (let waited = 0; waited < 10_000 && !disableWritten; waited += 250) {
+            const flipped = (await js(rowSig(REAL_NAME)).catch(() => null)) as RowSig
+            const doc = readSettingsTolerant(sandboxSettings)
+            disableWritten = flipped?.enabled === 'false' && Array.isArray(doc.skills) && doc.skills.includes(skillsPattern)
+            if (!disableWritten) await new Promise((r) => setTimeout(r, 250))
+          }
+          if (!disableWritten) fail(`ticket-63 stage: the disable toggle never wrote ${skillsPattern}`)
+          log('skills_disable_written_ok', skillsPattern)
+
+          // ⑤ Toggle back ON — the +pattern force-include.
+          await js(`(() => {
+            const row = document.querySelector('.skill-row[data-skill-name="${REAL_NAME}"] .skill-switch')
+            if (!(row instanceof HTMLElement)) return false
+            row.click()
+            return true
+          })()`)
+          const enablePattern = `+skills/${REAL_NAME}/SKILL.md`
+          let enableWritten = false
+          for (let waited = 0; waited < 10_000 && !enableWritten; waited += 250) {
+            const flipped = (await js(rowSig(REAL_NAME)).catch(() => null)) as RowSig
+            const doc = readSettingsTolerant(sandboxSettings)
+            enableWritten = flipped?.enabled === 'true' && Array.isArray(doc.skills) && doc.skills.includes(enablePattern)
+            if (!enableWritten) await new Promise((r) => setTimeout(r, 250))
+          }
+          if (!enableWritten) fail(`ticket-63 stage: the enable toggle never wrote ${enablePattern}`)
+          log('skills_enable_written_ok', enablePattern)
+
+          // ⑥ Delete the LINKED skill through the two-step confirm: the
+          // strip names the real directory, the confirm unlinks ONLY the
+          // link, and the SSOT target survives byte-for-byte.
+          if (!(await js(`(() => {
+            const btn = document.querySelector('.skill-row[data-skill-name="${LINK_NAME}"] button[aria-label^="Delete "]')
+            if (!(btn instanceof HTMLElement)) return false
+            btn.click()
+            return true
+          })()`).catch(() => false))) fail('ticket-63 stage: the linked row\'s delete button is missing')
+          let confirmShown = false
+          for (let waited = 0; waited < 3_000 && !confirmShown; waited += 100) {
+            confirmShown = (await js(`(() => {
+              const strip = document.querySelector('.skill-row[data-skill-name="${LINK_NAME}"] .skill-confirm-copy')
+              return strip !== null && (strip.textContent ?? '').includes('${LINK_TARGET}')
+            })()`).catch(() => false)) as boolean
+            if (!confirmShown) await new Promise((r) => setTimeout(r, 100))
+          }
+          if (!confirmShown) fail('ticket-63 stage: the delete confirm strip never showed the preserved target path')
+          log('skills_confirm_copy_ok')
+          if (!(await js(`(() => {
+            const strip = document.querySelector('.skill-row[data-skill-name="${LINK_NAME}"] .skill-confirm')
+            const btn = strip?.querySelector('.skill-confirm-delete')
+            if (!(btn instanceof HTMLElement)) return false
+            btn.click()
+            return true
+          })()`).catch(() => false))) fail('ticket-63 stage: the confirm-delete button is missing')
+          let linkGone = false
+          for (let waited = 0; waited < 10_000 && !linkGone; waited += 250) {
+            const row = (await js(rowSig(LINK_NAME)).catch(() => null)) as RowSig
+            linkGone = row === null
+            if (!linkGone) await new Promise((r) => setTimeout(r, 250))
+          }
+          if (!linkGone) fail('ticket-63 stage: the linked row never left the list after deletion')
+          if (existsSync(path.join(sandboxSkills, LINK_NAME))) fail('ticket-63 stage: the link still exists after deletion')
+          if (!existsSync(path.join(LINK_TARGET, 'SKILL.md'))) fail('ticket-63 stage: THE RED LINE — deleting the link touched the real directory')
+          if (readFileSync(path.join(LINK_TARGET, 'SKILL.md'), 'utf-8') !== LINK_TARGET_CONTENT) {
+            fail('ticket-63 stage: the real skill file content changed on link deletion')
+          }
+          log('skills_delete_link_target_survives_ok')
+
+          // ⑦ Escape closes the settings window.
+          await js(`(() => {
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+            return true
+          })()`)
+          let escClosed = false
+          for (let waited = 0; waited < 5_000 && !escClosed; waited += 100) {
+            escClosed = (await js(`document.querySelector('.settings-shell') === null`).catch(() => false)) as boolean
+            if (!escClosed) await new Promise((r) => setTimeout(r, 100))
+          }
+          if (!escClosed) fail('ticket-63 stage: Escape never closed the settings window')
+          log('settings_esc_close_ok')
+        })
+      } finally {
+        // Sandbox hygiene: the seeded skills + settings live ONLY in the
+        // throwaway agent dir — remove them so reruns start clean. (The
+        // wrapper deletes the whole dir when the app exits; the finally
+        // keeps standalone PICODE_SMOKE=1 runs clean too.)
+        rmSync(sandboxSkills, { recursive: true, force: true })
+        rmSync(path.join(agentDir, 'ssot'), { recursive: true, force: true })
+        rmSync(sandboxSettings, { force: true })
+      }
+      log('settings_skills_done')
+    }
+
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
     const livePids = supervisor.hostPids
     if (livePids.length < 2) fail(`expected at least 2 live hosts before quit, saw ${livePids.length}`)
@@ -5109,4 +5342,14 @@ function waitForProbe(win: BrowserWindow, probe: string, budgetMs: number): Prom
     }
     void poll()
   })
+}
+
+/** Tolerant sandbox settings read for the ticket-63 poll loops: a missing
+ * or half-written document reads as {} — the next poll iteration retries. */
+function readSettingsTolerant(file: string): { skills?: string[] } {
+  try {
+    return JSON.parse(readFileSync(file, 'utf-8')) as { skills?: string[] }
+  } catch {
+    return {}
+  }
 }

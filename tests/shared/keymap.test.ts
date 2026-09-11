@@ -85,6 +85,13 @@ describe('resolveKeybinding — non-chords stay null', () => {
     expect(resolveKeybinding(keydown('KeyG', { metaKey: true }))).toBeNull()
     expect(resolveKeybinding(keydown('KeyG', { metaKey: true, altKey: true }))).toBeNull()
   })
+
+  it('⌘, toggles the settings window (ticket 63)', () => {
+    expect(resolveKeybinding(keydown('Comma', { metaKey: true, key: ',' }))).toEqual({ type: 'toggle-settings' })
+    // ⌥, / ctrl-joins are rejected like every other chord.
+    expect(resolveKeybinding(keydown('Comma', { metaKey: true, altKey: true }))).toBeNull()
+    expect(resolveKeybinding(keydown('Comma', { ctrlKey: true }))).toBeNull()
+  })
 })
 
 describe('KEYBINDINGS — table integrity', () => {
@@ -97,8 +104,9 @@ describe('KEYBINDINGS — table integrity', () => {
     }
   })
 
-  it('covers exactly the seven shell chords (E N K J ⌥J B ⌥B)', () => {
+  it('covers exactly the eight shell chords (E N K J ⌥J B ⌥B ,)', () => {
     expect(KEYBINDINGS.map((chord) => `${chord.code}${chord.alt ? '+alt' : ''}`).sort()).toEqual([
+      'Comma',
       'KeyB',
       'KeyB+alt',
       'KeyE',

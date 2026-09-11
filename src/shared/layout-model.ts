@@ -65,6 +65,7 @@ export type ShellUiAction =
   | { type: 'close-side-panel' }
   | { type: 'open-settings' }
   | { type: 'back-to-workspace' }
+  | { type: 'toggle-settings' }
 
 export function shellUiReducer(state: ShellUiState, action: ShellUiAction): ShellUiState {
   switch (action.type) {
@@ -86,6 +87,10 @@ export function shellUiReducer(state: ShellUiState, action: ShellUiAction): Shel
       return state.view === 'settings' ? state : { ...state, view: 'settings' }
     case 'back-to-workspace':
       return state.view === 'workspace' ? state : { ...state, view: 'workspace' }
+    // Ticket 63: the ⌘, chord and the titlebar gear are one toggle — open
+    // from the workspace, close from the settings window (Esc closes too).
+    case 'toggle-settings':
+      return { ...state, view: state.view === 'settings' ? 'workspace' : 'settings' }
     default:
       return state
   }
