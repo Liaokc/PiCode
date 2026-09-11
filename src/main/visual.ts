@@ -11,10 +11,21 @@
  *   2. settled  — the turn folded into "Worked · Ns ›" (ticket 23), done tool
  *                 card hidden inside, per-message actions row (with fork)
  *                 outside the fold
- *   2b/2c/2d   — ticket 16 block chrome, replayed over the FOLDED transcript:
+ *   2b/2c      — ticket 16 block chrome, replayed over the FOLDED transcript:
  *                 the container is opened first (ticket 23 choreography), then
- *                 wrap toggle, table expand, table preview overlay, and the
- *                 message-row fork toast
+ *                 wrap toggle, table expand, and the table preview overlay
+ *   2e/3       — jump-to-latest + the density audit, shot on the settled
+ *                 transcript BEFORE the fork section (ticket 66: the fork's
+ *                 success announcement switches focus — registry
+ *                 applyAnnouncement semantics, ADR-0006 "now looking at it"
+ *                 — and empties the view, so every frame that needs the
+ *                 settled 'visual-session' transcript is captured first)
+ *   2d         — the message-row fork toast, RELOCATED after 3-expanded and
+ *                 before the ticket-14 replay (frame name kept): the harness
+ *                 answers the fork click with a NEW-id session_created
+ *                 announcement (the ticket-51 ACK chain fires "Forked to a
+ *                 new session."), and the replay announcement below re-focuses
+ *                 the intended track
  *   4b/4c/4d   — ticket 32: the preview reader's rendered state adopts the
  *                 SAME block chrome (code cards + table containers); wrap and
  *                 copy state stay isolated per block key, and the source
@@ -34,7 +45,7 @@
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import { terminalVisualEnabled } from './visual-terminal'
 import { traceVisualEnabled } from './visual-trace'
 import { foldVisualEnabled } from './visual-fold'
@@ -46,7 +57,7 @@ import { workedVisualEnabled } from './visual-worked-container'
 import { chronologyVisualEnabled } from './visual-chronology'
 import { thinkingVisualEnabled } from './visual-thinking'
 import { ensureVisualProjectDir, ensureVisualStore, writeVisualSession } from './visual-store'
-import type { HostToParent } from '../shared/contract'
+import type { HostToParent, ParentToHost } from '../shared/contract'
 
 export function visualEnabled(): boolean {
   return process.env['PICODE_VISUAL'] === '1'
@@ -203,6 +214,44 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
   if (process.env['PICODE_VISUAL_CWD'] === '1') return
   // And for the rail-stacking harness (ticket 62).
   if (process.env['PICODE_VISUAL_RAIL_STACK'] === '1') return
+
+  // Ticket 66: the 2d fork section clicks fork on the SYNTHETIC
+  // 'visual-session', which has no live host — left alone the supervisor
+  // answers session_command_error, whose App-level handler clears the
+  // pending fork ack (ticket 51) and toasts the failure, so the ACK toast
+  // could never fire. A real live host answers a fork by announcing a NEW
+  // session id; reproduce exactly that: when the fork command transits this
+  // process, inject the forked session's announcement into the contract flow
+  // (the announcement id is ALWAYS a new id, never the fork target's — that
+  // inequality is the ticket-51 ACK comparison scopeId !== forkAckRef.current)
+  // deterministically AHEAD of the hostless error. The error itself still
+  // surfaces with its unchanged hostless-fork semantics; it arrives after the
+  // ack consumed the announcement, so the captured toast pair matches the
+  // archived 2d frame: "Forked to a new session." on top, the hostless error
+  // below. Synthetic announcements carry no disk file, so the sidebar index
+  // gains no row from this.
+  // Registration-order invariant: startVisualIfEnabled runs BEFORE
+  // main/index.ts registers its own chat:to-host dispatcher, and ipcMain
+  // listeners fire in registration order — this handler must stay registered
+  // ahead of the supervisor's for the announcement to win the race it exists
+  // to win.
+  ipcMain.on('chat:to-host', (_event, message: ParentToHost) => {
+    if (
+      message.type === 'session_command' &&
+      message.sessionId === 'visual-session' &&
+      message.command.type === 'fork_session'
+    ) {
+      emit({
+        type: 'session_created',
+        // Fresh id — must not collide with any announced id ('visual-session'
+        // / 'visual-replay' / 'visual-preview' / 'visual-navigator') and must
+        // never reuse the fork target's own id (ticket 51 ACK semantics).
+        sessionId: 'visual-forked',
+        cwd: terminalVisualEnabled() ? tmpdir() : '/Users/dev/projects/api-server',
+        model: 'claude-opus-4-5'
+      })
+    }
+  })
 
   // Deterministic sidebar content for the shots (ticket 20): the empty-state
   // frame must show a status dot (a session written by ANOTHER end — fresh
@@ -368,7 +417,8 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
           return { cards: cards.length, buttons: document.querySelectorAll('.md-code-card .md-block-btn').length }
         })()`
       )) as { cards: number; buttons: number }
-      if (streamCodeSig.cards !== 1 || streamCodeSig.buttons !== 2) {
+      // Ticket 60 added the download button — three block buttons per card.
+      if (streamCodeSig.cards !== 1 || streamCodeSig.buttons !== 3) {
         throw new Error(`visual streaming: code card signature ${JSON.stringify(streamCodeSig)}`)
       }
       // Table streams in after the code block — same remount tolerance there.
@@ -380,7 +430,8 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
           return { wraps: wraps.length, buttons: document.querySelectorAll('.md-table-tools .md-block-btn').length }
         })()`
       )) as { wraps: number; buttons: number }
-      if (streamTableSig.wraps !== 1 || streamTableSig.buttons !== 3) {
+      // Ticket 60 added the CSV/TSV copy chips — five block buttons per table.
+      if (streamTableSig.wraps !== 1 || streamTableSig.buttons !== 5) {
         throw new Error(`visual streaming: table container signature ${JSON.stringify(streamTableSig)}`)
       }
       await streamText(['All ', 'three ', 'register ', 'tests ', 'pass ', '— ', 'ready ', 'for ', 'review.'])
@@ -452,7 +503,8 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
           innerTables: document.querySelectorAll('.md-table-scroll table').length
         }))()`
       )) as { codeCards: number; tableWraps: number; tools: number; innerTables: number }
-      if (chromeSig.codeCards < 1 || chromeSig.tableWraps < 1 || chromeSig.tools !== 3 || chromeSig.innerTables < 1) {
+      // Ticket 60: the table tool trio grew to five (CSV/TSV copy chips).
+      if (chromeSig.codeCards < 1 || chromeSig.tableWraps < 1 || chromeSig.tools !== 5 || chromeSig.innerTables < 1) {
         throw new Error(`visual 2b: block chrome signature ${JSON.stringify(chromeSig)}`)
       }
       await win.webContents.executeJavaScript(
@@ -502,36 +554,14 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       )
       await sleep(200)
 
-      // Fork from the message action row: toast + (in a live host) an
-      // automatic session switch; the harness can only see the toast.
-      await win.webContents.executeJavaScript(
-        `(() => {
-          const fork = document.querySelector('button[aria-label="Fork a new session from this message"]')
-          fork?.scrollIntoView({ block: 'center' })
-          if (fork instanceof HTMLElement) fork.click()
-          return fork !== null
-        })()`
-      )
-      await sleep(400)
-      await captureMenu(win, '2d-fork-toast', { toast: '.toast' })
-      const toastText = (await win.webContents.executeJavaScript(
-        `document.querySelector('.toast-message')?.textContent ?? ''`
-      )) as string
-      if (!toastText.includes('Forked')) throw new Error(`visual 2d: unexpected fork toast ${JSON.stringify(toastText)}`)
-      await sleep(300)
-
       // ---- ticket 45: Jump to Latest — scrolled away past the stick
       // threshold, the circular ↓ button fades in centered above the
       // composer (operator review frame; ZCode reference
-      // z13-jump-to-latest). The 2d toast must clear first — it parks
-      // bottom-right and would sit in the frame.
-      for (let waited = 0; waited < 8_000; waited += 200) {
-        const toastUp = (await win.webContents.executeJavaScript(
-          `document.querySelector('.toast') !== null`
-        )) as boolean
-        if (!toastUp) break
-        await sleep(200)
-      }
+      // z13-jump-to-latest). Captured BEFORE the 2d fork section (ticket 66
+      // relocation): the fork's success announcement switches focus and
+      // empties this settled transcript, and the fork toasts park
+      // bottom-right — the fork section therefore runs after the last frame
+      // that needs this view (3-expanded below).
       const scrollable = (await win.webContents.executeJavaScript(
         `(() => { const el = document.querySelector('.chat-scroll'); if (!el) return false; el.scrollTop = 0; return el.scrollHeight > el.clientHeight + 160 })()`
       )) as boolean
@@ -561,6 +591,60 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       )
       await sleep(500)
       await capture(win, '3-expanded')
+
+      // ---- 2d: fork from the message action row (ticket 51 ACK semantics,
+      // ticket 66 harness wiring). RELOCATED here — after the density frame,
+      // before the ticket-14 replay — keeping the frame name: the fork's
+      // success announcement switches focus to the NEW session and resets the
+      // chat (registry applyAnnouncement semantics, ADR-0006), so this
+      // section must run only after every frame that needs the settled
+      // 'visual-session' transcript; the replay announcement below then
+      // re-announces and brings focus back on track.
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const fork = document.querySelector('button[aria-label="Fork a new session from this message"]')
+          fork?.scrollIntoView({ block: 'center' })
+          if (fork instanceof HTMLElement) fork.click()
+          return fork !== null
+        })()`
+      )
+      // The click's fork_session transits main, where the harness listener
+      // registered in startVisualIfEnabled injects the NEW-id announcement
+      // (the ACK: scopeId !== the fork target) ahead of the hostless error.
+      await sleep(400)
+      await captureMenu(win, '2d-fork-toast', { toast: '.toast' })
+      const toastText = (await win.webContents.executeJavaScript(
+        `document.querySelector('.toast-message')?.textContent ?? ''`
+      )) as string
+      if (!toastText.includes('Forked')) throw new Error(`visual 2d: unexpected fork toast ${JSON.stringify(toastText)}`)
+      // The announcement focused the forked session (fork's automatic session
+      // switch): the settled transcript is gone from the view. The sidebar
+      // index is untouched — a synthetic announcement carries no disk file,
+      // so no row can appear (only the seeded 'visual-tui-live' row remains).
+      const forkSig = (await win.webContents.executeJavaScript(
+        `(() => ({
+          users: document.querySelectorAll('.msg-user').length,
+          turns: document.querySelectorAll('.turn-container').length,
+          sidebarRows: document.querySelectorAll('.sb-task').length
+        }))()`
+      )) as { users: number; turns: number; sidebarRows: number }
+      if (forkSig.users !== 0 || forkSig.turns !== 0) {
+        throw new Error(`visual 2d: fork announcement did not switch focus to the new session ${JSON.stringify(forkSig)}`)
+      }
+      if (forkSig.sidebarRows !== 1) {
+        throw new Error(`visual 2d: fork announcement leaked a sidebar row ${JSON.stringify(forkSig)}`)
+      }
+      console.log(`VISUAL probe 2d-fork-toast: ${JSON.stringify(forkSig)}`)
+      // The 2d toasts must clear before the replay frames — they park
+      // bottom-right and would sit in the frame. (The trailing hostless error
+      // toast is an 8s one; the replay sleep below covers its dismissal tail.)
+      for (let waited = 0; waited < 8_000; waited += 200) {
+        const toastUp = (await win.webContents.executeJavaScript(
+          `document.querySelector('.toast') !== null`
+        )) as boolean
+        if (!toastUp) break
+        await sleep(200)
+      }
 
       // ---- ticket 14: structured replay — a RESUMED agent-dense session.
       // A session_created(resumed) + history_loaded with structured items
@@ -661,6 +745,19 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       // and the null degradation has settled; re-inject the readout so the
       // replayed transcript shows the badge too.
       emit({ type: 'branch_info', branch: 'main' })
+      // Ticket 66: the replay announcement re-focused the intended track —
+      // the forked session's empty view is replaced by the replay transcript
+      // (both user bubbles render outside the folded turns).
+      const refocusSig = (await win.webContents.executeJavaScript(
+        `(() => ({
+          users: document.querySelectorAll('.msg-user').length,
+          firstUser: document.querySelector('.msg-user')?.textContent ?? ''
+        }))()`
+      )) as { users: number; firstUser: string }
+      if (refocusSig.users !== 2 || !refocusSig.firstUser.includes('Investigate the flaky auth test')) {
+        throw new Error(`visual 3b: replay announcement did not bring focus back on track ${JSON.stringify(refocusSig)}`)
+      }
+      console.log(`VISUAL probe 3b-refocused: ${JSON.stringify(refocusSig)}`)
       // Replay gates (tickets 14 + 23): every turn arrives FOLDED — inner
       // rows not in the DOM yet — with the skill marker waiting inside.
       const replaySig = (await win.webContents.executeJavaScript(
@@ -936,15 +1033,18 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
         wrapped: number
         tips: number
       }
+      // Ticket 60: three buttons per code card (wrap/download/copy), five
+      // per table (copy + CSV/TSV chips + preview/expand) — eleven tooltip
+      // triggers across the fixture (2 cards + 1 table).
       if (
         previewSig.md !== 1 ||
         previewSig.codeCards !== 2 ||
-        previewSig.codeBtns !== 4 ||
+        previewSig.codeBtns !== 6 ||
         previewSig.tableWraps !== 1 ||
-        previewSig.tableBtns !== 3 ||
+        previewSig.tableBtns !== 5 ||
         previewSig.innerTables !== 1 ||
         previewSig.wrapped !== 0 ||
-        previewSig.tips !== 7
+        previewSig.tips !== 11
       ) {
         throw new Error(`visual 4b: preview chrome signature ${JSON.stringify(previewSig)}`)
       }
