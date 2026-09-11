@@ -32,18 +32,20 @@ export function statCards(snapshot: UsageSnapshot): StatCards {
 
 // --- palette -------------------------------------------------------------------
 
-/** Vivid categorical palette matched against the reference screenshot. */
+/** Categorical palette, hues matched against the reference screenshot but
+ * taken one Tailwind step lighter (400 vs 500) — the operator prefers a
+ * pastel family on the light shell (2026-09-11, ticket-65 review). */
 export const MODEL_PALETTE = [
-  '#3b82f6', // blue
-  '#22c55e', // green
-  '#a855f7', // purple
-  '#ef4444', // red
-  '#f97316', // orange
-  '#14b8a6', // teal
-  '#eab308', // yellow
-  '#8b5cf6', // violet
-  '#ec4899', // pink
-  '#64748b' // slate
+  '#60a5fa', // blue
+  '#4ade80', // green
+  '#c084fc', // purple
+  '#f87171', // red
+  '#fb923c', // orange
+  '#2dd4bf', // teal
+  '#facc15', // yellow
+  '#a78bfa', // violet
+  '#f472b6', // pink
+  '#94a3b8' // slate
 ] as const
 
 export function modelColor(index: number): string {
