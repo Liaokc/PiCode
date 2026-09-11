@@ -17,7 +17,9 @@ const store = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-sessions-'))
 console.log(`SMOKE isolated session store: ${store}`)
 const result = spawnSync('electron', ['.'], {
   stdio: 'inherit',
-  env: { ...process.env, PICODE_SMOKE: '1', PICODE_SESSION_DIR: store }
+  // PICODE_FAKE_USAGE: the ticket-65 usage stage hovers the fixture-driven
+  // charts (the isolated smoke store has no usage history to render).
+  env: { ...process.env, PICODE_SMOKE: '1', PICODE_FAKE_USAGE: '1', PICODE_SESSION_DIR: store }
 })
 rmSync(store, { recursive: true, force: true })
 process.exit(result.status ?? 1)
