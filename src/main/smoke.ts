@@ -3624,7 +3624,7 @@ export function startSmokeIfEnabled(
     // zero jump — pi15-approval-above-answer, fixed); a thinking block after
     // the tool result renders below it in the segment, never back in the
     // fold (pi15-post-answer-thinking-misplaced, fixed); the segment keeps
-    // its geometry across settling — live 与落定同位. ----
+    // its composition and order across settling — live 与落定同位. ----
     log('turn_chronology_start')
     {
       const ANSWER = 'PICODE_TC_ANSWER: the deploy plan is ready'
@@ -3681,8 +3681,7 @@ export function startSmokeIfEnabled(
               const seg = el.closest('.turn-after-answer')
               const r = el.getBoundingClientRect()
               return JSON.stringify({ top: r.top, left: r.left, index: seg ? Array.prototype.indexOf.call(seg.children, el) : -1 })
-            })()`,
-            false
+            })()`
           ).catch(() => null)) as string | null
           if (raw === null || raw === 'null') return null
           try {

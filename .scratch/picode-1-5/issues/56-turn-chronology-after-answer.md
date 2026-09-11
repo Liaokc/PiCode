@@ -8,14 +8,14 @@
 
 **Status:** claimed
 
-- [ ] 分割决策表扩展（表驱动）：lastText 后 thinking/approval → 常显段；lastText 前 work 归容器不变；更早文本 → 过程叙述不变
-- [ ] 降级重划分：新文本块流式开始时旧答案降级过程叙述归容器、常显段清空——决策表覆盖
-- [ ] 审批两态同位：挂起卡位置 = 批准后工具卡位置（同一槽位，零跳变）
-- [ ] 常显段内 thinking 行渲染为折叠单行（Thought · Ns ›，可展开看全文），与容器内思考行同组件
-- [ ] ChatView / FollowView 同规则零开关
+- [x] 分割决策表扩展（表驱动）：lastText 后 thinking/approval → 常显段；lastText 前 work 归容器不变；更早文本 → 过程叙述不变
+- [x] 降级重划分：新文本块流式开始时旧答案降级过程叙述归容器、常显段清空——决策表覆盖
+- [x] 审批两态同位：挂起卡位置 = 批准后工具卡位置（同一槽位，零跳变）
+- [x] 常显段内 thinking 行渲染为折叠单行（Thought · Ns ›，可展开看全文），与容器内思考行同组件
+- [x] ChatView / FollowView 同规则零开关
 - [ ] electron smoke：脚本化 live 回合经审批闸门断言挂起/执行两态同位 + 工具后思考在正文下方
-- [ ] visual harness：时序帧（对照 pi15-approval-above-answer / pi15-post-answer-thinking-misplaced 场景修复后形态）
-- [ ] 跑 dev app / smoke / visual 前 ps 复核无其他 PiCode Electron/dev-app/smoke 进程；撞锁则等待重试不并跑
+- [x] visual harness：时序帧（对照 pi15-approval-above-answer / pi15-post-answer-thinking-misplaced 场景修复后形态）
+- [x] 跑 dev app / smoke / visual 前 ps 复核无其他 PiCode Electron/dev-app/smoke 进程；撞锁则等待重试不并跑
 - [ ] typecheck / lint / vitest 全绿；code-review 双轴通过
 
 **交接：** 完成后不自行 merge——操作者/合并会话执行 `bash scripts/merge-ticket.sh 56`。
