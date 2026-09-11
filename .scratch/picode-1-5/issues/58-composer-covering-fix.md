@@ -6,7 +6,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [ ] 输入区右 padding 预留按钮区：折叠态首行文本在按钮左缘前换行、光标全程可见；展开态同规则
 - [ ] 按钮位置/top-right 锚定/hover 形态零变化；两处 composer 同享
@@ -27,3 +27,9 @@
   - **gate**：typecheck 绿 / eslint 绿 / vitest **1128/1128（81 文件）**；visual:expand 全断言通过（4 帧）。ps 自查每跑前执行；其间捕获 wt-59 占用 dev-app 通道（smoke:electron），遵守串行未并跑。
   - **范围外发现（无票，另报操作者）**：`npm run visual:transcript` 基座 harness 在 2d fork-toast 段 FAIL——期望 toast 含 "Forked"，实得 "This session has no live host…"。已 stash 复测干净 HEAD 同样失败（非本票引入）：票 51 的 toast ACK 化后，synthetic 无 host 会话永远无法触发 Forked ACK，基座 2d 断言失效。建议单独小票修基座（emit fork 后补一个新 id 的 session_created 公告）。
   - **交接**：不自行 merge——操作者/合并会话执行 `bash scripts/merge-ticket.sh 58`。
+- 2026-09-11 (merge, T00 合并会话): **merged as edea624**（merge --no-ff；分支 rebase 后 feat=55aa97c'，tracker 提交 a4251cd 自动去重）。
+  - **验收口径**：操作者 2026-09-11 明示「58 已验收」；脚本门禁 typecheck 绿 + vitest **1134/1134（81 文件）**（纯 CSS + visual harness，基线未变，与分支侧一致）。
+  - **冲突处置**：**零冲突**。58 触面（app.css 输入区段 + visual-expand + 帧）与 main 新进改动（57 的 Composer/keymap/CONTEXT、54/55/56 邻接面）零交叠——波次表「58 与 62 区段不相交、57 与 58 无文件交集」预判应验。
+  - **终态审计**：`.composer-input` padding 16px 44px 4px 18px（L1136 含票 58 注释）在位；e1a/e2b 新帧 + clearance 探针 + staging 稳定性窗口在位；57 键帽 tooltip 零波及；无冲突标记残留。
+  - **范围外发现移交**：基座 visual:transcript 2d fork-toast 段失效（票 51 toast ACK 化后 synthetic 无 host 会话无法触发 Forked ACK——既有回归，非本票引入，stash 复测证实）→ 建议操作者另立小票（fork 后补发新 id 的 session_created 公告）。
+  - **清理**：worktree 已 remove、分支已删。58 无下游票；wt-59 已提醒 rebase。
