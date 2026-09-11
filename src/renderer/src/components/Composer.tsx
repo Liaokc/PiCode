@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type JSX, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type JSX, type KeyboardEvent } from 'react'
 import type { AccessMode, ImageAttachment, ModelRef, ProviderModels, SlashCommandItem, ThinkingLevel } from '../../../shared/contract'
 import type { ChatQueue } from '../../../shared/chat-reducer'
 import { applyMention, mentionQueryAt } from '../../../shared/composer/mention'
@@ -68,6 +68,14 @@ type MenuState = 'slash' | 'files' | 'access' | 'model' | 'thinking' | null
 /** Window events the `/model` and `/thinking` built-ins dispatch (App → Composer). */
 export const OPEN_MODEL_MENU_EVENT = 'picode:open-model-menu'
 export const OPEN_THINKING_MENU_EVENT = 'picode:open-thinking-menu'
+
+/** Window event the App shell dispatches when the global ⌘E chord resolves
+ * (ticket 57): the keymap produces `toggle-composer-expand` and the App
+ * routes it here — exactly ONE composer is mounted at a time (the focused
+ * session's view or the New Task empty state; the component is shared), so
+ * the mounted instance owns the state change. FollowView mounts none, so
+ * following is a natural no-op. */
+export const TOGGLE_EXPAND_EVENT = 'picode:toggle-composer-expand'
 
 interface LocalImage {
   id: number
@@ -306,13 +314,25 @@ export default function Composer({
   }
 
   /** 输入展开 (ticket 49): apply one expand-machine event (Seam-1). Every
-   * path — the button's toggle and all three collapse routes — goes through
-   * here; afterwards the textarea takes focus back so the keyboard (or
-   * post-send) flow keeps going. */
-  function transitionExpand(event: ComposerExpandEvent): void {
+   * path — the button's toggle, the global ⌘E chord (ticket 57), and all
+   * collapse routes — goes through here; afterwards the textarea takes
+   * focus back so the keyboard (or post-send) flow keeps going. */
+  const transitionExpand = useCallback((event: ComposerExpandEvent): void => {
     setExpandState((current) => reduceComposerExpand(current, event))
     requestAnimationFrame(() => textareaRef.current?.focus())
-  }
+  }, [])
+
+  // 输入展开 (ticket 57): the App shell resolves the global ⌘E chord and
+  // dispatches it to the mounted composer (see TOGGLE_EXPAND_EVENT). The
+  // machine treats the chord as its own 'key' event: collapsed↔expanded
+  // toggle, self-inverting — the keyboard twin of the button's click.
+  useEffect(() => {
+    function toggleFromKeymap(): void {
+      transitionExpand('key')
+    }
+    window.addEventListener(TOGGLE_EXPAND_EVENT, toggleFromKeymap)
+    return () => window.removeEventListener(TOGGLE_EXPAND_EVENT, toggleFromKeymap)
+  }, [transitionExpand])
 
   function toggleExpand(): void {
     transitionExpand('toggle')
@@ -464,10 +484,11 @@ export default function Composer({
       {/* 输入展开 (ticket 49): the operator-approved deviation from ZCode —
           a persistent button at the card's top-right that opens the input
           IN PLACE at about half the main zone, pushing the transcript down
-          (no overlay, no fullscreen). Icon-only with no shortcut, so the
-          tooltip shows only the short description (Tooltip discipline); the
+          (no overlay, no fullscreen). The global ⌘E chord (ticket 57) is
+          this button's shortcut, so the tooltip shows ONLY the ⌘E keycap
+          (Tooltip discipline — a shortcut replaces any description); the
           icon flips to the collapse glyph while expanded. */}
-      <Tooltip label="Expand input">
+      <Tooltip shortcut="⌘E">
         <button
           type="button"
           className="composer-expand"

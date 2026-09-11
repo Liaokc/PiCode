@@ -44,6 +44,25 @@ describe('resolveKeybinding — ticket 27 remap (physical event.code)', () => {
   })
 })
 
+describe('resolveKeybinding — ticket 57: ⌘E toggles the composer expand', () => {
+  it('⌘E resolves to toggle-composer-expand (physical KeyE, meta-only)', () => {
+    expect(resolveKeybinding(keydown('KeyE', { metaKey: true }))).toEqual({ type: 'toggle-composer-expand' })
+  })
+
+  it('⌥⌘E is rejected — the table binds no alt row for KeyE', () => {
+    expect(resolveKeybinding(keydown('KeyE', { metaKey: true, altKey: true }))).toBeNull()
+  })
+
+  it('ctrl and shift joins are rejected (meta-only discipline)', () => {
+    expect(resolveKeybinding(keydown('KeyE', { metaKey: true, ctrlKey: true }))).toBeNull()
+    expect(resolveKeybinding(keydown('KeyE', { metaKey: true, shiftKey: true }))).toBeNull()
+  })
+
+  it('plain typing (KeyE, no meta) stays null so the composer keeps the key', () => {
+    expect(resolveKeybinding(keydown('KeyE'))).toBeNull()
+  })
+})
+
 describe('resolveKeybinding — non-chords stay null', () => {
   it('rejects plain typing (no meta) so ⌘-less keys never toggle chrome', () => {
     expect(resolveKeybinding(keydown('KeyB'))).toBeNull()
@@ -78,10 +97,11 @@ describe('KEYBINDINGS — table integrity', () => {
     }
   })
 
-  it('covers exactly the six shell chords (N K J ⌥J B ⌥B)', () => {
+  it('covers exactly the seven shell chords (E N K J ⌥J B ⌥B)', () => {
     expect(KEYBINDINGS.map((chord) => `${chord.code}${chord.alt ? '+alt' : ''}`).sort()).toEqual([
       'KeyB',
       'KeyB+alt',
+      'KeyE',
       'KeyJ',
       'KeyJ+alt',
       'KeyK',

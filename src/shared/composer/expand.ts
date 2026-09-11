@@ -12,8 +12,9 @@
  *   输入展开 (Composer Expand) — an operator-approved deviation from ZCode
  *     (ZCode has no expand button): the persistent top-right button opens
  *     the input IN PLACE at about half the main area's height, clamped
- *     [280px, 560px], pushing the transcript down (no overlay). Three ways
- *     back: re-click, Esc, and a successful send.
+ *     [280px, 560px], pushing the transcript down (no overlay). Ways back:
+ *     re-click, Esc, the global ⌘E chord again (ticket 57), and a
+ *     successful send.
  */
 
 /** The auto-grow floor: the composer's resting one-line height. */
@@ -51,17 +52,20 @@ export function composerExpandHeight(mainAreaPx: number): number {
 export type ComposerExpandState = 'collapsed' | 'expanded'
 
 /**
- * What drives it: the button's toggle (the sole entry, and one of the three
- * exits), Escape in the textarea (only when no menu owns the key first),
- * and a successful send (dispatch actually handed the text to the session).
+ * What drives it: the button's toggle, the global ⌘E chord (ticket 57 —
+ * resolved by shared/keymap.ts and routed by the App shell to whichever
+ * composer is mounted; toggle semantics, distinct event for provenance),
+ * Escape in the textarea (only when no menu owns the key first), and a
+ * successful send (dispatch actually handed the text to the session).
  */
-export type ComposerExpandEvent = 'toggle' | 'escape' | 'sent'
+export type ComposerExpandEvent = 'toggle' | 'escape' | 'sent' | 'key'
 
-/** The full decision table: expanded only via the button; every other
- * pairing collapses. The machine is total — no transition is undefined. */
+/** The full decision table: expanded only via the button or the ⌘E chord
+ * (both self-inverting); every other pairing collapses. The machine is
+ * total — no transition is undefined. */
 const EXPAND_TRANSITIONS: Readonly<Record<ComposerExpandState, Readonly<Record<ComposerExpandEvent, ComposerExpandState>>>> = {
-  collapsed: { toggle: 'expanded', escape: 'collapsed', sent: 'collapsed' },
-  expanded: { toggle: 'collapsed', escape: 'collapsed', sent: 'collapsed' }
+  collapsed: { toggle: 'expanded', escape: 'collapsed', sent: 'collapsed', key: 'expanded' },
+  expanded: { toggle: 'collapsed', escape: 'collapsed', sent: 'collapsed', key: 'collapsed' }
 }
 
 export function reduceComposerExpand(state: ComposerExpandState, event: ComposerExpandEvent): ComposerExpandState {

@@ -48,7 +48,7 @@ import EmptyState from './components/EmptyState'
 import SidePanel from './components/SidePanel'
 import BottomDock from './components/BottomDock'
 import ChatView, { RENAME_EVENT } from './components/ChatView'
-import { OPEN_MODEL_MENU_EVENT, OPEN_THINKING_MENU_EVENT } from './components/Composer'
+import { OPEN_MODEL_MENU_EVENT, OPEN_THINKING_MENU_EVENT, TOGGLE_EXPAND_EVENT } from './components/Composer'
 import FollowView from './components/FollowView'
 import { useNowTick } from './components/use-now'
 import ErrorBanner from './components/ErrorBanner'
@@ -415,8 +415,9 @@ export default function App(): JSX.Element {
 
   // ---- global keybindings (ticket 27, shared/keymap.ts): ⌘N new task,
   // ⌘K task search, ⌘B left sidebar, ⌥⌘B side panel, ⌘J terminal dock,
-  // ⌥⌘J bridge dock — resolved table-driven by PHYSICAL event.code, so the
-  // ⌥⌘ chords survive macOS Option rewriting the character (⌥B → "∫").
+  // ⌥⌘J bridge dock, ⌘E composer expand (ticket 57) — resolved
+  // table-driven by PHYSICAL event.code, so the ⌥⌘ chords survive macOS
+  // Option rewriting the character (⌥B → "∫").
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent): void {
       const action = resolveKeybinding(event)
@@ -442,6 +443,14 @@ export default function App(): JSX.Element {
           break
         case 'toggle-bridge-panel':
           dockDispatch({ type: 'toggle-bridge-panel' })
+          break
+        case 'toggle-composer-expand':
+          // Ticket 57: the ⌘E chord routes to whichever composer is
+          // mounted — the focused session's ChatView or the New Task empty
+          // state (one shared component). FollowView mounts none, so the
+          // chord no-ops while following. The composer's own expand
+          // machine (Seam-1) owns the state change.
+          window.dispatchEvent(new Event(TOGGLE_EXPAND_EVENT))
           break
       }
     }
