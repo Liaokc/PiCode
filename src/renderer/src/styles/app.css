@@ -3581,7 +3581,9 @@ button.heat:hover {
   transition: transform 0.15s ease;
 }
 
-.thinking-row-open .row-chevron,
+/* The tool card keeps the pre-61 rotation baseline (its collapsed icon is a
+   down-chevron); thinking rows swapped to the Worked fold language in ticket
+   61 — right when collapsed, down when expanded, no rotation. */
 .tool-card-open .row-chevron {
   transform: rotate(180deg);
 }

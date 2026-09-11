@@ -44,6 +44,7 @@ import { expandVisualEnabled } from './visual-expand'
 import { answerVisualEnabled } from './visual-answer'
 import { workedVisualEnabled } from './visual-worked-container'
 import { chronologyVisualEnabled } from './visual-chronology'
+import { thinkingVisualEnabled } from './visual-thinking'
 import { ensureVisualProjectDir, ensureVisualStore, writeVisualSession } from './visual-store'
 import type { HostToParent } from '../shared/contract'
 
@@ -196,6 +197,8 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
   if (workedVisualEnabled()) return
   // And for the turn-chronology harness (ticket 56).
   if (chronologyVisualEnabled()) return
+  // And for the thinking-row harness (ticket 61).
+  if (thinkingVisualEnabled()) return
   // And for the ghost-cwd harness (ticket 54).
   if (process.env['PICODE_VISUAL_CWD'] === '1') return
   // And for the rail-stacking harness (ticket 62).
