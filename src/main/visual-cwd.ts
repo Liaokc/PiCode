@@ -9,6 +9,8 @@
  *                         entries only, no open-type action
  *   cwd3-restored       — the same row after its directory reappears:
  *                         dimming and meta gone, no manual step
+ *   cwd4-restored-menu  — the restored row's menu back to the FULL nine
+ *                         entries (the menu rides the same projection)
  *
  * Seeding: an isolated session store (PICODE_SESSION_DIR tmpdir) with one
  * ALIVE project and one DOOMED project (created, seeded, then deleted — the
@@ -49,6 +51,20 @@ const MENU_PROBE = `(() => {
 })()`
 
 const EXPECTED_GRAY_MENU = ['Archive task', 'Copy task path', 'Copy session file path', 'Copy session ID']
+
+/** The ordinary row menu (ticket 35): what the restored row's menu must be
+ * back to after recovery — the same render-time projection, flipped back. */
+const EXPECTED_FULL_MENU = [
+  'Pin task',
+  'Rename task',
+  'Archive task',
+  'Mark as Unread',
+  'Reveal in Finder',
+  'Copy task path',
+  'Copy session file path',
+  'Copy session ID',
+  'View call trace'
+]
 
 async function waitFor(getWindow: () => BrowserWindow | null, probe: string, budgetMs: number): Promise<boolean> {
   const win = getWindow()
@@ -176,6 +192,25 @@ export function startCwdVisualIfEnabled(getWindow: () => BrowserWindow | null): 
       )
       assert(restored, 'the gray row never restored to normal when its directory reappeared')
       await capture(win, 'cwd3-restored')
+
+      // The restored row's menu must be back to the FULL nine entries — the
+      // menu rides the same render-time projection as the row, so recovery
+      // restores it too (no stale harmless-only menu).
+      const restoredPoint = await pointOf(win, doomedSel)
+      assert(restoredPoint !== null, 'the restored row is not clickable')
+      rightClick(win, restoredPoint!.x, restoredPoint!.y)
+      let restoredMenu: string[] | null = null
+      for (let waited = 0; waited < 5_000; waited += 120) {
+        restoredMenu = await measure<string[]>(getWindow, MENU_PROBE)
+        if (restoredMenu !== null) break
+        await sleep(120)
+      }
+      assert(restoredMenu !== null, 'right-click never opened the restored row menu')
+      assert(
+        JSON.stringify(restoredMenu) === JSON.stringify(EXPECTED_FULL_MENU),
+        `the restored row menu must be the full nine entries (got ${JSON.stringify(restoredMenu)})`
+      )
+      await capture(win, 'cwd4-restored-menu')
 
       console.log('VISUAL cwd done — all invariants held')
       app.exit(0)

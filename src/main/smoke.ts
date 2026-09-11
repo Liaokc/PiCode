@@ -2583,6 +2583,40 @@ export function startSmokeIfEnabled(
         }
         log('cwd_row_recovered_ok')
 
+        // The restored row's menu is back to the FULL nine entries: the menu
+        // rides the same render-time projection as the row, so recovery must
+        // un-restrict it too — no stale harmless-only menu survives.
+        await js(`(() => {
+          const row = document.querySelector('${deadRow}')
+          if (!(row instanceof Element)) return
+          const r = row.getBoundingClientRect()
+          row.dispatchEvent(new MouseEvent('contextmenu', {
+            bubbles: true, cancelable: true,
+            clientX: Math.round(r.left + 60), clientY: Math.round(r.top + r.height / 2)
+          }))
+        })(); true`)
+        if (!(await waitForProbe(win, `document.querySelector('.sb-context-menu') !== null`, 5_000))) {
+          fail('ticket-54 stage: right-click never opened the restored row menu')
+        }
+        const restoredMenu = (await js(`[...document.querySelectorAll('.sb-context-item')].map((el) => el.textContent)`)) as string[]
+        const expectedRestoredMenu = [
+          'Pin task',
+          'Rename task',
+          'Archive task',
+          'Mark as Unread',
+          'Reveal in Finder',
+          'Copy task path',
+          'Copy session file path',
+          'Copy session ID',
+          'View call trace'
+        ]
+        if (JSON.stringify(restoredMenu) !== JSON.stringify(expectedRestoredMenu)) {
+          fail(`ticket-54 stage: the restored row menu must be the full nine entries (got ${JSON.stringify(restoredMenu)})`)
+        }
+        await js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`)
+        await waitForProbe(win, `document.querySelector('.sb-context-menu') === null`, 5_000)
+        log('cwd_menu_restored_ok')
+
         // The control row survived everything (no accidental over-filtering).
         if (!((await js(`document.querySelector('${aliveRow}') !== null`)) as boolean)) {
           fail('ticket-42 stage: the alive control row was wrongly filtered')
