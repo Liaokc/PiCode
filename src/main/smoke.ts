@@ -76,9 +76,14 @@
  * (hidden collapsed, work rows when opened) and the tool that ran after
  * the answer stays visible below it, outside the fold.
  *
+ * Ticket 57 extends the composer-expand stage with the global ⌘E chord:
+ * a new KeyE row in the ticket-27 keymap table routes to whichever
+ * composer is mounted, so the chord toggles BOTH composers' expanded
+ * state (re-press retracts), and the expand button's tooltip carries the
+ * ⌘E keycap only (Tooltip discipline).
+ *
  * Any missed step times out and exits non-zero. Progress logs as
- * `SMOKE <step>` lines on stdout. Not part of `npm test`.
- */
+ * `SMOKE <step>` lines on stdout. Not part of `npm test`. */
 
 import os from 'node:os'
 import { randomUUID } from 'node:crypto'
@@ -3126,23 +3131,32 @@ export function startSmokeIfEnabled(
     // the top-right expand button ----
     // The component is SHARED by both composers, so the stage drives both:
     // ① the New Task empty state (opened from the sidebar): the persistent
-    //    top-right button with the label-only tooltip ("Expand input", no
-    //    shortcut — Tooltip discipline), the 74px floor, in-place expansion
-    //    to about half the main zone, and the Esc collapse;
+    //    top-right button with the ⌘E keycap tooltip (ticket 57 — shortcut
+    //    only, no description), the 74px floor, in-place expansion to
+    //    about half the main zone, the Esc collapse, and the global ⌘E
+    //    chord toggling both ways (ticket 57);
     // ② a fresh session (createSession focuses it — ChatView by
     //    construction): auto-grow clamps [74,160] with internal scrolling
     //    at the cap, the expansion PUSHES the transcript down (no overlay),
-    //    and all three collapse paths (re-click / Esc / send success) land
-    //    back on the resting composer.
+    //    all three collapse paths (re-click / Esc / send success) land
+    //    back on the resting composer, and the global ⌘E chord (ticket 57)
+    //    toggles the expanded state both ways.
     log('composer_expand_start')
     await withWindow(getWindow, async (win) => {
       const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
-      /** The tooltip contract: label-only ("Expand input"), no shortcut. */
+      /** The tooltip contract: ⌘E keycap only (ticket 57), no label. */
       const expandTipJs = (scope: string): string => `(() => {
         const b = document.querySelector('${scope} .composer-expand')
         if (!(b instanceof HTMLElement)) return null
         return JSON.stringify({ label: b.getAttribute('data-tip-label'), shortcut: b.getAttribute('data-tip-shortcut') })
       })()`
+      /** The global ⌘E chord, dispatched as a PHYSICAL-key event (code +
+       * modifiers only — the same judgment surface the keymap reads,
+       * ticket-27 stage precedent). */
+      const pressCmdE = (): Promise<unknown> =>
+        win.webContents.executeJavaScript(
+          `window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyE', metaKey: true, bubbles: true }))`
+        )
       /** Expanded height = about half the main zone, clamped [280, 560]
        *  (the Seam-1 projection, re-derived from the same measured region). */
       const EXPANDED_FORMULA = (region: string): string => `(() => {
@@ -3187,8 +3201,8 @@ export function startSmokeIfEnabled(
         fail('ticket-49 stage: the empty-state composer never settled at the 74px floor')
       }
       const emptyTip = JSON.parse(String(await js(expandTipJs('.empty-state'))))
-      if (!emptyTip || emptyTip.label !== 'Expand input' || emptyTip.shortcut !== null) {
-        fail(`ticket-49 stage: the empty-state expand tooltip is ${JSON.stringify(emptyTip)}, expected label "Expand input" with no shortcut`)
+      if (!emptyTip || emptyTip.label !== null || emptyTip.shortcut !== '⌘E') {
+        fail(`ticket-49 stage: the empty-state expand tooltip is ${JSON.stringify(emptyTip)}, expected the ⌘E keycap only (ticket 57)`)
       }
       await clickExpand('.empty-state')
       if (!(await waitForProbe(win, EXPANDED_FORMULA('.empty-state'), 5_000))) {
@@ -3199,6 +3213,20 @@ export function startSmokeIfEnabled(
       if (!(await waitForProbe(win, `${emptyTa}.clientHeight === 74`, 5_000))) {
         fail('ticket-49 stage: Esc never collapsed the empty-state composer back to the floor')
       }
+      // ⌘E (ticket 57): the global chord toggles THIS composer too — the
+      // empty state shares the component — and a re-press retracts.
+      await pressCmdE()
+      if (!(await waitForProbe(win, EXPANDED_FORMULA('.empty-state'), 5_000))) {
+        fail('ticket-57: ⌘E never expanded the empty-state composer')
+      }
+      if ((await js(`document.querySelector('.empty-state .composer-expand')?.getAttribute('aria-expanded')`)) !== 'true') {
+        fail('ticket-57: ⌘E expanded the empty-state composer without aria-expanded=true')
+      }
+      await pressCmdE()
+      if (!(await waitForProbe(win, `${emptyTa}.clientHeight === 74`, 5_000))) {
+        fail('ticket-57: the second ⌘E never retracted the empty-state composer')
+      }
+      log('composer_expand_key_empty_state_ok')
       log('composer_expand_empty_state_ok')
 
       // ② A fresh session drives the in-session chain. createSession
@@ -3255,10 +3283,11 @@ export function startSmokeIfEnabled(
       }
       log('composer_autogrow_reset_ok')
 
-      // The expand button: persistent, icon-only, no shortcut, aria-expanded.
+      // The expand button: keycap-only tooltip (⌘E — ticket 57),
+      // aria-expanded reflects the machine state.
       const chatTip = JSON.parse(String(await js(expandTipJs('.chat-dock'))))
-      if (!chatTip || chatTip.label !== 'Expand input' || chatTip.shortcut !== null) {
-        fail(`ticket-49 stage: the chat expand tooltip is ${JSON.stringify(chatTip)}, expected label "Expand input" with no shortcut`)
+      if (!chatTip || chatTip.label !== null || chatTip.shortcut !== '⌘E') {
+        fail(`ticket-49 stage: the chat expand tooltip is ${JSON.stringify(chatTip)}, expected the ⌘E keycap only (ticket 57)`)
       }
       // Expansion pushes the transcript down: the transcript cell shrinks
       // and the composer card stays fully BELOW it (in-flow, no overlay).
@@ -3304,6 +3333,21 @@ export function startSmokeIfEnabled(
         fail('ticket-49 stage: Esc never collapsed the in-session composer')
       }
       log('composer_expand_collapse_paths_ok')
+
+      // ⌘E (ticket 57): the global chord toggles the in-session composer
+      // as well — expand, then a re-press retracts (self-inverting).
+      await pressCmdE()
+      if (!(await waitForProbe(win, EXPANDED_FORMULA('.chat-view'), 5_000))) {
+        fail('ticket-57: ⌘E never expanded the in-session composer')
+      }
+      if ((await js(`${chatExpand}?.getAttribute('aria-expanded')`)) !== 'true') {
+        fail('ticket-57: ⌘E expanded the in-session composer without aria-expanded=true')
+      }
+      await pressCmdE()
+      if (!(await waitForProbe(win, `${chatTa}.clientHeight === 74`, 5_000))) {
+        fail('ticket-57: the second ⌘E never retracted the in-session composer')
+      }
+      log('composer_expand_key_chat_ok')
 
       // Collapse path ③: a successful send starts the next turn from the
       // resting composer. The button STAYS while the turn runs (persistent).

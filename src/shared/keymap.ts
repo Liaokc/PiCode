@@ -10,6 +10,8 @@
  * The 27 remap: ⌘B toggles the left sidebar (was the Bridge — ZCode muscle
  * memory), ⌥⌘B toggles the right side panel, ⌘J keeps the terminal dock,
  * ⌥⌘J toggles the Bridge dock. ⌘N / ⌘K keep their pre-27 bindings.
+ * Ticket 57 adds ⌘E: toggle the focused composer's expanded input (both
+ * surfaces share the component; the App shell routes the action).
  */
 
 /** Actions the global chords dispatch; names mirror the reducer actions
@@ -21,6 +23,7 @@ export type KeybindingAction =
   | { type: 'toggle-side-panel' }
   | { type: 'toggle-terminal-panel' }
   | { type: 'toggle-bridge-panel' }
+  | { type: 'toggle-composer-expand' }
 
 /** Minimal shape of a KeyboardEvent the resolver reads. `key` exists on
  * real events but is deliberately NOT read — character judgment is exactly
@@ -49,7 +52,8 @@ export const KEYBINDINGS: readonly Chord[] = [
   { code: 'KeyJ', alt: false, action: { type: 'toggle-terminal-panel' } },
   { code: 'KeyJ', alt: true, action: { type: 'toggle-bridge-panel' } },
   { code: 'KeyB', alt: false, action: { type: 'toggle-sidebar' } },
-  { code: 'KeyB', alt: true, action: { type: 'toggle-side-panel' } }
+  { code: 'KeyB', alt: true, action: { type: 'toggle-side-panel' } },
+  { code: 'KeyE', alt: false, action: { type: 'toggle-composer-expand' } }
 ]
 
 /** Resolve a keydown to its global action, or null when it is not one of

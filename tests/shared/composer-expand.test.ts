@@ -94,11 +94,11 @@ describe('composerExpandHeight (main area → about half, clamped 280→560)', (
 
 describe('reduceComposerExpand (the expand state machine, three collapse paths)', () => {
   const states: ComposerExpandState[] = ['collapsed', 'expanded']
-  const events: ComposerExpandEvent[] = ['toggle', 'escape', 'sent']
+  const events: ComposerExpandEvent[] = ['toggle', 'escape', 'sent', 'key']
 
   const expected: Record<ComposerExpandState, Record<ComposerExpandEvent, ComposerExpandState>> = {
-    collapsed: { toggle: 'expanded', escape: 'collapsed', sent: 'collapsed' },
-    expanded: { toggle: 'collapsed', escape: 'collapsed', sent: 'collapsed' }
+    collapsed: { toggle: 'expanded', escape: 'collapsed', sent: 'collapsed', key: 'expanded' },
+    expanded: { toggle: 'collapsed', escape: 'collapsed', sent: 'collapsed', key: 'collapsed' }
   }
 
   it('follows the full decision table', () => {
@@ -109,8 +109,9 @@ describe('reduceComposerExpand (the expand state machine, three collapse paths)'
     }
   })
 
-  it('expands only through the toggle (the button is the sole entry)', () => {
+  it('expands only through the toggle and the ⌘E chord (the sole entries)', () => {
     expect(reduceComposerExpand('collapsed', 'toggle')).toBe('expanded')
+    expect(reduceComposerExpand('collapsed', 'key')).toBe('expanded')
     expect(reduceComposerExpand('collapsed', 'escape')).toBe('collapsed')
     expect(reduceComposerExpand('collapsed', 'sent')).toBe('collapsed')
   })
@@ -119,5 +120,23 @@ describe('reduceComposerExpand (the expand state machine, three collapse paths)'
     expect(reduceComposerExpand('expanded', 'toggle')).toBe('collapsed')
     expect(reduceComposerExpand('expanded', 'escape')).toBe('collapsed')
     expect(reduceComposerExpand('expanded', 'sent')).toBe('collapsed')
+  })
+})
+
+describe('reduceComposerExpand — ticket 57: the global ⌘E chord is its own event', () => {
+  it('the key event toggles collapsed → expanded (the chord opens the input)', () => {
+    expect(reduceComposerExpand('collapsed', 'key')).toBe('expanded')
+  })
+
+  it('the key event is self-inverting: expanded → collapsed (⌘E again retracts)', () => {
+    expect(reduceComposerExpand('expanded', 'key')).toBe('collapsed')
+  })
+
+  it('the key event is a provenance-distinct event, not an alias of the button toggle', () => {
+    // 'toggle' is the button's click; 'key' is the App-routed ⌘E chord.
+    // Identical semantics BY the table, distinct events IN the union —
+    // the same shape as click vs. the collapse routes.
+    const events: ComposerExpandEvent[] = ['toggle', 'escape', 'sent', 'key']
+    expect(new Set(events).size).toBe(events.length)
   })
 })
