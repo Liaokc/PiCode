@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, stat, writeFile, utimes, appendFile, readFile } fro
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { SessionIndexService } from '../../src/main/sessions/index-service'
+import type { SessionSummary } from '../../src/shared/sessions/types'
 
 /**
  * Fixture layout mirrors ~/.pi/agent/sessions/<encoded-cwd>/<session>.jsonl.
@@ -298,51 +299,57 @@ describe('SessionIndexService trace follow (ticket 37)', () => {
   })
 })
 
-describe('SessionIndexService cwd-liveness filter (ticket 42)', () => {
-  it('drops sessions whose cwd is gone from the index while leaving their files untouched', async () => {
+describe('SessionIndexService cwd-liveness annotation (tickets 42 + 54)', () => {
+  it('keeps dead-cwd sessions listed and flags them cwdMissing (gray-row data) while leaving their files untouched', async () => {
     const deadCwd = await cwdFor('liveness-dead')
     const file = await writeSession('livenessA', 'dead.jsonl', sessionText(deadCwd, 'id-dead', [userLine('e1', null, 'dead cwd task')]))
     const keepCwd = await cwdFor('liveness-keep')
     await writeSession('livenessA', 'keep.jsonl', sessionText(keepCwd, 'id-keep', [userLine('e1', null, 'alive task')]))
 
     const service = new SessionIndexService({ sessionsDir: dir, onIndexChanged: () => {} })
-    const ids = (): Promise<string[]> => service.list().then((list) => list.map((s) => s.id))
-    expect(await ids()).toEqual(expect.arrayContaining(['id-dead', 'id-keep']))
+    const byId = async (): Promise<Map<string, SessionSummary>> =>
+      service.list().then((list) => new Map(list.map((s) => [s.id, s])))
 
+    // The physical death happens BEFORE any scan sees the directory.
     await rm(deadCwd, { recursive: true, force: true })
-    expect(await ids()).toContain('id-keep')
-    expect(await ids()).not.toContain('id-dead')
+    const flagged = await byId()
+    expect(flagged.get('id-dead')).toBeDefined()
+    expect(flagged.get('id-dead')?.cwdMissing).toBe(true)
+    // The alive control keeps the EXACT pre-54 payload shape: no field at
+    // all (additive contract — absent, not false).
+    expect(flagged.get('id-keep')).toBeDefined()
+    expect('cwdMissing' in (flagged.get('id-keep') as SessionSummary)).toBe(false)
 
-    // Zero file action: the filtered session's bytes are exactly as before —
-    // no delete, no move, no marker (the dead-cwd session's file is
-    // deliberately NOT reachable from the UI, but nothing on disk changed).
+    // Zero file action: the flagged session's bytes are exactly as before —
+    // no delete, no move, no marker. The flag is a projection, the file is
+    // never touched.
     const text = await readFile(file, 'utf8')
     expect(text).toContain('"id-dead"')
 
-    // The directory reappearing makes its sessions listable again.
+    // The directory reappearing clears the flag (recovery needs no manual
+    // step): the gray row restores to a normal row on the next scan.
     await mkdir(deadCwd, { recursive: true })
-    expect(await ids()).toContain('id-dead')
+    const recovered = await byId()
+    expect('cwdMissing' in (recovered.get('id-dead') as SessionSummary)).toBe(false)
   })
 
-  it('exempts in-app live host sessions — a running session whose cwd died mid-run stays listed', async () => {
+  it('keeps a session listed while its cwd is gone regardless of any host — the flag is the raw physical fact', async () => {
+    // Ticket 42's exemption used to withhold list membership for live hosts;
+    // ticket 54: the banner needs the flag for live sessions too, so the
+    // index flags EVERY session on a dead cwd and the live-host distinction
+    // is a renderer projection (cwdRowState, cwd-liveness suite).
     const cwd = await cwdFor('liveness-live')
     await writeSession('livenessB', 'live.jsonl', sessionText(cwd, 'id-live', [userLine('e1', null, 'running task')]))
 
-    const exempt = new Set<string>(['id-live'])
-    const service = new SessionIndexService({
-      sessionsDir: dir,
-      onIndexChanged: () => {},
-      liveSessionIds: () => exempt
-    })
-    const ids = (): Promise<string[]> => service.list().then((list) => list.map((s) => s.id))
-    expect(await ids()).toContain('id-live')
+    const service = new SessionIndexService({ sessionsDir: dir, onIndexChanged: () => {} })
+    const flagOf = async (): Promise<boolean | undefined> =>
+      service.list().then((list) => list.find((s) => s.id === 'id-live')?.cwdMissing)
 
+    expect(await flagOf()).toBeUndefined()
     await rm(cwd, { recursive: true, force: true })
-    expect(await ids()).toContain('id-live')
-
-    // Host gone (exemption lifted): the now unhosted dead-cwd session drops.
-    exempt.clear()
-    expect(await ids()).not.toContain('id-live')
+    expect(await flagOf()).toBe(true)
+    await mkdir(cwd, { recursive: true })
+    expect(await flagOf()).toBeUndefined()
   })
 
   it('fires onIndexChanged when a cwd appears or vanishes, even with no file change', async () => {

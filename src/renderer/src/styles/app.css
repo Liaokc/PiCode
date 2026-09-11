@@ -4859,6 +4859,53 @@ button.heat:hover {
   background: var(--send-bg-hover);
 }
 
+/* ---------- ticket 54: CWD banner (infected session view) ---------- */
+
+.cwd-banner {
+  flex-shrink: 0;
+  margin: 0 14px 6px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #fdf6e7;
+  border: 1px solid #ecd9a8;
+}
+
+.cwd-banner-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #8a6a1c;
+}
+
+.cwd-banner-facts {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: #6f5f38;
+}
+
+/* ---------- ticket 54: gray row (Dimmed Row) ---------- */
+
+.sb-task-dimmed {
+  /* Pure display state: the row dims as a whole — the dot slot, hover
+     chrome and meta included (nothing about the row pretends to be
+     openable). Status-dot vocabulary untouched. */
+  opacity: 0.55;
+}
+
+.sb-task-dimmed:hover {
+  opacity: 0.75;
+}
+
+.sb-task-cwd-meta {
+  font-size: 11px;
+  color: var(--text-faint);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 /* ---------- composer stop control (screenshot 01, bottom right) ---------- */
 
 .cmp-send:disabled,

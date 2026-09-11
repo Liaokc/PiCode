@@ -90,6 +90,7 @@ import type { HostSupervisor } from './host-supervisor'
 import { focusSessionFromNotification, type ApprovalNotice } from './notifications'
 import type { HostToParent, SessionScopedEvent } from '../shared/contract'
 import { FOLLOW_TAKEOVER_REJECTED_TOAST } from '../shared/sessions/group'
+import { CWD_MISSING_ROW_TOAST } from '../shared/sessions/cwd-liveness'
 import type { SessionContextActionService } from './sessions/context-actions'
 import { emitContractEvent } from './visual'
 
@@ -2333,15 +2334,23 @@ export function startSmokeIfEnabled(
     }
     log('group_fold_done')
 
-    // ---- ticket 42: dead-cwd sessions never reach the index ----
+    // ---- ticket 42 × 54: the dead-cwd lifecycle, end to end ----
     // Three seeded sessions in an isolated store drive the whole stage:
-    //  - DEAD: its project dir is deleted BEFORE the scan — the session must
-    //    be absent from the sidebar AND from ⌘K (structurally unreachable:
-    //    resume would crash the host), its file byte-identical on disk;
+    //  - DEAD: its project dir is deleted BEFORE the scan — the session is
+    //    LISTED as a display-only gray row (ticket 54: dimmed + "cwd
+    //    missing" meta), the click explains with a toast and spawns ZERO
+    //    hosts, the row menu keeps only the harmless entries, ⌘K still
+    //    excludes it (resume on a deleted cwd would crash the host), and its
+    //    file stays byte-identical on disk;
     //  - ALIVE (control): real dir, first message carries the SDK's skill-
     //    injection prologue — the title must be the text AFTER the block;
     //  - LIVE: resumed in-app, then its project dir is deleted MID-RUN —
-    //    the exemption keeps the row listed (registry/sidebar).
+    //    the row stays listed (the ticket-42 exemption semantics) and the
+    //    session view carries the persistent CWD banner (three facts, no
+    //    dismiss button);
+    //  - RECOVERY: both directories reappearing clears the flag on the next
+    //    scan — the banner disappears and the gray row restores to normal
+    //    without any manual step.
     log('dead_cwd_start')
     const cwdStore = process.env['PICODE_SESSION_DIR']
     if (!cwdStore) fail('ticket-42 stage: PICODE_SESSION_DIR is not set')
@@ -2406,11 +2415,63 @@ export function startSmokeIfEnabled(
         }
         log('dead_cwd_control_listed_ok')
 
-        // Same scan, dead session: structurally absent from the sidebar.
+        // Same scan, the dead session: LISTED as a gray row (ticket 54) —
+        // dimmed, with the "cwd missing" meta note.
         const deadRow = `[data-file="${deadFile}"]`
-        if ((await js(`document.querySelector('${deadRow}') !== null`)) as boolean) {
-          fail('ticket-42 stage: the dead-cwd session is listed in the sidebar')
+        if (!(await waitForProbe(win, `document.querySelector('${deadRow}.sb-task-dimmed') !== null`, 15_000))) {
+          fail('ticket-54 stage: the dead-cwd session never reached the sidebar as a dimmed row')
         }
+        const meta = (await js(`document.querySelector('${deadRow} .sb-task-cwd-meta')?.textContent ?? ''`)) as string
+        if (meta !== 'cwd missing') fail(`ticket-54 stage: the gray row's meta must read "cwd missing" (got "${meta}")`)
+        log('dead_cwd_gray_row_ok')
+
+        // Click the gray row: an explanation toast ONLY — zero resume
+        // (session_created count must stay at zero) and the view never
+        // switches to the dead session.
+        let deadSpawns = 0
+        const onDeadSpawn = (e: Scoped): void => {
+          if (e.type === 'session_created') deadSpawns++
+        }
+        observers.push(onDeadSpawn)
+        await js(
+          `document.querySelector('${deadRow}')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
+        )
+        const toastShown = await waitForProbe(
+          win,
+          `[...document.querySelectorAll('.toast-message')].some((n) => (n.textContent ?? '').includes(${JSON.stringify(CWD_MISSING_ROW_TOAST)}))`,
+          5_000
+        )
+        if (!toastShown) fail('ticket-54 stage: the gray-row click never raised the explanation toast')
+        await new Promise((r) => setTimeout(r, 2_500))
+        observers.splice(observers.indexOf(onDeadSpawn), 1)
+        if (deadSpawns > 0) fail(`ticket-54 stage: the gray-row click attempted ${deadSpawns} resume(s) — must be zero`)
+        if (((await js(`document.querySelector('${deadRow}').classList.contains('sb-task-active')`)) as boolean)) {
+          fail('ticket-54 stage: the gray-row click switched the view to the dead session')
+        }
+        log('dead_cwd_click_toast_ok')
+
+        // Right-click the gray row: exactly the harmless entries, no
+        // open-type action of any kind.
+        await js(`(() => {
+          const row = document.querySelector('${deadRow}')
+          if (!(row instanceof Element)) return
+          const r = row.getBoundingClientRect()
+          row.dispatchEvent(new MouseEvent('contextmenu', {
+            bubbles: true, cancelable: true,
+            clientX: Math.round(r.left + 60), clientY: Math.round(r.top + r.height / 2)
+          }))
+        })(); true`)
+        if (!(await waitForProbe(win, `document.querySelector('.sb-context-menu') !== null`, 5_000))) {
+          fail('ticket-54 stage: right-click never opened the gray row menu')
+        }
+        const grayMenu = (await js(`[...document.querySelectorAll('.sb-context-item')].map((el) => el.textContent)`)) as string[]
+        const expectedGrayMenu = ['Archive task', 'Copy task path', 'Copy session file path', 'Copy session ID']
+        if (JSON.stringify(grayMenu) !== JSON.stringify(expectedGrayMenu)) {
+          fail(`ticket-54 stage: the gray row menu must carry only the harmless entries (got ${JSON.stringify(grayMenu)})`)
+        }
+        await js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`)
+        await waitForProbe(win, `document.querySelector('.sb-context-menu') === null`, 5_000)
+        log('dead_cwd_gray_menu_ok')
         log('dead_cwd_hidden_ok')
 
         // The dead session's file is untouched — zero delete/migrate action.
@@ -2470,6 +2531,92 @@ export function startSmokeIfEnabled(
         }
         log('dead_cwd_live_exempt_ok')
 
+        // ticket 54 — the CWD banner: the live session's view (the resume
+        // auto-focused it) carries the persistent warning while the cwd is
+        // gone: three facts, no dismiss button, anywhere in the banner.
+        if (!(await waitForProbe(win, `document.querySelector('.cwd-banner') !== null`, 10_000))) {
+          fail('ticket-54 stage: the CWD banner never appeared in the infected session view')
+        }
+        const bannerProbe = `(() => {
+          const banner = document.querySelector('.cwd-banner')
+          if (!banner) return null
+          return {
+            title: banner.querySelector('.cwd-banner-title')?.textContent ?? '',
+            facts: [...banner.querySelectorAll('.cwd-banner-facts li')].map((n) => n.textContent),
+            buttons: banner.querySelectorAll('button').length
+          }
+        })()`
+        const banner = (await js(bannerProbe)) as { title: string; facts: string[]; buttons: number } | null
+        if (banner === null) fail('ticket-54 stage: the CWD banner vanished before it could be inspected')
+        if (banner.title !== 'Working directory missing') {
+          fail(`ticket-54 stage: the banner title must read "Working directory missing" (got "${banner.title}")`)
+        }
+        const expectedFacts = [
+          'The session keeps running.',
+          'File tools will fail until the directory is restored.',
+          'After the session exits, it cannot be reopened from that directory.'
+        ]
+        if (JSON.stringify(banner.facts) !== JSON.stringify(expectedFacts)) {
+          fail(`ticket-54 stage: the banner must carry the three facts (got ${JSON.stringify(banner.facts)})`)
+        }
+        if (banner.buttons !== 0) fail(`ticket-54 stage: the banner must have NO dismiss button (saw ${banner.buttons})`)
+        log('cwd_banner_shown_ok')
+
+        // RECOVERY (banner): the directory reappearing clears the flag on
+        // the next scan — the banner disappears with no manual step.
+        mkdirSync(liveProject, { recursive: true })
+        if (!(await waitForProbe(win, `document.querySelector('.cwd-banner') === null`, 10_000))) {
+          fail('ticket-54 stage: the CWD banner never disappeared when the directory came back')
+        }
+        log('cwd_banner_recovered_ok')
+
+        // RECOVERY (gray row): the dead row restores to a normal row the
+        // same way — dimming and meta gone, no manual step.
+        mkdirSync(deadProject, { recursive: true })
+        if (!(await waitForProbe(
+          win,
+          `(() => { const row = document.querySelector('${deadRow}');
+            return row !== null && !row.classList.contains('sb-task-dimmed') && row.querySelector('.sb-task-cwd-meta') === null })()`,
+          10_000
+        ))) {
+          fail('ticket-54 stage: the gray row never restored to normal when its directory reappeared')
+        }
+        log('cwd_row_recovered_ok')
+
+        // The restored row's menu is back to the FULL nine entries: the menu
+        // rides the same render-time projection as the row, so recovery must
+        // un-restrict it too — no stale harmless-only menu survives.
+        await js(`(() => {
+          const row = document.querySelector('${deadRow}')
+          if (!(row instanceof Element)) return
+          const r = row.getBoundingClientRect()
+          row.dispatchEvent(new MouseEvent('contextmenu', {
+            bubbles: true, cancelable: true,
+            clientX: Math.round(r.left + 60), clientY: Math.round(r.top + r.height / 2)
+          }))
+        })(); true`)
+        if (!(await waitForProbe(win, `document.querySelector('.sb-context-menu') !== null`, 5_000))) {
+          fail('ticket-54 stage: right-click never opened the restored row menu')
+        }
+        const restoredMenu = (await js(`[...document.querySelectorAll('.sb-context-item')].map((el) => el.textContent)`)) as string[]
+        const expectedRestoredMenu = [
+          'Pin task',
+          'Rename task',
+          'Archive task',
+          'Mark as Unread',
+          'Reveal in Finder',
+          'Copy task path',
+          'Copy session file path',
+          'Copy session ID',
+          'View call trace'
+        ]
+        if (JSON.stringify(restoredMenu) !== JSON.stringify(expectedRestoredMenu)) {
+          fail(`ticket-54 stage: the restored row menu must be the full nine entries (got ${JSON.stringify(restoredMenu)})`)
+        }
+        await js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`)
+        await waitForProbe(win, `document.querySelector('.sb-context-menu') === null`, 5_000)
+        log('cwd_menu_restored_ok')
+
         // The control row survived everything (no accidental over-filtering).
         if (!((await js(`document.querySelector('${aliveRow}') !== null`)) as boolean)) {
           fail('ticket-42 stage: the alive control row was wrongly filtered')
@@ -2478,6 +2625,7 @@ export function startSmokeIfEnabled(
     } finally {
       rmSync(aliveProject, { recursive: true, force: true })
       rmSync(liveProject, { recursive: true, force: true })
+      rmSync(deadProject, { recursive: true, force: true })
     }
     log('dead_cwd_done')
 

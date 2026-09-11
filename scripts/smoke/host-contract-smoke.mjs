@@ -623,6 +623,19 @@ async function verifySessionSummaryContract() {
   }
   if (typeof summary.title !== 'string' || summary.title === '') fail('title must stay a non-empty string')
   console.log('SMOKE SessionSummary contract ok — purely additive (legacy fields intact)')
+
+  // ---- ticket 54: cwdMissing, the additive contract increment reported at
+  // implementation time. With the cwd alive the summary keeps the EXACT
+  // legacy shape (the field stays ABSENT, not false) — old payloads and old
+  // consumers keep validating; a dead cwd (injected stat) flags
+  // `cwdMissing: true`. ----
+  const { withCwdMissing } = await import('../../src/shared/sessions/cwd-liveness.ts')
+  const alive = withCwdMissing([summary], () => true)
+  if (alive[0] !== summary) fail('cwdMissing must leave an alive-cwd summary at its EXACT old payload shape (same reference, field absent)')
+  if ('cwdMissing' in alive[0]) fail('cwdMissing must stay ABSENT while the cwd exists — additive means absent, not false')
+  const flagged = withCwdMissing([{ id: 'x', cwd: '/gone' }], () => false)
+  if (flagged[0].cwdMissing !== true) fail('a dead cwd must flag cwdMissing: true')
+  console.log('SMOKE cwdMissing contract ok — absent while alive, true when dead; old payloads (field missing) pass through unchanged')
 }
 
 /** Ticket 36: the call-trace contract against the smoke's REAL session file.

@@ -64,3 +64,22 @@ export function sessionMenuGroups(pinned: boolean, unread: boolean): SessionMenu
 export function sessionMenuLabels(groups: readonly SessionMenuEntry[][]): string[] {
   return groups.flat().map((entry) => entry.label)
 }
+
+/** The gray row's menu (ticket 54, 灰行): exactly the harmless entries —
+ * Archive plus the three copy actions, in the ordinary menu's two groups.
+ * Every open-type action is absent (Reveal in Finder would open the gone
+ * directory, View call trace would seat a tab for a session that can never
+ * run again), and so do the row-organization entries — the ticket keeps
+ * precisely the four listed actions. The menu never offers a resume path:
+ * resume on a deleted cwd makes the host exit(1), so a gray row is a pure
+ * display state. */
+export function grayRowMenuGroups(): SessionMenuEntry[][] {
+  return [
+    [{ action: 'archive', label: 'Archive task' }],
+    [
+      { action: 'copy-task-path', label: 'Copy task path' },
+      { action: 'copy-session-file', label: 'Copy session file path' },
+      { action: 'copy-session-id', label: 'Copy session ID' }
+    ]
+  ]
+}

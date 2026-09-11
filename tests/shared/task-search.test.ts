@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { nextSelectionIndex, searchTasks } from '../../src/shared/task-search.ts'
+import { excludeDimmedRows, nextSelectionIndex, searchTasks } from '../../src/shared/task-search.ts'
 import type { SessionSummary } from '../../src/shared/sessions/types.ts'
 
 function session(overrides: Partial<SessionSummary> & { id: string }): SessionSummary {
@@ -49,5 +49,31 @@ describe('nextSelectionIndex', () => {
 
   it('stays put when the list is empty', () => {
     expect(nextSelectionIndex(0, 1, 0)).toBe(0)
+  })
+})
+
+describe('excludeDimmedRows — ⌘K offers actionable targets only (ticket 54)', () => {
+  const dimmed = session({ id: 'dead-cwd task', cwd: '/gone/project' })
+  const dimmedFlagged = { ...dimmed, cwdMissing: true as const }
+  const liveFlagged = { ...session({ id: 'live on dead cwd' }), cwdMissing: true as const }
+  const normal = session({ id: 'healthy task' })
+  const LIVE = new Set(['live on dead cwd'])
+
+  it('excludes dimmed rows (dead cwd, no live host) from the palette', () => {
+    expect(excludeDimmedRows([dimmedFlagged, normal], LIVE).map((s) => s.id)).toEqual(['healthy task'])
+  })
+
+  it('keeps flagged sessions that have a live host in this app (focus switch is actionable)', () => {
+    expect(excludeDimmedRows([liveFlagged], LIVE).map((s) => s.id)).toEqual(['live on dead cwd'])
+  })
+
+  it('passes old payloads without the cwdMissing field through untouched (additive contract)', () => {
+    expect(excludeDimmedRows([dimmed, normal], LIVE)).toEqual([dimmed, normal])
+  })
+
+  it('never mutates the input', () => {
+    const sessions = [dimmedFlagged, normal]
+    excludeDimmedRows(sessions, LIVE)
+    expect(sessions).toEqual([dimmedFlagged, normal])
   })
 })

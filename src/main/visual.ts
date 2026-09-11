@@ -190,6 +190,8 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
   if (answerVisualEnabled()) return
   // And for the worked-container harness (ticket 55).
   if (workedVisualEnabled()) return
+  // And for the ghost-cwd harness (ticket 54).
+  if (process.env['PICODE_VISUAL_CWD'] === '1') return
 
   // Deterministic sidebar content for the shots (ticket 20): the empty-state
   // frame must show a status dot (a session written by ANOTHER end — fresh

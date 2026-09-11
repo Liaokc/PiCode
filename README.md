@@ -90,6 +90,7 @@ npm run visual:filter       # filter dropdown: view/sort, timeline, created orde
 npm run visual:trace        # call-trace tool surfaces: expanded/collapsed/search frames (ticket 37; asserts its probes)
 npm run visual:codeblock    # code-card language labels: bare fences show 'text' (ticket 50; asserts its probes)
 npm run visual:answer       # turn answer split: tail block = answer, narration in fold, trailing tool below (ticket 53; asserts its probes)
+npm run visual:cwd          # ghost cwd: gray row + "cwd missing" meta, harmless-only menu, auto-restore (ticket 54; asserts its probes)
 # terminal bottom-dock capture (opens the dock via the titlebar toggle):
 PICODE_VISUAL=1 PICODE_VISUAL_TERMINAL=1 npx electron .
 ```
