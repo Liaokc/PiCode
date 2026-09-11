@@ -21,6 +21,7 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
 import { createPortal } from 'react-dom'
 import Tooltip from './Tooltip'
+import { downloadBlob } from './download'
 import {
   CheckIcon,
   CloseIcon,
@@ -143,18 +144,6 @@ function DiagramCanvas({ svg }: { svg: string }): JSX.Element {
       </div>
     </div>
   )
-}
-
-/** One file download through the usual anchor+blob path. */
-function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  anchor.click()
-  // Give the navigation handler a beat before revoking (an immediate revoke
-  // can race the download start).
-  setTimeout(() => URL.revokeObjectURL(url), 1_000)
 }
 
 interface DiagramCardProps {

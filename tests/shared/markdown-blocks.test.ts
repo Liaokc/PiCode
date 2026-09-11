@@ -413,7 +413,7 @@ describe('codeBody (Seam-1: per-line token split for the gutter)', () => {
       element('code', [text('const '), span('hljs-keyword', [text('let')]), text(' x = 1\n')], { className: ['hljs', 'language-js'] })
     ])
     expect(codeBody(pre)).toEqual({
-      className: ['hljs', 'language-js'],
+      className: 'hljs language-js',
       lines: [
         [{ text: 'const ', className: null }, { text: 'let', className: 'hljs-keyword' }, { text: ' x = 1', className: null }]
       ]

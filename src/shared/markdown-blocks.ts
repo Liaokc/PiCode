@@ -254,9 +254,9 @@ export interface CodeToken {
 
 /** The rebuilt content of a code card's `<code>` element. */
 export interface CodeBody {
-  /** The original `code` element's className (hljs + language-*) — carried
-   * onto the rebuilt element so token styling keeps applying. */
-  className: string | string[] | undefined
+  /** The original `code` element's className (hljs + language-*), joined —
+   * carried onto the rebuilt element so token styling keeps applying. */
+  className: string | undefined
   /** The highlighted content, split per logical line (the trailing newline
    * every fenced block carries is dropped — it renders no extra line). */
   lines: CodeToken[][]
@@ -272,12 +272,12 @@ function tokenClassName(value: unknown): string | null {
   return null
 }
 
-/** The code element's className for the rebuilt element (React-shaped). */
-function codeElementClassName(value: unknown): string | string[] | undefined {
+/** The code element's className for the rebuilt element (joined). */
+function codeElementClassName(value: unknown): string | undefined {
   if (typeof value === 'string') return value === '' ? undefined : value
   if (Array.isArray(value)) {
     const parts = value.filter((c): c is string => typeof c === 'string')
-    return parts.length > 0 ? parts : undefined
+    return parts.length > 0 ? parts.join(' ') : undefined
   }
   return undefined
 }
