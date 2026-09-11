@@ -6,7 +6,7 @@
 
 **Blocked by:** None (can start immediately).（需网络装依赖）
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] 围栏卡型投影纯函数：mermaid 闭合+解析成功 → 图卡 / 流式未闭合 → 源码卡 / 解析失败 → 源码卡回退（表驱动）
 - [x] mermaid 依赖接入：懒加载分片（动态 import），主包零增量；渲染主题用库默认浅色（深色范围外）
@@ -36,3 +36,9 @@
 - 2026-09-11 (operator decisions, post-review @ 15046f7): 操作者对 mm1/mm3 帧两项复核拍板：
   - **① mm1 箭头不直 → A 维持现状（零改动）**：对照实验实锤根因——同一份 mermaid 12.0.0 离线渲染，种子源码里 Start↔Gate 存在双向边（A→B 与 B -->|no| A），dagre 对反向边各自横移端口、折线绕行（路径数据：双向边 `M75.5,57…Q…L72.3,107.5…` vs 单向边 `M97.5,57L97.5,93` 纯直段）；我们管线对几何零干预（SVG 原样注入），ZCode 同库同型同形状。帧如实反映库行为。
   - **② mm3 sticky 头行悬停叠图 → 修复**：ZCode 取证的 sticky 钮组形态在卡片被转录卷走时头行钉住、叠在自家图内容上，操作者判为缺陷——去掉 `.md-diagram-head` 的 sticky（头行随卡滚走，与其它块头一致）。**操作者批准的 ZCode 偏离**已记入 CONTEXT.md「图卡」词条。全门复跑绿（typecheck / lint / vitest 1131 / visual:mermaid 全探针，mm1/mm2/mm3 三帧重生成）。
+- 2026-09-11 (merge, T00 合并会话): **merged as bf4bdaa**（merge --no-ff；分支五提交 rebase 后落 main，tracker 提交 c2b6773 重放时与本票文件对撞 → 例行取 main 侧 sync 终态，重放后逐字节一致）。
+  - **验收口径**：操作者 2026-09-11 明示「59 已验收」（含两项 operator decisions：箭头保留 dagre 双向边路由、sticky 头行废除随卡滚动）；脚本门禁 vitest **1137/1137（81 文件）**（1134 → 净增 +3，markdown-blocks 投影表驱动）。
+  - **⚠️ 合并插曲（环境差异，非代码缺陷）**：脚本 verify 首跑 typecheck FAIL——`mermaid-api.ts(13) TS2307: Cannot find module 'mermaid'`。根因：lockfile/依赖声明已入库但 root 工作区 node_modules 未同步（分支 worktree 装过、main 没装过——本批首张新增 npm 依赖的票）。处置：root `npm install`（按 lock 安装）→ typecheck GREEN + 1137/1137。**后续任何会话在 root 拉 main 后需 npm install 同步新依赖。**
+  - **冲突处置**：仅 tracker 状态对撞一处（例行）；package.json/lock **零冲突**（mermaid 依赖行与 main 侧 scripts 区不同 hunk）；CONTEXT.md（新词条 L145 vs 56/57 词条修订）、smoke.ts、visual.ts guard 追加全部自动合并。
+  - **终态审计**：懒加载确认（mermaid-api.ts 全部经动态 import()，主包零增量宣称成立）；「图卡（Diagram Card）」词条在位（含 sticky 偏离记录）；FenceCardKind 投影表驱动在位；DiagramCard/mermaid-api/visual-mermaid/mm1–mm3 帧入库；smoke ticket-59 段 30 处断言标记；无冲突标记残留。
+  - **清理**：worktree 已 remove、分支已删（was ed605b8'）。**解锁：60（代码卡与表格补齐，W2）——59 的 Markdown 块投影基座已就位。**
