@@ -1,8 +1,8 @@
 /**
  * Chat reducer for Seam-1: folds the `HostToParent` contract event stream into
- * renderable chat state. A pure function — no I/O, no SDK imports, no time or
- * randomness — so component and logic tests inject event sequences directly
- * (spec: testing seam #1).
+ * renderable chat state. A pure function — no I/O, no SDK imports, no clock
+ * reads (wall-clock stamps arrive ON actions, ticket 61) — so component and
+ * logic tests inject event sequences directly (spec: testing seam #1).
  *
  * The transcript is a flat list of entries in arrival order: user messages,
  * assistant entries (which own ordered thinking/text parts), and tool cards.
@@ -30,6 +30,13 @@ export interface ThinkingPart {
   streaming: boolean
   /** Wall-clock duration measured by the host; null when it never closed cleanly. */
   durationMs: number | null
+  /** Renderer receipt time of the delta that STARTED this part streaming
+   * (ticket 61, stamped onto the action at the dispatch boundary — the
+   * reducer copies it, it never reads a clock). null/absent → the view falls
+   * back to its local tick clock; replayed parts never carry one (session
+   * files record none — ticket 14). Superseded by `durationMs` the moment
+   * the host measurement lands (freeze priority). */
+  startedAtMs?: number | null
 }
 
 export interface TextPart {
@@ -108,11 +115,25 @@ export type ChatError =
   | { kind: 'agent'; message: string }
   | { kind: 'host'; message: string; /** Last known working directory, when a rebuild can reuse it. */ cwd: string | null }
 
-/** Everything that folds chat state: contract events AND the one UI action
- * the turn-collapse machine needs (ticket 23). Keeping the manual toggle in
+/** Renderer-side wall-clock receipt stamp (ticket 61): attached by the App's
+ * dispatch boundary to live `thinking_delta` actions so the entry-level
+ * thinking timer gets its start anchor. The reducer stays time-free — it only
+ * copies the stamp into entry state. Optional: absent on every other action
+ * and on directly injected test/harness events. */
+interface ReceivedAtStamp {
+  receivedAtMs?: number
+}
+
+/** Distributed so each contract-event member carries the stamp — narrowing
+ * a `thinking_delta` action keeps `receivedAtMs` visible at the use site. */
+type StampedHostToParent = HostToParent extends infer T ? (T extends unknown ? T & ReceivedAtStamp : never) : never
+
+/** Everything that folds chat state: contract events (optionally receipt-
+ * stamped at the dispatch boundary, ticket 61) AND the one UI action the
+ * turn-collapse machine needs (ticket 23). Keeping the manual toggle in
  * the same reducer keeps the collapse/exception/memory rules table-testable
  * at Seam-1 alongside the event-driven ones. */
-export type ChatAction = HostToParent | { type: 'toggle_turn_expanded'; turnId: string }
+export type ChatAction = StampedHostToParent | { type: 'toggle_turn_expanded'; turnId: string }
 
 export interface ChatState {
   session: ChatSessionInfo | null
@@ -357,7 +378,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     if (!expanded.delete(action.turnId)) expanded.add(action.turnId)
     return { ...state, expandedTurns: expanded }
   }
-  const event: HostToParent = action
+  const event = action
   switch (event.type) {
     case 'session_created':
       // A new session replaces everything — single active session (α) with a
@@ -432,21 +453,25 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         )
       }
 
-    case 'thinking_delta':
+    case 'thinking_delta': {
+      // Ticket 61: the part's START timestamp anchors its entry-level timer —
+      // recorded once at creation, never overwritten by later deltas.
+      const startedAtMs = event.receivedAtMs ?? null
       return {
         ...state,
         entries: withStreamingAssistant(
           state,
-          () => ({ kind: 'thinking', text: event.delta, streaming: true, durationMs: null }),
+          () => ({ kind: 'thinking', text: event.delta, streaming: true, durationMs: null, startedAtMs }),
           (parts) => {
             const last = parts[parts.length - 1]
             if (last !== undefined && last.kind === 'thinking' && last.streaming) {
               return [...parts.slice(0, -1), { ...last, text: last.text + event.delta }]
             }
-            return [...parts, { kind: 'thinking', text: event.delta, streaming: true, durationMs: null }]
+            return [...parts, { kind: 'thinking', text: event.delta, streaming: true, durationMs: null, startedAtMs }]
           }
         )
       }
+    }
 
     case 'thinking_end': {
       const last = state.entries[state.entries.length - 1]

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { chatReducer, initialChatState, type ChatState, type UserEntry } from '../../src/shared/chat-reducer'
+import type { ChatAction } from '../../src/shared/chat-reducer'
 import type { HostToParent } from '../../src/shared/contract'
 import type { TranscriptItem } from '../../src/shared/sessions/types'
 import { UNFINISHED_TOOL_OUTPUT } from '../../src/shared/tool-format'
@@ -12,7 +13,7 @@ const SESSION_CREATED: HostToParent = {
   model: 'claude-opus-4-5'
 }
 
-function run(state: ChatState, ...events: HostToParent[]): ChatState {
+function run(state: ChatState, ...events: ChatAction[]): ChatState {
   return events.reduce((acc, event) => chatReducer(acc, event), state)
 }
 
@@ -214,7 +215,7 @@ describe('chatReducer — thinking blocks', () => {
     expect(state.entries[0]).toEqual({
       id: 'm0',
       role: 'assistant',
-      parts: [{ kind: 'thinking', text: 'Let me think', streaming: true, durationMs: null }],
+      parts: [{ kind: 'thinking', text: 'Let me think', streaming: true, durationMs: null, startedAtMs: null }],
       streaming: true
     })
   })
@@ -228,7 +229,7 @@ describe('chatReducer — thinking blocks', () => {
       { type: 'thinking_delta', delta: 'c' }
     )
     const parts = state.entries[0].role === 'assistant' ? state.entries[0].parts : []
-    expect(parts).toEqual([{ kind: 'thinking', text: 'abc', streaming: true, durationMs: null }])
+    expect(parts).toEqual([{ kind: 'thinking', text: 'abc', streaming: true, durationMs: null, startedAtMs: null }])
   })
 
   it('thinking_end closes the thinking part with its measured duration', () => {
@@ -242,7 +243,7 @@ describe('chatReducer — thinking blocks', () => {
     expect(state.entries[0]).toEqual({
       id: 'm0',
       role: 'assistant',
-      parts: [{ kind: 'thinking', text: 'reasoning…', streaming: false, durationMs: 29_000 }],
+      parts: [{ kind: 'thinking', text: 'reasoning…', streaming: false, durationMs: 29_000, startedAtMs: null }],
       streaming: true
     })
   })
@@ -258,7 +259,7 @@ describe('chatReducer — thinking blocks', () => {
       {
         id: 'm0',
         role: 'assistant',
-        parts: [{ kind: 'thinking', text: 'orphan thought', streaming: true, durationMs: null }],
+        parts: [{ kind: 'thinking', text: 'orphan thought', streaming: true, durationMs: null, startedAtMs: null }],
         streaming: true
       }
     ])
@@ -275,7 +276,7 @@ describe('chatReducer — thinking blocks', () => {
       id: 'm0',
       role: 'assistant',
       parts: [
-        { kind: 'thinking', text: 'hmm', streaming: false, durationMs: null },
+        { kind: 'thinking', text: 'hmm', streaming: false, durationMs: null, startedAtMs: null },
         { kind: 'text', text: 'answer' }
       ],
       streaming: true
@@ -294,7 +295,7 @@ describe('chatReducer — thinking blocks', () => {
     expect(state.entries[0]).toEqual({
       id: 'm0',
       role: 'assistant',
-      parts: [{ kind: 'thinking', text: 'cut', streaming: false, durationMs: null }],
+      parts: [{ kind: 'thinking', text: 'cut', streaming: false, durationMs: null, startedAtMs: null }],
       streaming: false
     })
   })
@@ -314,12 +315,104 @@ describe('chatReducer — thinking blocks', () => {
       id: 'm0',
       role: 'assistant',
       parts: [
-        { kind: 'thinking', text: 'first pass', streaming: false, durationMs: 1_000 },
+        { kind: 'thinking', text: 'first pass', streaming: false, durationMs: 1_000, startedAtMs: null },
         { kind: 'text', text: 'draft' },
-        { kind: 'thinking', text: 'revisit', streaming: false, durationMs: 2_000 },
+        { kind: 'thinking', text: 'revisit', streaming: false, durationMs: 2_000, startedAtMs: null },
         { kind: 'text', text: ' final' }
       ],
       streaming: true
+    })
+  })
+})
+
+describe('chatReducer — thinking start stamps (ticket 61, entry-level timer anchor)', () => {
+  it('a stamped thinking_delta records the renderer receipt time on the new part', () => {
+    const state = run(
+      initialChatState(),
+      { type: 'message_start' },
+      { type: 'thinking_delta', delta: 'Let me think', receivedAtMs: 1_000 }
+    )
+    const entry = state.entries[0]
+    expect(entry.role === 'assistant' && entry.parts[0]).toEqual({
+      kind: 'thinking',
+      text: 'Let me think',
+      streaming: true,
+      durationMs: null,
+      startedAtMs: 1_000
+    })
+  })
+
+  it('an unstamped thinking_delta records null — the view falls back to its local tick', () => {
+    const state = run(initialChatState(), { type: 'message_start' }, { type: 'thinking_delta', delta: 'legacy' })
+    const entry = state.entries[0]
+    expect(entry.role === 'assistant' && entry.parts[0]).toEqual({
+      kind: 'thinking',
+      text: 'legacy',
+      streaming: true,
+      durationMs: null,
+      startedAtMs: null
+    })
+  })
+
+  it('continuation deltas keep the original start stamp (later stamps never overwrite it)', () => {
+    const state = run(
+      initialChatState(),
+      { type: 'message_start' },
+      { type: 'thinking_delta', delta: 'a', receivedAtMs: 1_000 },
+      { type: 'thinking_delta', delta: 'b', receivedAtMs: 2_400 },
+      { type: 'thinking_delta', delta: 'c', receivedAtMs: 3_900 }
+    )
+    const entry = state.entries[0]
+    expect(entry.role === 'assistant' && entry.parts[0]).toMatchObject({ startedAtMs: 1_000 })
+  })
+
+  it('a part defensively opened after text (fallback branch) carries the stamp too', () => {
+    const state = run(
+      initialChatState(),
+      { type: 'message_start' },
+      { type: 'text_delta', delta: 'answer' },
+      { type: 'thinking_delta', delta: 'second thought', receivedAtMs: 7_700 }
+    )
+    const entry = state.entries[0]
+    expect(entry.role === 'assistant' && entry.parts[1]).toEqual({
+      kind: 'thinking',
+      text: 'second thought',
+      streaming: true,
+      durationMs: null,
+      startedAtMs: 7_700
+    })
+  })
+
+  it('thinking_end freezes durationMs alongside the stamp — freeze wins in the view', () => {
+    const state = run(
+      initialChatState(),
+      { type: 'message_start' },
+      { type: 'thinking_delta', delta: 'reasoning…', receivedAtMs: 1_000 },
+      { type: 'thinking_end', durationMs: 29_000 }
+    )
+    const entry = state.entries[0]
+    expect(entry.role === 'assistant' && entry.parts[0]).toEqual({
+      kind: 'thinking',
+      text: 'reasoning…',
+      streaming: false,
+      durationMs: 29_000,
+      startedAtMs: 1_000
+    })
+  })
+
+  it('replayed thinking parts carry no stamp (session files record none — ticket 14)', () => {
+    const state = run(initialChatState(), SESSION_CREATED, {
+      type: 'history_loaded',
+      items: [
+        { role: 'assistant', id: 'e1', timestamp: 't1', text: 'done', parts: [{ kind: 'thinking', text: 'hmm', durationMs: null }] }
+      ]
+    })
+    const entry = state.entries[0]
+    expect(entry.role === 'assistant' && entry.parts[0]).toEqual({
+      kind: 'thinking',
+      text: 'hmm',
+      streaming: false,
+      durationMs: null
     })
   })
 })

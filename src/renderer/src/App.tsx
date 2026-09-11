@@ -7,8 +7,8 @@ import {
   registryReducer,
   runningSessionIds
 } from '../../shared/session-registry'
-import { initialChatState } from '../../shared/chat-reducer'
-import type { SessionCommand } from '../../shared/contract'
+import { initialChatState, type ChatAction } from '../../shared/chat-reducer'
+import type { HostToParent, SessionCommand, SessionScopedEvent } from '../../shared/contract'
 import { resolvePreviewPath } from '../../shared/preview/policy'
 import { initialShellUiState, shellUiReducer, SIDEBAR_WIDTH_PX, SIDEBAR_MIN_WIDTH_PX, MAIN_ZONE_MIN_WIDTH_PX, clampSidebarWidth, type ShellUiAction } from '../../shared/layout-model'
 import { resolveKeybinding } from '../../shared/keymap'
@@ -83,6 +83,27 @@ function loadPinnedIds(): Set<string> {
   } catch {
     return new Set()
   }
+}
+
+/**
+ * Ticket 61: a thinking part anchors its entry-level timer at the renderer
+ * receipt of the delta that starts it — the wall-clock stamp rides the
+ * ACTION (the Seam-1 reducer stays time-free), and the view derives
+ * (now − startedAt) so fold/reopen continues instead of resetting. Wrapped
+ * session events stamp their inner event; everything else passes through.
+ */
+function withReceipt<T extends { type: string }>(event: T, receivedAtMs: number): T & { receivedAtMs: number } {
+  return { ...event, receivedAtMs }
+}
+
+function stampThinkingStart(event: HostToParent): ChatAction {
+  if (event.type === 'session_event') return { ...event, event: stampScopedThinkingStart(event.event) }
+  if (event.type === 'thinking_delta') return withReceipt(event, Date.now())
+  return event
+}
+
+function stampScopedThinkingStart(event: SessionScopedEvent): SessionScopedEvent {
+  return event.type === 'thinking_delta' ? withReceipt(event, Date.now()) : event
 }
 
 /**
@@ -269,8 +290,9 @@ export default function App(): JSX.Element {
 
   useEffect(() => {
     const unsubscribe = window.picode.chat.onHostEvent((event) => {
-      // Every event (focused or not) folds into its session's view state.
-      registryDispatch(event)
+      // Every event (focused or not) folds into its session's view state —
+      // thinking deltas stamped with their receipt time first (ticket 61).
+      registryDispatch(stampThinkingStart(event))
       // The Bridge feed folds the SAME stream read-only (ticket 18) — all
       // sessions' bash commands stream to the observation panel.
       bridgeFeedDispatch(event)
