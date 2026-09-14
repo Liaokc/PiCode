@@ -4,6 +4,7 @@ import {
   deriveProjectTrust,
   hasProjectTrustResources,
   parsePackageSourceKind,
+  type PackageComponentCounts,
   type PackageRow,
   type ProjectTrustState
 } from '../shared/packages-management.ts'
@@ -280,18 +281,6 @@ function asTrustStoreCtor(value: unknown): TrustStoreCtor {
 }
 
 /**
- * Canonicalize a directory path the way the SDK's trust store keys its
- * decisions: resolve, then realpath when it exists.
- */
-export function canonicalDir(cwd: string): string {
-  try {
-    return realpathSync(cwd)
-  } catch {
-    return path.resolve(cwd)
-  }
-}
-
-/**
  * Enumerate the Packages-section universe for the probed cwd (ticket 64):
  *
  * - Global rows from the global settings' `packages` array; project rows
@@ -329,8 +318,8 @@ TrustStore: TrustStoreCtor): Promise<{
     // One read-only resolve for ALL counts: grouped by the resolved
     // metadata (source × scope) so the right scope's entry gets the counts.
     const resolved = await manager.resolve(async () => 'skip')
-    const countsBySource = new Map<string, { extensions: number; skills: number; prompts: number; themes: number }>()
-    const addTo = (rows: ResolvedPackageResource[], key: keyof ReturnType<typeof emptyCounts>): void => {
+    const countsBySource = new Map<string, PackageComponentCounts>()
+    const addTo = (rows: ResolvedPackageResource[], key: keyof PackageComponentCounts): void => {
       for (const resource of rows) {
         if (resource.metadata.origin !== 'package') continue
         const mapKey = `${resource.metadata.scope}\u0000${resource.metadata.source}`
@@ -380,7 +369,7 @@ TrustStore: TrustStoreCtor): Promise<{
   }
 }
 
-function emptyCounts(): { extensions: number; skills: number; prompts: number; themes: number } {
+function emptyCounts(): PackageComponentCounts {
   return { extensions: 0, skills: 0, prompts: 0, themes: 0 }
 }
 
