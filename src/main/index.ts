@@ -1,6 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
+import { existsSync } from 'node:fs'
 import fs from 'node:fs/promises'
 import type { HostToParent, ImageAttachment, ParentToHost } from '../shared/contract'
 import type { ReviewResult } from '../shared/review/types'
@@ -50,6 +51,8 @@ import { startPerfIfEnabled } from './visual-perf'
 import { startCwdVisualIfEnabled, isolateCwdVisualUserData } from './visual-cwd'
 import { fakeUsageSnapshot } from '../shared/usage/fixture'
 import type { SkillCatalogRow, SkillsReport } from '../shared/skills-management'
+import { hasProjectTrustResources } from '../shared/packages-management'
+import { projectListFromSummaries, type KnownProject } from '../shared/sessions/group'
 import type { PackageRow, PackagesReport } from '../shared/packages-management'
 import { TerminalService, type TerminalDataMessage, type TerminalExitMessage } from './terminal/service'
 import { nodePtyFactory } from './terminal/node-pty-factory'
@@ -218,8 +221,8 @@ app.whenReady().then(() => {
   // pi-settings editor (deletes never touch symlink targets).
   const skills = new SkillsService({ probe: (cwd, agentDir) => runAuthProbeHost(hostEntry, { cwd, agentDir }) })
   ipcMain.handle('settings:skills', (_event, cwd: unknown, force: unknown): Promise<SkillsReport> => {
-    if (fakeSettings) return Promise.resolve(fakeSkillsReport())
     const dir = typeof cwd === 'string' && cwd.trim() !== '' ? cwd : null
+    if (fakeSettings) return Promise.resolve(fakeSkillsReport(dir))
     return skills.listSkills(dir, force === true)
   })
   ipcMain.handle('settings:skills-toggle', (_event, rawRow: unknown, enable: unknown): Promise<SkillActionOutcome> => {
@@ -247,6 +250,26 @@ app.whenReady().then(() => {
     } catch {
       return false
     }
+  })
+
+  // Known-project list for the Skills section's Project card (ticket 67):
+  // distinct session cwds from the index, fs-PRE-FILTERED to plausible
+  // candidates via hasProjectTrustResources (cwd/.pi entries or ancestor
+  // .agents/skills — of the operator's 59 session projects only the few
+  // with real .pi content survive), newest first. Read-only; the
+  // per-project skills enumeration itself reuses settings:skills.
+  ipcMain.handle('settings:projects', async (): Promise<KnownProject[]> => {
+    if (fakeSettings) return fakeProjectsList()
+    if (!sessionIndex) return []
+    const sessions = await sessionIndex.list()
+    const home = homedir()
+    return projectListFromSummaries(sessions).filter((project) => {
+      try {
+        return hasProjectTrustResources(project.cwd, home, existsSync)
+      } catch {
+        return false
+      }
+    })
   })
 
   // Packages management (ticket 64): the settings window's Packages
@@ -590,10 +613,35 @@ function fakeAuthReport(): AuthProbeReport {
   }
 }
 
-/** Deterministic Skills-section fixture (PICODE_FAKE_SETTINGS=1, ticket 63):
- * every source badge + a broken link + a disabled row, so the visual frames
- * show the whole state vocabulary. Never touches the real machine. */
-function fakeSkillsReport(): SkillsReport {
+/** Deterministic Skills-section fixture (PICODE_FAKE_SETTINGS=1, ticket
+ * 63): every source badge + a broken link + a disabled row, so the visual
+ * frames show the whole state vocabulary. Ticket 67: cwd-AWARE — the null
+ * request returns only global-face rows; a project request returns that
+ * project's rows (with its trust state). Never touches the real machine. */
+function fakeSkillsReport(cwd: string | null): SkillsReport {
+  if (cwd !== null) {
+    const projectRow: SkillCatalogRow = {
+      path: `${cwd}/.pi/skills/api-review/SKILL.md`,
+      entryPath: null,
+      entryKind: null,
+      realPath: null,
+      name: 'api-review',
+      description: 'Review API changes against the team design checklist.',
+      enabled: true,
+      scope: 'project',
+      origin: 'top-level',
+      source: 'auto',
+      baseDir: `${cwd}/.pi`,
+      broken: false
+    }
+    return {
+      cwd,
+      scannedAt: Date.now(),
+      rows: [projectRow],
+      error: null,
+      trust: { decision: 'trusted', trusted: true, hasResources: true }
+    }
+  }
   const rows: SkillCatalogRow[] = [
     {
       path: '/Users/demo/.pi/agent/skills/alpha-testing/SKILL.md',
@@ -650,23 +698,20 @@ function fakeSkillsReport(): SkillsReport {
       source: 'npm:@demo/pi-clipboard',
       baseDir: '/install/pi-clipboard',
       broken: false
-    },
-    {
-      path: '/Users/demo/Projects/api/.pi/skills/api-review/SKILL.md',
-      entryPath: null,
-      entryKind: null,
-      realPath: null,
-      name: 'api-review',
-      description: 'Review API changes against the team design checklist.',
-      enabled: true,
-      scope: 'project',
-      origin: 'top-level',
-      source: 'auto',
-      baseDir: '/Users/demo/Projects/api/.pi',
-      broken: false
     }
   ]
   return { cwd: null, scannedAt: Date.now(), rows, error: null }
+}
+
+/** Deterministic known-projects fixture (PICODE_FAKE_SETTINGS=1, ticket
+ * 67): two candidate projects so the Project card's per-project groups
+ * render in the visual frame (one with skills, one without — the empty
+ * one collapses into the summary line). */
+function fakeProjectsList(): KnownProject[] {
+  return [
+    { cwd: '/Users/demo/Projects/api', name: 'api', sessionCount: 4, latest: Date.now() - 3_600_000 },
+    { cwd: '/Users/demo/Projects/picode', name: 'picode', sessionCount: 12, latest: Date.now() - 86_400_000 }
+  ]
 }
 
 /** Deterministic Packages-section fixture (PICODE_FAKE_SETTINGS=1, ticket

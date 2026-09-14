@@ -22,7 +22,13 @@ export interface AuthProbeHostOptions {
 
 export function runAuthProbeHost(hostEntryPath: string, options: AuthProbeHostOptions = {}): Promise<AuthProbeReport> {
   const timeoutMs = options.timeoutMs ?? 15_000
-  const args = options.cwd ? ['--auth-probe', options.cwd] : ['--auth-probe']
+  // The agentDir argument is ALWAYS argv[4]: when no cwd is requested the
+  // cwd slot stays an EMPTY STRING (the host falls back to the home
+  // directory) — dropping the slot would shift the agentDir into the cwd
+  // position and silently probe the REAL agent dir (the bug the ticket-67
+  // Global-card probe first exposed: every pre-67 caller passed a cwd, so
+  // the null-cwd + agentDir combination never ran).
+  const args = ['--auth-probe', options.cwd ? options.cwd : '']
   if (options.agentDir && options.agentDir.trim() !== '') args.push(options.agentDir)
   return new Promise((resolve) => {
     let settled = false

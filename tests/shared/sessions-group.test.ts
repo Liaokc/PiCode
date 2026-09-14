@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest'
 import {
   decideFollowTakeover,
   filterHiddenGroups,
+  filterKnownProjects,
   groupSessions,
   isSessionLive,
   projectLabel,
+  projectListFromSummaries,
   relativeTime,
   sessionCreatedMs,
   timelineSessions,
@@ -326,5 +328,36 @@ describe('projectLabel', () => {
   it('degrades gracefully for odd cwds', () => {
     expect(projectLabel('')).toBe('Unknown project')
     expect(projectLabel('/')).toBe('Unknown project')
+  })
+})
+
+describe('projectListFromSummaries + filterKnownProjects (ticket 67: the Project card scan)', () => {
+  const summaries = [
+    session('a.jsonl', '/Users/op/Projects/api', NOW - HOUR),
+    session('b.jsonl', '/Users/op/Projects/api', NOW - MIN),
+    session('c.jsonl', '/Users/op/PiCode', NOW - DAY),
+    session('d.jsonl', '/Users/op/PiCode', NOW - 2 * DAY)
+  ]
+
+  it('derives distinct projects with count + recency, newest first', () => {
+    const list = projectListFromSummaries(summaries)
+    expect(list).toEqual([
+      { cwd: '/Users/op/Projects/api', name: 'api', sessionCount: 2, latest: NOW - MIN },
+      { cwd: '/Users/op/PiCode', name: 'PiCode', sessionCount: 2, latest: NOW - DAY }
+    ]
+    )
+  })
+
+  it('empty index → empty list', () => {
+    expect(projectListFromSummaries([])).toEqual([])
+  })
+
+  it('filters by name or cwd substring, case-insensitively; empty query = all', () => {
+    const list = projectListFromSummaries(summaries)
+    expect(filterKnownProjects(list, '')).toHaveLength(2)
+    expect(filterKnownProjects(list, '  ')).toHaveLength(2)
+    expect(filterKnownProjects(list, 'API').map((p) => p.name)).toEqual(['api'])
+    expect(filterKnownProjects(list, '/op/PiCode').map((p) => p.name)).toEqual(['PiCode'])
+    expect(filterKnownProjects(list, 'nope')).toEqual([])
   })
 })

@@ -2190,21 +2190,21 @@ kbd {
 
 /* ---- Packages section (ticket 64) ---- */
 
-.packages-card-header {
+.settings-card-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
 }
 
-.packages-card-title {
+.settings-card-head-title {
   margin: 0;
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
 }
 
-.packages-file-note {
+.settings-card-head-note {
   display: block;
   margin-top: 2px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -2216,6 +2216,85 @@ kbd {
   display: flex;
   gap: 8px;
   margin-top: 12px;
+}
+
+/* ---- Skills section split + search entries (ticket 67) ---- */
+
+.settings-skill-search {
+  margin-bottom: 16px;
+}
+
+.settings-skill-search-input,
+.settings-project-search-input {
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-inset);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.settings-skill-search-input {
+  width: 100%;
+}
+
+.settings-project-search-input {
+  width: 200px;
+}
+
+.settings-skill-search-input::placeholder,
+.settings-project-search-input::placeholder {
+  color: var(--text-faint);
+}
+
+.settings-skill-search-input:focus,
+.settings-project-search-input:focus {
+  outline: none;
+  border-color: var(--accent-orange);
+}
+
+.project-skill-group {
+  padding: 10px 0 4px;
+}
+
+.project-skill-group + .project-skill-group {
+  border-top: 1px solid var(--border);
+}
+
+.project-skill-group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 4px 8px;
+}
+
+.project-skill-group-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.project-skill-group-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.project-skill-group-path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-projects-summary {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
 }
 
 .packages-install-input {

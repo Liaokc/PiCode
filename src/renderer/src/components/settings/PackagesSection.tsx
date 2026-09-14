@@ -235,10 +235,10 @@ function PackageList({
 
   return (
     <section className="settings-card">
-      <div className="packages-card-header">
+      <div className="settings-card-head">
         <div>
-          <h2 className="packages-card-title">{title}</h2>
-          <span className="packages-file-note">{fileNote}</span>
+          <h2 className="settings-card-head-title">{title}</h2>
+          <span className="settings-card-head-note">{fileNote}</span>
         </div>
         <div className="settings-skills-toolbar">
           {trustChip}
@@ -394,10 +394,10 @@ function ProjectPackagesCard({
   if (cwd === null) {
     return (
       <section className="settings-card">
-        <div className="packages-card-header">
+        <div className="settings-card-head">
           <div>
-            <h2 className="packages-card-title">Project packages</h2>
-            <span className="packages-file-note">.pi/settings.json</span>
+            <h2 className="settings-card-head-title">Project packages</h2>
+            <span className="settings-card-head-note">.pi/settings.json</span>
           </div>
         </div>
         <p className="settings-skills-empty">Open a task to manage its project packages.</p>

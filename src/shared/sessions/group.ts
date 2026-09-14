@@ -169,3 +169,45 @@ export function projectLabel(cwd: string): string {
   const base = trimmed.split('/').pop() ?? ''
   return base === '' ? 'Unknown project' : base
 }
+
+// ---- Skills-section project list (ticket 67) ----
+
+/** One known-project record for the Skills section's Project card (the
+ * scan candidates): distinct session cwds with recency + session count. */
+export interface KnownProject {
+  cwd: string
+  /** Directory basename — the group header text. */
+  name: string
+  sessionCount: number
+  /** Most recent session mtime under this project — recency ordering. */
+  latest: number
+}
+
+/**
+ * Derive the known-project list from the session index: distinct cwds,
+ * each with its folder name, session count, and most recent mtime,
+ * newest project first. Pure — the CALLER applies the fs candidate
+ * pre-filter (hasProjectTrustResources) and any visibility rules.
+ */
+export function projectListFromSummaries(sessions: readonly SessionSummary[]): KnownProject[] {
+  const byCwd = new Map<string, { sessionCount: number; latest: number }>()
+  for (const session of sessions) {
+    const entry = byCwd.get(session.cwd) ?? { sessionCount: 0, latest: 0 }
+    entry.sessionCount += 1
+    entry.latest = Math.max(entry.latest, session.modifiedAt)
+    byCwd.set(session.cwd, entry)
+  }
+  return [...byCwd.entries()]
+    .map(([cwd, stats]) => ({ cwd, name: projectLabel(cwd), ...stats }))
+    .sort((a, b) => b.latest - a.latest || a.cwd.localeCompare(b.cwd))
+}
+
+/** Case-insensitive substring filter over project name and cwd — the
+ * Project card's project-search entry. Empty query = no filter. */
+export function filterKnownProjects(projects: readonly KnownProject[], query: string): KnownProject[] {
+  const needle = query.trim().toLowerCase()
+  if (needle === '') return [...projects]
+  return projects.filter(
+    (project) => project.name.toLowerCase().includes(needle) || project.cwd.toLowerCase().includes(needle)
+  )
+}

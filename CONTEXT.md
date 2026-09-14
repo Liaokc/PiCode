@@ -143,7 +143,7 @@ _Avoid_: 中间结果；思考（thinking 是另一类 work item）。
 _Avoid_: 折叠条（强调折叠丢了常驻语义）；进度条（不表达进度）；折叠容器（体空时无折叠语义）。
 
 **设置窗（Settings Window）**：
-应用内第一个设置面：标题栏齿轮钮与 ⌘, 开合（Esc 亦关），窗口替换工作区三个区域（截图 09 构图）而非另开系统窗口——无模态：主窗会话在后台照常运行、事件流照常折叠。左侧节导航可扩展（General / Appearance / Models / Agent Resources / Data & Statistics），Skills 节以 Pi 实际加载面为准管理技能（来源徽标、per-技能启停写 Pi settings、打开所在目录、仅删 ~/.pi/agent/skills 下链接/条目）。见 **Packages 节**。
+应用内第一个设置面：标题栏齿轮钮与 ⌘, 开合（Esc 亦关），窗口替换工作区三个区域（截图 09 构图）而非另开系统窗口——无模态：主窗会话在后台照常运行、事件流照常折叠。左侧节导航可扩展（General / Appearance / Models / Agent Resources / Data & Statistics），Skills 节以 Pi 实际加载面为准管理技能——**全局技能 / 项目技能双卡**（票 67）：全局卡（用户目录 + 包提供，任何目录都加载）+ 项目卡（跨会话索引已知项目按项目分组、fs 预筛候选后逐项目探测、组头带 trust chip；技能搜索框过滤两卡全部行，项目搜索框过滤项目组），来源徽标、per-技能启停写 Pi settings、打开所在目录、仅删 ~/.pi/agent/skills 下链接/条目。见 **Packages 节**。
 _Avoid_: 设置页面（设置窗是完整窗口态，非主窗内嵌页）；弹窗（非浮层）；控制面板（含义过宽）。
 
 **Packages 节**：

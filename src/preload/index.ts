@@ -10,6 +10,7 @@ import type { AuthProbeReport } from '../shared/auth-status'
 import type { AppPreferences } from '../shared/preferences'
 import type { NewTaskCommandCatalog } from '../shared/new-task-commands'
 import type { SkillsReport } from '../shared/skills-management'
+import type { KnownProject } from '../shared/sessions/group'
 import type {
   PackagesOpOutcome,
   PackagesProgressEvent,
@@ -137,6 +138,10 @@ contextBridge.exposeInMainWorld('picode', {
      * global face). `force` re-probes instead of serving the cache. */
     listSkills: (cwd: string | null, force: boolean): Promise<SkillsReport> =>
       ipcRenderer.invoke('settings:skills', cwd, force),
+    /** Known-project list for the Project card (ticket 67): distinct
+     * session cwds, fs-pre-filtered to projects that can carry project
+     * skills, newest first. */
+    listProjects: (): Promise<KnownProject[]> => ipcRenderer.invoke('settings:projects'),
     /** Per-skill toggle — writes Pi's settings.json in pi-config format. */
     toggleSkill: (row: unknown, enable: boolean): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke('settings:skills-toggle', row, enable),

@@ -4,10 +4,13 @@ import {
   buildSkillCatalogRow,
   deriveSkillSettingsChange,
   dirnamePath,
+  filterSkillRows,
   isSkillCatalogRow,
+  isSkillsReport,
   isUnderPiSkillsDir,
   overrideEntryTarget,
   packageSkillPatternFor,
+  partitionSkillRows,
   peekSkillIdentity,
   projectSkillRows,
   relativePath,
@@ -369,5 +372,52 @@ describe('isSkillCatalogRow / report guard', () => {
     const { isSkillsReport } = await import('../../src/shared/skills-management')
     expect(isSkillsReport({ cwd: null, scannedAt: 1, rows: [valid], error: null })).toBe(true)
     expect(isSkillsReport({ cwd: null, scannedAt: 1, rows: ['x'], error: null })).toBe(false)
+  })
+})
+
+describe('partitionSkillRows + filterSkillRows (ticket 67: two-card split + skill search)', () => {
+  const views = projectSkillRows([
+    row({ name: 'user-skill', path: `${PI_DIR}/user-skill/SKILL.md`, scope: 'user', origin: 'top-level' }),
+    row({ name: 'pkg-skill', path: '/install/pkg/skills/pkg-skill/SKILL.md', scope: 'user', origin: 'package', source: 'npm:@demo/pkg' }),
+    row({ name: 'proj-skill', path: '/proj/.pi/skills/proj-skill/SKILL.md', scope: 'project', origin: 'top-level' }),
+    row({ name: 'proj-pkg-skill', path: '/proj/.pi/npm/pkg/skills/x/SKILL.md', scope: 'project', origin: 'package', source: 'npm:@proj/pkg' })
+  ])
+
+  it('splits by scope: global = user+package, project = project', () => {
+    const { global, project } = partitionSkillRows(views)
+    expect(global.map((r) => r.name)).toEqual(['user-skill', 'pkg-skill'])
+    expect(project.map((r) => r.name)).toEqual(['proj-pkg-skill', 'proj-skill'])
+  })
+
+  it('the union of both cards is the full loading surface', () => {
+    const { global, project } = partitionSkillRows(views)
+    expect([...global, ...project].length).toBe(views.length)
+  })
+
+  it('empty query returns every row (same order, copied)', () => {
+    expect(filterSkillRows(views, '')).toHaveLength(4)
+    expect(filterSkillRows(views, '   ')).toHaveLength(4)
+  })
+
+  it('matches name, description, and path case-insensitively', () => {
+    expect(filterSkillRows(views, 'PROJ-SKILL').map((r) => r.name)).toEqual(['proj-skill'])
+    expect(filterSkillRows(views, 'clipboard').map((r) => r.name)).toEqual([])
+    const described = projectSkillRows([row({ name: 'alpha', description: 'Runs the nightly Suite' })])
+    expect(filterSkillRows(described, 'nightly').map((r) => r.name)).toEqual(['alpha'])
+    expect(filterSkillRows(views, '/proj/.pi').map((r) => r.name)).toEqual(['proj-pkg-skill', 'proj-skill'])
+  })
+
+  it('the search applies to BOTH cards (the one entry filters everything)', () => {
+    const { global, project } = partitionSkillRows(views)
+    expect(filterSkillRows(global, 'pkg')).toHaveLength(1)
+    expect(filterSkillRows(project, 'pkg')).toHaveLength(1)
+  })
+
+  it('the report guard accepts the optional trust field (ticket 67, additive)', () => {
+    const base = { cwd: '/p', scannedAt: 1, rows: [], error: null }
+    expect(isSkillsReport(base)).toBe(true)
+    expect(isSkillsReport({ ...base, trust: { decision: 'none', trusted: false, hasResources: true } })).toBe(true)
+    expect(isSkillsReport({ ...base, trust: null })).toBe(true)
+    expect(isSkillsReport({ ...base, trust: { decision: 'bogus' } })).toBe(false)
   })
 })

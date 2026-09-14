@@ -9,6 +9,7 @@ import type { AuthProbeReport } from '../shared/auth-status'
 import type { AppPreferences } from '../shared/preferences'
 import type { NewTaskCommandCatalog } from '../shared/new-task-commands'
 import type { SkillsReport } from '../shared/skills-management'
+import type { KnownProject } from '../shared/sessions/group'
 import type {
   PackagesOpOutcome,
   PackagesProgressEvent,
@@ -109,6 +110,9 @@ interface PicodeSettingsBridge {
   /** Skills-section enumeration for one directory (ticket 63; null = the
    * global face). `force` re-probes instead of serving the cache. */
   listSkills(cwd: string | null, force: boolean): Promise<SkillsReport>
+  /** Known-project list for the Project card (ticket 67): distinct session
+   * cwds, fs-pre-filtered to plausible candidates, newest first. */
+  listProjects(): Promise<KnownProject[]>
   /** Per-skill toggle — writes Pi's settings.json in pi-config format. */
   toggleSkill(row: unknown, enable: boolean): Promise<{ ok: boolean; error?: string }>
   /** Delete one entry under ~/.pi/agent/skills (link targets untouched). */

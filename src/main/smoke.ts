@@ -4883,7 +4883,12 @@ export function startSmokeIfEnabled(
             await new Promise((res) => setTimeout(res, 250))
           }
           if (realRow === null || linkRow === null || danglingRow === null) {
-            fail(`ticket-63 stage: the sandbox skill rows never appeared (real=${realRow !== null} link=${linkRow !== null} dangling=${danglingRow !== null})`)
+            const diag = (await js(`(() => ({
+              rows: [...document.querySelectorAll('.skill-row')].map((r) => r.dataset['skillName']),
+              errors: [...document.querySelectorAll('.settings-skills-error')].map((e) => e.textContent),
+              globalCount: document.querySelector('.settings-card .settings-skills-count')?.textContent ?? null
+            }))()`).catch(() => null)) as { rows: string[]; errors: string[]; globalCount: string | null } | null
+            fail(`ticket-63 stage: the sandbox skill rows never appeared (real=${realRow !== null} link=${linkRow !== null} dangling=${danglingRow !== null}) diag=${JSON.stringify(diag)}`)
           }
           if (realRow!.enabled !== 'true' || linkRow!.enabled !== 'true') fail('ticket-63 stage: the live sandbox rows are not marked enabled')
           if (!realRow!.deleteBtn || !linkRow!.deleteBtn) fail('ticket-63 stage: the deletable sandbox rows lost their delete buttons')
@@ -5225,11 +5230,11 @@ export function startSmokeIfEnabled(
           }
           const projectLocked = (await js(`(() => {
             const cards = [...document.querySelectorAll('.settings-card')]
-            const card = cards.find((c) => c.querySelector('.packages-card-title')?.textContent === 'Project packages')
+            const card = cards.find((c) => c.querySelector('.settings-card-head-title')?.textContent === 'Project packages')
             if (!(card instanceof HTMLElement)) return null
             return {
               inputDisabled: card.querySelector('.packages-install-input')?.hasAttribute('disabled') ?? false,
-              chip: card.querySelector('.packages-card-header .skill-badge')?.textContent ?? '',
+              chip: card.querySelector('.settings-card-head .skill-badge')?.textContent ?? '',
               toggleDisabled: card.querySelector('.skill-switch')?.hasAttribute('disabled') ?? false
             }
           })()`)) as { inputDisabled: boolean; chip: string; toggleDisabled: boolean } | null

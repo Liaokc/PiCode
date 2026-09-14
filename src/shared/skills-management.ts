@@ -19,6 +19,8 @@
  * probe reports rows over IPC and the renderer/main consume the projections.
  */
 
+import type { ProjectTrustState } from './packages-management'
+
 // ---- probe report shapes (additive member of AuthProbeReport, ticket 63) ----
 
 /** Where Pi discovered a skill. `scope` mirrors the SDK's SourceScope. */
@@ -70,6 +72,13 @@ export interface SkillsReport {
   scannedAt: number
   rows: SkillCatalogRow[]
   error: string | null
+  /** Ticket 67 (additive): the probed cwd's read-only project trust state
+   * (saved decision + defaultProjectTrust derivation; null without a
+   * project scope). Rides the probe report that already computes it for
+   * the Packages section — the Project-skills group headers surface it
+   * honestly (rows of an untrusted project are NOT loaded by Pi).
+   * Reports from older probes omit the field. */
+  trust?: ProjectTrustState | null
 }
 
 // ---- structural guard (probe child → main, same family as auth-status) ----
@@ -109,12 +118,21 @@ export function isSkillCatalogRow(value: unknown): value is SkillCatalogRow {
 /** Structural guard for the probe's SkillsReport. */
 export function isSkillsReport(value: unknown): value is SkillsReport {
   if (!isRecord(value)) return false
+  const trust = value['trust']
+  const trustOk =
+    trust === undefined ||
+    trust === null ||
+    (isRecord(trust) &&
+      (trust['decision'] === 'trusted' || trust['decision'] === 'untrusted' || trust['decision'] === 'none') &&
+      typeof trust['trusted'] === 'boolean' &&
+      typeof trust['hasResources'] === 'boolean')
   return (
     (value['cwd'] === null || typeof value['cwd'] === 'string') &&
     typeof value['scannedAt'] === 'number' &&
     (value['error'] === null || typeof value['error'] === 'string') &&
     Array.isArray(value['rows']) &&
-    value['rows'].every(isSkillCatalogRow)
+    value['rows'].every(isSkillCatalogRow) &&
+    trustOk
   )
 }
 
@@ -190,6 +208,42 @@ export function projectSkillRows(rows: readonly SkillCatalogRow[]): SkillRowView
         a.name.localeCompare(b.name) ||
         a.path.localeCompare(b.path)
     )
+}
+
+// ---- section split + search projections (ticket 67) ----
+
+/** The two section cards: global skills load everywhere, project skills
+ * only for their directory. The split is a pure display projection over
+ * the scope field — the union is still Pi's full loading surface. */
+export interface SkillSectionSplit {
+  /** scope !== 'project' rows (user dir + package-provided). */
+  global: SkillRowView[]
+  /** scope === 'project' rows. */
+  project: SkillRowView[]
+}
+
+/** Partition projected rows into the Global / Project cards. */
+export function partitionSkillRows(rows: readonly SkillRowView[]): SkillSectionSplit {
+  const global: SkillRowView[] = []
+  const project: SkillRowView[] = []
+  for (const row of rows) {
+    if (row.scope === 'project') project.push(row)
+    else global.push(row)
+  }
+  return { global, project }
+}
+
+/** Case-insensitive substring match over name, description, and path —
+ * the one skill-search entry filters both cards. Empty query = no filter. */
+export function filterSkillRows(rows: readonly SkillRowView[], query: string): SkillRowView[] {
+  const needle = query.trim().toLowerCase()
+  if (needle === '') return [...rows]
+  return rows.filter(
+    (row) =>
+      row.name.toLowerCase().includes(needle) ||
+      (row.description ?? '').toLowerCase().includes(needle) ||
+      row.path.toLowerCase().includes(needle)
+  )
 }
 
 /** Confirmation copy for the two delete kinds (ticket 63: type-split, ZCode
