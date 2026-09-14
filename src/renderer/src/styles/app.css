@@ -1924,11 +1924,13 @@ kbd {
 .settings-skills-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
+  gap: 10px;
   margin-bottom: 10px;
 }
 
 .settings-skills-count {
+  margin-right: 2px;
   font-size: 12px;
   color: var(--text-secondary);
 }
