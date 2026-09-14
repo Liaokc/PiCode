@@ -7,6 +7,7 @@ import {
   type PackagesOpRunner,
   type PackagesProbe
 } from '../../src/main/settings/packages-service'
+import { runOpWithManager, type OpPackageManagerLike } from '../../src/host/packages-op'
 import type { AuthProbeReport } from '../../src/shared/auth-status'
 import type {
   PackageRow,
@@ -365,5 +366,76 @@ describe('PackagesService — ops (install/remove via the op runner)', () => {
     expect(seen).toHaveLength(1)
     expect(seen[0]?.local).toBe(true)
     expect(seen[0]?.cwd).toBe(project)
+  })
+})
+
+describe('runOpWithManager (op-host collector, ticket 64 + release fix)', () => {
+  function fakeManager(fail: { installError?: Error; removeError?: Error; removeResult?: boolean } = {}) {
+    const state: {
+      cb: ((event: { type: string; action: string; source: string; message?: string }) => void) | undefined
+    } = { cb: undefined }
+    const manager: OpPackageManagerLike = {
+      setProgressCallback(cb) {
+        state.cb = cb
+      },
+      async installAndPersist(_source) {
+        if (fail.installError) throw fail.installError
+      },
+      async removeAndPersist(_source) {
+        if (fail.removeError) throw fail.removeError
+        return fail.removeResult ?? true
+      }
+    }
+    return {
+      manager,
+      emit(event: { type: string; action: string; source: string; message?: string }): void {
+        state.cb?.(event)
+      }
+    }
+  }
+  const descriptor = (op: 'install' | 'remove'): PackagesOpDescriptor => ({
+    op,
+    source: '../picode-smoke-pkg-x',
+    local: false,
+    cwd: '/tmp/project',
+    agentDir: '/tmp/agent'
+  })
+
+  it('a remove that persists reports ok', async () => {
+    const { manager } = fakeManager({ removeResult: true })
+    const outcome = await runOpWithManager(manager, descriptor('remove'), () => undefined)
+    expect(outcome).toEqual({ ok: true })
+  })
+
+  it('a remove that matches nothing is a FAILURE, never a silent no-op', async () => {
+    const { manager } = fakeManager({ removeResult: false })
+    const outcome = await runOpWithManager(manager, descriptor('remove'), () => undefined)
+    expect(outcome.ok).toBe(false)
+    if (!outcome.ok) expect(outcome.error).toContain('No matching package found')
+  })
+
+  it('a remove that throws surfaces the error (errors resolve, never throw)', async () => {
+    const { manager } = fakeManager({ removeError: new Error('npm uninstall failed') })
+    const outcome = await runOpWithManager(manager, descriptor('remove'), () => undefined)
+    expect(outcome.ok).toBe(false)
+    if (!outcome.ok) expect(outcome.error).toContain('npm uninstall failed')
+  })
+
+  it('an install failure surfaces the error', async () => {
+    const { manager } = fakeManager({ installError: new Error('manifest unreadable') })
+    const outcome = await runOpWithManager(manager, descriptor('install'), () => undefined)
+    expect(outcome.ok).toBe(false)
+    if (!outcome.ok) expect(outcome.error).toContain('manifest unreadable')
+  })
+
+  it('progress events relay through with unknown phases normalized', async () => {
+    const seen: PackagesProgressEvent[] = []
+    const { manager, emit } = fakeManager()
+    const pending = runOpWithManager(manager, descriptor('install'), (e) => seen.push(e))
+    emit({ type: 'start', action: 'install', source: '../picode-smoke-pkg-x' })
+    emit({ type: 'weird-phase', action: 'install', source: '../picode-smoke-pkg-x' })
+    emit({ type: 'complete', action: 'install', source: '../picode-smoke-pkg-x' })
+    await expect(pending).resolves.toEqual({ ok: true })
+    expect(seen.map((e) => e.phase)).toEqual(['start', 'progress', 'complete'])
   })
 })

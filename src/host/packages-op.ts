@@ -48,7 +48,13 @@ export async function runOpWithManager(
     if (descriptor.op === 'install') {
       await manager.installAndPersist(descriptor.source, { local: descriptor.local })
     } else {
-      await manager.removeAndPersist(descriptor.source, { local: descriptor.local })
+      const removed = await manager.removeAndPersist(descriptor.source, { local: descriptor.local })
+      // removeAndPersist returns false when nothing matched the source — a
+      // silent no-op if surfaced as ok (the UI would claim "Removed." while
+      // the entry stays). Report it as the failure it is.
+      if (removed === false) {
+        return { ok: false, error: `No matching package found for ${descriptor.source}.` }
+      }
     }
     return { ok: true }
   } catch (err) {

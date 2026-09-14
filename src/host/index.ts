@@ -795,7 +795,16 @@ if (process.argv[2] === '--auth-probe') {
         setTimeout(() => process.exit(0), 100).unref?.()
         return
       }
-      const manager = new sdk.DefaultPackageManager({ cwd: descriptor.cwd, agentDir, settingsManager })
+      // Global (user-scope) ops resolve local sources against the AGENT DIR —
+      // the same base settings entries are relativized with — so the remove
+      // matcher pairs the input with the stored entry. Resolving from the
+      // focused session's cwd instead silently no-ops whenever the two dirs
+      // sit at different depths (removeAndPersist reports false and the op
+      // claimed success — unmasked by the packaged verify, whose extra tmp
+      // nesting broke run-all's sibling-dir coincidence). Project ops keep
+      // the project cwd: the project settings' base is cwd/.pi.
+      const managerCwd = descriptor.local ? descriptor.cwd : agentDir
+      const manager = new sdk.DefaultPackageManager({ cwd: managerCwd, agentDir, settingsManager })
       const outcome = await runOpWithManager(manager, descriptor, (event) => send(event))
       send(outcome)
       setTimeout(() => process.exit(outcome.ok ? 0 : 1), 200).unref?.()
