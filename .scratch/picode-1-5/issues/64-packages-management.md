@@ -6,7 +6,7 @@
 
 **Blocked by:** 63（同窗口文件——Packages 节挂进 63 交付的设置窗节导航）。
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [ ] 全局层：packages 列表（来源解析 npm:/git:/local 徽标）+ 安装（来源输入 + 拉取进行态 + 失败 toast）+ 移除（确认框）+ 启停——settings.json 读写与 `pi install/remove` 同落点
 - [ ] 项目级层：cwd 的 .pi/settings.json 列表 + 安装/移除/启停；与全局层同组件复用
@@ -34,3 +34,9 @@
 - 2026-09-11 (claim): 实施会话认领（worktree wt-64-packages-management / 分支 t64-packages-management，已 rebase 于 main 最新——63 已并入，PackagesSection 挂点就绪）。开工前 ps 复核：无其他 PiCode Electron/dev-app/smoke 进程在跑。
 - 2026-09-11 (requirements intake): 建票（mgmt 追加需求，Q2=C + Q8=Q11=A）。波次：独立链，**Blocked by 63**（同窗口文件）。操作者当前 packages 数组为空（首用户亦空态——空态文案如实）。安全文案沿用 Pi 官方口吻（packages run with full system access）。与 54–62 零文件交集。
 - 2026-09-11 (release scope): 操作者拍板「全部赶 v1.5.0」——本票纳入 v1.5.0 发布范围。
+- 2026-09-14 (merge, T00 合并会话): **merged as e8ab88b**（merge --no-ff；分支八提交 rebase 后落 main：票文件两撞取 main 侧终态、fdb424b scope-addition tracker 自动去重、67 的 feat/tracker/fix 三提交干净重放并入）。
+  - **验收口径**：操作者 2026-09-14 明示「64 已验收」；脚本门禁 typecheck 绿 + vitest **1313/1313（87 文件）**（1244 → 净增 +69：packages-management 36 + packages-service 24 等）；electron smoke 全绿含 ticket-64 段（零 trust.json 写入字节级红线）为分支侧记录。
+  - **冲突处置**：2 处均例行 tracker 对撞（feat/tracker 提交携带中途票状态 → 取 main 侧终态）；**零代码冲突**。
+  - **67 降级并入核验**：Skills 双卡（Global/Project）+ settings:projects IPC + 双搜索入口 + 卡头三件套通用化全部在位；CONTEXT.md 设置窗词条明文记录「双卡（票 67）」降级决议；t67 分支已删、无残留。
+  - **终态审计**：additive 字段族（packages/projectPackages/projectTrust/packagesProgress）+ settings:packages/-toggle/-op IPC + 进度广播 + op host（--packages-op，SDK DefaultPackageManager 同代码路径）；**零 trust.json 写入红线**（仅读 + 推导，写决策留在 Pi /trust）；untrusted 横幅 + 动作锁定；smoke 63/64 双段共存；无冲突标记残留。
+  - **清理**：worktree 已 remove、分支已删。**64 = 1.5 批最后一张票——13/13 全部 resolved，批次收官，进入 v1.5.0 发布流程。**
