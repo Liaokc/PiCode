@@ -10,6 +10,11 @@ import type { AuthProbeReport } from '../shared/auth-status'
 import type { AppPreferences } from '../shared/preferences'
 import type { NewTaskCommandCatalog } from '../shared/new-task-commands'
 import type { SkillsReport } from '../shared/skills-management'
+import type {
+  PackagesOpOutcome,
+  PackagesProgressEvent,
+  PackagesReport
+} from '../shared/packages-management'
 import type { TerminalDataMessage, TerminalExitMessage } from '../shared/terminal/messages'
 import { shellDisplayName } from '../shared/terminal/shell-name'
 
@@ -139,7 +144,41 @@ contextBridge.exposeInMainWorld('picode', {
     deleteSkillEntry: (entryPath: string): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke('settings:skills-delete', entryPath),
     /** Read-only Finder reveal of the row's skill file. */
-    revealSkill: (target: string): Promise<boolean> => ipcRenderer.invoke('settings:skills-reveal', target)
+    revealSkill: (target: string): Promise<boolean> => ipcRenderer.invoke('settings:skills-reveal', target),
+    /** Packages-section report for one directory (ticket 64; null = the
+     * global face — no project layer). `force` re-probes. */
+    listPackages: (cwd: string | null, force: boolean): Promise<PackagesReport> =>
+      ipcRenderer.invoke('settings:packages', cwd, force),
+    /** Package toggle — writes the pi-config filter format into the
+     * scope's settings.json (project writes are trust-gated in main). */
+    togglePackage: (
+      scope: 'global' | 'project',
+      source: string,
+      enable: boolean,
+      cwd: string | null
+    ): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('settings:packages-toggle', scope, source, enable, cwd),
+    /** Install/remove one package through the SDK's own package manager
+     * (op host, one at a time). Progress events stream to
+     * `onPackagesProgress` while the invoke is in flight. */
+    installPackage: (
+      source: string,
+      local: boolean,
+      cwd: string | null
+    ): Promise<PackagesOpOutcome> => ipcRenderer.invoke('settings:packages-op', 'install', source, local, cwd),
+    removePackage: (
+      source: string,
+      local: boolean,
+      cwd: string | null
+    ): Promise<PackagesOpOutcome> => ipcRenderer.invoke('settings:packages-op', 'remove', source, local, cwd),
+    /** Live progress of a running install/remove (op host relay). */
+    onPackagesProgress: (listener: (event: PackagesProgressEvent) => void): (() => void) => {
+      const wrapped = (_event: IpcRendererEvent, payload: PackagesProgressEvent): void => listener(payload)
+      ipcRenderer.on('settings:packages-progress', wrapped)
+      return () => {
+        ipcRenderer.removeListener('settings:packages-progress', wrapped)
+      }
+    }
   },
   review: {
     /** Collect a workspace-vs-HEAD diff snapshot for the given directory. */

@@ -21,6 +21,7 @@ import { SettingsService, type SettingsSnapshot } from './settings/service'
 import { runAuthProbeHost } from './settings/probe-runner'
 import { CommandCatalogService } from './settings/command-catalog'
 import { SkillsService, type SkillActionOutcome } from './settings/skills-service'
+import { PackagesService, forkPackagesOpRunner, type PackageActionOutcome } from './settings/packages-service'
 import { startSmokeIfEnabled, smokeEnabled, type SmokeHooks } from './smoke'
 import { startVisualIfEnabled } from './visual'
 import { startDensityVisualIfEnabled } from './visual-density'
@@ -49,6 +50,7 @@ import { startPerfIfEnabled } from './visual-perf'
 import { startCwdVisualIfEnabled, isolateCwdVisualUserData } from './visual-cwd'
 import { fakeUsageSnapshot } from '../shared/usage/fixture'
 import type { SkillCatalogRow, SkillsReport } from '../shared/skills-management'
+import type { PackageRow, PackagesReport } from '../shared/packages-management'
 import { TerminalService, type TerminalDataMessage, type TerminalExitMessage } from './terminal/service'
 import { nodePtyFactory } from './terminal/node-pty-factory'
 import { createUsageService } from './usage/service'
@@ -246,6 +248,56 @@ app.whenReady().then(() => {
       return false
     }
   })
+
+  // Packages management (ticket 64): the settings window's Packages
+  // section — the read side enumerates global + project packages and the
+  // read-only project trust state (probe host, cached); toggles derive the
+  // pi-config change through the shared pure model and write the settings
+  // file; installs/removes fork the op host running the SDK's OWN package
+  // manager (the exact pi install/remove code path), one op at a time, with
+  // progress relayed to every window. The project trust gate mirrors pi's
+  // own refusal — and trust.json is never written by this app.
+  const packages = new PackagesService({
+    probe: (cwd, agentDir) => runAuthProbeHost(hostEntry, { cwd, agentDir }),
+    runOp: forkPackagesOpRunner(hostEntry)
+  })
+  ipcMain.handle('settings:packages', (_event, cwd: unknown, force: unknown): Promise<PackagesReport> => {
+    if (fakeSettings) return Promise.resolve(fakePackagesReport())
+    const dir = typeof cwd === 'string' && cwd.trim() !== '' ? cwd : null
+    return packages.listPackages(dir, force === true)
+  })
+  ipcMain.handle(
+    'settings:packages-toggle',
+    (_event, scope: unknown, source: unknown, enable: unknown, cwd: unknown): Promise<PackageActionOutcome> => {
+      if (fakeSettings) return Promise.resolve({ ok: true })
+      if (
+        (scope !== 'global' && scope !== 'project') ||
+        typeof source !== 'string' ||
+        source.trim() === '' ||
+        typeof enable !== 'boolean'
+      ) {
+        return Promise.resolve({ ok: false, error: 'Malformed package toggle request.' })
+      }
+      const dir = typeof cwd === 'string' && cwd.trim() !== '' ? cwd : null
+      return packages.togglePackage(scope, source, enable, dir)
+    }
+  )
+  ipcMain.handle(
+    'settings:packages-op',
+    (_event, op: unknown, source: unknown, local: unknown, cwd: unknown): Promise<PackageActionOutcome> => {
+      if (fakeSettings) return Promise.resolve({ ok: true })
+      if (
+        (op !== 'install' && op !== 'remove') ||
+        typeof source !== 'string' ||
+        source.trim() === '' ||
+        typeof local !== 'boolean'
+      ) {
+        return Promise.resolve({ ok: false, error: 'Malformed package op request.' })
+      }
+      const dir = typeof cwd === 'string' && cwd.trim() !== '' ? cwd : null
+      return packages.performOp(op, source, local, dir, (event) => broadcastChannel('settings:packages-progress', event))
+    }
+  )
 
   let smokeHooks: SmokeHooks | null = null
   let mainWindow: BrowserWindow | null = null
@@ -615,4 +667,66 @@ function fakeSkillsReport(): SkillsReport {
     }
   ]
   return { cwd: null, scannedAt: Date.now(), rows, error: null }
+}
+
+/** Deterministic Packages-section fixture (PICODE_FAKE_SETTINGS=1, ticket
+ * 64): the three source badges, a disabled package, per-package component
+ * counts, a project layer, and an UNTRUSTED project — the visual frame
+ * shows the whole state vocabulary, including the untrusted banner. Never
+ * touches the real machine. */
+function fakePackagesReport(): PackagesReport {
+  const globalRows: PackageRow[] = [
+    {
+      source: 'npm:@demo/pi-clipboard',
+      kind: 'npm',
+      entry: 'npm:@demo/pi-clipboard',
+      autoload: null,
+      counts: { extensions: 2, skills: 3, prompts: 1, themes: 0 },
+      installedPath: '/Users/demo/.pi/agent/npm/node_modules/@demo/pi-clipboard',
+      scope: 'user'
+    },
+    {
+      source: 'git:github.com/demo/pi-themes@v2',
+      kind: 'git',
+      entry: 'git:github.com/demo/pi-themes@v2',
+      autoload: null,
+      counts: { extensions: 0, skills: 1, prompts: 0, themes: 4 },
+      installedPath: '/Users/demo/.pi/agent/git/github.com/demo/pi-themes',
+      scope: 'user'
+    },
+    {
+      source: '/Users/demo/ext/picode-local-pack',
+      kind: 'local',
+      entry: {
+        source: '/Users/demo/ext/picode-local-pack',
+        extensions: [],
+        skills: [],
+        prompts: [],
+        themes: []
+      },
+      autoload: null,
+      counts: { extensions: 1, skills: 2, prompts: 0, themes: 0 },
+      installedPath: '/Users/demo/ext/picode-local-pack',
+      scope: 'user'
+    }
+  ]
+  const projectRows: PackageRow[] = [
+    {
+      source: 'npm:@api/team-skills',
+      kind: 'npm',
+      entry: 'npm:@api/team-skills',
+      autoload: null,
+      counts: { extensions: 0, skills: 4, prompts: 2, themes: 0 },
+      installedPath: null,
+      scope: 'project'
+    }
+  ]
+  return {
+    cwd: '/Users/demo/Projects/api',
+    scannedAt: Date.now(),
+    global: globalRows,
+    project: projectRows,
+    trust: { decision: 'none', trusted: false, hasResources: true },
+    error: null
+  }
 }

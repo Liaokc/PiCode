@@ -32,6 +32,8 @@ interface SettingsWindowProps {
   /** Ticket 63: the cwd scoping the Skills enumeration — the focused
    * session's workspace; null = the home directory's global face. */
   skillsCwd: string | null
+  /** Toast surface (ticket 64: Packages op failure toasts). */
+  onNotify: (message: string, level: 'info' | 'error') => void
 }
 
 function SectionIcon({ section }: { section: SettingsSection }): JSX.Element {
@@ -66,7 +68,8 @@ export default function SettingsWindow({
   authScanning,
   onSetPreferences,
   onRefreshAuth,
-  skillsCwd
+  skillsCwd,
+  onNotify
 }: SettingsWindowProps): JSX.Element {
   const [ui, dispatch] = useReducer(settingsUiReducer, undefined, initialSettingsUiState)
   const { snapshot, error } = useUsageSnapshot()
@@ -116,7 +119,7 @@ export default function SettingsWindow({
           />
         )}
         {ui.section === 'skills' && <SkillsSection cwd={skillsCwd} />}
-        {ui.section === 'packages' && <PackagesSection />}
+        {ui.section === 'packages' && <PackagesSection cwd={skillsCwd} onNotify={onNotify} />}
         {ui.section === 'usage' && (
           <UsagePage
             snapshot={snapshot}

@@ -1230,6 +1230,7 @@ export default function App(): JSX.Element {
           onSetPreferences={handleSetPreferences}
           onRefreshAuth={handleRefreshAuth}
           skillsCwd={chat.session?.cwd ?? null}
+          onNotify={notify}
         />
         <TooltipHost />
       </div>

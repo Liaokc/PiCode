@@ -143,8 +143,12 @@ _Avoid_: 中间结果；思考（thinking 是另一类 work item）。
 _Avoid_: 折叠条（强调折叠丢了常驻语义）；进度条（不表达进度）；折叠容器（体空时无折叠语义）。
 
 **设置窗（Settings Window）**：
-应用内第一个设置面：标题栏齿轮钮与 ⌘, 开合（Esc 亦关），窗口替换工作区三个区域（截图 09 构图）而非另开系统窗口——无模态：主窗会话在后台照常运行、事件流照常折叠。左侧节导航可扩展（General / Appearance / Models / Agent Resources / Data & Statistics），Skills 节以 Pi 实际加载面为准管理技能（来源徽标、per-技能启停写 Pi settings、打开所在目录、仅删 ~/.pi/agent/skills 下链接/条目），Packages 节由票 64 交付。
+应用内第一个设置面：标题栏齿轮钮与 ⌘, 开合（Esc 亦关），窗口替换工作区三个区域（截图 09 构图）而非另开系统窗口——无模态：主窗会话在后台照常运行、事件流照常折叠。左侧节导航可扩展（General / Appearance / Models / Agent Resources / Data & Statistics），Skills 节以 Pi 实际加载面为准管理技能（来源徽标、per-技能启停写 Pi settings、打开所在目录、仅删 ~/.pi/agent/skills 下链接/条目）。见 **Packages 节**。
 _Avoid_: 设置页面（设置窗是完整窗口态，非主窗内嵌页）；弹窗（非浮层）；控制面板（含义过宽）。
+
+**Packages 节**：
+设置窗的包管理面（票 64）：全局层（~/.pi/agent/settings.json 的 packages 数组）与项目级层（聚焦 Task cwd 的 .pi/settings.json）同套管理——列表（npm:/git:/本地路径来源徽标 + 组件计数 extensions/skills/prompts/themes）、安装（来源输入 + 拉取进行态 + 失败 toast）、移除（确认框）、包级启停（写 pi config 同格式：关 = 包条目四过滤数组全 `[]`——SDK 明文「load none of that type」；开 = 摘空数组并回退字符串形式）。安装/移除走 Pi 本体包管理器（op host 内 DefaultPackageManager，与 `pi install/remove` 同代码路径，本地源相对化落盘同一落点）；**项目信任只读展示**：读 trust.json 保存决策 + 无决策时按 defaultProjectTrust 派生（ask/never → untrusted），untrusted 横幅明示「项目资源未被 Pi 加载」且项目动作锁定；信任决策本身留在 Pi 的 /trust，PiCode 零 trust.json 写入。安全文案沿用 Pi 官方口吻（packages run with full system access）。空态如实（操作者 packages 为空亦是首用户形态）。
+_Avoid_: 插件（ZCode 的 plugin 语义绑死其市场体系，不借用）；市场（PiCode 不做发现/市场面）；信任管理（PiCode 只读展示，不代写决策）。
 
 **图卡（Diagram Card）**：
 mermaid 围栏闭合且解析成功后渲染的图形卡（票 59，ZCode streamdown 管线同型）：小写 mono mermaid 标签头 + 右上操作钮组（download SVG/PNG/MMD 下拉、copy 源码、fullscreen）+ 渲染体 panZoom（滚轮缩放、拖拽平移、角部缩放控件）；fullscreen 为根层浮层、Esc 退；渲染主题用 mermaid 库默认浅色（深色全应用范围外）。**操作者批准的 ZCode 偏离**：ZCode 取证为 sticky 钮组，但卡片被转录滚动卷走时 sticky 头行悬停叠在自家图内容上——操作者拍板头行随卡滚走、不钉住。流式未闭合（mermaid 需全文）与解析失败均回退为代码卡——lang 标签照常、不弹错误 toast；mermaid 依赖按图型懒加载分片（动态 import），主包零增量。
