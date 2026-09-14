@@ -104,9 +104,14 @@ if (runningPids.trim()) {
 // Session isolation (ticket 13): the smoke writes sessions into a throwaway
 // store, never into the real ~/.pi/agent/sessions. The dir name carries the
 // picode-smoke- prefix so cleanup-smoke-sessions can sweep any leftovers.
+// Agent-dir isolation (tickets 63/64): same story for the skills/packages
+// stages' sandbox — a throwaway ~/.pi/agent lookalike; empty is enough, the
+// stages seed their own fixtures and clean up (run-all.sh precedent).
 const verifyTmp = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-verify-'))
 const sessionDir = path.join(verifyTmp, 'sessions')
 mkdirSync(sessionDir)
+const piAgentDir = path.join(verifyTmp, 'pi-agent')
+mkdirSync(piAgentDir)
 const stdoutLog = path.join(verifyTmp, 'smoke-stdout.log')
 const stderrLog = path.join(verifyTmp, 'smoke-stderr.log')
 writeFileSync(stdoutLog, '')
@@ -114,7 +119,7 @@ writeFileSync(stderrLog, '')
 
 let failure = null
 try {
-  execFileSync('open', openLaunchArgs({ appPath, sessionDir, stdoutLog, stderrLog }), {
+  execFileSync('open', openLaunchArgs({ appPath, sessionDir, piAgentDir, stdoutLog, stderrLog }), {
     stdio: 'inherit',
     timeout: 5 * 60_000
   })

@@ -17,6 +17,7 @@ describe('openLaunchArgs', () => {
     const args = openLaunchArgs({
       appPath: '/repo/release/picode-darwin-arm64/PiCode.app',
       sessionDir: '/tmp/picode-smoke-verify-x/sessions',
+      piAgentDir: '/tmp/picode-smoke-verify-x/pi-agent',
       stdoutLog: '/tmp/picode-smoke-verify-x/smoke-stdout.log',
       stderrLog: '/tmp/picode-smoke-verify-x/smoke-stderr.log'
     })
@@ -26,6 +27,7 @@ describe('openLaunchArgs', () => {
       '--stderr', '/tmp/picode-smoke-verify-x/smoke-stderr.log',
       '--env', 'PICODE_SMOKE=1',
       '--env', 'PICODE_SESSION_DIR=/tmp/picode-smoke-verify-x/sessions',
+      '--env', 'PICODE_PI_AGENT_DIR=/tmp/picode-smoke-verify-x/pi-agent',
       '/repo/release/picode-darwin-arm64/PiCode.app'
     ])
   })

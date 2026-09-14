@@ -31,10 +31,14 @@ export const SMOKE_DONE_MARKER = 'SMOKE done'
 export const SMOKE_FAIL_MARKER = 'SMOKE FAIL'
 
 /** Paths the verify launch needs: the packaged bundle, the isolated session
- * store (never the real ~/.pi sessions), and the captured stream files. */
+ * store (never the real ~/.pi sessions), the throwaway agent dir (never the
+ * real ~/.pi/agent — the tickets 63/64 skills/packages stages seed their
+ * sandboxes there and refuse to run without it), and the captured stream
+ * files. */
 export interface OpenLaunchPaths {
   appPath: string
   sessionDir: string
+  piAgentDir: string
   stdoutLog: string
   stderrLog: string
 }
@@ -42,14 +46,17 @@ export interface OpenLaunchPaths {
 /** argv for `open` (passed WITHOUT a shell, via execFileSync) that boots the
  * packaged app through LaunchServices: wait for it to quit, capture its
  * streams, and deliver the smoke env — PICODE_SMOKE enables the in-app smoke,
- * PICODE_SESSION_DIR isolates the session store. */
-export function openLaunchArgs({ appPath, sessionDir, stdoutLog, stderrLog }: OpenLaunchPaths): string[] {
+ * PICODE_SESSION_DIR isolates the session store, PICODE_PI_AGENT_DIR isolates
+ * the agent dir for the tickets 63/64 skills/packages stages (they refuse to
+ * touch the real ~/.pi/agent when it's absent). */
+export function openLaunchArgs({ appPath, sessionDir, piAgentDir, stdoutLog, stderrLog }: OpenLaunchPaths): string[] {
   return [
     '-W', // block until the smoke app quits
     '--stdout', stdoutLog,
     '--stderr', stderrLog,
     '--env', 'PICODE_SMOKE=1',
     '--env', `PICODE_SESSION_DIR=${sessionDir}`,
+    '--env', `PICODE_PI_AGENT_DIR=${piAgentDir}`,
     appPath
   ]
 }
