@@ -1,6 +1,14 @@
 import type { AuthProbeReport, CommandCatalogRow, ModelCatalogEntry, ProviderAuthStatus } from '../shared/auth-status.ts'
 import type { ThinkingLevel } from '../shared/contract.ts'
 import {
+  deriveProjectTrust,
+  hasProjectTrustResources,
+  parsePackageSourceKind,
+  type PackageComponentCounts,
+  type PackageRow,
+  type ProjectTrustState
+} from '../shared/packages-management.ts'
+import {
   buildSkillCatalogRow,
   isUnderPiSkillsDir,
   peekSkillIdentity,
@@ -8,7 +16,7 @@ import {
   type SkillEntryKind
 } from '../shared/skills-management.ts'
 import { homedir } from 'node:os'
-import { readdirSync, readFileSync, lstatSync, realpathSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, lstatSync, realpathSync, statSync } from 'node:fs'
 import path from 'node:path'
 
 /**
@@ -122,7 +130,6 @@ interface ResolvedSkillRow {
 interface PackageManagerLike {
   resolve(onMissing: (source: string) => Promise<'skip'>): Promise<{ skills: ResolvedSkillRow[] }>
 }
-
 /** The probe receives the SDK class dynamically (ESM-only package); the
  * structural ctor type keeps this module's surface SDK-free. The
  * settingsManager slot is the services' REAL SettingsManager — declared as
@@ -229,6 +236,146 @@ export async function collectSkillCatalog(
   } catch (err) {
     return { rows: [], error: err instanceof Error ? err.message : String(err) }
   }
+}
+
+/**
+ * Ticket 64: the packages enumeration needs the FULL resolved face (all
+ * four resource types) plus the configured-package listing, so the probe
+ * widens the structural PackageManager type for the packages pass.
+ */
+interface ResolvedPackageResource {
+  path: string
+  enabled: boolean
+  metadata: { source: string; scope: string; origin: string; baseDir?: string }
+}
+
+interface PackagesPackageManagerLike extends PackageManagerLike {
+  resolve(onMissing: (source: string) => Promise<'skip'>): Promise<{
+    extensions: ResolvedPackageResource[]
+    skills: ResolvedPackageResource[]
+    prompts: ResolvedPackageResource[]
+    themes: ResolvedPackageResource[]
+  }>
+  getInstalledPath(source: string, scope: 'user' | 'project'): string | undefined
+}
+
+interface PackagesSettingsManagerLike extends SettingsManagerLike {
+  getProjectSettings(): { packages?: unknown[] }
+  getDefaultProjectTrust(): string
+}
+
+interface ProjectTrustStoreLike {
+  get(cwd: string): boolean | null
+}
+
+interface TrustStoreCtor {
+  new (agentDir: string): ProjectTrustStoreLike
+}
+
+function asPackagesPackageManager(value: unknown): PackagesPackageManagerLike {
+  return value as PackagesPackageManagerLike
+}
+
+function asTrustStoreCtor(value: unknown): TrustStoreCtor {
+  return value as TrustStoreCtor
+}
+
+/**
+ * Enumerate the Packages-section universe for the probed cwd (ticket 64):
+ *
+ * - Global rows from the global settings' `packages` array; project rows
+ *   from the project settings' array (SettingsManager loads both — the
+ *   probe's face is "what is configured here").
+ * - ONE resolve() pass (onMissing 'skip' — strictly read-only, never an
+ *   auto-install) fills the per-package component counts (extensions /
+ *   skills / prompts / themes) and the on-disk install paths.
+ * - The project trust state is DERIVED read-only: saved trust.json
+ *   decision (nearest parent) wins, otherwise the global
+ *   defaultProjectTrust decides — 'ask' with no decision means untrusted
+ *   (a non-interactive host has no UI to ask). No trust.json write ever
+ *   happens here; the decision itself stays with Pi's /trust.
+ *
+ * Failures degrade to an error report, never a throw.
+ */
+export async function collectPackagesCatalog(services: {
+  cwd: string
+  agentDir: string
+  settingsManager: PackagesSettingsManagerLike
+},
+PackageManager: PackageManagerCtor,
+TrustStore: TrustStoreCtor): Promise<{
+  global: PackageRow[]
+  project: PackageRow[]
+  trust: ProjectTrustState | null
+  error: string | null
+}> {
+  try {
+    const globalPackages = readPackagesArray(services.settingsManager.getGlobalSettings() as { packages?: unknown })
+    const projectPackages = readPackagesArray(services.settingsManager.getProjectSettings() as { packages?: unknown })
+    const manager = asPackagesPackageManager(
+      new PackageManager({ cwd: services.cwd, agentDir: services.agentDir, settingsManager: services.settingsManager })
+    )
+    // One read-only resolve for ALL counts: grouped by the resolved
+    // metadata (source × scope) so the right scope's entry gets the counts.
+    const resolved = await manager.resolve(async () => 'skip')
+    const countsBySource = new Map<string, PackageComponentCounts>()
+    const addTo = (rows: ResolvedPackageResource[], key: keyof PackageComponentCounts): void => {
+      for (const resource of rows) {
+        if (resource.metadata.origin !== 'package') continue
+        const mapKey = `${resource.metadata.scope}\u0000${resource.metadata.source}`
+        const counts = countsBySource.get(mapKey) ?? emptyCounts()
+        counts[key] += 1
+        countsBySource.set(mapKey, counts)
+      }
+    }
+    addTo(resolved.extensions, 'extensions')
+    addTo(resolved.skills, 'skills')
+    addTo(resolved.prompts, 'prompts')
+    addTo(resolved.themes, 'themes')
+    const toRows = (entries: unknown[], scope: 'user' | 'project'): PackageRow[] =>
+      entries.map((entry) => {
+        const source = typeof entry === 'string' ? entry : String((entry as { source?: unknown }).source ?? '')
+        const counts = countsBySource.get(`${scope}\u0000${source}`) ?? null
+        let installedPath: string | null = null
+        try {
+          installedPath = manager.getInstalledPath(source, scope) ?? null
+        } catch {
+          installedPath = null
+        }
+        return {
+          source,
+          kind: parsePackageSourceKind(source),
+          entry: entry as PackageRow['entry'],
+          autoload:
+            typeof entry === 'object' && entry !== null && typeof (entry as { autoload?: unknown }).autoload === 'boolean'
+              ? ((entry as { autoload: boolean }).autoload as boolean)
+              : null,
+          counts: counts ? { ...counts } : null,
+          installedPath,
+          scope
+        }
+      })
+    const hasResources = hasProjectTrustResources(services.cwd, homedir(), (p) => existsSync(p))
+    const trustStore = new TrustStore(services.agentDir)
+    const saved = trustStore.get(services.cwd)
+    const trust = deriveProjectTrust({
+      savedDecision: saved,
+      defaultProjectTrust: services.settingsManager.getDefaultProjectTrust(),
+      hasResources
+    })
+    return { global: toRows(globalPackages, 'user'), project: toRows(projectPackages, 'project'), trust, error: null }
+  } catch (err) {
+    return { global: [], project: [], trust: null, error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+function emptyCounts(): PackageComponentCounts {
+  return { extensions: 0, skills: 0, prompts: 0, themes: 0 }
+}
+
+/** The `packages` array of a settings document, tolerating junk. */
+function readPackagesArray(doc: { packages?: unknown }): unknown[] {
+  return Array.isArray(doc.packages) ? doc.packages : []
 }
 
 /** lstat classification of the deletable ENTRY for a row under the pi skills
@@ -346,8 +493,11 @@ export async function collectAuthStatuses(
 export async function runAuthProbe(cwd?: string, agentDir?: string): Promise<AuthProbeReport> {
   try {
     const sdk = await import('@earendil-works/pi-coding-agent')
+    // The probe's effective working directory: an empty argument falls back
+    // to the home directory (global resources only).
+    const probeCwd = cwd && cwd.trim() !== '' ? cwd : homedir()
     const services = await sdk.createAgentSessionServices({
-      cwd: cwd && cwd.trim() !== '' ? cwd : homedir(),
+      cwd: probeCwd,
       ...(agentDir !== undefined && agentDir.trim() !== '' ? { agentDir } : {})
     })
     const report = await collectAuthStatuses(
@@ -369,6 +519,23 @@ export async function runAuthProbe(cwd?: string, agentDir?: string): Promise<Aut
     report.skillsError = skills.error
     report.skillsScannedAt = Date.now()
     report.skillsCwd = cwd && cwd.trim() !== '' ? cwd : null
+    // Ticket 64: the Packages-section enumeration + the read-only trust
+    // state ride the same report (no trust.json write ever happens here).
+    const packages = await collectPackagesCatalog(
+      {
+        cwd: probeCwd,
+        agentDir: services.agentDir,
+        settingsManager: services.settingsManager as unknown as PackagesSettingsManagerLike
+      },
+      asPackageManagerCtor(sdk.DefaultPackageManager),
+      asTrustStoreCtor(sdk.ProjectTrustStore)
+    )
+    report.packages = packages.global
+    report.projectPackages = packages.project
+    report.packagesError = packages.error
+    report.packagesScannedAt = Date.now()
+    report.packagesCwd = cwd && cwd.trim() !== '' ? cwd : null
+    report.projectTrust = packages.trust
     return report
   } catch (err) {
     return {

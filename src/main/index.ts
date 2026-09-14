@@ -1,6 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
 import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
+import { existsSync } from 'node:fs'
 import fs from 'node:fs/promises'
 import type { HostToParent, ImageAttachment, ParentToHost } from '../shared/contract'
 import type { ReviewResult } from '../shared/review/types'
@@ -21,6 +22,7 @@ import { SettingsService, type SettingsSnapshot } from './settings/service'
 import { runAuthProbeHost } from './settings/probe-runner'
 import { CommandCatalogService } from './settings/command-catalog'
 import { SkillsService, type SkillActionOutcome } from './settings/skills-service'
+import { PackagesService, forkPackagesOpRunner, type PackageActionOutcome } from './settings/packages-service'
 import { startSmokeIfEnabled, smokeEnabled, type SmokeHooks } from './smoke'
 import { startVisualIfEnabled } from './visual'
 import { startDensityVisualIfEnabled } from './visual-density'
@@ -49,6 +51,9 @@ import { startPerfIfEnabled } from './visual-perf'
 import { startCwdVisualIfEnabled, isolateCwdVisualUserData } from './visual-cwd'
 import { fakeUsageSnapshot } from '../shared/usage/fixture'
 import type { SkillCatalogRow, SkillsReport } from '../shared/skills-management'
+import { hasProjectTrustResources } from '../shared/packages-management'
+import { projectListFromSummaries, type KnownProject } from '../shared/sessions/group'
+import type { PackageRow, PackagesReport } from '../shared/packages-management'
 import { TerminalService, type TerminalDataMessage, type TerminalExitMessage } from './terminal/service'
 import { nodePtyFactory } from './terminal/node-pty-factory'
 import { createUsageService } from './usage/service'
@@ -216,8 +221,8 @@ app.whenReady().then(() => {
   // pi-settings editor (deletes never touch symlink targets).
   const skills = new SkillsService({ probe: (cwd, agentDir) => runAuthProbeHost(hostEntry, { cwd, agentDir }) })
   ipcMain.handle('settings:skills', (_event, cwd: unknown, force: unknown): Promise<SkillsReport> => {
-    if (fakeSettings) return Promise.resolve(fakeSkillsReport())
     const dir = typeof cwd === 'string' && cwd.trim() !== '' ? cwd : null
+    if (fakeSettings) return Promise.resolve(fakeSkillsReport(dir))
     return skills.listSkills(dir, force === true)
   })
   ipcMain.handle('settings:skills-toggle', (_event, rawRow: unknown, enable: unknown): Promise<SkillActionOutcome> => {
@@ -246,6 +251,76 @@ app.whenReady().then(() => {
       return false
     }
   })
+
+  // Known-project list for the Skills section's Project card (ticket 67):
+  // distinct session cwds from the index, fs-PRE-FILTERED to plausible
+  // candidates via hasProjectTrustResources (cwd/.pi entries or ancestor
+  // .agents/skills — of the operator's 59 session projects only the few
+  // with real .pi content survive), newest first. Read-only; the
+  // per-project skills enumeration itself reuses settings:skills.
+  ipcMain.handle('settings:projects', async (): Promise<KnownProject[]> => {
+    if (fakeSettings) return fakeProjectsList()
+    if (!sessionIndex) return []
+    const sessions = await sessionIndex.list()
+    const home = homedir()
+    return projectListFromSummaries(sessions).filter((project) => {
+      try {
+        return hasProjectTrustResources(project.cwd, home, existsSync)
+      } catch {
+        return false
+      }
+    })
+  })
+
+  // Packages management (ticket 64): the settings window's Packages
+  // section — the read side enumerates global + project packages and the
+  // read-only project trust state (probe host, cached); toggles derive the
+  // pi-config change through the shared pure model and write the settings
+  // file; installs/removes fork the op host running the SDK's OWN package
+  // manager (the exact pi install/remove code path), one op at a time, with
+  // progress relayed to every window. The project trust gate mirrors pi's
+  // own refusal — and trust.json is never written by this app.
+  const packages = new PackagesService({
+    probe: (cwd, agentDir) => runAuthProbeHost(hostEntry, { cwd, agentDir }),
+    runOp: forkPackagesOpRunner(hostEntry)
+  })
+  ipcMain.handle('settings:packages', (_event, cwd: unknown, force: unknown): Promise<PackagesReport> => {
+    if (fakeSettings) return Promise.resolve(fakePackagesReport())
+    const dir = typeof cwd === 'string' && cwd.trim() !== '' ? cwd : null
+    return packages.listPackages(dir, force === true)
+  })
+  ipcMain.handle(
+    'settings:packages-toggle',
+    (_event, scope: unknown, source: unknown, enable: unknown, cwd: unknown): Promise<PackageActionOutcome> => {
+      if (fakeSettings) return Promise.resolve({ ok: true })
+      if (
+        (scope !== 'global' && scope !== 'project') ||
+        typeof source !== 'string' ||
+        source.trim() === '' ||
+        typeof enable !== 'boolean'
+      ) {
+        return Promise.resolve({ ok: false, error: 'Malformed package toggle request.' })
+      }
+      const dir = typeof cwd === 'string' && cwd.trim() !== '' ? cwd : null
+      return packages.togglePackage(scope, source, enable, dir)
+    }
+  )
+  ipcMain.handle(
+    'settings:packages-op',
+    (_event, op: unknown, source: unknown, local: unknown, cwd: unknown): Promise<PackageActionOutcome> => {
+      if (fakeSettings) return Promise.resolve({ ok: true })
+      if (
+        (op !== 'install' && op !== 'remove') ||
+        typeof source !== 'string' ||
+        source.trim() === '' ||
+        typeof local !== 'boolean'
+      ) {
+        return Promise.resolve({ ok: false, error: 'Malformed package op request.' })
+      }
+      const dir = typeof cwd === 'string' && cwd.trim() !== '' ? cwd : null
+      return packages.performOp(op, source, local, dir, (event) => broadcastChannel('settings:packages-progress', event))
+    }
+  )
 
   let smokeHooks: SmokeHooks | null = null
   let mainWindow: BrowserWindow | null = null
@@ -538,10 +613,35 @@ function fakeAuthReport(): AuthProbeReport {
   }
 }
 
-/** Deterministic Skills-section fixture (PICODE_FAKE_SETTINGS=1, ticket 63):
- * every source badge + a broken link + a disabled row, so the visual frames
- * show the whole state vocabulary. Never touches the real machine. */
-function fakeSkillsReport(): SkillsReport {
+/** Deterministic Skills-section fixture (PICODE_FAKE_SETTINGS=1, ticket
+ * 63): every source badge + a broken link + a disabled row, so the visual
+ * frames show the whole state vocabulary. Ticket 67: cwd-AWARE — the null
+ * request returns only global-face rows; a project request returns that
+ * project's rows (with its trust state). Never touches the real machine. */
+function fakeSkillsReport(cwd: string | null): SkillsReport {
+  if (cwd !== null) {
+    const projectRow: SkillCatalogRow = {
+      path: `${cwd}/.pi/skills/api-review/SKILL.md`,
+      entryPath: null,
+      entryKind: null,
+      realPath: null,
+      name: 'api-review',
+      description: 'Review API changes against the team design checklist.',
+      enabled: true,
+      scope: 'project',
+      origin: 'top-level',
+      source: 'auto',
+      baseDir: `${cwd}/.pi`,
+      broken: false
+    }
+    return {
+      cwd,
+      scannedAt: Date.now(),
+      rows: [projectRow],
+      error: null,
+      trust: { decision: 'trusted', trusted: true, hasResources: true }
+    }
+  }
   const rows: SkillCatalogRow[] = [
     {
       path: '/Users/demo/.pi/agent/skills/alpha-testing/SKILL.md',
@@ -598,21 +698,80 @@ function fakeSkillsReport(): SkillsReport {
       source: 'npm:@demo/pi-clipboard',
       baseDir: '/install/pi-clipboard',
       broken: false
-    },
-    {
-      path: '/Users/demo/Projects/api/.pi/skills/api-review/SKILL.md',
-      entryPath: null,
-      entryKind: null,
-      realPath: null,
-      name: 'api-review',
-      description: 'Review API changes against the team design checklist.',
-      enabled: true,
-      scope: 'project',
-      origin: 'top-level',
-      source: 'auto',
-      baseDir: '/Users/demo/Projects/api/.pi',
-      broken: false
     }
   ]
   return { cwd: null, scannedAt: Date.now(), rows, error: null }
+}
+
+/** Deterministic known-projects fixture (PICODE_FAKE_SETTINGS=1, ticket
+ * 67): two candidate projects so the Project card's per-project groups
+ * render in the visual frame (one with skills, one without — the empty
+ * one collapses into the summary line). */
+function fakeProjectsList(): KnownProject[] {
+  return [
+    { cwd: '/Users/demo/Projects/api', name: 'api', sessionCount: 4, latest: Date.now() - 3_600_000 },
+    { cwd: '/Users/demo/Projects/picode', name: 'picode', sessionCount: 12, latest: Date.now() - 86_400_000 }
+  ]
+}
+
+/** Deterministic Packages-section fixture (PICODE_FAKE_SETTINGS=1, ticket
+ * 64): the three source badges, a disabled package, per-package component
+ * counts, a project layer, and an UNTRUSTED project — the visual frame
+ * shows the whole state vocabulary, including the untrusted banner. Never
+ * touches the real machine. */
+function fakePackagesReport(): PackagesReport {
+  const globalRows: PackageRow[] = [
+    {
+      source: 'npm:@demo/pi-clipboard',
+      kind: 'npm',
+      entry: 'npm:@demo/pi-clipboard',
+      autoload: null,
+      counts: { extensions: 2, skills: 3, prompts: 1, themes: 0 },
+      installedPath: '/Users/demo/.pi/agent/npm/node_modules/@demo/pi-clipboard',
+      scope: 'user'
+    },
+    {
+      source: 'git:github.com/demo/pi-themes@v2',
+      kind: 'git',
+      entry: 'git:github.com/demo/pi-themes@v2',
+      autoload: null,
+      counts: { extensions: 0, skills: 1, prompts: 0, themes: 4 },
+      installedPath: '/Users/demo/.pi/agent/git/github.com/demo/pi-themes',
+      scope: 'user'
+    },
+    {
+      source: '/Users/demo/ext/picode-local-pack',
+      kind: 'local',
+      entry: {
+        source: '/Users/demo/ext/picode-local-pack',
+        extensions: [],
+        skills: [],
+        prompts: [],
+        themes: []
+      },
+      autoload: null,
+      counts: { extensions: 1, skills: 2, prompts: 0, themes: 0 },
+      installedPath: '/Users/demo/ext/picode-local-pack',
+      scope: 'user'
+    }
+  ]
+  const projectRows: PackageRow[] = [
+    {
+      source: 'npm:@api/team-skills',
+      kind: 'npm',
+      entry: 'npm:@api/team-skills',
+      autoload: null,
+      counts: { extensions: 0, skills: 4, prompts: 2, themes: 0 },
+      installedPath: null,
+      scope: 'project'
+    }
+  ]
+  return {
+    cwd: '/Users/demo/Projects/api',
+    scannedAt: Date.now(),
+    global: globalRows,
+    project: projectRows,
+    trust: { decision: 'none', trusted: false, hasResources: true },
+    error: null
+  }
 }

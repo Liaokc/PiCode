@@ -4883,7 +4883,12 @@ export function startSmokeIfEnabled(
             await new Promise((res) => setTimeout(res, 250))
           }
           if (realRow === null || linkRow === null || danglingRow === null) {
-            fail(`ticket-63 stage: the sandbox skill rows never appeared (real=${realRow !== null} link=${linkRow !== null} dangling=${danglingRow !== null})`)
+            const diag = (await js(`(() => ({
+              rows: [...document.querySelectorAll('.skill-row')].map((r) => r.dataset['skillName']),
+              errors: [...document.querySelectorAll('.settings-skills-error')].map((e) => e.textContent),
+              globalCount: document.querySelector('.settings-card .settings-skills-count')?.textContent ?? null
+            }))()`).catch(() => null)) as { rows: string[]; errors: string[]; globalCount: string | null } | null
+            fail(`ticket-63 stage: the sandbox skill rows never appeared (real=${realRow !== null} link=${linkRow !== null} dangling=${danglingRow !== null}) diag=${JSON.stringify(diag)}`)
           }
           if (realRow!.enabled !== 'true' || linkRow!.enabled !== 'true') fail('ticket-63 stage: the live sandbox rows are not marked enabled')
           if (!realRow!.deleteBtn || !linkRow!.deleteBtn) fail('ticket-63 stage: the deletable sandbox rows lost their delete buttons')
@@ -4992,6 +4997,283 @@ export function startSmokeIfEnabled(
         rmSync(sandboxSettings, { force: true })
       }
       log('settings_skills_done')
+    }
+
+    // ---- ticket 64: the Packages section — global install/toggle/remove +
+    // project layer + the untrusted trust banner ----
+    // The GLOBAL layer installs a REAL local-path package through the op
+    // host (the SDK's own package manager, the exact pi install code path)
+    // into the SANDBOX settings.json, toggles it (the canonical all-[]
+    // pi-config shape, then back to the string form), and removes it with
+    // the confirm strip. The PROJECT layer scopes to a sandbox project
+    // whose .pi/settings.json carries one package — the sandbox agent dir
+    // has NO trust.json, so the ask+no-decision derivation renders the
+    // project UNTRUSTED: the banner must state that Pi is not loading the
+    // project's resources, and every project action must stay locked.
+    // trust.json is byte-identical across the whole stage (the red line:
+    // the APP never writes trust decisions).
+    log('packages_stage_start')
+    {
+      const sandboxAgent = process.env['PICODE_PI_AGENT_DIR']
+      if (sandboxAgent === undefined || sandboxAgent.trim() === '') {
+        fail('ticket-64 stage: PICODE_PI_AGENT_DIR is not set — the packages stage refuses to touch the real agent dir')
+      }
+      const agentDir = sandboxAgent!
+      const sandboxSettings = path.join(agentDir, 'settings.json')
+      const sandboxTrust = path.join(agentDir, 'trust.json')
+      // A real mini pi package on disk — the LOCAL-PATH install source
+      // (offline-safe: a local install validates the path and writes the
+      // settings entry; nothing is downloaded).
+      const pkgRoot = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-pkg-'))
+      mkdirSync(path.join(pkgRoot, 'skills', 'picode-smoke-pkg-skill'), { recursive: true })
+      mkdirSync(path.join(pkgRoot, 'extensions'), { recursive: true })
+      mkdirSync(path.join(pkgRoot, 'prompts'), { recursive: true })
+      writeFileSync(
+        path.join(pkgRoot, 'skills', 'picode-smoke-pkg-skill', 'SKILL.md'),
+        '---\nname: picode-smoke-pkg-skill\ndescription: The smoke package skill.\n---\nbody'
+      )
+      writeFileSync(path.join(pkgRoot, 'extensions', 'picode-smoke-noop.ts'), 'export const picodeSmokeNoop = 1\n')
+      writeFileSync(
+        path.join(pkgRoot, 'prompts', 'picode-smoke.md'),
+        '---\ndescription: The smoke package prompt.\n---\nbody'
+      )
+      // The project sandbox: one local-path package in .pi/settings.json;
+      // trust.json stays ABSENT (ask + no decision → derived untrusted).
+      const projectDir = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-pkg-proj-'))
+      const projectPkgRoot = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-pkg-projpkg-'))
+      mkdirSync(path.join(projectPkgRoot, 'skills'), { recursive: true })
+      writeFileSync(
+        path.join(projectPkgRoot, 'skills', 'SKILL.md'),
+        '---\nname: picode-smoke-projpkg-skill\ndescription: The smoke project package skill.\n---\nbody'
+      )
+      mkdirSync(path.join(projectDir, '.pi'), { recursive: true })
+      writeFileSync(path.join(projectDir, '.pi', 'settings.json'), JSON.stringify({ packages: [projectPkgRoot] }))
+      // The canonical settings form of the installed local package: pi
+      // relativizes local sources against the settings file's directory
+      // (the agent dir for user scope) — the row and the file carry THAT
+      // form, not the absolute path the input received.
+      const relPkg = path.relative(agentDir, pkgRoot)
+      // The red line's baseline: the app must never create trust.json.
+      const trustJsonBefore = existsSync(sandboxTrust) ? readFileSync(sandboxTrust, 'utf-8') : null
+      writeFileSync(sandboxSettings, JSON.stringify({}))
+      try {
+        // A session scoped to the project dir focuses it — the settings
+        // window's Packages request then carries the project cwd.
+        supervisor.createSession(projectDir)
+        await waitFor((e) => e.type === 'session_created', 'packages session_created')
+        await withWindow(getWindow, async (win) => {
+          const js = (script: string) => win.webContents.executeJavaScript(script)
+
+          // ① ⌘, opens the settings window; the Packages nav opens the
+          // section.
+          await js(`(() => {
+            window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Comma', key: ',', metaKey: true, cancelable: true }))
+            return true
+          })()`)
+          if (!(await waitForProbe(win, `document.querySelector('.settings-shell') !== null`, 5_000))) {
+            fail('ticket-64 stage: ⌘, never opened the settings window')
+          }
+          if (!(await js(`(() => {
+            const item = [...document.querySelectorAll('.settings-item')].find((el) => el.textContent?.trim() === 'Packages')
+            if (!(item instanceof HTMLElement)) return false
+            item.click()
+            return true
+          })()`).catch(() => false))) fail('ticket-64 stage: the Packages nav item is missing')
+          if (!(await waitForProbe(win, `document.querySelector('.packages-install-input') !== null`, 5_000))) {
+            fail('ticket-64 stage: the Packages section never rendered its install row')
+          }
+          log('packages_section_open_ok')
+
+          // ② The honest empty state: the sandbox settings are empty.
+          if (!(await waitForProbe(
+            win,
+            `[...document.querySelectorAll('.settings-card')].some((card) => card.textContent?.includes('No packages installed'))`,
+            5_000
+          ))) {
+            fail('ticket-64 stage: the global card never showed the empty state')
+          }
+          log('packages_empty_state_ok')
+
+          // ③ Install the local-path package through the op host: the row
+          // appears (Local badge + counts) AND the sandbox settings.json
+          // gains the entry — the same landing zone pi install writes.
+          if (!(await js(`(() => {
+            const input = document.querySelector('.settings-card .packages-install-input')
+            if (!(input instanceof HTMLInputElement)) return false
+            const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+            setter.call(input, ${JSON.stringify(pkgRoot)})
+            input.dispatchEvent(new Event('input', { bubbles: true }))
+            return true
+          })()`).catch(() => false))) fail('ticket-64 stage: the global install input is missing')
+          if (!(await js(`(() => {
+            const btn = document.querySelector('.settings-card .packages-install-btn')
+            if (!(btn instanceof HTMLElement)) return false
+            btn.click()
+            return true
+          })()`).catch(() => false))) fail('ticket-64 stage: the global Install button is missing')
+          const rowFor = (source: string): string => `(() => {
+            const row = document.querySelector('.skill-row[data-package-source="${source}"]')
+            if (!(row instanceof HTMLElement)) return null
+            const toggle = row.querySelector('.skill-switch')
+            return {
+              present: true,
+              enabled: toggle?.getAttribute('aria-checked') ?? null,
+              badges: [...row.querySelectorAll('.skill-badge')].map((b) => b.textContent ?? ''),
+              counts: row.querySelector('.packages-counts')?.textContent ?? null
+            }
+          })()`
+          type PkgRowSig = { present: boolean; enabled: string | null; badges: string[]; counts: string | null } | null
+          let pkgRow: PkgRowSig = null
+          for (let waited = 0; waited < 20_000 && pkgRow === null; waited += 250) {
+            pkgRow = (await js(rowFor(relPkg)).catch(() => null)) as PkgRowSig
+            if (pkgRow === null) await new Promise((r) => setTimeout(r, 250))
+          }
+          if (pkgRow === null) fail(`ticket-64 stage: the installed package row never appeared (${pkgRoot} as ${relPkg})`)
+          if (!pkgRow!.badges.some((b) => b.toLowerCase() === 'local')) fail('ticket-64 stage: the local install is not badged Local')
+          if (!pkgRow!.counts?.includes('1 extension') || !pkgRow!.counts?.includes('1 skill') || !pkgRow!.counts?.includes('1 prompt')) {
+            fail(`ticket-64 stage: the package component counts are wrong (${String(pkgRow!.counts)})`)
+          }
+          const written = readSettingsTolerant(sandboxSettings) as { packages?: unknown[] }
+          if (!Array.isArray(written.packages) || !written.packages.includes(relPkg)) {
+            fail('ticket-64 stage: the install never wrote the sandbox settings.json (pi install landing zone)')
+          }
+          log('packages_install_ok', relPkg)
+
+          // ④ Toggle OFF: the entry becomes the canonical all-[] object —
+          // the pi-config "load nothing" shape — and the row says Disabled.
+          await js(`(() => {
+            const row = document.querySelector('.skill-row[data-package-source="${relPkg}"] .skill-switch')
+            if (!(row instanceof HTMLElement)) return false
+            row.click()
+            return true
+          })()`)
+          let offWritten = false
+          for (let waited = 0; waited < 10_000 && !offWritten; waited += 250) {
+            const flipped = (await js(rowFor(relPkg)).catch(() => null)) as PkgRowSig
+            const doc = readSettingsTolerant(sandboxSettings) as { packages?: Array<Record<string, unknown>> }
+            const entry = Array.isArray(doc.packages) ? (doc.packages[0] as Record<string, unknown> | undefined) : undefined
+            offWritten =
+              flipped?.enabled === 'false' &&
+              entry !== undefined &&
+              Array.isArray(entry['extensions']) && (entry['extensions'] as unknown[]).length === 0 &&
+              Array.isArray(entry['skills']) && (entry['skills'] as unknown[]).length === 0 &&
+              Array.isArray(entry['prompts']) && (entry['prompts'] as unknown[]).length === 0 &&
+              Array.isArray(entry['themes']) && (entry['themes'] as unknown[]).length === 0
+            if (!offWritten) await new Promise((r) => setTimeout(r, 250))
+          }
+          if (!offWritten) fail('ticket-64 stage: the disable toggle never wrote the all-[] pi-config shape')
+          log('packages_toggle_off_ok')
+
+          // ⑤ Toggle ON: back to the plain string form.
+          await js(`(() => {
+            const row = document.querySelector('.skill-row[data-package-source="${relPkg}"] .skill-switch')
+            if (!(row instanceof HTMLElement)) return false
+            row.click()
+            return true
+          })()`)
+          let onWritten = false
+          for (let waited = 0; waited < 10_000 && !onWritten; waited += 250) {
+            const flipped = (await js(rowFor(relPkg)).catch(() => null)) as PkgRowSig
+            const doc = readSettingsTolerant(sandboxSettings) as { packages?: unknown[] }
+            onWritten = flipped?.enabled === 'true' && Array.isArray(doc.packages) && doc.packages.includes(relPkg)
+            if (!onWritten) await new Promise((r) => setTimeout(r, 250))
+          }
+          if (!onWritten) fail('ticket-64 stage: the enable toggle never restored the string form')
+          log('packages_toggle_on_ok')
+
+          // ⑥ Remove through the two-step confirm: the entry leaves the
+          // sandbox settings.json and the row leaves the list.
+          await js(`(() => {
+            const row = document.querySelector('.skill-row[data-package-source="${relPkg}"]')
+            const btn = row?.querySelector('button[aria-label^="Remove "]')
+            if (!(btn instanceof HTMLElement)) return false
+            btn.click()
+            return true
+          })()`)
+          if (!(await waitForProbe(
+            win,
+            `document.querySelector('.skill-row[data-package-source="${relPkg}"] .skill-confirm') !== null`,
+            3_000
+          ))) {
+            fail('ticket-64 stage: the remove confirm strip never opened')
+          }
+          await js(`(() => {
+            const strip = document.querySelector('.skill-row[data-package-source="${relPkg}"] .skill-confirm')
+            const btn = strip?.querySelector('.skill-confirm-delete')
+            if (!(btn instanceof HTMLElement)) return false
+            btn.click()
+            return true
+          })()`)
+          let removed = false
+          for (let waited = 0; waited < 10_000 && !removed; waited += 250) {
+            const row = (await js(rowFor(relPkg)).catch(() => null)) as PkgRowSig
+            const doc = readSettingsTolerant(sandboxSettings) as { packages?: unknown[] }
+            removed = row === null && (!Array.isArray(doc.packages) || doc.packages.length === 0)
+            if (!removed) await new Promise((r) => setTimeout(r, 250))
+          }
+          if (!removed) fail('ticket-64 stage: the package never left the list and the settings file')
+          log('packages_remove_ok')
+
+          // ⑦ The PROJECT layer: the sandbox project's row renders, the
+          // banner states Pi is not loading the project's resources, and
+          // every project action is LOCKED (untrusted → the gate pi itself
+          // applies to project writes).
+          const projectRowSel = `.skill-row[data-package-source="${projectPkgRoot}"]`
+          if (!(await waitForProbe(win, `document.querySelector('${projectRowSel}') !== null`, 20_000))) {
+            fail(`ticket-64 stage: the project package row never appeared (${projectPkgRoot})`)
+          }
+          const bannerText = (await js(
+            `document.querySelector('.packages-untrusted-banner')?.textContent ?? ''`
+          )) as string
+          if (!bannerText.includes('not loaded by Pi') || !bannerText.includes('/trust')) {
+            fail(`ticket-64 stage: the untrusted banner is missing or wrong (${JSON.stringify(bannerText)})`)
+          }
+          const projectLocked = (await js(`(() => {
+            const cards = [...document.querySelectorAll('.settings-card')]
+            const card = cards.find((c) => c.querySelector('.settings-card-head-title')?.textContent === 'Project packages')
+            if (!(card instanceof HTMLElement)) return null
+            return {
+              inputDisabled: card.querySelector('.packages-install-input')?.hasAttribute('disabled') ?? false,
+              chip: card.querySelector('.settings-card-head .skill-badge')?.textContent ?? '',
+              toggleDisabled: card.querySelector('.skill-switch')?.hasAttribute('disabled') ?? false
+            }
+          })()`)) as { inputDisabled: boolean; chip: string; toggleDisabled: boolean } | null
+          if (projectLocked === null) fail('ticket-64 stage: the project card is missing')
+          if (!projectLocked!.inputDisabled || !projectLocked!.toggleDisabled) {
+            fail('ticket-64 stage: the untrusted project actions are not locked')
+          }
+          if (projectLocked!.chip !== 'Not trusted') {
+            fail(`ticket-64 stage: the project trust chip is wrong (${JSON.stringify(projectLocked!.chip)})`)
+          }
+          log('packages_project_untrusted_ok')
+
+          // ⑧ Escape closes the settings window.
+          await js(`(() => {
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+            return true
+          })()`)
+          if (!(await waitForProbe(win, `document.querySelector('.settings-shell') === null`, 5_000))) {
+            fail('ticket-64 stage: Escape never closed the settings window')
+          }
+          log('packages_esc_close_ok')
+        })
+
+        // THE RED LINE: zero trust.json writes — byte-identical (or still
+        // absent) across the whole stage.
+        const trustJsonAfter = existsSync(sandboxTrust) ? readFileSync(sandboxTrust, 'utf-8') : null
+        if (trustJsonBefore !== trustJsonAfter) {
+          fail('ticket-64 stage: THE RED LINE — the app wrote trust.json')
+        }
+        log('packages_trust_json_untouched_ok')
+      } finally {
+        // Sandbox hygiene: everything this stage created lives in throwaway
+        // dirs (the wrapper deletes the agent dir on exit).
+        rmSync(pkgRoot, { recursive: true, force: true })
+        rmSync(projectDir, { recursive: true, force: true })
+        rmSync(projectPkgRoot, { recursive: true, force: true })
+        rmSync(sandboxSettings, { force: true })
+      }
+      log('packages_stage_done')
     }
 
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).

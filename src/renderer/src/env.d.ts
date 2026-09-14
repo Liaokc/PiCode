@@ -9,6 +9,12 @@ import type { AuthProbeReport } from '../shared/auth-status'
 import type { AppPreferences } from '../shared/preferences'
 import type { NewTaskCommandCatalog } from '../shared/new-task-commands'
 import type { SkillsReport } from '../shared/skills-management'
+import type { KnownProject } from '../shared/sessions/group'
+import type {
+  PackagesOpOutcome,
+  PackagesProgressEvent,
+  PackagesReport
+} from '../shared/packages-management'
 import type { UsageSnapshot } from '../../shared/usage/aggregate'
 import type { TerminalDataMessage, TerminalExitMessage } from '../../shared/terminal/messages'
 
@@ -104,12 +110,32 @@ interface PicodeSettingsBridge {
   /** Skills-section enumeration for one directory (ticket 63; null = the
    * global face). `force` re-probes instead of serving the cache. */
   listSkills(cwd: string | null, force: boolean): Promise<SkillsReport>
+  /** Known-project list for the Project card (ticket 67): distinct session
+   * cwds, fs-pre-filtered to plausible candidates, newest first. */
+  listProjects(): Promise<KnownProject[]>
   /** Per-skill toggle — writes Pi's settings.json in pi-config format. */
   toggleSkill(row: unknown, enable: boolean): Promise<{ ok: boolean; error?: string }>
   /** Delete one entry under ~/.pi/agent/skills (link targets untouched). */
   deleteSkillEntry(entryPath: string): Promise<{ ok: boolean; error?: string }>
   /** Read-only Finder reveal of the row's skill file. */
   revealSkill(target: string): Promise<boolean>
+  /** Packages-section report for one directory (ticket 64; null = the
+   * global face — no project layer). `force` re-probes. */
+  listPackages(cwd: string | null, force: boolean): Promise<PackagesReport>
+  /** Package toggle — writes the pi-config filter format into the
+   * scope's settings.json (project writes are trust-gated in main). */
+  togglePackage(
+    scope: 'global' | 'project',
+    source: string,
+    enable: boolean,
+    cwd: string | null
+  ): Promise<{ ok: boolean; error?: string }>
+  /** Install/remove one package through the SDK's own package manager
+   * (op host, one at a time); progress streams to onPackagesProgress. */
+  installPackage(source: string, local: boolean, cwd: string | null): Promise<PackagesOpOutcome>
+  removePackage(source: string, local: boolean, cwd: string | null): Promise<PackagesOpOutcome>
+  /** Live progress of a running install/remove (op host relay). */
+  onPackagesProgress(listener: (event: PackagesProgressEvent) => void): () => void
 }
 
 declare global {

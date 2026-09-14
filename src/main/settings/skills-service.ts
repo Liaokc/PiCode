@@ -95,24 +95,33 @@ export class SkillsService {
   private async runProbe(cwd: string | null): Promise<SkillsReport> {
     try {
       const report = await this.probe(cwd, this.agentDirOverride ?? process.env['PICODE_PI_AGENT_DIR'] ?? null)
-      if (
-        report.skills !== undefined &&
-        report.skillsError !== undefined &&
-        isSkillsReport({
-          cwd: report.skillsCwd ?? null,
-          scannedAt: report.skillsScannedAt ?? 0,
-          rows: report.skills,
-          error: report.skillsError ?? null
-        })
-      ) {
-        const payload: SkillsReport = {
-          cwd: report.skillsCwd ?? null,
-          scannedAt: report.skillsScannedAt ?? report.scannedAt,
-          rows: report.skills,
-          error: report.skillsError ?? null
+      if (report.skills === undefined || report.skillsError === undefined) {
+        return {
+          cwd,
+          scannedAt: Date.now(),
+          rows: [],
+          error: report.error ?? 'The skills probe returned no enumeration.'
         }
+      }
+      const payload: SkillsReport = {
+        cwd: report.skillsCwd ?? null,
+        scannedAt: report.skillsScannedAt ?? report.scannedAt,
+        rows: report.skills,
+        error: report.skillsError ?? null,
+        // Ticket 67: the probed cwd's trust state rides the same probe
+        // report (computed for the Packages section) — the Project-skills
+        // group headers surface it honestly.
+        trust: report.projectTrust ?? null
+      }
+      if (isSkillsReport(payload)) {
         this.cache.set(cwd ?? '', payload)
         return payload
+      }
+      return {
+        cwd,
+        scannedAt: Date.now(),
+        rows: [],
+        error: 'The skills probe returned a malformed enumeration.'
       }
       return {
         cwd,

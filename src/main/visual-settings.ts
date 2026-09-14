@@ -9,7 +9,8 @@
  *   4. Appearance section — theme placeholder
  *   5. Skills section (ticket 63) — the full state vocabulary: source
  *      badges, disabled row, broken link, per-skill switches
- *   6. Packages placeholder (ticket 63 nav slot, ticket 64 delivers)
+ *   6. Packages section (ticket 64) — source badges, component counts,
+ *      a disabled package, project layer + untrusted banner
  *
  * PNGs land in $PICODE_VISUAL_OUT (default: <cwd>/.scratch/visual/). Not part
  * of `npm test`; a human compares them against the reference screenshots.
@@ -163,9 +164,12 @@ export function startSettingsVisualIfEnabled(getWindow: () => BrowserWindow | nu
       await sleep(400)
       await capture(win, 's5-settings-skills')
 
-      // 6. Packages placeholder (nav slot for ticket 64).
+      // 6. Packages section (ticket 64): the fake-settings fixture serves
+      // the deterministic enumeration — npm/git/local badges, a disabled
+      // package, component counts, a project layer with the untrusted
+      // banner — so the frame shows the whole state vocabulary.
       if (!(await clickNavItem(wc, 'Packages'))) throw new Error('settings visual: Packages nav item missing')
-      await sleep(300)
+      await sleep(400)
       await capture(win, 's6-settings-packages')
 
       console.log('VISUAL settings done')

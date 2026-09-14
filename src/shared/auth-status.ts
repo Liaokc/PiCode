@@ -9,6 +9,7 @@
  */
 
 import type { ThinkingLevel } from './contract.ts'
+import { isPackagesReport, type PackagesReport } from './packages-management.ts'
 import { isSkillsReport, type SkillsReport } from './skills-management.ts'
 
 export type AuthMethod = 'api_key' | 'oauth'
@@ -75,6 +76,19 @@ export interface AuthProbeReport {
   skillsError?: string | null
   skillsScannedAt?: number
   skillsCwd?: string | null
+  /**
+   * Ticket 64 (additive, operator-approved): the Packages-section report
+   * for the probed working directory — global packages, the project layer
+   * (cwd/.pi/settings.json), and the read-only project trust state.
+   * Reports from older probes omit the field; consumers treat absence as
+   * "not enumerated".
+   */
+  packages?: PackagesReport['global']
+  projectPackages?: PackagesReport['project']
+  packagesError?: string | null
+  packagesScannedAt?: number
+  packagesCwd?: string | null
+  projectTrust?: PackagesReport['trust']
 }
 
 /** One raw row of the probe's command catalog (prompt template or skill). */
@@ -162,6 +176,18 @@ export function isAuthProbeReport(value: unknown): value is AuthProbeReport {
       rows: record['skills'],
       error: record['skillsError'] ?? null
     })
+  // Ticket 64: the packages block rides the same report; all-or-nothing per
+  // field so a partial packages enumeration degrades to "not enumerated".
+  const packagesOk =
+    record['packages'] === undefined ||
+    isPackagesReport({
+      cwd: record['packagesCwd'] ?? null,
+      scannedAt: typeof record['packagesScannedAt'] === 'number' ? record['packagesScannedAt'] : 0,
+      global: record['packages'],
+      project: record['projectPackages'] ?? [],
+      trust: record['projectTrust'] ?? null,
+      error: record['packagesError'] ?? null
+    })
   return (
     typeof record['scannedAt'] === 'number' &&
     (record['error'] === null || typeof record['error'] === 'string') &&
@@ -170,6 +196,7 @@ export function isAuthProbeReport(value: unknown): value is AuthProbeReport {
     Array.isArray(record['models']) &&
     record['models'].every(isModelCatalogEntry) &&
     commandsOk &&
-    skillsOk
+    skillsOk &&
+    packagesOk
   )
 }

@@ -36,9 +36,11 @@ import type { SessionDefaults } from '../shared/preferences'
 import { buildSessionTree, extractTranscriptItems, type RawSessionEntry } from '../shared/sessions/parse'
 import type { SessionTreePayload } from '../shared/sessions/types'
 import { toolResultText } from '../shared/tool-format'
+import { isPackagesOpDescriptor, packagesOpRefusal, type PackagesOpDescriptor } from '../shared/packages-management'
 import { homedir } from 'node:os'
 import { ApprovalGate } from './approval-gate'
 import { runAuthProbe } from './auth-probe'
+import { runOpWithManager } from './packages-op'
 import {
   PICODE_BUILTIN_COMMANDS,
   buildSlashCommands,
@@ -752,6 +754,56 @@ if (process.argv[2] === '--auth-probe') {
     // Give the IPC message a moment to flush before exiting.
     setTimeout(() => process.exit(0), 100).unref?.()
   })
+} else if (process.argv[2] === '--packages-op') {
+  // Ticket 64 packages op: a short-lived host-family process performing ONE
+  // install/remove through the SDK's own package manager (the exact code
+  // path pi install/remove run), relaying progress events and reporting an
+  // outcome. The descriptor arrives as argv JSON (validated before use);
+  // the trust gate mirrors pi install -l — an untrusted project refuses
+  // project-scope writes before anything touches the disk.
+  void (async () => {
+    let descriptor: PackagesOpDescriptor | null = null
+    try {
+      const parsed: unknown = JSON.parse(process.argv[3] ?? 'null')
+      descriptor = isPackagesOpDescriptor(parsed) ? parsed : null
+    } catch {
+      descriptor = null
+    }
+    if (descriptor === null) {
+      process.send?.({ ok: false, error: 'Malformed packages op descriptor.' })
+      setTimeout(() => process.exit(1), 100).unref?.()
+      return
+    }
+    const send = (message: unknown): void => {
+      process.send?.(message)
+    }
+    try {
+      const sdk = await import('@earendil-works/pi-coding-agent')
+      const agentDir = descriptor.agentDir !== null && descriptor.agentDir.trim() !== '' ? descriptor.agentDir : sdk.getAgentDir()
+      // Trust gate (the same derivation the probe reports): a saved
+      // trust.json decision wins; otherwise defaultProjectTrust decides.
+      // SettingsManager starts project-untrusted and is flipped only when
+      // the derivation trusts — the SDK's own assert then backs the gate.
+      const settingsManager = sdk.SettingsManager.create(descriptor.cwd, agentDir, { projectTrusted: false })
+      const trustStore = new sdk.ProjectTrustStore(agentDir)
+      const saved = trustStore.get(descriptor.cwd)
+      const projectTrusted = saved !== null ? saved : settingsManager.getDefaultProjectTrust() === 'always'
+      settingsManager.setProjectTrusted(projectTrusted)
+      const refusal = packagesOpRefusal(descriptor.local, projectTrusted)
+      if (refusal !== null) {
+        send({ ok: false, error: refusal })
+        setTimeout(() => process.exit(0), 100).unref?.()
+        return
+      }
+      const manager = new sdk.DefaultPackageManager({ cwd: descriptor.cwd, agentDir, settingsManager })
+      const outcome = await runOpWithManager(manager, descriptor, (event) => send(event))
+      send(outcome)
+      setTimeout(() => process.exit(outcome.ok ? 0 : 1), 200).unref?.()
+    } catch (err) {
+      send({ ok: false, error: err instanceof Error ? err.message : String(err) })
+      setTimeout(() => process.exit(1), 100).unref?.()
+    }
+  })()
 } else {
   boot()
 }

@@ -1574,26 +1574,6 @@ kbd {
   background: var(--bg-main);
 }
 
-.settings-placeholder {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding-bottom: 18vh;
-}
-
-.settings-placeholder-title {
-  font-size: 17px;
-  font-weight: 600;
-}
-
-.settings-placeholder-body {
-  font-size: 13px;
-  color: var(--text-secondary);
-}
-
 /* ---------- settings sections (ticket 11) ---------- */
 
 .settings-page {
@@ -1944,11 +1924,13 @@ kbd {
 .settings-skills-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
+  gap: 10px;
   margin-bottom: 10px;
 }
 
 .settings-skills-count {
+  margin-right: 2px;
   font-size: 12px;
   color: var(--text-secondary);
 }
@@ -2206,6 +2188,206 @@ kbd {
 
 .skill-confirm-delete:hover {
   filter: brightness(1.06);
+}
+
+/* ---- Packages section (ticket 64) ---- */
+
+.settings-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-card-head-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.settings-card-head-note {
+  display: block;
+  margin-top: 2px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.packages-install {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* ---- Skills section split + search entries (ticket 67) ---- */
+
+.settings-skill-search {
+  margin-bottom: 16px;
+}
+
+.settings-skill-search-input,
+.settings-project-search-input {
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-inset);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.settings-skill-search-input {
+  width: 100%;
+}
+
+.settings-project-search-input {
+  width: 200px;
+}
+
+.settings-skill-search-input::placeholder,
+.settings-project-search-input::placeholder {
+  color: var(--text-faint);
+}
+
+.settings-skill-search-input:focus,
+.settings-project-search-input:focus {
+  outline: none;
+  border-color: var(--accent-orange);
+}
+
+.project-skill-group {
+  padding: 10px 0 4px;
+}
+
+.project-skill-group + .project-skill-group {
+  border-top: 1px solid var(--border);
+}
+
+.project-skill-group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 4px 8px;
+}
+
+.project-skill-group-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.project-skill-group-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.project-skill-group-path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-projects-summary {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+
+.packages-install-input {
+  flex: 1;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-inset);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.packages-install-input::placeholder {
+  font-family: inherit;
+  color: var(--text-faint);
+}
+
+.packages-install-input:focus {
+  outline: none;
+  border-color: var(--accent-orange);
+}
+
+.packages-install-input:disabled {
+  opacity: 0.55;
+}
+
+.packages-install-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: var(--accent-orange);
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffffff;
+  flex: none;
+}
+
+.packages-install-btn:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.packages-install-btn:disabled {
+  opacity: 0.55;
+}
+
+.packages-op-progress {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.packages-security-note {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-faint);
+}
+
+.packages-untrusted-banner {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--accent-orange);
+  background: var(--bg-inset);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+
+.packages-counts {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.pkg-source {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.skill-badge-trusted {
+  background: var(--bg-inset);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
 }
 
 .settings-note-error {
