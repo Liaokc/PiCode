@@ -6,7 +6,7 @@
 
 **Blocked by:** 64（分支 t67 叠于 t64 之上——复用 64 的双卡样式与 PackagesSection 模式；合并顺序必须 64 → 67）。
 
-**Status:** claimed
+**Status:** ready-for-human
 
 - [ ] shared 纯投影：`partitionSkillRows(rows) → { global, project }` + `filterSkillRows(rows, query)`（名称/描述/路径子串）+ `projectListFromSummaries(summaries)`（去重 cwd → {cwd,name,sessionCount,latest}）+ SkillsReport additive 可选 `trust`（守卫兼容旧载荷）——表驱动测试
 - [ ] main：`settings:projects` IPC（additive）——SessionIndexService 派生 + hasProjectTrustResources 预筛（fs 注入）；fake 分支 fixture（visual 帧）；SkillsService 透传 report.projectTrust → SkillsReport.trust
@@ -19,4 +19,10 @@
 
 ## Comments
 
+- 2026-09-14 (done): 全验收项通过，提交 **149a5d6**（分支 t67-skills-section-split，叠于 t64 的 4220a93 之上，未自行 merge——**合并顺序必须 64 → 67**，请操作者/合并会话先执行 `bash scripts/merge-ticket.sh 64` 再执行 `bash scripts/merge-ticket.sh 67`）。
+  - Gates：typecheck 双 tsconfig 绿；eslint 0 error（1 条 pre-existing warning）；vitest **1313 全绿**（+9：partitionSkillRows / filterSkillRows / projectListFromSummaries / filterKnownProjects / SkillsReport.trust 守卫）；visual s5 帧重拍（双卡 + 双搜索框 + api 项目组 TRUSTED chip）；electron smoke 全绿（63 阶段沙箱行在 Global 卡断言 + 64 阶段不受扰 + 零孤儿 host）；跑前 ps 复核每轮执行。
+  - **Additive 报备**：SkillsReport 增可选 `trust`（probe 已算的 projectTrust 透传，旧载荷照常过守卫）；新 IPC `settings:projects`（SessionIndexService 派生 + hasProjectTrustResources fs 预筛——真实库 59 个项目只剩真实候选）；preload/env.d.ts 桥增 listProjects。卡头三件套 .packages-card-header/-title/-file-note 通用化为 .settings-card-head/-title/-note（Packages/Skills 共用）。
+  - **顺带修复（票 63 潜伏 bug）**：probe-runner 在 cwd 为空时少传占位——agentDir 参数错位到 cwd 槽，probe 静默用了真实 agent dir。此前所有调用方都传非空 cwd 从未触发；67 的 Global 卡固定探测 null 面首次踩中（冒烟诊断抓到：Global 卡渲染了操作者真实 69 技能而非沙箱行）。修复：cwd 槽恒占位空串，host 端回退 home。
+  - 设计落点记录：默认不自动扫全 59 项目（fs 预筛后逐候选探测，4 并发批次渐进渲染）；空项目组折叠为汇总行；技能搜索 = 节顶部一框过滤两卡行，项目搜索 = Project 卡内过滤组；untrusted 项目组头 Not trusted chip（行仍可见，供管理）。
+  - 冒烟环境备注：hover/焦点类阶段（35/44/46）对机器占用敏感，本轮多次失败重试后全绿，失败点每轮不同，与本票改动无关。
 - 2026-09-14 (claim): 操作者拍板「分为全局技能和项目技能进行展示」。实施会话认领（worktree wt-67-skills-section-split / 分支 t67-skills-section-split，叠于 t64 的 4220a93 之上）。开工前 ps 复核：无其他 PiCode Electron/dev-app/smoke 进程在跑。
