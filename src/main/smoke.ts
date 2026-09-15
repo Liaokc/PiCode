@@ -82,6 +82,14 @@
  * state (re-press retracts), and the expand button's tooltip carries the
  * ⌘E keycap only (Tooltip discipline).
  *
+ * Ticket 68 adds the menu-surface stage right after the retired-slash
+ * stage: the shared trigger surface — a multi-line `/` report never
+ * haunts the composer with a menu (open only while the caret sits inside
+ * the leading token), a mid-text @ never opens the file menu, zero
+ * matches render NO menu at all, and Enter on a zero-match /skill:...
+ * sends the raw text straight through to the SDK (user_message observed,
+ * no retired-slash toast, composer cleared).
+ *
  * Any missed step times out and exits non-zero. Progress logs as
  * `SMOKE <step>` lines on stdout. Not part of `npm test`.
  */
@@ -124,10 +132,10 @@ const composerTypeJs = (text: string): string => `(() => {
   ta.focus()
   return true
 })()`
-const composerKeyJs = (key: string): string => `(() => {
+const composerKeyJs = (key: string, mods: Record<string, boolean> = {}): string => `(() => {
   const ta = document.querySelector('.composer-input')
   if (!(ta instanceof HTMLTextAreaElement)) return false
-  ta.dispatchEvent(new KeyboardEvent('keydown', { key: '${key}', bubbles: true, cancelable: true }))
+  ta.dispatchEvent(new KeyboardEvent('keydown', { key: '${key}', bubbles: true, cancelable: true, ...${JSON.stringify(mods)} }))
   return true
 })()`
 const composerClearJs = `(() => {
@@ -607,6 +615,114 @@ export function startSmokeIfEnabled(
       await win.webContents.executeJavaScript(composerClearJs)
     })
     log('slash_gate_done')
+
+    // ---- ticket 68: the trigger surface — a multi-line `/` report never
+    // haunts the composer with a menu (open only while the caret sits in
+    // the leading token), a mid-text @ never opens the file menu (same
+    // table), zero matches render NO menu at all, and Enter on a zero-match
+    // /skill:... sends the raw text straight through to the SDK (the
+    // retired-slash gate must stay silent — the turn it starts dies with
+    // the SIGKILL in the crash-isolation stage right after). ----
+    log('menu_surface_start')
+    await withWindow(getWindow, async (win) => {
+      // The text menus' row classes are unique to them (the chip menus
+      // share .cmp-menu-list, so that class proves nothing here).
+      const textMenuOpenJs =
+        `document.querySelector('.cmp-popover .cmp-cmd-name') !== null || document.querySelector('.cmp-popover .cmp-file-row') !== null`
+
+      // ① The leading token still opens the menu (positive trigger).
+      if (!(await win.webContents.executeJavaScript(composerTypeJs('/')).catch(() => false))) {
+        fail('composer textarea missing for the menu-surface stage')
+      }
+      let opened = false
+      for (let waited = 0; waited < 5_000; waited += 100) {
+        if ((await win.webContents.executeJavaScript(textMenuOpenJs).catch(() => false))) {
+          opened = true
+          break
+        }
+        await new Promise((r) => setTimeout(r, 100))
+      }
+      if (!opened) fail('typing "/" never opened the slash menu (ticket 68 stage)')
+      log('menu_surface_leading_token_ok')
+
+      // ①b Shift+Enter with the menu open must NEVER pick a row or send —
+      // it inserts a newline (the native insert a real keydown produces;
+      // the synthetic event can't, so the honest proxy is: value unchanged,
+      // zero session traffic, menu still on the same token). The pre-fix
+      // handler picked row 0 here — visible as a rewritten composer.
+      let shiftSent = 0
+      const onShiftSend = (event: Scoped): void => {
+        if (event.type === 'user_message') shiftSent++
+      }
+      observers.push(onShiftSend)
+      if (!(await win.webContents.executeJavaScript(composerKeyJs('Enter', { shiftKey: true })).catch(() => false))) {
+        fail('composer textarea missing for the Shift+Enter probe')
+      }
+      await new Promise((r) => setTimeout(r, 500))
+      observers.splice(observers.indexOf(onShiftSend), 1)
+      const shiftValue = (await win.webContents.executeJavaScript(
+        `document.querySelector('.composer-input')?.value ?? 'missing'`
+      ).catch(() => 'probe-failed')) as string
+      if (shiftValue !== '/') fail(`Shift+Enter with the menu open rewrote the composer: ${JSON.stringify(shiftValue)}`)
+      if (shiftSent > 0) fail(`Shift+Enter with the menu open sent ${shiftSent} message(s)`)
+      if (!(await win.webContents.executeJavaScript(textMenuOpenJs).catch(() => true))) {
+        fail('the slash menu vanished on Shift+Enter before any newline landed')
+      }
+      log('menu_surface_shift_enter_ok')
+
+      // ② Typing the multi-line report: the first space closes the menu and
+      // no later line ever brings it back (pi16-slash-menu-multiline).
+      for (const line of ['/Report title', '/Report title\nbody line', '/Report title\nbody line\n/three']) {
+        if (!(await win.webContents.executeJavaScript(composerTypeJs(line)).catch(() => false))) {
+          fail(`composer textarea missing while typing the report line ${JSON.stringify(line)}`)
+        }
+        await new Promise((r) => setTimeout(r, 300))
+        if (await win.webContents.executeJavaScript(textMenuOpenJs).catch(() => true)) {
+          fail(`the text menu is still rendered for ${JSON.stringify(line)}`)
+        }
+      }
+      log('menu_surface_multiline_ok')
+
+      // ③ A mid-text @ never opens the file menu (slash and @ share one
+      // trigger table — leading token only).
+      if (!(await win.webContents.executeJavaScript(composerTypeJs('see @src for details')).catch(() => false))) {
+        fail('composer textarea missing for the mid-text @ probe')
+      }
+      await new Promise((r) => setTimeout(r, 300))
+      if (await win.webContents.executeJavaScript(textMenuOpenJs).catch(() => true)) {
+        fail('the file menu opened for a mid-text @ trigger')
+      }
+      await win.webContents.executeJavaScript(composerClearJs)
+      log('menu_surface_at_midtext_ok')
+
+      // ④ Zero matches render no menu; Enter sends the raw text — the SDK
+      // passes the unknown command through untouched.
+      const zeroMatch = '/skill:zzzqqq'
+      const zeroSent = waitFor(
+        (e) => e.type === 'user_message' && e.text === zeroMatch,
+        'zero-match slash command delivered'
+      )
+      if (!(await win.webContents.executeJavaScript(composerTypeJs(zeroMatch)).catch(() => false))) {
+        fail('composer textarea missing for the zero-match probe')
+      }
+      await new Promise((r) => setTimeout(r, 500))
+      if (await win.webContents.executeJavaScript(textMenuOpenJs).catch(() => true)) {
+        fail('a menu rendered for a zero-match /skill: query')
+      }
+      await win.webContents.executeJavaScript(composerKeyJs('Enter'))
+      await zeroSent
+      await new Promise((r) => setTimeout(r, 1_500))
+      const noToast = await win.webContents.executeJavaScript(
+        `[...document.querySelectorAll('.toast-message')].every((n) => !(n.textContent ?? '').includes('/skill'))`
+      ).catch(() => false)
+      if (!noToast) fail('the zero-match send raised a retired-slash toast')
+      const cleared = (await win.webContents.executeJavaScript(
+        `document.querySelector('.composer-input')?.value ?? 'missing'`
+      ).catch(() => 'probe-failed')) as string
+      if (cleared !== '') fail(`the zero-match send left text in the composer: ${JSON.stringify(cleared)}`)
+      log('menu_surface_zero_match_send_ok')
+    })
+    log('menu_surface_done')
 
     // Crash isolation: SIGKILL the host; supervisor must report it unclean —
     // and scoped to exactly the session that died (ticket 20).

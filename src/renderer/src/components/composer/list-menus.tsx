@@ -1,32 +1,32 @@
 import { type JSX, type KeyboardEvent } from 'react'
 import type { SlashCommandItem } from '../../../../shared/contract'
-import { filterCommands, pickCommand } from '../../../../shared/composer/commands'
-import { filterFiles } from '../../../../shared/composer/mention'
+import { pickCommand } from '../../../../shared/composer/commands'
 import { ComposerPopover, MenuHint, MenuRow, flatMenuKey } from './menus'
 
 /**
  * The `/` command menu (screenshot 06): `/name` bold + description gray,
- * fuzzy-filtered, keyboard navigable, docked above the composer.
+ * keyboard navigable, docked above the composer. Ticket 68: the composer
+ * owns the trigger surface AND the filtering, and mounts this menu only
+ * when rows exist — the zero-match state renders nothing (the "No matching
+ * commands" box is gone) and Enter falls back to the send path.
  */
 export function SlashMenu({
-  commands,
-  query,
+  rows,
   index,
   onIndex,
   onInsert,
   onBuiltin,
   onClose
 }: {
-  commands: SlashCommandItem[]
-  query: string
+  /** Pre-filtered rows; never empty (the composer gates on that). */
+  rows: SlashCommandItem[]
   index: number
   onIndex: (i: number) => void
   onInsert: (text: string) => void
   onBuiltin: (name: string) => void
   onClose: () => void
 }): JSX.Element {
-  const rows = filterCommands(commands, query)
-  const clamped = rows.length === 0 ? 0 : Math.min(index, rows.length - 1)
+  const clamped = Math.min(index, rows.length - 1)
 
   function pick(i: number): void {
     const row = rows[i]
@@ -56,7 +56,6 @@ export function SlashMenu({
               </span>
             </MenuRow>
           ))}
-          {rows.length === 0 && <div className="cmp-menu-empty">No matching commands</div>}
         </div>
         <MenuHint />
       </>
@@ -67,24 +66,24 @@ export function SlashMenu({
 /**
  * The @-mention file menu: ranked candidate paths from the host's
  * `file_list` reply (correlated by requestId outside this component).
+ * Ticket 68: same rule as the slash menu — pre-filtered by the composer,
+ * mounted only when rows exist, never a "No matching files" box.
  */
 export function FileMenu({
-  files,
-  query,
+  rows,
   index,
   onIndex,
   onPick,
   onClose
 }: {
-  files: string[]
-  query: string
+  /** Pre-filtered rows; never empty (the composer gates on that). */
+  rows: string[]
   index: number
   onIndex: (i: number) => void
   onPick: (path: string) => void
   onClose: () => void
 }): JSX.Element {
-  const rows = filterFiles(files, query)
-  const clamped = rows.length === 0 ? 0 : Math.min(index, rows.length - 1)
+  const clamped = Math.min(index, rows.length - 1)
 
   function pick(i: number): void {
     const row = rows[i]
@@ -106,7 +105,6 @@ export function FileMenu({
               <span className="cmp-file-row">{renderPath(row)}</span>
             </MenuRow>
           ))}
-          {rows.length === 0 && <div className="cmp-menu-empty">No matching files</div>}
         </div>
         <MenuHint />
       </>
