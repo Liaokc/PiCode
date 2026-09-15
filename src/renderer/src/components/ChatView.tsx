@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import type { ChatEntry, ChatState } from '../../../shared/chat-reducer'
-import { isNearBottom, shouldAutoScroll } from '../../../shared/scroll-stay'
+import { isNearBottom, nextHeldAway, shouldAutoScroll } from '../../../shared/scroll-stay'
 import { groupTurns } from '../../../shared/turn-collapse'
 import type { SessionTreePayload } from '../../../shared/sessions/types'
 import Composer, { type ComposerApi } from './Composer'
@@ -82,6 +82,12 @@ export default function ChatView({
   const sendPin = useRef(false)
   const returning = useRef(false)
   const lastScrollTop = useRef(0)
+  // Ticket 75 adds the reader-held-away latch: any upward scroll movement
+  // holds the viewport away from the bottom (the wheel always wins); a
+  // downward return into the bottom band, the user's own send or a
+  // jump-to-latest click clears it. Ref-only — the scroll listener and the
+  // stick effect write it, the stick effect reads it: zero extra renders.
+  const heldAway = useRef(false)
   const [jumpVisible, setJumpVisible] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [draft, setDraft] = useState('')
@@ -102,7 +108,10 @@ export default function ChatView({
   // shouldAutoScroll — the viewport pins to the bottom only while the reader
   // is already near it or their own agency asks for it (send / jump click).
   // Growth alone NEVER yanks a reader who scrolled away (Q12 behavior
-  // change). A freshly focused transcript has no reading position to
+  // change), and — ticket 75 — never one who wheeled up either: an upward
+  // scroll gesture sets the held-away latch and mutes the in-band strong
+  // stick until they return to the bottom band or their own agency asks.
+  // A freshly focused transcript has no reading position to
   // preserve, so arrival pins the bottom until the content has landed
   // (a resumed session arrives over two passes: session_created empties the
   // transcript, history_loaded replays it).
@@ -115,6 +124,7 @@ export default function ChatView({
       arrivalPending.current = true
       lastEntries.current = null
       lastTurns.current = null
+      heldAway.current = false
     }
     const grew = chat.entries !== lastEntries.current || chat.expandedTurns !== lastTurns.current
     lastEntries.current = chat.entries
@@ -127,8 +137,16 @@ export default function ChatView({
       if (chat.entries.length > 0) arrivalPending.current = false
       return
     }
+    // Ticket 75: a movement whose scroll event has not delivered yet (it
+    // landed between the last scroll event and this pass) reads here via
+    // the live delta — the same transition the scroll listener runs, so a
+    // gesture can never be coalesced away by a same-frame growth yank.
+    heldAway.current = nextHeldAway(heldAway.current, el.scrollTop - lastScrollTop.current, el)
+    // The user's own agency (own send, jump travel) asks for the bottom and
+    // clears the hold (自发送/跳转复位).
+    if (selfSent) heldAway.current = false
     const nearBottom = isNearBottom(el)
-    if (shouldAutoScroll({ nearBottom }, { grew }, selfSent)) {
+    if (shouldAutoScroll({ nearBottom, heldAway: heldAway.current }, { grew }, selfSent)) {
       el.scrollTop = el.scrollHeight
     }
     setJumpVisible(!isNearBottom(el))
@@ -137,12 +155,17 @@ export default function ChatView({
   // Ticket 45: track the reader's position for the Jump-to-Latest button,
   // and end the jump travel when it arrives — or when the user scrolls
   // upward mid-travel (their wheel took over; the pin must not survive it
-  // and yank them back on the next growth pass).
+  // and yank them back on the next growth pass). Ticket 75 rides the same
+  // scroll stream: any real upward movement holds the viewport away (the
+  // wheel always wins), a downward return into the bottom band clears it
+  // (the next growth pass resumes following — 滚回底部恢复吸底).
   function handleScroll(): void {
     const el = scrollRef.current
     if (!el) return
     const top = el.scrollTop
-    if (returning.current && (isNearBottom(el) || top < lastScrollTop.current - 1)) {
+    const moved = top - lastScrollTop.current
+    heldAway.current = nextHeldAway(heldAway.current, moved, el)
+    if (returning.current && (isNearBottom(el) || moved < -1)) {
       returning.current = false
     }
     lastScrollTop.current = top
@@ -156,6 +179,7 @@ export default function ChatView({
     const el = scrollRef.current
     if (!el) return
     returning.current = true
+    heldAway.current = false // 跳转复位 — the click re-engages the bottom
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     el.scrollTo({ top: el.scrollHeight, behavior: reduced ? 'auto' : 'smooth' })
   }
