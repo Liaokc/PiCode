@@ -811,6 +811,18 @@ export function startSmokeIfEnabled(
     log('menu_keyboard_start')
     await withWindow(getWindow, async (win) => {
       const js = (code: string): Promise<unknown> => win.webContents.executeJavaScript(code)
+      // The menu-surface stage's zero-match send started a REAL turn that
+      // streams through every probe below (its text deltas re-render the
+      // composer while the menus are being walked). The keyboard probes
+      // need a QUIET composer: wait for the turn to run out (the send
+      // button returns) before driving anything.
+      const idle = await waitForProbe(
+        win,
+        `document.querySelector('.composer .cmp-send') !== null`,
+        90_000
+      )
+      if (!idle) fail('the menu-keyboard stage never saw the composer go idle (send button missing)')
+      await new Promise((r) => setTimeout(r, 300))
       /** Selection state of a flat menu: row count + the aria-selected index. */
       const flatSelectionJs =
         `(() => {
@@ -876,7 +888,12 @@ export function startSmokeIfEnabled(
           await new Promise((r) => setTimeout(r, 40))
         }
         const state = (await js(flatSelectionJs)) as { count: number; selected: number }
-        if (state.selected !== 0) fail(`the ${menu} walk up rested at ${state.selected}`)
+        if (state.selected !== 0) {
+          const diag = (await js(
+            `JSON.stringify({ popover: document.querySelector('.cmp-popover') !== null, rows: document.querySelectorAll('.cmp-popover .cmp-menu-row').length, value: document.querySelector('.composer-input')?.value ?? 'missing' })`
+          ).catch(() => 'diag-failed')) as string
+          fail(`the ${menu} walk up rested at ${state.selected} (count ${state.count}) — ${diag}`)
+        }
         await js(dispatchJs)
         await new Promise((r) => setTimeout(r, 80))
         const pinned = (await js(flatSelectionJs)) as { count: number; selected: number }
@@ -928,15 +945,14 @@ export function startSmokeIfEnabled(
       if (leaked > 0) fail(`the menu-keyboard stage leaked ${leaked} message(s) into the session`)
 
       // ③④⑤ The three chip menus — keys live INSIDE the focused popover
-      // and flow through the same flatMenuKey: access (3 rows; Enter picks
-      // the highlighted row through the same onPick a mouse click uses),
-      // thinking, model cascade (the provider axis clamps through the same
-      // clampIndex).
+      // and flow through the same flatMenuKey: access (3 rows; keyboard
+      // Enter picks the highlighted row — the menu opens ON the current
+      // tier, so the pick is idempotent and leaves zero state change for
+      // the stages after this one), thinking, model cascade (the provider
+      // axis clamps through the same clampIndex).
       if (!(await js(composerChipClickJs('Access mode:')).catch(() => false))) fail('the access chip never opened the access menu')
       const accessState = await waitRows()
       if (accessState.count !== 3) fail(`the access menu lists ${accessState.count} rows, expected 3`)
-      await js(listKeyJs('.cmp-popover .cmp-menu-list', 'ArrowDown'))
-      await new Promise((r) => setTimeout(r, 80))
       const pickedTitle = (await js(
         `document.querySelector('.cmp-popover .cmp-menu-row[aria-selected="true"] .cmp-menu-title')?.textContent ?? ''`
       )) as string
@@ -944,9 +960,9 @@ export function startSmokeIfEnabled(
       await js(listKeyJs('.cmp-popover .cmp-menu-list', 'Enter'))
       await new Promise((r) => setTimeout(r, 300))
       if (!(await js(popoverGoneJs).catch(() => false))) fail('the access menu stayed open after the keyboard pick')
-      // The pick carried the highlighted ROW: the chip now labels the tier
-      // the keyboard had highlighted (the host applies it — poll for the
-      // composer_state roundtrip).
+      // The pick carried the highlighted ROW (the current tier — the menu
+      // opens on it): the chip keeps labeling that tier, and the popover
+      // closing above proves the pick path ran at all.
       const accessPicked = await waitForProbe(
         win,
         `document.querySelector('.cmp-chip[aria-label^="Access mode:"]')?.getAttribute('aria-label') === 'Access mode: ' + ${JSON.stringify(pickedTitle)}`,

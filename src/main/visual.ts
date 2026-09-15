@@ -1014,16 +1014,17 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
         await sleep(100)
       }
       if (slashProbe.count !== 12) throw new Error(`visual 4c: expected the full 12-row command menu, got ${JSON.stringify(slashProbe)}`)
+      let lastProbe = slashProbe
       for (let step = 1; step <= 11; step++) {
         await win.webContents.executeJavaScript(menuKeyJs('.composer-input', 'ArrowDown'))
         await sleep(70)
-        const probe = (await win.webContents.executeJavaScript(menuScrollProbeJs('.cmp-popover'))) as typeof slashProbe
-        if (probe.selected !== step) throw new Error(`visual 4c: after ${step} ArrowDowns the selection is ${probe.selected} (clamp walk broken)`)
-        if (!probe.ok) throw new Error(`visual 4c: the selected row left the visible list at step ${step} (scroll follow broken)`)
+        lastProbe = (await win.webContents.executeJavaScript(menuScrollProbeJs('.cmp-popover'))) as typeof slashProbe
+        if (lastProbe.selected !== step) throw new Error(`visual 4c: after ${step} ArrowDowns the selection is ${lastProbe.selected} (clamp walk broken)`)
+        if (!lastProbe.ok) throw new Error(`visual 4c: the selected row left the visible list at step ${step} (scroll follow broken)`)
         if (step === 10) await captureMenu(win, '4c-menu-scroll-follow', { menuRows: '.cmp-popover .cmp-menu-row' })
       }
       await captureMenu(win, '4d-menu-scroll-bottom', { menuRows: '.cmp-popover .cmp-menu-row' })
-      console.log(`VISUAL probe 4d-menu-scroll-bottom: selected=${slashProbe.selected} of ${slashProbe.count} visible=${slashProbe.ok}`)
+      console.log(`VISUAL probe 4d-menu-scroll-bottom: selected=${lastProbe.selected} of ${lastProbe.count} visible=${lastProbe.ok}`)
       // Close the text menu the way the surface does: clear the input —
       // a window-level Escape never reaches the textarea's menu handler.
       await win.webContents.executeJavaScript(
