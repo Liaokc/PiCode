@@ -1,6 +1,6 @@
 import { type JSX, type KeyboardEvent } from 'react'
 import type { SlashCommandItem } from '../../../../shared/contract'
-import { flatMenuKey } from '../../../../shared/composer/menu-keys'
+import { clampIndex, flatMenuKey } from '../../../../shared/composer/menu-keys'
 import { ComposerPopover, MenuHint, MenuRow } from './menus'
 
 /**
@@ -30,7 +30,7 @@ export function SlashMenu({
   onPickRow: (i: number) => void
   onClose: () => void
 }): JSX.Element {
-  const clamped = Math.min(index, rows.length - 1)
+  const clamped = clampIndex(index, rows.length)
 
   function onKey(event: KeyboardEvent): void {
     flatMenuKey(event, rows.length, clamped, onIndex, onPickRow, onClose)
@@ -82,7 +82,7 @@ export function FileMenu({
   onPickRow: (i: number) => void
   onClose: () => void
 }): JSX.Element {
-  const clamped = Math.min(index, rows.length - 1)
+  const clamped = clampIndex(index, rows.length)
 
   function onKey(event: KeyboardEvent): void {
     flatMenuKey(event, rows.length, clamped, onIndex, onPickRow, onClose)
