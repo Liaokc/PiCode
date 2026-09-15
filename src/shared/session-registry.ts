@@ -15,6 +15,8 @@
 
 import { chatReducer, initialChatState, type ChatAction, type ChatError, type ChatState } from './chat-reducer'
 import type { HostToParent } from './contract'
+import type { ComposerDraft } from './composer/drafts'
+import { parkedDraft } from './composer/drafts'
 import type { SessionTreePayload } from './sessions/types'
 
 /** View state of ONE session inside this app run. */
@@ -36,6 +38,12 @@ export interface RegistrySession {
   branch: string | null
   /** The error banner this session's user dismissed (per session, ticket 20). */
   dismissedError: ChatError | null
+  /** Composer draft slot (ticket 74): this session's unsent text+images,
+   * parked by the App when the view leaves and restored when the view
+   * remounts. Written only through `set_session_draft` (the 空槽不存 rule
+   * applies — an emptied draft clears the slot); a detach drops it with the
+   * entry; memory-level — a restart loses it. null = no draft parked. */
+  draft: ComposerDraft | null
 }
 
 export interface SessionRegistryState {
@@ -56,6 +64,7 @@ export type RegistryAction =
   | { type: 'toggle_turn_expanded'; turnId: string }
   | { type: 'focus_session'; sessionId: string }
   | { type: 'dismiss_error' }
+  | { type: 'set_session_draft'; sessionId: string; draft: ComposerDraft | null }
 
 // ---- pure queries ----
 
@@ -149,7 +158,7 @@ function withEntryFor(state: SessionRegistryState, id: string): SessionRegistryS
     ...state,
     sessions: [
       ...state.sessions,
-      { id, cwd: null, sessionFile: null, name: null, chat: initialChatState(), tree: null, branch: null, dismissedError: null }
+      { id, cwd: null, sessionFile: null, name: null, chat: initialChatState(), tree: null, branch: null, dismissedError: null, draft: null }
     ]
   }
 }
@@ -269,6 +278,20 @@ export function registryReducer(state: SessionRegistryState, action: RegistryAct
         sessions: state.sessions.map((s) =>
           s.id === focused ? { ...s, dismissedError: s.chat.error } : s
         )
+      }
+    }
+    case 'set_session_draft': {
+      // Ticket 74: the App parks the mounted composer's live draft into the
+      // addressed session's slot — at switch time (before the view changes)
+      // and after sends (an explicit null clears). The 空槽不存 rule applies
+      // here, so an emptied draft leaves no slot behind. Unknown ids are
+      // ignored: a park's owner always comes from a mounted ChatView, never
+      // from a session the registry has not seen.
+      if (findSession(state, action.sessionId) === undefined) return state
+      const draft = action.draft === null ? null : parkedDraft(action.draft)
+      return {
+        ...state,
+        sessions: state.sessions.map((s) => (s.id === action.sessionId ? { ...s, draft } : s))
       }
     }
     default:

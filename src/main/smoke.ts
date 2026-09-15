@@ -90,6 +90,16 @@
  * sends the raw text straight through to the SDK (user_message observed,
  * no retired-slash toast, composer cleared).
  *
+ * Ticket 74 adds the draft-preservation stage: the typed-but-unsent
+ * composer content (text + pasted images) survives every view switch —
+ * A/B per-session slots stay isolated across pure focus switches (which
+ * also used to LEAK the outgoing composer into the incoming session: the
+ * same Composer instance simply stayed mounted), a pasted-image draft
+ * round-trips with its thumbnail, the New Task single slot survives
+ * ⌘N → session → ⌘N and Escape, both send paths clear their slot
+ * naturally, and a renderer reload (the restart proxy) loses every draft
+ * — memory-level by design.
+ *
  * Any missed step times out and exits non-zero. Progress logs as
  * `SMOKE <step>` lines on stdout. Not part of `npm test`.
  */
@@ -5755,6 +5765,321 @@ export function startSmokeIfEnabled(
     } finally {
       rmSync(seedProject73, { recursive: true, force: true })
     }
+
+    // ---- ticket 74: composer draft preservation — the typed-but-unsent
+    // composer content (text + pasted images) survives every view switch:
+    // per-session slots in the session view registry + the New Task single
+    // slot at the App layer. Locked end to end here with two cheap real
+    // turns carrying the send assertions: A/B drafts stay isolated across
+    // pure focus switches (which ALSO used to leak the outgoing composer
+    // into the incoming session — the same Composer instance simply stayed
+    // mounted; the per-session view key breaks that), a pasted-image draft
+    // round-trips with its thumbnail, the New Task draft survives
+    // ⌘N → session → ⌘N and Escape, both send paths clear their slot
+    // naturally (nothing resurrects), and a renderer reload (the restart
+    // proxy, ticket-39/31 precedent) loses every draft — memory-level. ----
+    log('draft_preserve_start')
+    const store74 = process.env['PICODE_SESSION_DIR']
+    if (!store74) fail('ticket-74 stage: PICODE_SESSION_DIR is not set')
+    if (!created.sessionFile) fail('ticket-74 stage: no host-written session file to seed resume targets from')
+    const seedProject74 = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-seed74-'))
+    const DRAFT_A_74 = 'PICODE_74_DRAFT_A remember the milk'
+    const DRAFT_B_74 = 'PICODE_74_DRAFT_B feed the cat'
+    const NEWTASK_DRAFT_74 = 'PICODE_74_NEWTASK_DRAFT plan the garden'
+    const SEND_TEXT_74 = 'Reply with exactly: PICODE_74_SENT'
+    const NEWTASK_SEND_TEXT_74 = 'Reply with exactly: PICODE_74_SENT_NEWTASK'
+    try {
+      // Two resume targets: copies of the host-written session file (the
+      // proven-openable shape, ticket-73 precedent) with distinct ids, the
+      // stage's own fresh cwd (exists → normal rows; its own group → above
+      // the ticket-39 Show-more cut) and one marked seed turn each.
+      // Backdated mtimes = quiet; the first click on each takes the resume
+      // branch (no model traffic — resume replays history).
+      const template74 = readFileSync(created.sessionFile, 'utf8')
+      const fileA74 = path.join(store74, 'draft74-a.jsonl')
+      const fileB74 = path.join(store74, 'draft74-b.jsonl')
+      const seedResumeTarget74 = (file: string, seedText: string): void => {
+        const lines = template74.split('\n')
+        const header = JSON.parse(lines[0] ?? '{}') as { id?: string; cwd?: string }
+        header.id = randomUUID()
+        header.cwd = seedProject74
+        lines[0] = JSON.stringify(header)
+        lines.push(
+          JSON.stringify({
+            type: 'message',
+            id: `t74-${randomUUID().slice(0, 8)}`,
+            parentId: lastEntryId(template74),
+            timestamp: new Date().toISOString(),
+            message: { role: 'user', content: [{ type: 'text', text: seedText }] }
+          })
+        )
+        writeFileSync(file, lines.join('\n'))
+        backdateMtime(file)
+      }
+      seedResumeTarget74(fileA74, 'PICODE_74_A seed turn')
+      seedResumeTarget74(fileB74, 'PICODE_74_B seed turn')
+
+      await withWindow(getWindow, async (win) => {
+        const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+        // The sidebar may have been closed by an earlier stage —
+        // press-until-present (the ticket-73 pattern).
+        const sidebarPresent74 = `(document.querySelector('.sidebar') !== null)`
+        if (!((await js(sidebarPresent74)) as boolean)) {
+          await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', metaKey: true, bubbles: true })); true`)
+          await waitForProbe(win, sidebarPresent74, 5_000)
+        }
+        const rowA74 = `[data-file="${fileA74}"]`
+        const rowB74 = `[data-file="${fileB74}"]`
+        for (const [row, label] of [
+          [rowA74, 'A'],
+          [rowB74, 'B']
+        ] as Array<[string, string]>) {
+          if (!(await waitForProbe(win, `document.querySelector('${row}') !== null`, 15_000))) {
+            fail(`ticket-74 stage: the ${label} row never reached the sidebar`)
+          }
+        }
+        log('draft_preserve_rows_ok')
+
+        // Surface-specific probes: the chat composer lives in .chat-dock,
+        // the empty state's in .empty-state — the value probe doubles as a
+        // WHERE assertion (a value probe against the wrong surface would
+        // read 'missing').
+        const chatValue74 = `document.querySelector('.chat-dock textarea.composer-input')?.value ?? 'missing'`
+        const emptyValue74 = `document.querySelector('.empty-state textarea.composer-input')?.value ?? 'missing'`
+        const chatAttachCount74 = `document.querySelectorAll('.chat-dock .composer-attachment').length`
+        const openNewTask74 = async (): Promise<void> => {
+          await js(
+            `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', code: 'KeyN', metaKey: true, bubbles: true })); true`
+          )
+          if (!(await waitForProbe(win, `document.querySelector('.empty-state') !== null`, 5_000))) {
+            fail('ticket-74 stage: ⌘N never opened the new-task empty state')
+          }
+        }
+        const clickRow74 = async (row: string): Promise<void> => {
+          await js(`document.querySelector('${row}')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
+        }
+        const switchedTo74 = (row: string, marker: string): string =>
+          `document.querySelector('.empty-state') === null &&
+           [...document.querySelectorAll('.main-zone .msg-user')].some((n) => (n.textContent ?? '').includes(${JSON.stringify(marker)})) &&
+           (document.querySelector('${row}')?.classList.contains('sb-task-active') ?? false)`
+
+        // ① Resume both sessions (the announcements focus them in turn).
+        const resumedA74 = waitFor(
+          (e) => e.type === 'session_created' && e.sessionFile === fileA74,
+          'ticket-74 resume A session_created'
+        )
+        await clickRow74(rowA74)
+        const idA74 = ((await resumedA74) as Extract<Scoped, { type: 'session_created' }>).sessionId
+        if (!(await waitForProbe(win, switchedTo74(rowA74, 'PICODE_74_A seed'), 15_000))) {
+          fail('ticket-74 stage: the resumed session A never took over the main zone')
+        }
+        const resumedB74 = waitFor(
+          (e) => e.type === 'session_created' && e.sessionFile === fileB74,
+          'ticket-74 resume B session_created'
+        )
+        await clickRow74(rowB74)
+        await resumedB74
+        if (!(await waitForProbe(win, switchedTo74(rowB74, 'PICODE_74_B seed'), 15_000))) {
+          fail('ticket-74 stage: the resumed session B never took over the main zone')
+        }
+        log('draft_preserve_resumes_ok')
+
+        // ② A/B drafts stay isolated across pure focus switches. The B-side
+        // empty check doubles as the leak lock: without the per-session view
+        // key the SAME composer instance survived the switch and A's text
+        // bled into B's composer.
+        await clickRow74(rowA74)
+        if (!(await waitForProbe(win, switchedTo74(rowA74, 'PICODE_74_A seed'), 10_000))) {
+          fail('ticket-74 stage: the in-app switch back to A never landed')
+        }
+        if (!((await js(composerTypeJs(DRAFT_A_74)).catch(() => false)) as boolean)) {
+          fail('ticket-74 stage: the chat composer textarea is missing while typing draft A')
+        }
+        await clickRow74(rowB74)
+        if (!(await waitForProbe(win, `${switchedTo74(rowB74, 'PICODE_74_B seed')} && ${chatValue74} === ''`, 10_000))) {
+          fail(`ticket-74 stage: switching A→B leaked A's composer into B (saw ${String(await js(chatValue74))})`)
+        }
+        if (!((await js(composerTypeJs(DRAFT_B_74)).catch(() => false)) as boolean)) {
+          fail('ticket-74 stage: the chat composer textarea is missing while typing draft B')
+        }
+        await clickRow74(rowA74)
+        if (
+          !(await waitForProbe(
+            win,
+            `${switchedTo74(rowA74, 'PICODE_74_A seed')} && ${chatValue74} === ${JSON.stringify(DRAFT_A_74)}`,
+            10_000
+          ))
+        ) {
+          fail(`ticket-74 stage: A's draft was lost on the round trip (saw ${String(await js(chatValue74))})`)
+        }
+        await clickRow74(rowB74)
+        if (
+          !(await waitForProbe(
+            win,
+            `${switchedTo74(rowB74, 'PICODE_74_B seed')} && ${chatValue74} === ${JSON.stringify(DRAFT_B_74)}`,
+            10_000
+          ))
+        ) {
+          fail(`ticket-74 stage: B's draft was lost on the round trip (saw ${String(await js(chatValue74))})`)
+        }
+        log('draft_preserve_independent_ok')
+
+        // ③ A pasted-image draft round-trips: paste into A (on top of its
+        // text draft), the thumbnail renders, B never sees it, and A's
+        // restore rebuilds the attachment card + text together.
+        await clickRow74(rowA74)
+        if (!(await waitForProbe(win, switchedTo74(rowA74, 'PICODE_74_A seed'), 10_000))) {
+          fail('ticket-74 stage: the in-app switch back to A (image leg) never landed')
+        }
+        const pasteImage74 = `(() => {
+          const ta = document.querySelector('.chat-dock textarea.composer-input')
+          if (!(ta instanceof HTMLTextAreaElement)) return false
+          const dt = new DataTransfer()
+          dt.items.add(new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])], 'picode74.png', { type: 'image/png' }))
+          ta.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+          return true
+        })()`
+        if (!((await js(pasteImage74).catch(() => false)) as boolean)) {
+          fail('ticket-74 stage: the chat composer textarea is missing for the paste')
+        }
+        if (!(await waitForProbe(win, `${chatAttachCount74} === 1`, 10_000))) {
+          fail('ticket-74 stage: the pasted image never rendered an attachment card')
+        }
+        log('draft_preserve_image_paste_ok')
+        await clickRow74(rowB74)
+        if (!(await waitForProbe(win, `${switchedTo74(rowB74, 'PICODE_74_B seed')} && ${chatAttachCount74} === 0`, 10_000))) {
+          fail('ticket-74 stage: the pasted image leaked into the B composer')
+        }
+        await clickRow74(rowA74)
+        if (
+          !(await waitForProbe(
+            win,
+            `${switchedTo74(rowA74, 'PICODE_74_A seed')} && ${chatValue74} === ${JSON.stringify(DRAFT_A_74)} && ${chatAttachCount74} === 1 && document.querySelector('.chat-dock .composer-attachment img') !== null`,
+            10_000
+          ))
+        ) {
+          fail('ticket-74 stage: the image draft did not round-trip (text + thumbnail)')
+        }
+        log('draft_preserve_image_roundtrip_ok')
+
+        // ④ New Task single slot: ⌘N → type → row click away — the New Task
+        // text must not leak into A (A restores ITS own draft), and ⌘N
+        // restores the New Task draft exactly.
+        await openNewTask74()
+        if (!((await js(composerTypeJs(NEWTASK_DRAFT_74)).catch(() => false)) as boolean)) {
+          fail('ticket-74 stage: the empty-state composer textarea is missing')
+        }
+        await clickRow74(rowA74)
+        if (
+          !(await waitForProbe(
+            win,
+            `${switchedTo74(rowA74, 'PICODE_74_A seed')} && ${chatValue74} === ${JSON.stringify(DRAFT_A_74)} && ${chatAttachCount74} === 1`,
+            10_000
+          ))
+        ) {
+          fail('ticket-74 stage: the New Task draft leaked into A, or the A draft was lost')
+        }
+        await openNewTask74()
+        if (!(await waitForProbe(win, `${emptyValue74} === ${JSON.stringify(NEWTASK_DRAFT_74)}`, 10_000))) {
+          fail(`ticket-74 stage: the New Task draft did not survive the round trip (saw ${String(await js(emptyValue74))})`)
+        }
+        log('draft_preserve_newtask_roundtrip_ok')
+
+        // ⑤ Escape leaves the new-task state — its draft parks, A restores.
+        await js(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`)
+        if (
+          !(await waitForProbe(
+            win,
+            `${switchedTo74(rowA74, 'PICODE_74_A seed')} && ${chatValue74} === ${JSON.stringify(DRAFT_A_74)}`,
+            10_000
+          ))
+        ) {
+          fail('ticket-74 stage: Escape out of the new-task state never restored session A')
+        }
+        log('draft_preserve_escape_ok')
+
+        // ⑥ Send clears naturally: drop the image, replace the text, send —
+        // the slot clears with the composer, so B never shows it and A
+        // comes back to a resting composer.
+        await js(`document.querySelector('.chat-dock .composer-attachment-remove')?.click(); true`)
+        if (!((await js(composerClearJs).catch(() => false)) as boolean)) {
+          fail('ticket-74 stage: the chat composer textarea is missing for the clear')
+        }
+        if (!((await js(composerTypeJs(SEND_TEXT_74)).catch(() => false)) as boolean)) {
+          fail('ticket-74 stage: the chat composer textarea is missing for the send')
+        }
+        const sentA74 = waitFor(
+          (e) => e.type === 'user_message' && e.sessionId === idA74 && e.text === SEND_TEXT_74,
+          'ticket-74 send user_message'
+        )
+        const endedA74 = waitFor((e) => e.type === 'agent_end' && e.sessionId === idA74, 'ticket-74 send agent_end')
+        await js(composerKeyJs('Enter'))
+        await sentA74
+        await endedA74
+        await clickRow74(rowB74)
+        await clickRow74(rowA74)
+        if (
+          !(await waitForProbe(
+            win,
+            `${switchedTo74(rowA74, 'PICODE_74_A seed')} && ${chatValue74} === '' && ${chatAttachCount74} === 0`,
+            10_000
+          ))
+        ) {
+          fail('ticket-74 stage: a sent draft resurrected in the composer after switching away and back')
+        }
+        log('draft_preserve_send_clear_ok')
+
+        // ⑦ The New Task send clears the single slot too: ⌘N → send → a new
+        // session takes over → ⌘N shows a RESTING composer.
+        await openNewTask74()
+        if (!((await js(composerTypeJs(NEWTASK_SEND_TEXT_74)).catch(() => false)) as boolean)) {
+          fail('ticket-74 stage: the empty-state composer textarea is missing for the send')
+        }
+        const newTaskCreated74 = waitFor((e) => e.type === 'session_created', 'ticket-74 newtask send session_created')
+        await js(composerKeyJs('Enter'))
+        const fresh74 = (await newTaskCreated74) as Extract<Scoped, { type: 'session_created' }>
+        if (fresh74.sessionFile === fileA74 || fresh74.sessionFile === fileB74) {
+          fail('ticket-74 stage: the new-task send did not create a fresh session')
+        }
+        await waitFor((e) => e.type === 'agent_end' && e.sessionId === fresh74.sessionId, 'ticket-74 newtask send agent_end')
+        await openNewTask74()
+        if (!(await waitForProbe(win, `${emptyValue74} === ''`, 10_000))) {
+          fail(`ticket-74 stage: the sent New Task draft resurrected (saw ${String(await js(emptyValue74))})`)
+        }
+        log('draft_preserve_newtask_send_clear_ok')
+
+        // ⑧ Memory-level: a renderer reload (the restart proxy) loses every
+        // draft — the boot empty state and a freshly resumed A both start
+        // resting.
+        await win.webContents.reload()
+        await waitForProbe(win, `document.documentElement.dataset['chatSubscribed'] === 'true'`, 15_000)
+        if (!(await waitForProbe(win, `document.querySelector('.empty-state') !== null && ${emptyValue74} === ''`, 15_000))) {
+          fail('ticket-74 stage: after the restart proxy the boot empty state composer is not resting')
+        }
+        if (!(await waitForProbe(win, `document.querySelector('${rowA74}') !== null`, 15_000))) {
+          fail('ticket-74 stage: session A row never returned after the restart proxy')
+        }
+        const reResumed74 = waitFor(
+          (e) => e.type === 'session_created' && e.sessionFile === fileA74,
+          'ticket-74 post-restart resume session_created'
+        )
+        await clickRow74(rowA74)
+        await reResumed74
+        if (
+          !(await waitForProbe(
+            win,
+            `${switchedTo74(rowA74, 'PICODE_74_A seed')} && ${chatValue74} === '' && ${chatAttachCount74} === 0`,
+            15_000
+          ))
+        ) {
+          fail('ticket-74 stage: a draft survived the restart proxy')
+        }
+        log('draft_preserve_restart_empty_ok')
+      })
+    } finally {
+      rmSync(seedProject74, { recursive: true, force: true })
+    }
+    log('draft_preserve_done')
 
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
     const livePids = supervisor.hostPids

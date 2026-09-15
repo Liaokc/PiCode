@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type JSX, type KeyboardEvent } from 'react'
 import type { AccessMode, ImageAttachment, ModelRef, ProviderModels, SlashCommandItem, ThinkingLevel } from '../../../shared/contract'
 import type { ChatQueue } from '../../../shared/chat-reducer'
+import { composerDraft, type ComposerDraft, type ComposerDraftEntry, type ComposerDraftOwner } from '../../../shared/composer/drafts'
 import { applyMention, filterFiles } from '../../../shared/composer/mention'
 import { accessModeLabel } from '../../../shared/composer/access'
 import { gateSlashCommand } from '../../../shared/composer/slash-gate'
@@ -63,6 +64,19 @@ interface ComposerProps extends ComposerApi {
   chat: ComposerChat
   /** Live steering/follow-up queue (SDK-authoritative, contract-pushed). */
   queue: ChatQueue
+  /** Ticket 74: the draft to restore on MOUNT — the parked slot content for
+   * this surface. Read exactly once (the state initializers); slots only
+   * change while the view is elsewhere, and every view switch remounts the
+   * composer, so the mount-time value is always the current slot. */
+  initialDraft?: ComposerDraft | null
+  /** Ticket 74: the live-draft bridge. The composer rewrites this ref every
+   * render (owner-tagged, latest-value pattern) and the App parks the last
+   * entry into the matching slot at every view switch — a ref write, so no
+   * per-keystroke renders. Absent = the surface opts out (no parking). */
+  draftBridgeRef?: { current: ComposerDraftEntry | null }
+  /** Ticket 74: which slot this composer's draft belongs to; required for
+   * the bridge to carry an entry (an unowned bridge write is skipped). */
+  draftOwner?: ComposerDraftOwner
 }
 
 type MenuState = 'slash' | 'files' | 'access' | 'model' | 'thinking' | null
@@ -104,6 +118,9 @@ export default function Composer({
   placeholder,
   chat,
   queue,
+  initialDraft = null,
+  draftBridgeRef,
+  draftOwner,
   onSend,
   onSteer,
   onFollowUp,
@@ -117,9 +134,12 @@ export default function Composer({
   onBuiltinCommand,
   onSlashHint
 }: ComposerProps): JSX.Element {
-  const [value, setValue] = useState('')
-  const [caret, setCaret] = useState(0)
-  const [images, setImages] = useState<LocalImage[]>([])
+  /** Ticket 74: restore the parked draft at mount — the state initializers
+   * read the slot exactly once. The caret starts at the restored text's end
+   * (menu surfaces stay closed until the user interacts). */
+  const [value, setValue] = useState(initialDraft?.text ?? '')
+  const [caret, setCaret] = useState(initialDraft?.text.length ?? 0)
+  const [images, setImages] = useState<LocalImage[]>(() => localImagesFromDraft(initialDraft))
   const [queuedMode, setQueuedMode] = useState<'follow-up' | 'steer'>('follow-up')
   const [menu, setMenu] = useState<MenuState>(null)
   const [menuIndex, setMenuIndex] = useState(0)
@@ -137,6 +157,22 @@ export default function Composer({
   /** Ticket 68: the query the open text menu was last synced with — the
    * keyboard-selection reset and the candidate refetch ride on its change. */
   const menuQueryRef = useRef<string | null>(null)
+
+  // Ticket 74: publish the live draft (owner-tagged) after every commit —
+  // the App parks the latest entry into the matching slot at view-switch
+  // time, before any unmount can lose the component-local state. A layout
+  // effect (not a render-phase write — the ref is parent-owned) keeps the
+  // bridge current at every event handler: layout effects run synchronously
+  // with the commit, before the next event can fire, so the parked draft is
+  // always what the composer last showed. Zero extra renders, no
+  // per-keystroke cost (the ticket 30/46 red line).
+  useLayoutEffect(() => {
+    if (draftBridgeRef === undefined || draftOwner === undefined) return
+    draftBridgeRef.current = {
+      owner: draftOwner,
+      draft: composerDraft(value, images.map((img) => ({ mimeType: img.mimeType, data: img.data })))
+    }
+  })
 
   // Staged label degradation (ZCode parity, ticket-29 feedback): the footer
   // sheds text as the panes crowd the main zone. Measured on the composer
@@ -665,6 +701,19 @@ export default function Composer({
 
 function modelShortId(model: ModelRef): string {
   return model.modelId
+}
+
+/** Ticket 74: rebuild the local attachment cards from a restored draft —
+ * fresh local ids, data-URL previews rebuilt from the raw base64 payload
+ * (the bridge carries the contract shape, previews never leave this file). */
+function localImagesFromDraft(draft: ComposerDraft | null | undefined): LocalImage[] {
+  return (draft?.images ?? []).map((img) => ({
+    id: imageSeq++,
+    mimeType: img.mimeType,
+    data: img.data,
+    preview: `data:${img.mimeType};base64,${img.data}`,
+    label: 'Image'
+  }))
 }
 
 /** 输入展开 (ticket 49): the height of the main zone the composer lives in

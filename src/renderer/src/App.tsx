@@ -39,6 +39,7 @@ import {
 } from '../../shared/new-task-models'
 import { toastReducer, type ToastLevel, type ToastList } from '../../shared/toast'
 import type { AccessMode, ImageAttachment, ThinkingLevel } from '../../shared/contract'
+import { parkedDraft, type ComposerDraft, type ComposerDraftEntry } from '../../shared/composer/drafts'
 import type { AuthProbeReport } from '../../shared/auth-status'
 import { selectCommandCatalog, type NewTaskCommandCatalog } from '../../shared/new-task-commands'
 import type { SessionSummary, TranscriptItem } from '../../shared/sessions/types'
@@ -173,6 +174,17 @@ export default function App(): JSX.Element {
   const pendingPromptRef = useRef<string | null>(null)
   /** Images typed (pasted) before a folder exists; attached to the first prompt. */
   const pendingImagesRef = useRef<ImageAttachment[] | null>(null)
+  /** Ticket 74: the New Task single draft slot — the boot empty state and
+   * ⌘N share it. Memory-level renderer state: a restart (even a renderer
+   * reload) loses it. null = no draft parked. */
+  const [newTaskDraft, setNewTaskDraft] = useState<ComposerDraft | null>(null)
+  /** Ticket 74: the mounted composer's live draft, owner-tagged — the
+   * Composer rewrites it on every render; every view switch parks the last
+   * entry into the matching slot (per-session registry slot, or this New
+   * Task single slot) BEFORE the view changes. Idempotent when stale (no
+   * composer mounted): a park only ever rewrites what that composer last
+   * published, and every slot write runs the same 空槽不存 rule. */
+  const composerDraftRef = useRef<ComposerDraftEntry | null>(null)
   /** Ticket 51 fork ack: the session id a fork_session command was sent to,
    * while the command is in flight. The success toast fires only when the
    * forked session's announcement (session_created) arrives — never
@@ -214,6 +226,22 @@ export default function App(): JSX.Element {
   const notify = useCallback((message: string, level: ToastLevel): void => {
     toastIdRef.current += 1
     dispatchToast({ type: 'push', message, level, id: toastIdRef.current })
+  }, [])
+
+  /** Ticket 74: park the last mounted composer's draft into its slot — the
+   * owner tag routes it (session id → the registry's per-session slot;
+   * new-task → the App's single slot). An emptied draft clears the slot
+   * (空槽不存), so a send clears naturally at the next switch too. Safe to
+   * call with no composer mounted (bridge null) and repeatedly on the same
+   * draft: every write is idempotent. */
+  const parkMountedComposerDraft = useCallback((): void => {
+    const entry = composerDraftRef.current
+    if (entry === null) return
+    if (entry.owner.kind === 'new-task') {
+      setNewTaskDraft(parkedDraft(entry.draft))
+      return
+    }
+    registryDispatch({ type: 'set_session_draft', sessionId: entry.owner.sessionId, draft: entry.draft })
   }, [])
   const dismissToastById = useCallback((id: number): void => {
     dispatchToast({ type: 'dismiss', id })
@@ -290,6 +318,12 @@ export default function App(): JSX.Element {
 
   useEffect(() => {
     const unsubscribe = window.picode.chat.onHostEvent((event) => {
+      // Ticket 74: an announcement switches the view (create/resume/fork/
+      // takeover all re-announce and auto-focus) — park the mounted
+      // composer's draft FIRST, so the switch cannot lose it.
+      if (event.type === 'session_created' || (event.type === 'session_event' && event.event.type === 'session_created')) {
+        parkMountedComposerDraft()
+      }
       // Every event (focused or not) folds into its session's view state —
       // thinking deltas stamped with their receipt time first (ticket 61).
       registryDispatch(stampThinkingStart(event))
@@ -396,7 +430,7 @@ export default function App(): JSX.Element {
     // contract event emitted before this point was seen by the registry.
     document.documentElement.dataset.chatSubscribed = 'true'
     return unsubscribe
-  }, [refreshSessions, notify])
+  }, [refreshSessions, notify, parkMountedComposerDraft])
 
   // System-notification deep link (ticket 25): clicking a background
   // session's approval notification foregrounds the window and mounts THAT
@@ -405,12 +439,15 @@ export default function App(): JSX.Element {
   // waits inside the session; the click never approves anything.
   useEffect(() => {
     return window.picode.notifications.onFocusRequest((sessionId) => {
+      // Ticket 74: the view is leaving (possibly the New Task empty state
+      // with a draft) — park before the focus change.
+      parkMountedComposerDraft()
       registryDispatch({ type: 'focus_session', sessionId })
       setNewTaskOpen(false)
       setTreeOpen(false)
       stopFollowing()
     })
-  }, [])
+  }, [parkMountedComposerDraft])
 
   /** create_session carrying the settings-window defaults (ticket 11) plus,
    * since ticket 41, any model/thinking choice made in the new-task empty
@@ -427,13 +464,17 @@ export default function App(): JSX.Element {
    * that project's chip; otherwise the chip follows the fallback chain
    * (active session → last used → recent first). */
   const handleNewTask = useCallback((presetCwd?: string): void => {
+    // Ticket 74: leaving whatever view is on screen — park its composer
+    // draft first (the owner tag routes it; the boot empty state and ⌘N
+    // share the New Task slot, so its own draft round-trips through here).
+    parkMountedComposerDraft()
     // ⌘N × dock (ticket 17×18 decision, dock-model.dockForNewTask): the
     // new-task state replaces the MAIN ZONE only — the dock shell stays
     // exactly as the user arranged it.
     dockDispatch({ type: 'dock-for-new-task' })
     setNewTaskPreset(presetCwd ?? null)
     setNewTaskOpen(true)
-  }, [])
+  }, [parkMountedComposerDraft])
 
   // ---- global keybindings (ticket 27, shared/keymap.ts): ⌘N new task,
   // ⌘K task search, ⌘B left sidebar, ⌥⌘B side panel, ⌘J terminal dock,
@@ -477,13 +518,16 @@ export default function App(): JSX.Element {
         case 'toggle-settings':
           // Ticket 63: ⌘, opens the settings window from the workspace and
           // closes it from inside — one self-inverting shell action.
+          // Ticket 74: opening it unmounts the workspace (the composer with
+          // it) — park first. Closing is a stale-idempotent no-op.
+          parkMountedComposerDraft()
           dispatch({ type: 'toggle-settings' })
           break
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [handleNewTask])
+  }, [handleNewTask, parkMountedComposerDraft])
 
   // Escape leaves the new-task state (ticket 17) — except inside the
   // composer, the chip dropdown, and the ⌘K palette, where Escape closes
@@ -495,14 +539,21 @@ export default function App(): JSX.Element {
       const target = event.target
       if (target instanceof Element && target.closest('.composer, .newtask-pop, .palette-overlay, .skill-confirm')) return
       if (ui.view === 'settings') {
+        // Ticket 74: back to the workspace — the view that remounts reads
+        // its slot; the park is a stale-idempotent no-op from the settings
+        // shell (no composer mounted there).
+        parkMountedComposerDraft()
         dispatch({ type: 'back-to-workspace' })
         return
       }
+      // Ticket 74: the empty state is leaving — park its draft into the New
+      // Task slot before the focused session's view remounts.
+      parkMountedComposerDraft()
       setNewTaskOpen(false)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [ui.view])
+  }, [ui.view, parkMountedComposerDraft])
 
   // Honest liveness: the Live Follow badge and its Open control (ticket 24)
   // must flip when a watched session goes quiet even if no file changes —
@@ -531,6 +582,10 @@ export default function App(): JSX.Element {
 
   async function handleComposerSend(text: string, images: ImageAttachment[] = []): Promise<void> {
     if (focusedId !== null && chat.session !== null) {
+      // Ticket 74: the send empties the composer — clear its draft slot with
+      // it, so a later remount starts from the resting composer (发送后自然
+      // 清空; the empty rule leaves no slot behind).
+      registryDispatch({ type: 'set_session_draft', sessionId: focusedId, draft: null })
       window.picode.chat.sendToHost({
         type: 'session_command',
         sessionId: focusedId,
@@ -555,6 +610,9 @@ export default function App(): JSX.Element {
     void (async () => {
       const project = cwd ?? (await window.picode.chat.pickWorkingDirectory())
       if (!project) return
+      // Ticket 74: the message is on its way — the New Task slot clears with
+      // the composer (发送后自然清空), so ⌘N never resurrects a sent draft.
+      setNewTaskDraft(null)
       setCreating(true)
       // Both survive the session boot: text AND images are delivered together
       // as the first prompt once the session exists.
@@ -565,10 +623,19 @@ export default function App(): JSX.Element {
   }
 
   function handleSteer(text: string, images: ImageAttachment[] = []): void {
+    // Ticket 74: a queued injection empties the composer too — clear the
+    // focused session's draft slot with it.
+    if (focusedIdRef.current !== null) {
+      registryDispatch({ type: 'set_session_draft', sessionId: focusedIdRef.current, draft: null })
+    }
     sendFocused({ type: 'steer_prompt', text, images: images.length > 0 ? images : undefined })
   }
 
   function handleFollowUp(text: string, images: ImageAttachment[] = []): void {
+    // Ticket 74: same as steer — the composer empties, the slot follows.
+    if (focusedIdRef.current !== null) {
+      registryDispatch({ type: 'set_session_draft', sessionId: focusedIdRef.current, draft: null })
+    }
     sendFocused({ type: 'follow_up_prompt', text, images: images.length > 0 ? images : undefined })
   }
 
@@ -751,6 +818,23 @@ export default function App(): JSX.Element {
     [handleSetPreferences]
   )
 
+  /** Ticket 74: shell actions that swap the main zone to the settings
+   * window unmount the workspace (the composer with it) — park the mounted
+   * composer's draft first. Closing actions (back-to-workspace, and the
+   * toggle's close leg) park stale-idempotently: no composer is mounted in
+   * the settings shell, and a park only ever rewrites the owner's own
+   * slot with what it last published. The TitleBar gear and the sidebar
+   * button both route through here. */
+  const dispatchShellParking = useCallback(
+    (action: ShellUiAction): void => {
+      if (action.type === 'open-settings' || action.type === 'toggle-settings' || action.type === 'back-to-workspace') {
+        parkMountedComposerDraft()
+      }
+      dispatch(action)
+    },
+    [parkMountedComposerDraft]
+  )
+
   const handleRefreshAuth = useCallback((): void => {
     setSettings((prev) => ({ ...prev, authScanning: true }))
     void window.picode.settings
@@ -861,6 +945,11 @@ export default function App(): JSX.Element {
       notify(CWD_MISSING_ROW_TOAST, 'info')
       return
     }
+    // Ticket 74: the view is about to leave (or stay — an idempotent park is
+    // harmless) — park the mounted composer's draft into its slot first: the
+    // owner tag routes a session view's draft to ITS registry slot and the
+    // empty state's draft to the New Task slot.
+    parkMountedComposerDraft()
     if (summary.id === focusedId) {
       // Already the focused view — leave Follow mode, if any. Ticket 73:
       // leave the new-task state too — from the empty state this click is
@@ -1229,7 +1318,7 @@ export default function App(): JSX.Element {
   if (ui.view === 'settings') {
     return (
       <div className="app-shell">
-        <TitleBar ui={ui} dispatch={dispatch} dispatchDock={dockDispatch} />
+        <TitleBar ui={ui} dispatch={dispatchShellParking} dispatchDock={dockDispatch} />
         <SettingsWindow
           dispatchShell={dispatch}
           preferences={settings.preferences}
@@ -1291,7 +1380,7 @@ export default function App(): JSX.Element {
         } as CSSProperties
       }
     >
-      <TitleBar ui={ui} dispatch={dispatch} dispatchDock={dockDispatch} />
+      <TitleBar ui={ui} dispatch={dispatchShellParking} dispatchDock={dockDispatch} />
       <Sidebar
         open={ui.sidebarOpen}
         width={ui.sidebarWidth}
@@ -1314,7 +1403,7 @@ export default function App(): JSX.Element {
         onHideGroup={handleHideGroup}
         onOpenPreview={openPreview}
         onOpenSearch={() => setSearchOpen(true)}
-        onOpenSettings={() => dispatch({ type: 'open-settings' })}
+        onOpenSettings={() => dispatchShellParking({ type: 'open-settings' })}
         view={settings.preferences.sidebarView}
         sort={settings.preferences.sidebarSort}
         onViewChange={(view) => handleSetPreferences({ sidebarView: view })}
@@ -1349,6 +1438,8 @@ export default function App(): JSX.Element {
                 key={newTaskPresetActive ?? 'newtask-chain'}
                 creating={creating}
                 defaultProject={newTaskPresetActive ?? newTaskDefaultProject}
+                draftBridgeRef={composerDraftRef}
+                initialDraft={newTaskDraft}
                 recentProjects={recentWorkspaceList}
                 providers={newTaskCatalog?.providers ?? []}
                 model={newTaskChip.model}
@@ -1363,10 +1454,18 @@ export default function App(): JSX.Element {
                 composerApi={composerApi}
               />
             ) : (
+              // Ticket 74: the key remounts the view per focused session —
+              // ADR-0006's 切回重挂载, made literal. Without it the SAME
+              // Composer instance survived a direct focus switch, leaking
+              // session A's typed draft into session B's composer; with it
+              // every switch restores from the parked per-session slot.
               <ChatView
+                key={focusedId ?? 'chat'}
                 chat={chat}
                 creating={creating}
                 cwdMissing={focusedCwdMissing}
+                draftBridgeRef={composerDraftRef}
+                initialDraft={focused?.draft ?? null}
                 tree={tree}
                 branch={focused?.branch ?? null}
                 treeOpen={treeOpen}
