@@ -113,6 +113,9 @@ import { app, clipboard, type BrowserWindow } from 'electron'
 import type { HostSupervisor } from './host-supervisor'
 import { focusSessionFromNotification, type ApprovalNotice } from './notifications'
 import type { HostToParent, SessionScopedEvent } from '../shared/contract'
+import type { AuthProbeReport } from '../shared/auth-status'
+import { configuredProviderIds, sortProvidersConfiguredFirst } from '../shared/provider-sort'
+import { projectNewTaskCatalog } from '../shared/new-task-models'
 import { FOLLOW_TAKEOVER_REJECTED_TOAST } from '../shared/sessions/group'
 import { CWD_MISSING_ROW_TOAST } from '../shared/sessions/cwd-liveness'
 import type { SessionContextActionService } from './sessions/context-actions'
@@ -175,10 +178,14 @@ export function smokeEnabled(): boolean {
 }
 
 /** What the smoke exposes to main (index.ts): the host-event tap plus the
- * notification-notice tap (ticket 25 asserts the notification pipeline). */
+ * notification-notice tap (ticket 25 asserts the notification pipeline).
+ * Ticket 76 adds the cached auth-probe report getter — the exact report the
+ * renderer joined for the provider order, so the order assertions compute
+ * their expectation from the same source the UI used. */
 export interface SmokeHooks {
   onHostEvent: (event: HostToParent) => void
   onApprovalNotice: (notice: ApprovalNotice) => void
+  getAuthReport: () => Promise<AuthProbeReport | null>
 }
 
 /** Every event the smoke sees carries its session scope: the supervisor
@@ -203,7 +210,8 @@ interface Waiter {
 export function startSmokeIfEnabled(
   supervisor: HostSupervisor,
   getWindow: () => BrowserWindow | null,
-  actions?: SessionContextActionService | null
+  actions?: SessionContextActionService | null,
+  getAuthReport?: () => Promise<AuthProbeReport | null>
 ): SmokeHooks | null {
   if (!smokeEnabled()) return null
   const cwd = process.env['PICODE_SMOKE_CWD'] || os.tmpdir()
@@ -336,6 +344,57 @@ export function startSmokeIfEnabled(
       if (providerRows === 0) fail('the empty-state model menu lists no providers')
       if (modelRows.length === 0) fail('the empty-state model menu lists no models')
       log('empty_state_menu_catalog_ok', `providers=${providerRows} models=${modelRows.length}`)
+
+      // ②b (ticket 76): the provider column is ordered configured-first,
+      // alphabetical within each group, joined from the SAME auth report
+      // the settings service cached (zero new contract — the expectation
+      // is computed from that report, so the check holds on any machine:
+      // all-configured ⇒ pure alphabetical; missing report ⇒ registry
+      // order). The current provider is also located and check-marked on
+      // open — the chip's chained default (the report's first configured
+      // provider, report order).
+      {
+        const authReport = getAuthReport ? await getAuthReport() : null
+        if (authReport === null) fail('the smoke could not read the cached auth report for the ticket-76 order check')
+        const sortedGroups = sortProvidersConfiguredFirst(
+          projectNewTaskCatalog(authReport).providers,
+          configuredProviderIds(authReport)
+        )
+        const expectedProviders = sortedGroups.map((group) => group.name)
+        let menuCols: string[][] = []
+        for (let waited = 0; waited < 5_000; waited += 100) {
+          menuCols = (await win.webContents.executeJavaScript(
+            `[...document.querySelectorAll('.cmp-popover .cmp-cascade-col')].map((col) => [...col.querySelectorAll('.cmp-menu-row')].map((n) => n.textContent ?? ''))`
+          ).catch(() => [])) as string[][]
+          if (menuCols.length >= 2 && menuCols[0]!.length > 0) break
+          await new Promise((r) => setTimeout(r, 100))
+        }
+        const providerTitles = menuCols[0] ?? []
+        if (JSON.stringify(providerTitles) !== JSON.stringify(expectedProviders)) {
+          fail(`ticket-76 order: provider column ${JSON.stringify(providerTitles)} != expected ${JSON.stringify(expectedProviders)}`)
+        }
+        const located = (await win.webContents.executeJavaScript(
+          `(() => {
+            const rows = [...(document.querySelector('.cmp-popover .cmp-cascade-col')?.querySelectorAll('.cmp-menu-row') ?? [])]
+            return {
+              checked: rows.findIndex((r) => r.querySelector('.cmp-menu-check') !== null),
+              selected: rows.findIndex((r) => r.classList.contains('cmp-menu-row-selected'))
+            }
+          })()`
+        ).catch(() => null)) as { checked: number; selected: number } | null
+        const fallback = projectNewTaskCatalog(authReport).piFallback
+        if (fallback === null) fail('ticket-76: the chip default resolved but the report has no configured provider')
+        const expectedCurrent = authReport.providers.find((p) => p.providerId === fallback?.providerId)?.name
+        if (located === null) fail('ticket-76: the provider column never rendered rows for the highlight check')
+        if (located.checked < 0 || located.selected < 0 || located.checked !== located.selected) {
+          fail(`ticket-76: the current provider is not located+highlighted (checked=${located.checked}, selected=${located.selected})`)
+        }
+        if (providerTitles[located.checked] !== expectedCurrent) {
+          fail(`ticket-76: the check-marked provider ${JSON.stringify(providerTitles[located.checked])} != current ${JSON.stringify(expectedCurrent)}`)
+        }
+        log('empty_state_menu_provider_order_ok', `${expectedProviders.join(',')}`)
+        log('empty_state_menu_locate_ok', `${expectedCurrent} at row ${located.checked}`)
+      }
 
       // ③ Pick a model from the menu. With ≥2 models in the active provider
       // (the chained default's own, so credentials exist) pick the second
@@ -5131,6 +5190,38 @@ export function startSmokeIfEnabled(
           if (!reopened) fail('ticket-63 stage: ⌘, never reopened the settings window')
           log('settings_reopen_ok')
 
+          // ②b (ticket 76): the Models section's sign-in list is ordered
+          // configured-first, alphabetical within each group — computed
+          // from the SAME cached auth report the renderer joined.
+          {
+            if (!(await js(`(() => {
+              const item = [...document.querySelectorAll('.settings-item')].find((el) => el.textContent?.trim() === 'Models')
+              if (!(item instanceof HTMLElement)) return false
+              item.click()
+              return true
+            })()`).catch(() => false))) fail('ticket-76 stage: the Models nav item is missing')
+            const authReport = getAuthReport ? await getAuthReport() : null
+            if (authReport === null) fail('ticket-76 stage: the smoke could not read the cached auth report')
+            const expectedProviders = sortProvidersConfiguredFirst(authReport.providers, configuredProviderIds(authReport)).map((p) => p.name)
+            let rowNames: string[] = []
+            for (let waited = 0; waited < 10_000; waited += 100) {
+              rowNames = (await js(`[...document.querySelectorAll('.auth-list .auth-row-name')].map((n) => n.textContent ?? '')`).catch(() => [])) as string[]
+              if (rowNames.length >= expectedProviders.length) break
+              await new Promise((r) => setTimeout(r, 100))
+            }
+            if (JSON.stringify(rowNames) !== JSON.stringify(expectedProviders)) {
+              fail(`ticket-76 stage: sign-in order ${JSON.stringify(rowNames)} != expected ${JSON.stringify(expectedProviders)}`)
+            }
+            log('settings_models_provider_order_ok', expectedProviders.join(','))
+            // Return to the Skills section the ticket-63 stage continues with.
+            if (!(await js(`(() => {
+              const item = [...document.querySelectorAll('.settings-item')].find((el) => el.textContent?.trim() === 'Skills')
+              if (!(item instanceof HTMLElement)) return false
+              item.click()
+              return true
+            })()`).catch(() => false))) fail('ticket-76 stage: the Skills nav item is missing')
+          }
+
           // ③ The Skills section lists the sandbox's real loading surface
           // (the probe child + the SDK package manager do the enumeration).
           if (!(await js(`(() => {
@@ -6161,6 +6252,14 @@ export function startSmokeIfEnabled(
     onHostEvent,
     onApprovalNotice: (notice: ApprovalNotice): void => {
       approvalNotices.push(notice)
+    },
+    getAuthReport: async (): Promise<AuthProbeReport | null> => {
+      if (!getAuthReport) return null
+      try {
+        return await getAuthReport()
+      } catch {
+        return null
+      }
     }
   }
 }

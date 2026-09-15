@@ -144,8 +144,62 @@ export function startSettingsVisualIfEnabled(getWindow: () => BrowserWindow | nu
 
       // 2. Models section.
       if (!(await clickNavItem(wc, 'Models'))) throw new Error('settings visual: Models nav item missing')
+      // Ticket 76: the sign-in list orders configured-first, alphabetical
+      // within each group — the fixture's signed-in providers (Anthropic,
+      // Bella, Google, OpenAI) lead and the unconfigured ones follow
+      // (pi16-settings-providers rebuilt: bella no longer sinks).
+      const EXPECTED_PROVIDER_ORDER = ['Anthropic', 'Bella', 'Google', 'OpenAI', 'GitHub Copilot', 'Z.ai']
+      let providerNames: string[] = []
+      for (let waited = 0; waited < 10_000; waited += 100) {
+        providerNames = await execute<string[]>(
+          wc,
+          `[...document.querySelectorAll('.auth-list .auth-row-name')].map((n) => n.textContent ?? '')`
+        )
+        if (providerNames.length >= EXPECTED_PROVIDER_ORDER.length) break
+        await sleep(100)
+      }
+      if (JSON.stringify(providerNames) !== JSON.stringify(EXPECTED_PROVIDER_ORDER)) {
+        throw new Error(`settings visual: provider sign-in order wrong: ${JSON.stringify(providerNames)}`)
+      }
+      console.log(`VISUAL provider order ok: ${providerNames.join(', ')}`)
+      // Composite settle: the capturePage can race the section's first paint
+      // (the assertion above resolves the instant the rows mount).
       await sleep(400)
       await capture(win, 's2-settings-models')
+
+      // 2b. Ticket 76: the default-model cascade shares the rule —
+      // "Use Pi default" first, then the same configured-first provider
+      // order as the sign-in list.
+      if (!(await click(wc, '.settings-select-btn'))) {
+        throw new Error('settings visual: default-model select button missing')
+      }
+      await sleep(300)
+      const cascadeRows = await execute<string[]>(
+        wc,
+        `[...document.querySelectorAll('.settings-cascade-row')].map((n) => n.textContent ?? '')`
+      )
+      if (cascadeRows[0] !== 'Use Pi default') {
+        throw new Error(`settings visual: cascade first row wrong: ${JSON.stringify(cascadeRows[0] ?? null)}`)
+      }
+      for (let i = 0; i < EXPECTED_PROVIDER_ORDER.length; i++) {
+        if (!cascadeRows[i + 1]?.startsWith(EXPECTED_PROVIDER_ORDER[i]!)) {
+          throw new Error(
+            `settings visual: cascade order wrong at ${i}: ${JSON.stringify(cascadeRows)}`
+          )
+        }
+      }
+      console.log(`VISUAL cascade order ok: ${cascadeRows.join(' | ')}`)
+      await capture(win, 's2b-settings-model-cascade')
+      await wc.executeJavaScript(
+        `(() => {
+          document.querySelector('.settings-cascade')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+          return true
+        })()`
+      )
+      await sleep(200)
+      if (await execute<boolean>(wc, `document.querySelector('.settings-cascade') !== null`)) {
+        throw new Error('settings visual: the model cascade never closed')
+ }
 
       // 3. General section.
       if (!(await clickNavItem(wc, 'General'))) throw new Error('settings visual: General nav item missing')
