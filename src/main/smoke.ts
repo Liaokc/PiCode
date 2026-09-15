@@ -132,10 +132,10 @@ const composerTypeJs = (text: string): string => `(() => {
   ta.focus()
   return true
 })()`
-const composerKeyJs = (key: string): string => `(() => {
+const composerKeyJs = (key: string, mods: Record<string, boolean> = {}): string => `(() => {
   const ta = document.querySelector('.composer-input')
   if (!(ta instanceof HTMLTextAreaElement)) return false
-  ta.dispatchEvent(new KeyboardEvent('keydown', { key: '${key}', bubbles: true, cancelable: true }))
+  ta.dispatchEvent(new KeyboardEvent('keydown', { key: '${key}', bubbles: true, cancelable: true, ...${JSON.stringify(mods)} }))
   return true
 })()`
 const composerClearJs = `(() => {
@@ -644,6 +644,31 @@ export function startSmokeIfEnabled(
       }
       if (!opened) fail('typing "/" never opened the slash menu (ticket 68 stage)')
       log('menu_surface_leading_token_ok')
+
+      // ①b Shift+Enter with the menu open must NEVER pick a row or send —
+      // it inserts a newline (the native insert a real keydown produces;
+      // the synthetic event can't, so the honest proxy is: value unchanged,
+      // zero session traffic, menu still on the same token). The pre-fix
+      // handler picked row 0 here — visible as a rewritten composer.
+      let shiftSent = 0
+      const onShiftSend = (event: Scoped): void => {
+        if (event.type === 'user_message') shiftSent++
+      }
+      observers.push(onShiftSend)
+      if (!(await win.webContents.executeJavaScript(composerKeyJs('Enter', { shiftKey: true })).catch(() => false))) {
+        fail('composer textarea missing for the Shift+Enter probe')
+      }
+      await new Promise((r) => setTimeout(r, 500))
+      observers.splice(observers.indexOf(onShiftSend), 1)
+      const shiftValue = (await win.webContents.executeJavaScript(
+        `document.querySelector('.composer-input')?.value ?? 'missing'`
+      ).catch(() => 'probe-failed')) as string
+      if (shiftValue !== '/') fail(`Shift+Enter with the menu open rewrote the composer: ${JSON.stringify(shiftValue)}`)
+      if (shiftSent > 0) fail(`Shift+Enter with the menu open sent ${shiftSent} message(s)`)
+      if (!(await win.webContents.executeJavaScript(textMenuOpenJs).catch(() => true))) {
+        fail('the slash menu vanished on Shift+Enter before any newline landed')
+      }
+      log('menu_surface_shift_enter_ok')
 
       // ② Typing the multi-line report: the first space closes the menu and
       // no later line ever brings it back (pi16-slash-menu-multiline).

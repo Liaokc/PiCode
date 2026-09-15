@@ -255,7 +255,10 @@ export default function Composer({
       if (menu === 'slash' || menu === 'files') setMenu(null)
       return
     }
-    if (menuQueryRef.current === next.query && (menu === 'slash' || menu === 'files')) return
+    // Same menu kind AND same query: nothing to reconcile. (The kind must
+    // match too — a one-event trigger swap, e.g. paste replacing '/ab'
+    // with '@ab', keeps the query equal while the menu kind flips.)
+    if (menu === next.kind && menuQueryRef.current === next.query) return
     menuQueryRef.current = next.query
     setMenu(next.kind)
     setMenuIndex(0)
