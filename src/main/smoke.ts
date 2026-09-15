@@ -5548,6 +5548,214 @@ export function startSmokeIfEnabled(
       log('packages_stage_done')
     }
 
+    // ---- ticket 73: the New Task dead-end fix — from the new-task empty
+    // state, ANY openable session-row click must land the main zone on the
+    // target session. The already-focused and in-app branches used to leave
+    // the empty state on screen (the operator's "clicked, nothing happened"
+    // dead end); the resume and follow paths already cleared the state. All
+    // four row classes are clicked out of the empty state here so the whole
+    // guarantee is locked end to end (the gray-row explain-only path is the
+    // ticket-54 stage's click, unchanged by design). ----
+    log('newtask_switch_start')
+    const store73 = process.env['PICODE_SESSION_DIR']
+    if (!store73) fail('ticket-73 stage: PICODE_SESSION_DIR is not set')
+    const seedProject73 = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-seed73-'))
+    const QUIET_MARKER_73 = 'PICODE_73_RESUME quiet session'
+    const FOLLOW_MARKER_73 = 'PICODE_73_FOLLOW running elsewhere'
+    const seed73 = (file: string, id: string, userText: string): void => {
+      const stamp = new Date().toISOString()
+      writeFileSync(
+        file,
+        [
+          JSON.stringify({ type: 'session', version: 3, id, timestamp: stamp, cwd: seedProject73 }),
+          JSON.stringify({
+            type: 'message',
+            id: `${id}-u1`,
+            parentId: null,
+            timestamp: stamp,
+            message: { role: 'user', content: [{ type: 'text', text: userText }] }
+          })
+        ].join('\n') + '\n'
+      )
+    }
+    try {
+      // One live in-app host with a settled turn — its file must exist for
+      // the sidebar row. It plays the already-focused AND the in-app click
+      // target; the resumed quiet session becomes the second in-app session
+      // the in-app click needs.
+      supervisor.createSession(cwd)
+      const sw73 = (await waitFor((e) => e.type === 'session_created', 'ticket-73 host session_created')) as Extract<
+        Scoped,
+        { type: 'session_created' }
+      >
+      if (!sw73.sessionFile) fail('ticket-73 stage: the host session did not report its file')
+      const sw73Pid = supervisor.pidForSession(sw73.sessionId)
+      if (!sw73Pid) fail('ticket-73 stage: the host session pid is missing')
+      supervisor.handleParentCommand({
+        type: 'session_command',
+        sessionId: sw73.sessionId,
+        command: { type: 'prompt', text: 'Reply with exactly: PICODE_73_HOST' }
+      })
+      await waitFor((e) => e.type === 'agent_end' && e.sessionId === sw73.sessionId, 'ticket-73 host agent_end')
+
+      // The resume target: a COPY of the host-written session file (a shape
+      // the resume chain is proven to open) with the header id rewritten —
+      // the resumed session must be a DISTINCT registry entry — and one
+      // marked user turn appended. The header cwd is rewritten to the stage's
+      // own fresh project too: it must exist (normal row, resume spawn target)
+      // and a group of its own keeps the row above the ticket-39 Show-more
+      // cut that the big smoke-cwd group paginates behind. Backdated mtime =
+      // quiet (not TUI-live); no host here means the click takes the resume
+      // branch.
+      const quietFile73 = path.join(store73, 'quiet73.jsonl')
+      {
+        const base = readFileSync(sw73.sessionFile, 'utf8')
+        const lines = base.split('\n')
+        const header = JSON.parse(lines[0] ?? '{}') as { id?: string; cwd?: string }
+        header.id = randomUUID()
+        header.cwd = seedProject73
+        lines[0] = JSON.stringify(header)
+        const leafId = lastEntryId(base)
+        const stamp = new Date().toISOString()
+        lines.push(
+          JSON.stringify({
+            type: 'message',
+            id: `t73q-${randomUUID().slice(0, 8)}`,
+            parentId: leafId,
+            timestamp: stamp,
+            message: { role: 'user', content: [{ type: 'text', text: QUIET_MARKER_73 }] }
+          })
+        )
+        writeFileSync(quietFile73, lines.join('\n'))
+      }
+      backdateMtime(quietFile73)
+      // The follow target: seeded fresh — its mtime says a TUI is writing it
+      // RIGHT NOW, so the click must take the Live Follow branch.
+      const followFile73 = path.join(store73, 'follow73.jsonl')
+      seed73(followFile73, randomUUID(), FOLLOW_MARKER_73)
+
+      await withWindow(getWindow, async (win) => {
+        const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+        // The settings stage may have left the sidebar closed — open with ⌘B
+        // (press-until-present, the panel-stage pattern).
+        const sidebarPresent = `(document.querySelector('.sidebar') !== null)`
+        if (!((await js(sidebarPresent)) as boolean)) {
+          await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', metaKey: true, bubbles: true })); true`)
+          await waitForProbe(win, sidebarPresent, 5_000)
+        }
+        const hostRow73 = `[data-file="${sw73.sessionFile}"]`
+        const quietRow73 = `[data-file="${quietFile73}"]`
+        const followRow73 = `[data-file="${followFile73}"]`
+        const rows73: Array<[string, string]> = [
+          [hostRow73, 'host'],
+          [quietRow73, 'quiet'],
+          [followRow73, 'follow']
+        ]
+        for (const [row, label] of rows73) {
+          if (!(await waitForProbe(win, `document.querySelector('${row}') !== null`, 15_000))) {
+            fail(`ticket-73 stage: the ${label} row never reached the sidebar`)
+          }
+        }
+        log('newtask_switch_rows_ok')
+
+        /** ⌘N: the new-task empty state replaces the main zone. */
+        const openNewTask73 = async (): Promise<void> => {
+          await js(
+            `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', code: 'KeyN', metaKey: true, bubbles: true })); true`
+          )
+          if (!(await waitForProbe(win, `document.querySelector('.empty-state') !== null`, 5_000))) {
+            fail('ticket-73 stage: ⌘N never opened the new-task empty state')
+          }
+        }
+        /** The empty state is gone AND the main zone shows the target
+         * session's transcript with its row selected. The marker is probed
+         * inside .msg-user — the sidebar row title carries the same text, so
+         * a body-level probe would lie about WHERE it rendered. */
+        const switchedTo73 = (row: string, marker: string): string =>
+          `document.querySelector('.empty-state') === null &&
+           [...document.querySelectorAll('.main-zone .msg-user')].some((n) => (n.textContent ?? '').includes(${JSON.stringify(marker)})) &&
+           (document.querySelector('${row}')?.classList.contains('sb-task-active') ?? false)`
+        const clickRow73 = async (row: string): Promise<void> => {
+          await js(`document.querySelector('${row}')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
+        }
+
+        // ① The ALREADY-FOCUSED row: the click must land back on the focused
+        // session's view instead of dead-ending in the empty state.
+        await openNewTask73()
+        await clickRow73(hostRow73)
+        if (!(await waitForProbe(win, switchedTo73(hostRow73, 'PICODE_73_HOST'), 10_000))) {
+          fail('ticket-73 stage: clicking the focused row never left the new-task empty state (the dead end)')
+        }
+        log('newtask_switch_focused_ok')
+
+        // ② The NON-IN-APP row (quiet, alive cwd): the resume path already
+        // cleared the new-task state — a non-regression lock; the takeover
+        // then completes into the resumed session's view.
+        const resumed73 = waitFor(
+          (e) => e.type === 'session_created' && e.sessionFile === quietFile73,
+          'ticket-73 resume session_created'
+        )
+        await openNewTask73()
+        await clickRow73(quietRow73)
+        if (!(await waitForProbe(win, `document.querySelector('.empty-state') === null`, 5_000))) {
+          fail('ticket-73 stage: the resume-path click never left the new-task empty state')
+        }
+        await resumed73
+        if (!(await waitForProbe(win, switchedTo73(quietRow73, QUIET_MARKER_73), 15_000))) {
+          fail('ticket-73 stage: the resumed session never took over the main zone')
+        }
+        log('newtask_switch_resume_ok')
+
+        // ③ The IN-APP row (live host, NOT focused): a pure focus change —
+        // same pid — that must ALSO leave the new-task state. This is the
+        // fixed branch: a bare registry focus change used to keep the empty
+        // state on screen.
+        await openNewTask73()
+        await clickRow73(hostRow73)
+        if (!(await waitForProbe(win, switchedTo73(hostRow73, 'PICODE_73_HOST'), 10_000))) {
+          fail('ticket-73 stage: clicking the in-app row never left the new-task empty state (the dead end)')
+        }
+        if (supervisor.pidForSession(sw73.sessionId) !== sw73Pid) {
+          fail('ticket-73 stage: the in-app row click respawned the host — registry semantics broken')
+        }
+        log('newtask_switch_inapp_ok')
+
+        // ④ The LIVE-ELSEWHERE row (fresh mtime, no host here): Live Follow —
+        // the follow path already cleared the new-task state (non-regression
+        // lock): the follow view replaces the empty state.
+        await openNewTask73()
+        await clickRow73(followRow73)
+        if (
+          !(await waitForProbe(
+            win,
+            `document.querySelector('.empty-state') === null && document.querySelector('.follow-badge') !== null`,
+            10_000
+          ))
+        ) {
+          fail('ticket-73 stage: the live-row click never opened Live Follow out of the new-task state')
+        }
+        log('newtask_switch_follow_ok')
+
+        // ⑤ Pointing back at the focused row exits Follow (the highlight
+        // follows back) — and the empty state stays gone.
+        await clickRow73(hostRow73)
+        if (
+          !(await waitForProbe(
+            win,
+            `document.querySelector('.follow-badge') === null &&
+             document.querySelector('.empty-state') === null &&
+             (document.querySelector('${hostRow73}')?.classList.contains('sb-task-active') ?? false)`,
+            10_000
+          ))
+        ) {
+          fail('ticket-73 stage: clicking the focused row never exited Live Follow')
+        }
+        log('newtask_switch_follow_exit_ok')
+      })
+    } finally {
+      rmSync(seedProject73, { recursive: true, force: true })
+    }
+
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
     const livePids = supervisor.hostPids
     if (livePids.length < 2) fail(`expected at least 2 live hosts before quit, saw ${livePids.length}`)

@@ -862,17 +862,26 @@ export default function App(): JSX.Element {
       return
     }
     if (summary.id === focusedId) {
-      // Already the focused view — leave Follow mode, if any.
+      // Already the focused view — leave Follow mode, if any. Ticket 73:
+      // leave the new-task state too — from the empty state this click is
+      // the only way back to the focused session's view, and it must always
+      // land there instead of dead-ending in the empty state.
       stopFollowing()
+      setNewTaskOpen(false)
       return
     }
     if (inAppIds.has(summary.id)) {
       // Multi-active sessions (ticket 20): the host is alive in this app —
       // switching is a pure focus change. Nothing is terminated; the view
-      // remounts already caught up and live.
+      // remounts already caught up and live. Ticket 73: clear the new-task
+      // state as well — a bare registry focus change used to leave the
+      // empty state on screen (the "clicked, nothing happened" dead end;
+      // the same cleanup the notification focus, follow and resume paths
+      // already do).
       registryDispatch({ type: 'focus_session', sessionId: summary.id })
       setTreeOpen(false)
       stopFollowing()
+      setNewTaskOpen(false)
       return
     }
     if (isSessionLive(summary, now)) {
