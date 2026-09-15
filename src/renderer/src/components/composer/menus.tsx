@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react'
 import type { AccessMode, ThinkingLevel } from '../../../../shared/contract'
 import { ACCESS_MODES, accessModeHint, accessModeLabel } from '../../../../shared/composer/access'
+import { clampIndex, flatMenuKey } from '../../../../shared/composer/menu-keys'
 import { CheckIcon, ChevronRightIcon, ShieldCheckIcon } from '../icons'
 
 /** English labels for Pi thinking levels (the dropdown under "Max"). */
@@ -80,8 +81,19 @@ interface MenuRowProps {
 
 /** One navigable row of a popover menu. */
 export function MenuRow({ selected, onSelect, onHover, children }: MenuRowProps): JSX.Element {
+  const ref = useRef<HTMLButtonElement>(null)
+  // Ticket 69: the selected row always scrolls into view — keyboard
+  // navigation can never walk the gray highlight past the list edge
+  // (pi16-menu-no-scroll). block:'nearest' is a no-op while the row is
+  // already visible, and the effect deps pin it to selection CHANGES only
+  // (the red line: no per-render scrolling; hover rides the same selected
+  // flag, so mouse and keyboard share one selection model).
+  useEffect(() => {
+    if (selected) ref.current?.scrollIntoView({ block: 'nearest' })
+  }, [selected])
   return (
     <button
+      ref={ref}
       type="button"
       className={selected ? 'cmp-menu-row cmp-menu-row-selected' : 'cmp-menu-row'}
       role="option"
@@ -92,31 +104,6 @@ export function MenuRow({ selected, onSelect, onHover, children }: MenuRowProps)
       {children}
     </button>
   )
-}
-
-/** Shared keyboard handling for flat menus: returns the action for a key. */
-export function flatMenuKey(event: KeyboardEvent, count: number, index: number, onIndex: (i: number) => void, onPick: (i: number) => void, onClose: () => void): boolean {
-  if (event.key === 'ArrowDown') {
-    event.preventDefault()
-    onIndex(count === 0 ? 0 : (index + 1) % count)
-    return true
-  }
-  if (event.key === 'ArrowUp') {
-    event.preventDefault()
-    onIndex(count === 0 ? 0 : (index - 1 + count) % count)
-    return true
-  }
-  if (event.key === 'Enter') {
-    event.preventDefault()
-    if (count > 0) onPick(index)
-    return true
-  }
-  if (event.key === 'Escape') {
-    event.preventDefault()
-    onClose()
-    return true
-  }
-  return false
 }
 
 /** Footer hint line shared by the command/file menus. */
@@ -238,12 +225,14 @@ export function ModelMenu({
 
   // Keep the highlighted model inside the active provider's list.
   const modelCount = group?.models.length ?? 0
-  const clampedIndex = modelCount === 0 ? 0 : Math.min(modelIndex, modelCount - 1)
+  const clampedIndex = clampIndex(modelIndex, modelCount)
 
   function onKey(event: KeyboardEvent): void {
     if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
       event.preventDefault()
-      if (providers.length > 0) setProviderIndex((providerIndex + (event.key === 'ArrowRight' ? 1 : -1) + providers.length) % providers.length)
+      // Ticket 69: the provider axis clamps through the SAME clampIndex as
+      // every other menu axis — one end-of-list rule everywhere (no wrap).
+      setProviderIndex(clampIndex(providerIndex + (event.key === 'ArrowRight' ? 1 : -1), providers.length))
       return
     }
     if (flatMenuKey(event, modelCount, clampedIndex, setModelIndex, (i) => pick(i), onClose)) return

@@ -36,6 +36,13 @@
  *                collapsed thinking rows + settled tool cards; the failed card
  *                is in the error style, replayed thinking carries no ticking
  *                duration, the skill-driven turn shows its marker row.
+ *   4c/4d/4e/4f — ticket 69: menu scroll follow (pi16-menu-no-scroll). The
+ *                slash menu walks a full 12-row catalog; 4c catches the walk
+ *                crossing the fold and 4d the clamped bottom row — both with
+ *                the selected row fully inside the visible list. 4e pins the
+ *                model cascade auto-locating the current provider (11 of 14)
+ *                already in view on OPEN, 4f the provider walk clamped on the
+ *                last row.
  *   8. tooltip  — unified tooltip bubble on the sidebar filter button (ticket 22)
  *
  * PNGs land in $PICODE_VISUAL_OUT (default: <cwd>/.scratch/visual/). Not part
@@ -932,6 +939,137 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
         console.log(`VISUAL probe 4b-model-menu: provider order ok (${providerTitles.join(', ')})`)
       }
       // Close the cascade so the approval-pill shot shows the pill alone.
+      await win.webContents.executeJavaScript(
+        `(() => {
+          for (const target of [window, document]) {
+            target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+          }
+          return true
+        })()`
+      )
+      await sleep(300)
+
+      // ---- ticket 69: menu scroll follow (pi16-menu-no-scroll). The
+      // pre-69 defect: keyboard navigation walked the gray selected row
+      // past the list edge and the list never moved — the selection
+      // vanished out of view while the next rows stayed clipped. After:
+      // the selected row always scrolls into view (scrollIntoView nearest)
+      // and ↑↓ clamps at the ends. Frames 4c/4d pin the slash menu at the
+      // moment the walk crosses the fold and at the bottom; 4e/4f pin the
+      // model cascade auto-locating the current provider on OPEN and the
+      // provider walk resting clamped on the last row. ----
+      const menuKeyJs = (selector: string, key: string): string =>
+        `(() => {
+          const el = document.querySelector(${JSON.stringify(selector)})
+          if (!el) return false
+          el.dispatchEvent(new KeyboardEvent('keydown', { key: '${key}', bubbles: true, cancelable: true }))
+          return true
+        })()`
+      /** Flat-menu selection + the selected row's visibility inside its
+       * scroll list (the money probe: the gray row must sit fully inside
+       * the visible list box after every navigation step). */
+      const menuScrollProbeJs = (scopeSelector: string): string =>
+        `(() => {
+          const scope = ${scopeSelector ? `document.querySelector(${JSON.stringify(scopeSelector)})` : 'document'}
+          if (!scope) return { count: 0, selected: -1, ok: false }
+          const rows = [...scope.querySelectorAll('.cmp-menu-row')]
+          const list = scope.querySelector('.cmp-menu-list')
+          const sel = rows.find((r) => r.getAttribute('aria-selected') === 'true')
+          if (rows.length === 0 || !sel) return { count: 0, selected: -1, ok: false }
+          let ok = true
+          if (list instanceof HTMLElement && sel instanceof HTMLElement) {
+            const l = list.getBoundingClientRect()
+            const r = sel.getBoundingClientRect()
+            ok = r.top >= l.top - 0.5 && r.bottom <= l.bottom + 0.5
+          }
+          return { count: rows.length, selected: rows.indexOf(sel), ok }
+        })()`
+
+      // ① The slash menu with a full 12-row catalog (COMMAND_MENU_LIMIT):
+      // the list is taller than its 320px viewport, so the walk MUST scroll.
+      emit({
+        type: 'slash_commands',
+        commands: [
+          'summarize', 'review', 'plan', 'implement', 'test', 'refactor',
+          'document', 'optimize', 'migrate', 'profile', 'benchmark', 'ship'
+        ].map((name) => ({ name, description: `Ticket-69 scroll-follow row /${name}`, source: 'prompt' as const }))
+      })
+      await sleep(300)
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const ta = document.querySelector('.composer-input')
+          if (!(ta instanceof HTMLTextAreaElement)) return false
+          const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+          setter.call(ta, '/')
+          ta.dispatchEvent(new Event('input', { bubbles: true }))
+          ta.focus()
+          return true
+        })()`
+      )
+      await sleep(400)
+      let slashProbe = { count: 0, selected: -1, ok: false }
+      for (let waited = 0; waited < 5_000; waited += 100) {
+        slashProbe = (await win.webContents.executeJavaScript(menuScrollProbeJs('.cmp-popover')).catch(() => slashProbe)) as typeof slashProbe
+        if (slashProbe.count > 0) break
+        await sleep(100)
+      }
+      if (slashProbe.count !== 12) throw new Error(`visual 4c: expected the full 12-row command menu, got ${JSON.stringify(slashProbe)}`)
+      for (let step = 1; step <= 11; step++) {
+        await win.webContents.executeJavaScript(menuKeyJs('.composer-input', 'ArrowDown'))
+        await sleep(70)
+        const probe = (await win.webContents.executeJavaScript(menuScrollProbeJs('.cmp-popover'))) as typeof slashProbe
+        if (probe.selected !== step) throw new Error(`visual 4c: after ${step} ArrowDowns the selection is ${probe.selected} (clamp walk broken)`)
+        if (!probe.ok) throw new Error(`visual 4c: the selected row left the visible list at step ${step} (scroll follow broken)`)
+        if (step === 10) await captureMenu(win, '4c-menu-scroll-follow', { menuRows: '.cmp-popover .cmp-menu-row' })
+      }
+      await captureMenu(win, '4d-menu-scroll-bottom', { menuRows: '.cmp-popover .cmp-menu-row' })
+      console.log(`VISUAL probe 4d-menu-scroll-bottom: selected=${slashProbe.selected} of ${slashProbe.count} visible=${slashProbe.ok}`)
+      // Close the text menu the way the surface does: clear the input —
+      // a window-level Escape never reaches the textarea's menu handler.
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const ta = document.querySelector('.composer-input')
+          if (!(ta instanceof HTMLTextAreaElement)) return false
+          const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+          setter.call(ta, '')
+          ta.dispatchEvent(new Event('input', { bubbles: true }))
+          return true
+        })()`
+      )
+      await sleep(200)
+
+      // ② The model cascade with a long provider column: on OPEN the
+      // current provider (deep in the list) must already be scrolled into
+      // view, and ←→ must walk clamped to the last provider with the
+      // selected row following the scroll.
+      const longProviders = Array.from({ length: 14 }, (_, i) => ({
+        providerId: `prov-${i}`, name: `Provider ${String(i).padStart(2, '0')}`,
+        models: [{ providerId: `prov-${i}`, modelId: `m-${i}`, name: `Model ${i}` }]
+      }))
+      longProviders[11] = { providerId: 'bella', name: 'Bella', models: [{ providerId: 'bella', modelId: 'GLM-5.3', name: 'GLM-5.3' }] }
+      emit({ type: 'models_available', providers: longProviders, current: { providerId: 'bella', modelId: 'GLM-5.3', name: 'GLM-5.3' } })
+      await sleep(300)
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const ta = document.querySelector('.composer-input')
+          if (!(ta instanceof HTMLTextAreaElement)) return false
+          window.dispatchEvent(new Event('picode:open-model-menu'))
+          return true
+        })()`
+      )
+      await sleep(400)
+      const cascadeProbe = (await win.webContents.executeJavaScript(menuScrollProbeJs('.cmp-popover .cmp-cascade-col'))) as typeof slashProbe
+      if (cascadeProbe.selected !== 11) throw new Error(`visual 4e: the current provider (11 of 14) is not highlighted on open: ${JSON.stringify(cascadeProbe)}`)
+      if (!cascadeProbe.ok) throw new Error('visual 4e: the auto-located provider row is outside the visible column (scroll follow broken on open)')
+      await captureMenu(win, '4e-model-menu-locate', { providers: '.cmp-cascade-col .cmp-menu-row' })
+      for (let step = 0; step < 13; step++) {
+        await win.webContents.executeJavaScript(menuKeyJs('.cmp-popover .cmp-cascade', 'ArrowRight'))
+        await sleep(70)
+      }
+      const walked = (await win.webContents.executeJavaScript(menuScrollProbeJs('.cmp-popover .cmp-cascade-col'))) as typeof slashProbe
+      if (walked.selected !== 13) throw new Error(`visual 4f: the provider walk rested at ${walked.selected} of 14 (clamp broken)`)
+      if (!walked.ok) throw new Error('visual 4f: the walked provider row is outside the visible column')
+      await captureMenu(win, '4f-model-menu-scroll-bottom', { providers: '.cmp-cascade-col .cmp-menu-row' })
       await win.webContents.executeJavaScript(
         `(() => {
           for (const target of [window, document]) {

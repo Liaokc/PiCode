@@ -9,7 +9,8 @@ import {
 import type { ThinkingLevel } from '../../../../shared/contract'
 import type { AppPreferences } from '../../../../shared/preferences'
 import { configuredProviderIds, sortProvidersConfiguredFirst } from '../../../../shared/provider-sort'
-import { flatMenuKey, THINKING_LABELS } from '../composer/menus'
+import { flatMenuKey } from '../../../../shared/composer/menu-keys'
+import { THINKING_LABELS } from '../composer/menus'
 import { useNowTick } from '../use-now'
 import { ChevronRightIcon, CubeIcon, LoaderIcon, RefreshIcon } from '../icons'
 

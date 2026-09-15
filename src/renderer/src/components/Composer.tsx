@@ -6,7 +6,8 @@ import { applyMention, filterFiles } from '../../../shared/composer/mention'
 import { accessModeLabel } from '../../../shared/composer/access'
 import { gateSlashCommand } from '../../../shared/composer/slash-gate'
 import { textMenuSurface } from '../../../shared/composer/menu-surface'
-import { filterCommands } from '../../../shared/composer/commands'
+import { filterCommands, pickCommand } from '../../../shared/composer/commands'
+import { clampIndex, flatMenuKey } from '../../../shared/composer/menu-keys'
 import { composerDensity, thinkingBarFraction, thinkingBarShimmers, type ComposerDensity } from '../../../shared/composer/density'
 import {
   composerAutoGrowHeight,
@@ -314,40 +315,45 @@ export default function Composer({
     syncTextMenu(el.value, el.selectionStart)
   }
 
+  /** Ticket 69: the ONE pick path for the open text menu — a row's mouse
+   * click and the keyboard's Enter both land here, so the slash decision
+   * (insert vs built-in) and the @-mention application exist exactly once
+   * and can never diverge between mouse and keyboard. */
+  function pickTextMenuRow(i: number): void {
+    if (menu === 'slash') {
+      const row = slashRows[i]
+      if (!row) return
+      const decision = pickCommand(row)
+      if (decision.kind === 'insert') updateValue(decision.text)
+      else {
+        onBuiltinCommand(decision.name)
+        setValue('')
+      }
+    } else if (menu === 'files') {
+      const row = fileRows[i]
+      if (!row) return
+      const applied = applyMention(value, caret, row)
+      updateValue(applied.text, applied.caret)
+    } else {
+      return
+    }
+    setMenu(null)
+  }
+
   function handleMenuKey(event: KeyboardEvent<HTMLTextAreaElement>): boolean {
     if (menu !== 'slash' && menu !== 'files') return false
-    const rows = document.querySelectorAll('.cmp-popover .cmp-menu-row')
+    const count = (menu === 'slash' ? slashRows : fileRows).length
     // Zero matches render no menu (ticket 68): the surface may still be
     // "open", but with nothing mounted the keys belong to the textarea —
     // arrows move the caret, and Enter falls through to the send path
     // below (unknown /commands pass through to the SDK untouched).
-    if (rows.length === 0) return false
-    if (event.key === 'ArrowDown') {
-      event.preventDefault()
-      setMenuIndex((i) => i + 1)
-      return true
-    }
-    if (event.key === 'ArrowUp') {
-      event.preventDefault()
-      setMenuIndex((i) => Math.max(0, i - 1))
-      return true
-    }
-    if (event.key === 'Enter') {
-      // Ticket 68: Shift+Enter inserts a newline in EVERY menu state —
-      // the guard sits ahead of the row pick so composing multiline text
-      // never picks a row (the pi16-slash-menu-multiline blocked send).
-      if (event.shiftKey) return false
-      event.preventDefault()
-      const clamped = Math.min(menuIndex, rows.length - 1)
-      ;(rows[clamped] as HTMLButtonElement | undefined)?.click()
-      return true
-    }
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      setMenu(null)
-      return true
-    }
-    return false
+    if (count === 0) return false
+    // Ticket 69: ONE keyboard rule — the same shared flatMenuKey every
+    // composer menu uses (clamped ends, Enter picks, Escape closes; the
+    // old ad-hoc intercept here had an unbounded ArrowDown). Shift+Enter
+    // returns false inside it, so the newline path below keeps owning the
+    // modified key in every menu state.
+    return flatMenuKey(event, count, clampIndex(menuIndex, count), setMenuIndex, pickTextMenuRow, () => setMenu(null))
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
@@ -470,12 +476,7 @@ export default function Composer({
           rows={slashRows}
           index={menuIndex}
           onIndex={setMenuIndex}
-          onInsert={(text) => updateValue(text)}
-          onBuiltin={(name) => {
-            onBuiltinCommand(name)
-            setValue('')
-            setMenu(null)
-          }}
+          onPickRow={pickTextMenuRow}
           onClose={() => setMenu(null)}
         />
       )}
@@ -484,10 +485,7 @@ export default function Composer({
           rows={fileRows}
           index={menuIndex}
           onIndex={setMenuIndex}
-          onPick={(path) => {
-            const applied = applyMention(value, caret, path)
-            updateValue(applied.text, applied.caret)
-          }}
+          onPickRow={pickTextMenuRow}
           onClose={() => setMenu(null)}
         />
       )}
