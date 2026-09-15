@@ -199,7 +199,7 @@ export function startSettingsVisualIfEnabled(getWindow: () => BrowserWindow | nu
       await sleep(200)
       if (await execute<boolean>(wc, `document.querySelector('.settings-cascade') !== null`)) {
         throw new Error('settings visual: the model cascade never closed')
- }
+      }
 
       // 3. General section.
       if (!(await clickNavItem(wc, 'General'))) throw new Error('settings visual: General nav item missing')
