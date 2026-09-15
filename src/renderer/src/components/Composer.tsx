@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type JSX, type KeyboardEvent } from 'react'
 import type { AccessMode, ImageAttachment, ModelRef, ProviderModels, SlashCommandItem, ThinkingLevel } from '../../../shared/contract'
 import type { ChatQueue } from '../../../shared/chat-reducer'
-import { applyMention, mentionQueryAt } from '../../../shared/composer/mention'
+import { applyMention, filterFiles } from '../../../shared/composer/mention'
 import { accessModeLabel } from '../../../shared/composer/access'
 import { gateSlashCommand } from '../../../shared/composer/slash-gate'
+import { textMenuSurface } from '../../../shared/composer/menu-surface'
+import { filterCommands } from '../../../shared/composer/commands'
 import { composerDensity, thinkingBarFraction, thinkingBarShimmers, type ComposerDensity } from '../../../shared/composer/density'
 import {
   composerAutoGrowHeight,
@@ -132,6 +134,9 @@ export default function Composer({
   const fileSeq = useRef(0)
   const fileListRequest = useRef<string | null>(null)
   const fileDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** Ticket 68: the query the open text menu was last synced with — the
+   * keyboard-selection reset and the candidate refetch ride on its change. */
+  const menuQueryRef = useRef<string | null>(null)
 
   // Staged label degradation (ZCode parity, ticket-29 feedback): the footer
   // sheds text as the panes crowd the main zone. Measured on the composer
@@ -149,8 +154,15 @@ export default function Composer({
     return () => observer.disconnect()
   }, [])
 
-  const mention = mentionQueryAt(value, caret)
-  const slashQuery = value.startsWith('/') ? value.slice(1) : null
+  // Ticket 68: ONE trigger-surface decision (Seam-1, menu-surface.ts) rules
+  // both text menus — open only while the caret sits inside the first-line
+  // leading token. The surface says WHICH menu the position calls for; the
+  // filtered rows decide whether it renders at all: zero matches render
+  // nothing (the "No matching commands/files" box is gone) and Enter
+  // falls back to the send path.
+  const surface = textMenuSurface(value, caret)
+  const slashRows = surface?.kind === 'slash' ? filterCommands(chat.slashCommands, surface.query) : []
+  const fileRows = surface?.kind === 'files' ? filterFiles(fileOptions, surface.query) : []
 
   // 输入展开 (ticket 49): adaptive height, applied imperatively — height
   // lives OUTSIDE React state so typing re-measures and re-styles the
@@ -229,41 +241,48 @@ export default function Composer({
     })
   }
 
-  function syncCaret(el: HTMLTextAreaElement): void {
-    const nextMention = mentionQueryAt(el.value, el.selectionStart)
-    setCaret(el.selectionStart)
-    if (nextMention !== null) {
-      if (menu === null) {
-        setMenu('files')
-        setMenuIndex(0)
-        refreshFileList(nextMention)
-      }
+  /** Ticket 68: reconcile the open text menu with the trigger surface.
+   * Every path that edits the text or moves the caret funnels here, so the
+   * menu tracks the surface exactly: open while it resolves, closed the
+   * moment it doesn't (newline, space, cursor out of the token), reopened
+   * when the cursor re-enters. A fresh query resets the keyboard selection
+   * and refetches file candidates; an unchanged one touches nothing (a
+   * click that doesn't move the caret fires onSelect AND onClick). */
+  function syncTextMenu(text: string, caretPos: number): void {
+    const next = textMenuSurface(text, caretPos)
+    if (next === null) {
+      menuQueryRef.current = null
+      if (menu === 'slash' || menu === 'files') setMenu(null)
       return
     }
-    // Triggers gone → close text menus.
-    if (menu === 'files' || (menu === 'slash' && !el.value.startsWith('/'))) setMenu(null)
+    if (menuQueryRef.current === next.query && (menu === 'slash' || menu === 'files')) return
+    menuQueryRef.current = next.query
+    setMenu(next.kind)
+    setMenuIndex(0)
+    if (next.kind === 'files') refreshFileList(next.query)
   }
 
   function handleChange(el: HTMLTextAreaElement): void {
-    const next = el.value
-    setValue(next)
+    setValue(el.value)
     setCaret(el.selectionStart)
-    if (next.startsWith('/')) {
-      setMenu('slash')
-      setMenuIndex(0)
-      return
-    }
-    const query = mentionQueryAt(next, el.selectionStart)
-    if (query !== null) {
-      setMenu('files')
-      setMenuIndex(0)
-      refreshFileList(query)
-      return
-    }
-    if (menu === 'slash' || menu === 'files') setMenu(null)
+    syncTextMenu(el.value, el.selectionStart)
   }
+
+  /** Cursor moved without a text change (click / arrows): the same surface
+   * decision governs — leaving the token closes, re-entering re-opens. */
+  function syncCaret(el: HTMLTextAreaElement): void {
+    setCaret(el.selectionStart)
+    syncTextMenu(el.value, el.selectionStart)
+  }
+
   function handleMenuKey(event: KeyboardEvent<HTMLTextAreaElement>): boolean {
     if (menu !== 'slash' && menu !== 'files') return false
+    const rows = document.querySelectorAll('.cmp-popover .cmp-menu-row')
+    // Zero matches render no menu (ticket 68): the surface may still be
+    // "open", but with nothing mounted the keys belong to the textarea —
+    // arrows move the caret, and Enter falls through to the send path
+    // below (unknown /commands pass through to the SDK untouched).
+    if (rows.length === 0) return false
     if (event.key === 'ArrowDown') {
       event.preventDefault()
       setMenuIndex((i) => i + 1)
@@ -275,15 +294,11 @@ export default function Composer({
       return true
     }
     if (event.key === 'Enter') {
+      // Ticket 68: Shift+Enter inserts a newline in EVERY menu state —
+      // the guard sits ahead of the row pick so composing multiline text
+      // never picks a row (the pi16-slash-menu-multiline blocked send).
+      if (event.shiftKey) return false
       event.preventDefault()
-      const rows = document.querySelectorAll('.cmp-popover .cmp-menu-row')
-      if (rows.length === 0) {
-        // No matches — send the raw text (the SDK passes unknown /commands
-        // through untouched).
-        setMenu(null)
-        dispatch()
-        return true
-      }
       const clamped = Math.min(menuIndex, rows.length - 1)
       ;(rows[clamped] as HTMLButtonElement | undefined)?.click()
       return true
@@ -361,6 +376,7 @@ export default function Composer({
     setCaret(0)
     setImages([])
     setMenu(null)
+    menuQueryRef.current = null
     // 输入展开 (ticket 49), collapse path ③: the message is on its way, so
     // the next turn starts from the resting composer.
     if (expanded) transitionExpand('sent')
@@ -410,10 +426,9 @@ export default function Composer({
 
   return (
     <section ref={sectionRef} className="composer" aria-label="Composer">
-      {menu === 'slash' && (
+      {menu === 'slash' && slashRows.length > 0 && (
         <SlashMenu
-          commands={chat.slashCommands}
-          query={slashQuery ?? ''}
+          rows={slashRows}
           index={menuIndex}
           onIndex={setMenuIndex}
           onInsert={(text) => updateValue(text)}
@@ -425,10 +440,9 @@ export default function Composer({
           onClose={() => setMenu(null)}
         />
       )}
-      {menu === 'files' && (
+      {menu === 'files' && fileRows.length > 0 && (
         <FileMenu
-          files={fileOptions}
-          query={mention ?? ''}
+          rows={fileRows}
           index={menuIndex}
           onIndex={setMenuIndex}
           onPick={(path) => {
