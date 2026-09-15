@@ -3053,6 +3053,162 @@ export function startSmokeIfEnabled(
     })
     log('scroll_stay_done')
 
+    // ---- ticket 75: streaming stick direction awareness — the wheel always wins ----
+    // A FRESH session (createSession focuses it — in-app ChatView by
+    // construction) drives the three acceptance assertions on top of the
+    // ticket-45 stage above (which stays as the no-regression harness and
+    // now also covers the far-away held + own-send combination):
+    // ① a SLIGHT upward scroll INSIDE the 160px band during streaming sets
+    //    the held-away latch — the next deltas must NOT yank (the pre-75
+    //    rule fought the wheel frame-by-frame = jitter), and the jump button
+    //    stays hidden in-band (160px visibility semantics kept);
+    // ② scrolling back down into the band while still streaming RESTORES
+    //    the stick — the following deltas keep the bottom pinned;
+    // ③ the user's own send while held away still lands at the bottom and
+    //    the reply streams pinned through its end (the send clears the
+    //    latch — 自发送复位).
+    // The run counts to 1200 (vs ticket 45's 120) so the stream OUTLIVES
+    // every assertion window below by minutes: a natural run-end mid-window
+    // settles-collapse the transcript and the browser clamps the held
+    // reader onto the new bottom — an expected latch clear (回底), but one
+    // that would read as a false failure. The run is aborted at ③.
+    log('scroll75_start')
+    const stick75Created = waitFor(
+      (e) => e.type === 'session_created',
+      'scroll75 session_created'
+    ) as Promise<Extract<Scoped, { type: 'session_created' }>>
+    supervisor.createSession(cwd)
+    const stick75Session = await stick75Created
+    const stick75Id = stick75Session.sessionId
+    const COUNT_PROMPT_75 =
+      'PICODE_SCROLL_75: Count from 1 to 1200. Output each number on its own line, one number per line. Do not summarize and do not stop early.\n' +
+      '\n'.repeat(100)
+    await withWindow(getWindow, async (win) => {
+      const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+      const AT_BOTTOM = `(() => { const el = document.querySelector('.chat-scroll'); return el !== null && el.scrollHeight - el.scrollTop - el.clientHeight < 40 })()`
+      const JUMP_HIDDEN = `(() => {
+        const btn = document.querySelector('.chat-jump-btn')
+        return btn !== null && !btn.classList.contains('chat-jump-btn-visible')
+      })()`
+      const SCROLL_DIAG = `JSON.stringify({
+        scrollTop: document.querySelector('.chat-scroll')?.scrollTop ?? null,
+        scrollH: document.querySelector('.chat-scroll')?.scrollHeight ?? null,
+        clientH: document.querySelector('.chat-scroll')?.clientHeight ?? null,
+        btn: document.querySelector('.chat-jump-btn')?.className ?? null,
+        chatView: document.querySelector('.chat-view') !== null
+      })`
+
+      if (!(await waitForProbe(win, `document.querySelector('.chat-view') !== null`, 10_000))) {
+        fail('ticket-75 stage: the fresh session never reached the chat view')
+      }
+
+      // Start a LONG streaming run; the answer streams with the view pinned
+      // at the bottom.
+      supervisor.handleParentCommand({
+        type: 'session_command',
+        sessionId: stick75Id,
+        command: { type: 'prompt', text: COUNT_PROMPT_75 }
+      })
+      await waitFor((e) => e.type === 'agent_start' && e.sessionId === stick75Id, 'scroll75 agent_start')
+      if (
+        !(await waitForProbe(
+          win,
+          `(document.querySelector('.chat-thread')?.textContent ?? '').includes('PICODE_SCROLL_75')`,
+          10_000
+        ))
+      ) {
+        fail('ticket-75 stage: the count prompt never rendered in the focused transcript')
+      }
+      await waitFor((e) => e.type === 'text_delta' && e.sessionId === stick75Id, 'scroll75 first text_delta')
+      if (!(await waitForProbe(win, AT_BOTTOM, 5_000))) {
+        fail('ticket-75 stage: the streaming transcript did not stay pinned at the bottom')
+      }
+
+      // ① Slight upward scroll INSIDE the band while streaming: the latch
+      // must set immediately — no yank on the next deltas, button stays
+      // hidden (in-band, the 160px visibility semantics unchanged). A few
+      // deltas first: the stream is deep underway when the gesture lands.
+      for (let seen = 0; seen < 3; seen++) {
+        await waitFor((e) => e.type === 'text_delta' && e.sessionId === stick75Id, 'scroll75 underway text_delta')
+      }
+      const heldTop = (await js(
+        `(() => { const el = document.querySelector('.chat-scroll'); el.scrollTop -= 60; return el.scrollTop })()`
+      )) as number
+      log('scroll75_hold_latched', `heldTop=${heldTop}`)
+      if (!(await waitForProbe(win, `document.querySelector('.chat-scroll').scrollTop === ${heldTop} && (${JUMP_HIDDEN})`, 2_000))) {
+        const diag = (await js(SCROLL_DIAG).catch(() => 'unavailable')) as string
+        fail(`ticket-75 stage: the in-band hold did not latch (yanked back or the button flickered); DOM: ${diag}`)
+      }
+      for (let seen = 0; seen < 2; seen++) {
+        await waitFor((e) => e.type === 'text_delta' && e.sessionId === stick75Id, 'scroll75 hold text_delta')
+      }
+      await new Promise((r) => setTimeout(r, 300))
+      const heldAfter = (await js(`document.querySelector('.chat-scroll').scrollTop`)) as number
+      if (heldAfter !== heldTop) {
+        fail(`ticket-75 stage: in-band growth yanked the held reader (${heldTop} → ${heldAfter})`)
+      }
+      log('scroll75_hold_ok')
+
+      // ② Scroll back down into the band while still streaming: the stick
+      // restores — the following deltas keep the bottom pinned (and the
+      // button stays hidden in-band).
+      await js(`(() => { const el = document.querySelector('.chat-scroll'); el.scrollTop = el.scrollHeight; return true })(); true`)
+      if (!(await waitForProbe(win, AT_BOTTOM, 5_000))) {
+        fail('ticket-75 stage: the downward return never reached the bottom')
+      }
+      for (let seen = 0; seen < 3; seen++) {
+        await waitFor((e) => e.type === 'text_delta' && e.sessionId === stick75Id, 'scroll75 restore text_delta')
+      }
+      await new Promise((r) => setTimeout(r, 300))
+      if (!(await win.webContents.executeJavaScript(`(${AT_BOTTOM}) && (${JUMP_HIDDEN})`))) {
+        const diag = (await js(SCROLL_DIAG).catch(() => 'unavailable')) as string
+        fail(`ticket-75 stage: the stick never resumed after the return to the bottom; DOM: ${diag}`)
+      }
+      log('scroll75_restore_ok')
+
+      // ③ Own send while held away (in-band): settle the run first (a send
+      // while busy takes the queued path — no user_message echo), re-hold
+      // slightly, then send. The echo's user_message pass must clear the
+      // latch, pin the bottom, and the reply must stream pinned through its
+      // end (the send reset the follow).
+      supervisor.handleParentCommand({
+        type: 'session_command',
+        sessionId: stick75Id,
+        command: { type: 'abort_turn' }
+      })
+      if (!(await waitForProbe(win, `document.querySelector('.cmp-send') !== null`, 15_000))) {
+        fail('ticket-75 stage: the composer never left the busy state after the abort')
+      }
+      await new Promise((r) => setTimeout(r, 500)) // the settle/fold rewrites settle
+      await js(`(() => { const el = document.querySelector('.chat-scroll'); el.scrollTop -= 60; return true })(); true`)
+      if (!(await win.webContents.executeJavaScript(composerTypeJs('Reply with exactly: PICODE_SEND_75')).catch(() => false))) {
+        fail('ticket-75 stage: composer textarea missing for the held-away self-send')
+      }
+      await new Promise((r) => setTimeout(r, 300))
+      await win.webContents.executeJavaScript(composerKeyJs('Enter'))
+      const sent75 = await waitForProbe(
+        win,
+        `(document.querySelector('.chat-thread')?.textContent ?? '').includes('PICODE_SEND_75') && (${AT_BOTTOM}) && (${JUMP_HIDDEN})`,
+        10_000
+      )
+      if (!sent75) {
+        const diag = (await js(SCROLL_DIAG).catch(() => 'unavailable')) as string
+        fail(`ticket-75 stage: the held-away own send never jumped back to the bottom; DOM: ${diag}`)
+      }
+      // The reply must keep following (the send cleared the latch): still at
+      // the bottom when the turn ends and after its settle rewrites.
+      await waitFor((e) => e.type === 'agent_end' && e.sessionId === stick75Id, 'scroll75 reply agent_end')
+      await new Promise((r) => setTimeout(r, 500))
+      if (!(await win.webContents.executeJavaScript(AT_BOTTOM))) {
+        const diag = (await js(SCROLL_DIAG).catch(() => 'unavailable')) as string
+        fail(`ticket-75 stage: the reply drifted from the bottom after the held-away send; DOM: ${diag}`)
+      }
+      log('scroll75_self_send_ok')
+
+      await win.webContents.executeJavaScript(composerClearJs)
+    })
+    log('scroll75_done')
+
     // ---- ticket 46: the turn navigator rail ----
     // A FRESH session (createSession focuses it — in-app ChatView by
     // construction) drives the acceptance chain:
