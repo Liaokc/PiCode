@@ -291,15 +291,7 @@ export default function Composer({
       menuQueryRef.current = null
       setValue(detail.text)
       setCaret(detail.text.length)
-      setImages(
-        detail.images.map((img) => ({
-          id: imageSeq++,
-          mimeType: img.mimeType,
-          data: img.data,
-          preview: `data:${img.mimeType};base64,${img.data}`,
-          label: 'Image'
-        }))
-      )
+      setImages(localImagesFrom(detail.images))
       requestAnimationFrame(() => {
         const el = textareaRef.current
         if (el) {
@@ -781,17 +773,23 @@ function modelShortId(model: ModelRef): string {
   return model.modelId
 }
 
-/** Ticket 74: rebuild the local attachment cards from a restored draft —
- * fresh local ids, data-URL previews rebuilt from the raw base64 payload
- * (the bridge carries the contract shape, previews never leave this file). */
-function localImagesFromDraft(draft: ComposerDraft | null | undefined): LocalImage[] {
-  return (draft?.images ?? []).map((img) => ({
+/** Build the local attachment cards from {mimeType, data} parts — fresh
+ * local ids, data-URL previews rebuilt from the raw base64 payload (previews
+ * never leave this file). ONE builder for both restore paths: the ticket-74
+ * parked-draft mount and the ticket-79 edit-resend prefill. */
+function localImagesFrom(parts: ReadonlyArray<{ mimeType: string; data: string }>): LocalImage[] {
+  return parts.map((img) => ({
     id: imageSeq++,
     mimeType: img.mimeType,
     data: img.data,
     preview: `data:${img.mimeType};base64,${img.data}`,
     label: 'Image'
   }))
+}
+
+/** Ticket 74: rebuild the local attachment cards from a restored draft. */
+function localImagesFromDraft(draft: ComposerDraft | null | undefined): LocalImage[] {
+  return localImagesFrom(draft?.images ?? [])
 }
 
 /** 输入展开 (ticket 49): the height of the main zone the composer lives in
