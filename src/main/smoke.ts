@@ -108,14 +108,18 @@
  * selected row always sits inside the visible list (scroll follow,
  * pi16-menu-no-scroll).
  *
- * Ticket 72 adds the command-card stage right after the menu-keyboard
- * stage (CONTEXT.md: 技能卡 Skill Card): picking a seeded skill renders the
- * structured card (violet wand icon + name + ×) instead of raw text, the
- * args text follows it, × removes the card (args preserved), and a
- * re-pick — the seeded prompt template — REPLACES the card (single slot).
- * The send recombines `/skill:name args` and the SDK's own expansion
- * proves the byte-identical form: the persisted user message is the skill
- * prologue plus the exact args (a real in-session turn).
+ * Ticket 72 adds the command-card stage after the draft-preservation stage
+ * (CONTEXT.md: 技能卡 Skill Card; after ticket-20's crash isolation like
+ * every stage that resumes a seeded session — the legacy crash-isolation
+ * stage SIGKILLs the most recently spawned host and waits for the FIRST
+ * session's host_exit, so a resume before it would break that pairing):
+ * picking a seeded skill renders the structured card (violet wand icon +
+ * name + ×) instead of raw text, the args text follows it, × removes the
+ * card (args preserved), and a re-pick — the seeded prompt template —
+ * REPLACES the card (single slot). The send recombines `/skill:name args`
+ * and the SDK's own expansion proves the byte-identical form: the
+ * persisted user message is the skill prologue plus the exact args (a real
+ * in-session turn).
  *
  * Ticket 70 adds the chip-toggle stage right after it: REAL chip presses
  * (mousedown, mouseup, click — click() alone never fires mousedown, which
@@ -1225,225 +1229,6 @@ export function startSmokeIfEnabled(
       // host_exit path covers a killed host) — drop the observer for real.
       observers.splice(observers.indexOf(onGateAsk), 1)
     })
-
-    // ---- ticket 72: the command card (CONTEXT.md: 技能卡 Skill Card).
-    // Picking a skill from the `/` menu renders the structured card (violet
-    // wand icon + name + ×) instead of raw text, the args text follows it,
-    // × removes the card (args preserved), and a re-pick — the seeded prompt
-    // template — REPLACES the card (single slot: Pi semantics = one leading
-    // command per message). The send recombines `/skill:name args` and the
-    // SDK's OWN expansion proves the byte-identical form: the persisted user
-    // message is the skill prologue plus the exact args (a real in-session
-    // turn), and the composer resets fully (args AND card). The empty-state
-    // half of the shared-composer rule is locked by the ticket-52 stage's
-    // card probes above. ----
-    log('command_card_start')
-    {
-      const store72 = process.env['PICODE_SESSION_DIR']
-      if (!store72) fail('ticket-72 stage: PICODE_SESSION_DIR is not set')
-      if (!created.sessionFile) fail('ticket-72 stage: no host-written session file to seed a resume target from')
-      const seedProject72 = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-seed72-'))
-      const CARD_SKILL_72 = 'picode-72-skill'
-      const CARD_TEMPLATE_72 = 'picode-72-template'
-      const CARD_ARGS_72 = 'PICODE_72_ARGS stress the boundaries'
-      try {
-        // The real resources: a project skill + prompt template that the
-        // session's own resource loader enumerates (cwd-scoped scan at
-        // session creation). The skill body instructs the model to a
-        // deterministic tool-free reply so the send's turn settles fast.
-        mkdirSync(path.join(seedProject72, '.pi', 'skills', CARD_SKILL_72), { recursive: true })
-        writeFileSync(
-          path.join(seedProject72, '.pi', 'skills', CARD_SKILL_72, 'SKILL.md'),
-          `---\nname: ${CARD_SKILL_72}\ndescription: Seeded card-flow skill\n---\nReply with exactly: PICODE_72_SKILL_OK. Never use tools.\n`
-        )
-        mkdirSync(path.join(seedProject72, '.pi', 'prompts'), { recursive: true })
-        writeFileSync(
-          path.join(seedProject72, '.pi', 'prompts', `${CARD_TEMPLATE_72}.md`),
-          `---\ndescription: Seeded card-flow template\nargument-hint: [env]\n---\nSeeded template body\n`
-        )
-        // The resume target: a copy of the host-written session file (the
-        // proven-openable shape, ticket-73/74 precedent) whose cwd is the
-        // seeded project; backdated = quiet, the click takes the resume path.
-        const template72 = readFileSync(created.sessionFile, 'utf8')
-        const file72 = path.join(store72, 'commandcard72.jsonl')
-        const lines72 = template72.split('\n')
-        const header72 = JSON.parse(lines72[0] ?? '{}') as { id?: string; cwd?: string }
-        header72.id = randomUUID()
-        header72.cwd = seedProject72
-        lines72[0] = JSON.stringify(header72)
-        lines72.push(
-          JSON.stringify({
-            type: 'message',
-            id: `t72-${randomUUID().slice(0, 8)}`,
-            parentId: lastEntryId(template72),
-            timestamp: new Date().toISOString(),
-            message: { role: 'user', content: [{ type: 'text', text: 'PICODE_72 seed turn' }] }
-          })
-        )
-        writeFileSync(file72, lines72.join('\n'))
-        backdateMtime(file72)
-
-        await withWindow(getWindow, async (win) => {
-          const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
-          const chatValue72 = `(document.querySelector('.chat-dock textarea.composer-input')?.value ?? 'missing')`
-          const chatCard72 = `(() => {
-            const c = document.querySelector('.chat-dock .composer-command-card')
-            return c === null ? null : { name: c.getAttribute('data-card-name'), source: c.getAttribute('data-card-source') }
-          })()`
-          const cmdRow72 = (name: string): string => `(() => {
-            const rows = [...document.querySelectorAll('.cmp-popover .cmp-cmd-row')]
-            const row = rows.find((r) => (r.querySelector('.cmp-cmd-name')?.textContent ?? '') === ${JSON.stringify(`/${name}`)})
-            if (!(row instanceof HTMLElement)) return false
-            row.click()
-            return true
-          })()`
-          const cmdRowProbe72 = (name: string): string => `(() => {
-            const rows = [...document.querySelectorAll('.cmp-popover .cmp-cmd-row')]
-            return rows.some((r) => (r.querySelector('.cmp-cmd-name')?.textContent ?? '') === ${JSON.stringify(`/${name}`)})
-          })()`
-          /** Type the seeded query and wait for BOTH seeded menu rows. */
-          const openSeededMenu72 = async (): Promise<void> => {
-            await js(composerClearJs)
-            if (!((await js(composerTypeJs('/picode-72')).catch(() => false)) as boolean)) {
-              fail('ticket-72 stage: the chat composer textarea is missing for the seeded query')
-            }
-            if (!(await waitForProbe(win, `${cmdRowProbe72(CARD_SKILL_72)} && ${cmdRowProbe72(CARD_TEMPLATE_72)}`, 15_000))) {
-              fail('ticket-72 stage: the seeded skill/template rows never reached the in-session `/` menu')
-            }
-          }
-
-          // The sidebar may have been closed by an earlier stage —
-          // press-until-present (the ticket-73 pattern).
-          if (!((await js(`document.querySelector('.sidebar') !== null`)) as boolean)) {
-            await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', metaKey: true, bubbles: true })); true`)
-            await waitForProbe(win, `document.querySelector('.sidebar') !== null`, 5_000)
-          }
-          // Resume by a real sidebar-row click; the announcement focuses the
-          // session and the chat view takes over.
-          if (!(await waitForProbe(win, `document.querySelector('[data-file="${file72}"]') !== null`, 15_000))) {
-            fail('ticket-72 stage: the seeded resume row never reached the sidebar')
-          }
-          const resumed72 = waitFor(
-            (e) => e.type === 'session_created' && e.sessionFile === file72,
-            'ticket-72 resume session_created'
-          )
-          await js(`document.querySelector('[data-file="${file72}"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
-          const id72 = ((await resumed72) as Extract<Scoped, { type: 'session_created' }>).sessionId
-          if (!(await waitForProbe(win, `document.querySelector('.chat-dock textarea.composer-input') !== null`, 15_000))) {
-            fail('ticket-72 stage: the resumed session never opened its chat composer')
-          }
-          log('command_card_resume_ok')
-
-          // ① Pick the seeded skill: the card replaces the raw-text insert —
-          // structured (name + source), args empty, and ZERO session traffic
-          // across the pick (the ticket-52 negative-assertion precedent).
-          let leaked = 0
-          const onLeak72 = (event: Scoped): void => {
-            if (event.type === 'user_message') leaked++
-          }
-          observers.push(onLeak72)
-          await openSeededMenu72()
-          if (!((await js(cmdRow72(CARD_SKILL_72))) as boolean)) {
-            fail('ticket-72 stage: the seeded skill row disappeared before the pick')
-          }
-          if (!(await waitForProbe(win, `${chatCard72} !== null && ${chatCard72}.name === ${JSON.stringify(CARD_SKILL_72)} && ${chatCard72}.source === 'skill' && ${chatValue72} === ''`, 5_000))) {
-            fail('ticket-72 stage: the skill pick never staged the command card with empty args')
-          }
-          log('command_card_skill_pick_ok')
-
-          // ② The args text follows the card: typing plain text keeps the
-          // card (and never re-opens a menu — the args do not start with `/`).
-          if (!((await js(composerTypeJs(CARD_ARGS_72)).catch(() => false)) as boolean)) {
-            fail('ticket-72 stage: the chat composer textarea is missing for the args')
-          }
-          if (!(await waitForProbe(win, `${chatValue72} === ${JSON.stringify(CARD_ARGS_72)} && ${chatCard72}.name === ${JSON.stringify(CARD_SKILL_72)}`, 5_000))) {
-            fail('ticket-72 stage: the args text never followed the card')
-          }
-          log('command_card_args_follow_ok')
-
-          // ③ × removes the CARD, not the message: the args text survives.
-          if (!((await js(`document.querySelector('.chat-dock .composer-command-card-remove')?.click(); true`).catch(() => false)) as boolean)) {
-            fail('ticket-72 stage: the card remove button is missing')
-          }
-          if (!(await waitForProbe(win, `${chatCard72} === null && ${chatValue72} === ${JSON.stringify(CARD_ARGS_72)}`, 5_000))) {
-            fail(`ticket-72 stage: × never cleared the card while keeping the args (saw ${String(await js(chatValue72))})`)
-          }
-          log('command_card_clear_ok')
-
-          // ④ A re-pick REPLACES the card (single slot): the prompt template
-          // lands in the same slot — a different source proves replacement.
-          await openSeededMenu72()
-          if (!((await js(cmdRow72(CARD_TEMPLATE_72))) as boolean)) {
-            fail('ticket-72 stage: the seeded template row disappeared before the re-pick')
-          }
-          if (!(await waitForProbe(win, `${chatCard72}.name === ${JSON.stringify(CARD_TEMPLATE_72)} && ${chatCard72}.source === 'prompt' && ${chatValue72} === ''`, 5_000))) {
-            fail('ticket-72 stage: the re-pick never replaced the card with the template')
-          }
-          observers.splice(observers.indexOf(onLeak72), 1)
-          if (leaked > 0) fail(`ticket-72 stage: the menu picks leaked ${leaked} message(s) — staging must not send`)
-          log('command_card_replace_ok')
-
-          // ⑤ The send recombines the invocation — byte-identical to the raw
-          // text era, proven by the SDK's own expansion: the persisted user
-          // message IS the skill prologue plus the exact args. One-shot
-          // auto-deny (the menu_surface precedent) keeps a hallucinated tool
-          // call from stalling the turn.
-          await openSeededMenu72()
-          if (!((await js(cmdRow72(CARD_SKILL_72))) as boolean)) {
-            fail('ticket-72 stage: the seeded skill row disappeared before the send pick')
-          }
-          if (!(await waitForProbe(win, `${chatCard72}.name === ${JSON.stringify(CARD_SKILL_72)}`, 5_000))) {
-            fail('ticket-72 stage: the skill card never came back for the send')
-          }
-          if (!((await js(composerTypeJs(CARD_ARGS_72)).catch(() => false)) as boolean)) {
-            fail('ticket-72 stage: the chat composer textarea is missing for the send args')
-          }
-          await new Promise((r) => setTimeout(r, 300))
-          let gateWatch72 = true
-          const onGateAsk72 = (event: Scoped): void => {
-            if (!gateWatch72) return
-            if (event.type === 'approval_required') {
-              gateWatch72 = false
-              log('command_card_gate_auto_deny', `tool=${event.toolName}`)
-              supervisor.handleParentCommand({
-                type: 'session_command',
-                sessionId: event.sessionId,
-                command: {
-                  type: 'deny_tool',
-                  toolCallId: event.toolCallId,
-                  reason: 'smoke auto-deny: the card-flow send must settle as a plain skill reply'
-                }
-              })
-            } else if (event.type === 'agent_end' || event.type === 'host_exit') {
-              gateWatch72 = false
-            }
-          }
-          observers.push(onGateAsk72)
-          const expanded72 = waitFor(
-            (e) =>
-              e.type === 'user_message' &&
-              e.sessionId === id72 &&
-              e.text.includes(`<skill name="${CARD_SKILL_72}"`) &&
-              e.text.includes(CARD_ARGS_72),
-            'ticket-72 SDK skill expansion user_message'
-          )
-          await js(composerKeyJs('Enter'))
-          await expanded72
-          log('command_card_send_expanded_ok')
-          await waitFor((e) => e.type === 'agent_end' && e.sessionId === id72, 'ticket-72 send agent_end')
-          observers.splice(observers.indexOf(onGateAsk72), 1)
-
-          // ⑥ The send resets the whole composer: args AND card.
-          if (!(await waitForProbe(win, `${chatCard72} === null && ${chatValue72} === ''`, 5_000))) {
-            fail(`ticket-72 stage: the send left composer content behind (card=${String(await js(chatCard72))}, value=${String(await js(chatValue72))})`)
-          }
-          log('command_card_send_reset_ok')
-        })
-      } finally {
-        rmSync(seedProject72, { recursive: true, force: true })
-      }
-    }
-    log('command_card_done')
 
     // ---- ticket 70: the chip-popover toggle race. The menu-keyboard
     // stage's chip clicks go through click(), which fires NO mousedown —
@@ -7199,6 +6984,226 @@ export function startSmokeIfEnabled(
       rmSync(seedProject74, { recursive: true, force: true })
     }
     log('draft_preserve_done')
+
+    // ---- ticket 72: the command card (CONTEXT.md: 技能卡 Skill Card).
+    // Picking a skill from the `/` menu renders the structured card (violet
+    // wand icon + name + ×) instead of raw text, the args text follows it,
+    // × removes the card (args preserved), and a re-pick — the seeded prompt
+    // template — REPLACES the card (single slot: Pi semantics = one leading
+    // command per message). The send recombines `/skill:name args` and the
+    // SDK's OWN expansion proves the byte-identical form: the persisted user
+    // message is the skill prologue plus the exact args (a real in-session
+    // turn), and the composer resets fully (args AND card). The empty-state
+    // half of the shared-composer rule is locked by the ticket-52 stage's
+    // card probes above. ----
+    log('command_card_start')
+    {
+      const store72 = process.env['PICODE_SESSION_DIR']
+      if (!store72) fail('ticket-72 stage: PICODE_SESSION_DIR is not set')
+      if (!created.sessionFile) fail('ticket-72 stage: no host-written session file to seed a resume target from')
+      const seedProject72 = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-seed72-'))
+      const CARD_SKILL_72 = 'picode-72-skill'
+      const CARD_TEMPLATE_72 = 'picode-72-template'
+      const CARD_ARGS_72 = 'PICODE_72_ARGS stress the boundaries'
+      try {
+        // The real resources: a project skill + prompt template that the
+        // session's own resource loader enumerates (cwd-scoped scan at
+        // session creation). The skill body instructs the model to a
+        // deterministic tool-free reply so the send's turn settles fast.
+        mkdirSync(path.join(seedProject72, '.pi', 'skills', CARD_SKILL_72), { recursive: true })
+        writeFileSync(
+          path.join(seedProject72, '.pi', 'skills', CARD_SKILL_72, 'SKILL.md'),
+          `---\nname: ${CARD_SKILL_72}\ndescription: Seeded card-flow skill\n---\nReply with exactly: PICODE_72_SKILL_OK. Never use tools.\n`
+        )
+        mkdirSync(path.join(seedProject72, '.pi', 'prompts'), { recursive: true })
+        writeFileSync(
+          path.join(seedProject72, '.pi', 'prompts', `${CARD_TEMPLATE_72}.md`),
+          `---\ndescription: Seeded card-flow template\nargument-hint: [env]\n---\nSeeded template body\n`
+        )
+        // The resume target: a copy of the host-written session file (the
+        // proven-openable shape, ticket-73/74 precedent) whose cwd is the
+        // seeded project; backdated = quiet, the click takes the resume path.
+        const template72 = readFileSync(created.sessionFile, 'utf8')
+        const file72 = path.join(store72, 'commandcard72.jsonl')
+        const lines72 = template72.split('\n')
+        const header72 = JSON.parse(lines72[0] ?? '{}') as { id?: string; cwd?: string }
+        header72.id = randomUUID()
+        header72.cwd = seedProject72
+        lines72[0] = JSON.stringify(header72)
+        lines72.push(
+          JSON.stringify({
+            type: 'message',
+            id: `t72-${randomUUID().slice(0, 8)}`,
+            parentId: lastEntryId(template72),
+            timestamp: new Date().toISOString(),
+            message: { role: 'user', content: [{ type: 'text', text: 'PICODE_72 seed turn' }] }
+          })
+        )
+        writeFileSync(file72, lines72.join('\n'))
+        backdateMtime(file72)
+
+        await withWindow(getWindow, async (win) => {
+          const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+          const chatValue72 = `(document.querySelector('.chat-dock textarea.composer-input')?.value ?? 'missing')`
+          const chatCard72 = `(() => {
+            const c = document.querySelector('.chat-dock .composer-command-card')
+            return c === null ? null : { name: c.getAttribute('data-card-name'), source: c.getAttribute('data-card-source') }
+          })()`
+          const cmdRow72 = (name: string): string => `(() => {
+            const rows = [...document.querySelectorAll('.cmp-popover .cmp-cmd-row')]
+            const row = rows.find((r) => (r.querySelector('.cmp-cmd-name')?.textContent ?? '') === ${JSON.stringify(`/${name}`)})
+            if (!(row instanceof HTMLElement)) return false
+            row.click()
+            return true
+          })()`
+          const cmdRowProbe72 = (name: string): string => `(() => {
+            const rows = [...document.querySelectorAll('.cmp-popover .cmp-cmd-row')]
+            return rows.some((r) => (r.querySelector('.cmp-cmd-name')?.textContent ?? '') === ${JSON.stringify(`/${name}`)})
+          })()`
+          /** Type the seeded query and wait for BOTH seeded menu rows. */
+          const openSeededMenu72 = async (): Promise<void> => {
+            await js(composerClearJs)
+            if (!((await js(composerTypeJs('/picode-72')).catch(() => false)) as boolean)) {
+              fail('ticket-72 stage: the chat composer textarea is missing for the seeded query')
+            }
+            if (!(await waitForProbe(win, `${cmdRowProbe72(CARD_SKILL_72)} && ${cmdRowProbe72(CARD_TEMPLATE_72)}`, 15_000))) {
+              fail('ticket-72 stage: the seeded skill/template rows never reached the in-session `/` menu')
+            }
+          }
+
+          // The sidebar may have been closed by an earlier stage —
+          // press-until-present (the ticket-73 pattern).
+          if (!((await js(`document.querySelector('.sidebar') !== null`)) as boolean)) {
+            await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', metaKey: true, bubbles: true })); true`)
+            await waitForProbe(win, `document.querySelector('.sidebar') !== null`, 5_000)
+          }
+          // Resume by a real sidebar-row click; the announcement focuses the
+          // session and the chat view takes over.
+          if (!(await waitForProbe(win, `document.querySelector('[data-file="${file72}"]') !== null`, 15_000))) {
+            fail('ticket-72 stage: the seeded resume row never reached the sidebar')
+          }
+          const resumed72 = waitFor(
+            (e) => e.type === 'session_created' && e.sessionFile === file72,
+            'ticket-72 resume session_created'
+          )
+          await js(`document.querySelector('[data-file="${file72}"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
+          const id72 = ((await resumed72) as Extract<Scoped, { type: 'session_created' }>).sessionId
+          if (!(await waitForProbe(win, `document.querySelector('.chat-dock textarea.composer-input') !== null`, 15_000))) {
+            fail('ticket-72 stage: the resumed session never opened its chat composer')
+          }
+          log('command_card_resume_ok')
+
+          // ① Pick the seeded skill: the card replaces the raw-text insert —
+          // structured (name + source), args empty, and ZERO session traffic
+          // across the pick (the ticket-52 negative-assertion precedent).
+          let leaked = 0
+          const onLeak72 = (event: Scoped): void => {
+            if (event.type === 'user_message') leaked++
+          }
+          observers.push(onLeak72)
+          await openSeededMenu72()
+          if (!((await js(cmdRow72(CARD_SKILL_72))) as boolean)) {
+            fail('ticket-72 stage: the seeded skill row disappeared before the pick')
+          }
+          if (!(await waitForProbe(win, `${chatCard72} !== null && ${chatCard72}.name === ${JSON.stringify(CARD_SKILL_72)} && ${chatCard72}.source === 'skill' && ${chatValue72} === ''`, 5_000))) {
+            fail('ticket-72 stage: the skill pick never staged the command card with empty args')
+          }
+          log('command_card_skill_pick_ok')
+
+          // ② The args text follows the card: typing plain text keeps the
+          // card (and never re-opens a menu — the args do not start with `/`).
+          if (!((await js(composerTypeJs(CARD_ARGS_72)).catch(() => false)) as boolean)) {
+            fail('ticket-72 stage: the chat composer textarea is missing for the args')
+          }
+          if (!(await waitForProbe(win, `${chatValue72} === ${JSON.stringify(CARD_ARGS_72)} && ${chatCard72}.name === ${JSON.stringify(CARD_SKILL_72)}`, 5_000))) {
+            fail('ticket-72 stage: the args text never followed the card')
+          }
+          log('command_card_args_follow_ok')
+
+          // ③ × removes the CARD, not the message: the args text survives.
+          if (!((await js(`document.querySelector('.chat-dock .composer-command-card-remove')?.click(); true`).catch(() => false)) as boolean)) {
+            fail('ticket-72 stage: the card remove button is missing')
+          }
+          if (!(await waitForProbe(win, `${chatCard72} === null && ${chatValue72} === ${JSON.stringify(CARD_ARGS_72)}`, 5_000))) {
+            fail(`ticket-72 stage: × never cleared the card while keeping the args (saw ${String(await js(chatValue72))})`)
+          }
+          log('command_card_clear_ok')
+
+          // ④ A re-pick REPLACES the card (single slot): the prompt template
+          // lands in the same slot — a different source proves replacement.
+          await openSeededMenu72()
+          if (!((await js(cmdRow72(CARD_TEMPLATE_72))) as boolean)) {
+            fail('ticket-72 stage: the seeded template row disappeared before the re-pick')
+          }
+          if (!(await waitForProbe(win, `${chatCard72}.name === ${JSON.stringify(CARD_TEMPLATE_72)} && ${chatCard72}.source === 'prompt' && ${chatValue72} === ''`, 5_000))) {
+            fail('ticket-72 stage: the re-pick never replaced the card with the template')
+          }
+          observers.splice(observers.indexOf(onLeak72), 1)
+          if (leaked > 0) fail(`ticket-72 stage: the menu picks leaked ${leaked} message(s) — staging must not send`)
+          log('command_card_replace_ok')
+
+          // ⑤ The send recombines the invocation — byte-identical to the raw
+          // text era, proven by the SDK's own expansion: the persisted user
+          // message IS the skill prologue plus the exact args. One-shot
+          // auto-deny (the menu_surface precedent) keeps a hallucinated tool
+          // call from stalling the turn.
+          await openSeededMenu72()
+          if (!((await js(cmdRow72(CARD_SKILL_72))) as boolean)) {
+            fail('ticket-72 stage: the seeded skill row disappeared before the send pick')
+          }
+          if (!(await waitForProbe(win, `${chatCard72}.name === ${JSON.stringify(CARD_SKILL_72)}`, 5_000))) {
+            fail('ticket-72 stage: the skill card never came back for the send')
+          }
+          if (!((await js(composerTypeJs(CARD_ARGS_72)).catch(() => false)) as boolean)) {
+            fail('ticket-72 stage: the chat composer textarea is missing for the send args')
+          }
+          await new Promise((r) => setTimeout(r, 300))
+          let gateWatch72 = true
+          const onGateAsk72 = (event: Scoped): void => {
+            if (!gateWatch72) return
+            if (event.type === 'approval_required') {
+              gateWatch72 = false
+              log('command_card_gate_auto_deny', `tool=${event.toolName}`)
+              supervisor.handleParentCommand({
+                type: 'session_command',
+                sessionId: event.sessionId,
+                command: {
+                  type: 'deny_tool',
+                  toolCallId: event.toolCallId,
+                  reason: 'smoke auto-deny: the card-flow send must settle as a plain skill reply'
+                }
+              })
+            } else if (event.type === 'agent_end' || event.type === 'host_exit') {
+              gateWatch72 = false
+            }
+          }
+          observers.push(onGateAsk72)
+          const expanded72 = waitFor(
+            (e) =>
+              e.type === 'user_message' &&
+              e.sessionId === id72 &&
+              e.text.includes(`<skill name="${CARD_SKILL_72}"`) &&
+              e.text.includes(CARD_ARGS_72),
+            'ticket-72 SDK skill expansion user_message'
+          )
+          await js(composerKeyJs('Enter'))
+          await expanded72
+          log('command_card_send_expanded_ok')
+          await waitFor((e) => e.type === 'agent_end' && e.sessionId === id72, 'ticket-72 send agent_end')
+          observers.splice(observers.indexOf(onGateAsk72), 1)
+
+          // ⑥ The send resets the whole composer: args AND card.
+          if (!(await waitForProbe(win, `${chatCard72} === null && ${chatValue72} === ''`, 5_000))) {
+            fail(`ticket-72 stage: the send left composer content behind (card=${String(await js(chatCard72))}, value=${String(await js(chatValue72))})`)
+          }
+          log('command_card_send_reset_ok')
+        })
+      } finally {
+        rmSync(seedProject72, { recursive: true, force: true })
+      }
+    }
+    log('command_card_done')
+
 
     // ---- ticket 77: the context ring (CONTEXT.md: 上下文圆环) — the model
     // chip's left-hand occupancy ring, ChatView-only. Four surfaces locked
