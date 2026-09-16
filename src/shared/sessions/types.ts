@@ -86,6 +86,11 @@ export type TranscriptItem =
       /** Final serialized result (same projection the live path uses). */
       output: string
       isError: boolean
+      /** The result's display diff text (ticket 78, additive): present when
+       * the recorded toolResult carries a string `details.diff` (the edit
+       * tool); ABSENT on every other tool and on pre-78 session payloads —
+       * consumers must treat absence as "no diff text", never default it. */
+      diff?: string
     }
 
 /** One tool call of an assistant message, projected for the history tree

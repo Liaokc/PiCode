@@ -8,6 +8,7 @@ import {
   runningSessionIds
 } from '../../shared/session-registry'
 import { initialChatState, type ChatAction } from '../../shared/chat-reducer'
+import { groupTurns } from '../../shared/turn-collapse'
 import type { HostToParent, SessionCommand, SessionScopedEvent } from '../../shared/contract'
 import { resolvePreviewPath } from '../../shared/preview/policy'
 import { initialShellUiState, shellUiReducer, SIDEBAR_WIDTH_PX, SIDEBAR_MIN_WIDTH_PX, MAIN_ZONE_MIN_WIDTH_PX, clampSidebarWidth, type ShellUiAction } from '../../shared/layout-model'
@@ -1196,6 +1197,28 @@ export default function App(): JSX.Element {
     registryDispatch({ type: 'toggle_turn_expanded', turnId })
   }, [])
 
+  // ---- Turn file bar deep links (ticket 78) ----
+
+  /** Review: open the turn's file changes in the side panel's turn-diff tab
+   * (coexists with the Review tab; one tab per reviewed turn). */
+  const handleReviewTurn = useCallback(
+    (turnId: string): void => {
+      panelDispatch({ type: 'open-tab', tab: { kind: 'turn-diff', turnId } })
+      dispatch({ type: 'open-side-panel' })
+    },
+    [panelDispatch, dispatch]
+  )
+
+  /** The turn-diff tab body's resolver: the focused session view's file
+   * changes for one turn, null when the turn is not in view (the tab may
+   * outlive its session focus). Derived from the same groupTurns projection
+   * ChatView renders. */
+  const focusedTurns = useMemo(() => groupTurns(chat.entries, chat.agentRunning), [chat.entries, chat.agentRunning])
+  const resolveTurnChanges = useCallback(
+    (turnId: string) => focusedTurns.find((turn) => turn.id === turnId)?.fileChanges ?? null,
+    [focusedTurns]
+  )
+
   /** Tool card → Bridge deep link: open the panel in place and flash the
    * matching feed entry (the panel clears it after the flash). */
   const handleShowInBridge = useCallback((toolCallId: string): void => {
@@ -1497,6 +1520,7 @@ export default function App(): JSX.Element {
                 onOpenFile={handleOpenFileFromTranscript}
                 onShowInBridge={handleShowInBridge}
                 onToggleTurn={handleToggleTurn}
+                onReviewTurn={handleReviewTurn}
                 composerApi={composerApi}
                 onApprove={handleApprove}
                 onDeny={handleDeny}
@@ -1509,6 +1533,7 @@ export default function App(): JSX.Element {
             dispatch={dispatchPanelPersisting}
             workspaceCwd={chat.session?.cwd ?? null}
             onPreviewNavigate={handlePreviewNavigate}
+            resolveTurnChanges={resolveTurnChanges}
           />
         </div>
         {/* Bottom dock: ONE frame, sibling panels — terminal (⌘J) and the

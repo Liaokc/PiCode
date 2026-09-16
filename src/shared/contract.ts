@@ -193,8 +193,11 @@ export type SessionScopedEvent =
   | { type: 'tool_start'; toolCallId: string; name: string; args: Record<string, unknown> }
   /** Live partial output from a running tool call (appended to prior updates). */
   | { type: 'tool_update'; toolCallId: string; partial: string }
-  /** A tool call finished; `output` is the serialized final result and replaces any partials. */
-  | { type: 'tool_end'; toolCallId: string; output: string; isError: boolean }
+  /** A tool call finished; `output` is the serialized final result and replaces any partials.
+   * `diff` (ticket 78, additive): the result's display diff text — present when the SDK
+   * result carries a string `details.diff` (the edit tool); absent on every other tool
+   * and on pre-78 payloads. Feeds the turn file bar and its turn-diff side-panel tab. */
+  | { type: 'tool_end'; toolCallId: string; output: string; isError: boolean; diff?: string }
   /** The currently open assistant message finished. `entryId` (ticket 51,
    * additive): the real session entry id of the finished message, read back
    * when the host persisted it — the fork anchor depends on it; absent →

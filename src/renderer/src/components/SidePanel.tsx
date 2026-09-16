@@ -1,5 +1,6 @@
 import { useRef, useState, type Dispatch, type JSX, type PointerEvent } from 'react'
 import { PANEL_EMPTY_TABS } from '../../../shared/layout-model'
+import type { TurnFileChange } from '../../../shared/turn-files'
 import {
   clampPanelWidth,
   panelTabKey,
@@ -12,6 +13,7 @@ import {
 import ReviewTab from './ReviewTab'
 import PreviewTab from './PreviewTab'
 import TraceTab from './TraceTab'
+import TurnDiffTab from './TurnDiffTab'
 import PanelTabMenu, { panelTabGlyph } from './PanelTabMenu'
 import Tooltip from './Tooltip'
 import { ChevronDownIcon, CloseIcon, FileTextIcon, PlusIcon } from './icons'
@@ -27,6 +29,10 @@ interface SidePanelProps {
   workspaceCwd: string | null
   /** Open a path as its own deep link (open new tab / focus existing). */
   onPreviewNavigate: (cwd: string, path: string) => void
+  /** Turn-diff tab resolver (ticket 78): the ACTIVE session view's file
+   * changes for one turn, or null when the turn is not in view. The panel
+   * re-resolves on every render so a live turn's tab grows with it. */
+  resolveTurnChanges?: (turnId: string) => TurnFileChange[] | null
 }
 
 /**
@@ -57,7 +63,8 @@ export default function SidePanel({
   panel,
   dispatch,
   workspaceCwd,
-  onPreviewNavigate
+  onPreviewNavigate,
+  resolveTurnChanges
 }: SidePanelProps): JSX.Element {
   const drag = useRef<{ startX: number; startWidth: number; width: number; raf: number } | null>(null)
   const frameRef = useRef<HTMLElement | null>(null)
@@ -140,6 +147,11 @@ export default function SidePanel({
         // The call-trace inspector (ticket 36): tab identity = session file;
         // closing rides the framework's recently-closed tracking.
         return <TraceTab sessionFile={tab.sessionFile} onClose={() => dispatch({ type: 'close-tab', tab, at: Date.now() })} />
+      case 'turn-diff':
+        // The turn-diff inspector (ticket 78): the reviewed turn's own file
+        // changes, rendered in the Review tab's diff language. Identity =
+        // turn id; the body resolves against the active session's view.
+        return <TurnDiffTab turnId={tab.turnId} changes={resolveTurnChanges?.(tab.turnId) ?? null} />
     }
   }
 

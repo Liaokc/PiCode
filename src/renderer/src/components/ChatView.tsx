@@ -8,6 +8,7 @@ import Composer, { type ComposerApi } from './Composer'
 import NavigatorRail from './NavigatorRail'
 import TreePanel from './TreePanel'
 import TurnContainer from './TurnContainer'
+import TurnFileBar from './TurnFileBar'
 import AnswerBlock from './AnswerBlock'
 import MessageActions from './MessageActions'
 import Tooltip from './Tooltip'
@@ -38,6 +39,8 @@ interface ChatViewProps {
   onShowInBridge?: (toolCallId: string) => void
   /** Fold/unfold one turn's work container (ticket 23). */
   onToggleTurn: (turnId: string) => void
+  /** Open one turn's file changes in the side panel's turn-diff tab (ticket 78). */
+  onReviewTurn?: (turnId: string) => void
   /** Composer commands + the chat slices the composer menus render. */
   composerApi: ComposerApi
   /** Ticket 74: the focused session's parked composer draft, restored by the
@@ -73,6 +76,7 @@ export default function ChatView({
   onOpenFile,
   onShowInBridge,
   onToggleTurn,
+  onReviewTurn,
   composerApi,
   initialDraft = null,
   draftBridgeRef,
@@ -331,6 +335,12 @@ export default function ChatView({
                     onApprove={onApprove}
                     onDeny={onDeny}
                   />
+                )}
+                {turn.fileChanges.length > 0 && (
+                  /* Ticket 78: the turn file bar — collapsed "N files changed
+                     +X −Y" at the end of the always-visible segment (below
+                     the answer; after the container on answer-less turns). */
+                  <TurnFileBar turnId={turn.id} changes={turn.fileChanges} onReviewTurn={onReviewTurn} onOpenFile={onOpenFile} />
                 )}
               </Fragment>
             ))}

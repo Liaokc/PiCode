@@ -21,13 +21,16 @@ export const PANEL_DEFAULT_WIDTH_PX = SIDE_PANEL_WIDTH_PX
 
 /**
  * Side panel tab identity (ticket 31): the fixed Review tab, one tab per
- * deep-linked file (cwd anchors relative navigation), and one per session
- * call trace. Equality is structural — same kind and coordinates = same tab.
+ * deep-linked file (cwd anchors relative navigation), one per session call
+ * trace, and — ticket 78 — one per reviewed turn (the turn-diff tab that
+ * renders a turn's file-change diffs; the turn id scopes it). Equality is
+ * structural — same kind and coordinates = same tab.
  */
 export type PanelTabId =
   | { kind: 'review' }
   | { kind: 'file'; cwd: string; path: string }
   | { kind: 'trace'; sessionFile: string }
+  | { kind: 'turn-diff'; turnId: string }
 
 /** One entry of the recently closed history: what was closed, and when. */
 export interface RecentlyClosedTab {
@@ -72,6 +75,7 @@ export function samePanelTab(a: PanelTabId, b: PanelTabId): boolean {
   if (a.kind !== b.kind) return false
   if (a.kind === 'file' && b.kind === 'file') return a.cwd === b.cwd && a.path === b.path
   if (a.kind === 'trace' && b.kind === 'trace') return a.sessionFile === b.sessionFile
+  if (a.kind === 'turn-diff' && b.kind === 'turn-diff') return a.turnId === b.turnId
   return true
 }
 
@@ -84,10 +88,14 @@ export function panelTabKey(tab: PanelTabId): string {
       return JSON.stringify(['file', tab.cwd, tab.path])
     case 'trace':
       return JSON.stringify(['trace', tab.sessionFile])
+    case 'turn-diff':
+      return JSON.stringify(['turn-diff', tab.turnId])
   }
 }
 
-/** Display name: the path leaf for file/trace tabs, the fixed Review label. */
+/** Display name: the path leaf for file/trace tabs, the fixed Review label,
+ * the generic turn-diff label (one per reviewed turn — the strip keeps them
+ * apart by position, the identity by turn id). */
 export function panelTabLabel(tab: PanelTabId): string {
   switch (tab.kind) {
     case 'review':
@@ -96,6 +104,8 @@ export function panelTabLabel(tab: PanelTabId): string {
       return leafOf(tab.path)
     case 'trace':
       return leafOf(tab.sessionFile)
+    case 'turn-diff':
+      return 'Turn diff'
   }
 }
 
@@ -105,9 +115,11 @@ function leafOf(path: string): string {
 }
 
 /** True for the identities the recently closed history remembers (ticket 31:
- * the Review tab is not tracked — the picker card reopens it). */
+ * the Review tab is not tracked — the picker card reopens it). Ticket 78:
+ * turn-diff tabs are ephemeral like Review — the turn they render lives in
+ * the active view's state, so a closed-history entry could not restore it. */
 function isTrackable(tab: PanelTabId): boolean {
-  return tab.kind !== 'review'
+  return tab.kind !== 'review' && tab.kind !== 'turn-diff'
 }
 
 /**
@@ -152,6 +164,8 @@ function normalizeEntry(raw: unknown): RecentlyClosedTab | null {
     if (typeof tab.sessionFile !== 'string') return null
     return { tab: { kind: 'trace', sessionFile: tab.sessionFile }, closedAt }
   }
+  // turn-diff tabs are never persisted (not trackable) — dropped defensively
+  // should an older preference file ever contain one.
   return null
 }
 

@@ -19,6 +19,7 @@ import {
 const review = (): PanelTabId => ({ kind: 'review' })
 const file = (path: string, cwd = '/work/api'): PanelTabId => ({ kind: 'file', cwd, path })
 const trace = (sessionFile: string): PanelTabId => ({ kind: 'trace', sessionFile })
+const turnDiff = (turnId: string): PanelTabId => ({ kind: 'turn-diff', turnId })
 
 describe('tab identity (ticket 31)', () => {
   it('treats tabs with the same kind and coordinates as the same tab', () => {
@@ -41,6 +42,15 @@ describe('tab identity (ticket 31)', () => {
     expect(panelTabLabel(file('src/app/main.ts'))).toBe('main.ts')
     expect(panelTabLabel(file('docs/'))).toBe('docs')
     expect(panelTabLabel(trace('/home/dev/.pi/sessions/abc.jsonl'))).toBe('abc.jsonl')
+  })
+
+  it('turn-diff tabs (ticket 78) are identified by their turn id and labeled generically', () => {
+    expect(samePanelTab(turnDiff('m3'), turnDiff('m3'))).toBe(true)
+    expect(samePanelTab(turnDiff('m3'), turnDiff('m5'))).toBe(false)
+    expect(samePanelTab(turnDiff('m3'), review())).toBe(false)
+    expect(panelTabKey(turnDiff('m3'))).toBe(panelTabKey(turnDiff('m3')))
+    expect(panelTabKey(turnDiff('m3'))).not.toBe(panelTabKey(turnDiff('m5')))
+    expect(panelTabLabel(turnDiff('m3'))).toBe('Turn diff')
   })
 })
 
@@ -391,5 +401,29 @@ describe('panelReducer — purity', () => {
     expect(state.openTabs).toEqual([review()])
     expect(state.recentlyClosed).toEqual([{ tab: file('a.md'), closedAt: 1 }])
     expect(panelReducer(state, { type: 'nonsense' } as unknown as PanelAction)).toBe(state)
+  })
+})
+
+describe('panelReducer — turn-diff tabs (ticket 78)', () => {
+  it('opens, focuses and closes like any tab', () => {
+    let state = panelReducer(initialPanelState(), { type: 'open-tab', tab: turnDiff('m3') })
+    expect(state.openTabs).toEqual([turnDiff('m3')])
+    expect(state.activeTab).toEqual(turnDiff('m3'))
+    state = panelReducer(state, { type: 'open-tab', tab: review() })
+    state = panelReducer(state, { type: 'activate-tab', tab: turnDiff('m3') })
+    expect(state.activeTab).toEqual(turnDiff('m3'))
+    state = panelReducer(state, { type: 'close-tab', tab: turnDiff('m3'), at: 1 })
+    expect(state.openTabs).toEqual([review()])
+    expect(state.activeTab).toEqual(review())
+  })
+
+  it('closing a turn-diff tab is NOT remembered in the recently closed history (ephemeral like Review)', () => {
+    let state = panelReducer(initialPanelState(), { type: 'open-tab', tab: turnDiff('m3') })
+    state = panelReducer(state, { type: 'close-tab', tab: turnDiff('m3'), at: 1 })
+    expect(state.recentlyClosed).toEqual([])
+    // And a persisted history can never smuggle one back in.
+    expect(normalizeRecentlyClosed([{ tab: turnDiff('m3'), closedAt: 1 }, { tab: file('a.md'), closedAt: 2 }])).toEqual([
+      { tab: file('a.md'), closedAt: 2 }
+    ])
   })
 })

@@ -812,3 +812,69 @@ describe('chatReducer — UI toggle action', () => {
     expect(toggled.expandedTurns.has('m0')).toBe(true)
   })
 })
+
+describe('groupTurns — turn file changes (ticket 78)', () => {
+  const EDIT_DIFF_A = '+ 1 a-one'
+  const EDIT_DIFF_B = '- 2 gone\n+ 2 back'
+
+  /** One live turn: an edit inside the fold, an answer, an edit + a read
+   * after it, a write at the tail. The bar aggregates every settled
+   * edit/write in the TURN — fold and segment alike. */
+  function mixedTurnState(): ChatState {
+    return fold(
+      initialChatState(),
+      SESSION_CREATED,
+      USER('change some files'),
+      { type: 'agent_start' },
+      { type: 'tool_start', toolCallId: 'e1', name: 'edit', args: { path: 'src/a.ts' } },
+      { type: 'tool_end', toolCallId: 'e1', output: 'ok', isError: false, diff: EDIT_DIFF_A },
+      { type: 'message_start' },
+      { type: 'text_delta', delta: 'Done editing.' },
+      { type: 'message_end' },
+      { type: 'tool_start', toolCallId: 'e2', name: 'edit', args: { path: 'src/a.ts' } },
+      { type: 'tool_end', toolCallId: 'e2', output: 'ok', isError: false, diff: EDIT_DIFF_B },
+      { type: 'tool_start', toolCallId: 'r1', name: 'read', args: { path: 'src/a.ts' } },
+      { type: 'tool_end', toolCallId: 'r1', output: 'contents', isError: false },
+      { type: 'tool_start', toolCallId: 'w1', name: 'write', args: { path: 'docs/new.md' } },
+      { type: 'tool_end', toolCallId: 'w1', output: 'Successfully wrote to docs/new.md', isError: false }
+    )
+  }
+
+  it('aggregates the turn\u0027s settled edit/write calls across fold and after-answer segment', () => {
+    const state = mixedTurnState()
+    const [turn] = groupTurns(state.entries, false)
+    expect(turn.fileChanges).toEqual([
+      { path: 'src/a.ts', added: 2, removed: 1, diff: `${EDIT_DIFF_A}\n${EDIT_DIFF_B}`, calls: 2 },
+      { path: 'docs/new.md', added: null, removed: 0, diff: '', calls: 1 }
+    ])
+  })
+
+  it('a turn with no settled edit/write aggregates to NO bar (无更改回合不出条)', () => {
+    const state = fold(
+      initialChatState(),
+      SESSION_CREATED,
+      USER('just explain'),
+      { type: 'agent_start' },
+      { type: 'message_start' },
+      { type: 'text_delta', delta: 'Explanation.' },
+      { type: 'message_end' },
+      { type: 'tool_start', toolCallId: 'r1', name: 'read', args: { path: 'src/a.ts' } },
+      { type: 'tool_end', toolCallId: 'r1', output: 'contents', isError: false },
+      { type: 'agent_end' }
+    )
+    const [turn] = groupTurns(state.entries, false)
+    expect(turn.fileChanges).toEqual([])
+  })
+
+  it('a still-running edit does not enter the bar yet — it grows as tools SETTLE (live 同构)', () => {
+    const state = fold(
+      initialChatState(),
+      SESSION_CREATED,
+      USER('edit away'),
+      { type: 'agent_start' },
+      { type: 'tool_start', toolCallId: 'e1', name: 'edit', args: { path: 'src/a.ts' } }
+    )
+    const [turn] = groupTurns(state.entries, true)
+    expect(turn.fileChanges).toEqual([])
+  })
+})

@@ -351,6 +351,56 @@ describe('extractTranscriptItems — structured replay (ticket 14)', () => {
   })
 })
 
+describe('extractTranscriptItems — tool result diff text (ticket 78, additive projection)', () => {
+  const DIFF = '+ 13   "old": false,\n- 12   "old": true,'
+
+  function editRound(details: unknown): RawSessionEntry[] {
+    return [
+      {
+        type: 'message',
+        id: 'e1',
+        parentId: null,
+        timestamp: 't1',
+        message: {
+          role: 'assistant',
+          content: [{ type: 'toolCall', id: 'c1', name: 'edit', arguments: { path: 'src/a.ts', edits: [] } }]
+        }
+      },
+      {
+        type: 'message',
+        id: 'e2',
+        parentId: 'e1',
+        timestamp: 't2',
+        message: {
+          role: 'toolResult',
+          toolCallId: 'c1',
+          toolName: 'edit',
+          content: text('Successfully replaced 1 block(s) in src/a.ts.'),
+          isError: false,
+          ...(details !== undefined ? { details } : {})
+        }
+      }
+    ]
+  }
+
+  it('carries the edit result\u0027s details.diff as the item diff text', () => {
+    const items = extractTranscriptItems(editRound({ diff: DIFF, patch: '--- a/x\n+++ b/x' }))
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({ role: 'tool', name: 'edit', diff: DIFF })
+  })
+
+  it('omits the field entirely when the result has no details (old payloads stay valid)', () => {
+    const items = extractTranscriptItems(editRound(undefined))
+    expect(items).toHaveLength(1)
+    expect((items[0] as { diff?: string }).diff).toBeUndefined()
+  })
+
+  it('a non-diff details shape never fabricates a diff field', () => {
+    const items = extractTranscriptItems(editRound({ truncation: null }))
+    expect((items[0] as { diff?: string }).diff).toBeUndefined()
+  })
+})
+
 describe('sniffSkillName', () => {
   it('matches the exact injection shape the Pi SDK prepends to a turn message', () => {
     const injected = '<skill name="tdd" location="/x/SKILL.md">\nbody\n</skill>\n\nreal prompt'

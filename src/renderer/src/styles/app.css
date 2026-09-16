@@ -4303,6 +4303,251 @@ button.heat:hover {
   user-select: text;
 }
 
+/* ---------- turn file bar (ticket 78: collapsed "N files changed +X −Y"
+   at the end of the always-visible segment, expanding to per-file rows.
+   Composition references: z-site-card-filebar.png (collapsed) and the
+   operator-supplied ZCode expanded frame — ONE full-width bordered card:
+   the summary header row and the per-file rows share the card, separated
+   by hairlines; per-type colored icons, semibold names, right-aligned ±
+   and bordered pill actions. The ZCode row's undo button is deliberately
+   absent (ticket 78: 撤销不做, 1.1 discipline). ---------- */
+
+.turn-filebar {
+  margin-top: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg-card);
+  overflow: hidden;
+}
+
+.turn-filebar-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 0 16px;
+  font-size: 13px;
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.turn-filebar-header:hover {
+  background: var(--bg-inset);
+}
+
+.turn-filebar-chevron {
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.turn-filebar-summary {
+  font-size: 13px;
+}
+
+.turn-filebar-header .file-stat {
+  font-size: 13px;
+  gap: 6px;
+}
+
+.turn-filebar-files {
+  display: flex;
+  flex-direction: column;
+}
+
+.turn-filebar-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 50px;
+  padding: 0 16px;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.turn-filebar-file:hover {
+  background: var(--bg-inset);
+}
+
+.turn-filebar-file + .turn-filebar-file {
+  border-top: 1px solid var(--border);
+}
+
+.turn-filebar-file-icon {
+  flex-shrink: 0;
+}
+
+.turn-filebar-file-icon.tfb-icon-doc {
+  color: #4a86c8;
+}
+
+.turn-filebar-file-icon.tfb-icon-json {
+  color: #b3a125;
+}
+
+.turn-filebar-file-icon.tfb-icon-py {
+  color: #3572a5;
+}
+
+.turn-filebar-file-icon.tfb-icon-ts {
+  color: #3178c6;
+}
+
+.turn-filebar-file-icon.tfb-icon-sql {
+  color: #d16843;
+}
+
+.turn-filebar-file-icon.tfb-icon-img {
+  color: #a55fb5;
+}
+
+.turn-filebar-file-icon.tfb-icon-code {
+  color: var(--text-faint);
+}
+
+.turn-filebar-file-name {
+  font-weight: 600;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.turn-filebar-file-path {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.turn-filebar-file .file-stat,
+.turn-filebar-file .file-stat-new {
+  font-size: 13px;
+}
+
+.turn-filebar-act {
+  flex-shrink: 0;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.turn-filebar-act:hover {
+  color: var(--text-primary);
+  border-color: var(--text-faint);
+}
+
+.turn-filebar-open {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.turn-filebar-open:hover {
+  color: var(--text-primary);
+  border-color: var(--text-faint);
+}
+
+.file-stat-new {
+  font-size: 13px;
+  color: #1a7f37;
+}
+
+/* ---------- turn-diff side-panel tab (ticket 78: the reviewed turn's own
+   diffs, in the Review tab's diff language — not a git diff) ---------- */
+
+.turn-diff-view {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.turn-diff-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.turn-diff-summary {
+  font-family: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+}
+
+.turn-diff-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.turn-diff-file {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-card);
+  overflow: hidden;
+}
+
+.turn-diff-file-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--bg-inset);
+}
+
+.turn-diff-file-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+}
+
+.turn-diff-scroll {
+  max-height: 320px;
+  overflow: auto;
+}
+
+.turn-diff-nodiff {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.turn-diff-empty {
+  height: 100%;
+}
+
 /* ---------- after-answer work rows (ticket 53: tools that ran after the
    answer stay visible below it, outside the fold — ZCode rule) ---------- */
 
