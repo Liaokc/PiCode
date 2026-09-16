@@ -3,6 +3,7 @@ import type { AccessMode, ImageAttachment, ModelRef, ProviderModels, SlashComman
 import type { ChatQueue } from '../../../shared/chat-reducer'
 import type { ContextRingInput } from '../../../shared/context-ring'
 import { composerDraft, type ComposerDraft, type ComposerDraftEntry, type ComposerDraftOwner } from '../../../shared/composer/drafts'
+import type { EditResendPrefill } from '../../../shared/edit-resend'
 import { applyMention, filterFiles, splitTruncatedFiles } from '../../../shared/composer/mention'
 import { accessModeLabel } from '../../../shared/composer/access'
 import { gateSlashCommand } from '../../../shared/composer/slash-gate'
@@ -99,6 +100,14 @@ type MenuState = 'slash' | 'files' | 'access' | 'model' | 'thinking' | null
 /** Window events the `/model` and `/thinking` built-ins dispatch (App → Composer). */
 export const OPEN_MODEL_MENU_EVENT = 'picode:open-model-menu'
 export const OPEN_THINKING_MENU_EVENT = 'picode:open-thinking-menu'
+
+/** Window event the App dispatches for 编辑重发 (ticket 79): clicking Edit on
+ * a settled user message prefills THIS composer with the message's original
+ * text + restored image attachments and takes the caret. The draft in place
+ * is replaced wholesale (spec ③ — draft protection is the view-switch park's
+ * job, not the edit's). Only one composer is mounted at a time, so the
+ * mounted instance owns the event (OPEN_MODEL_MENU_EVENT precedent). */
+export const PREFILL_EVENT = 'picode:composer-prefill'
 
 /** Window event the App shell dispatches when the global ⌘E chord resolves
  * (ticket 57): the keymap produces `toggle-composer-expand` and the App
@@ -268,6 +277,40 @@ export default function Composer({
       }
     })
   }, [])
+
+  // 编辑重发 (ticket 79): the App's Edit click rides this window event — the
+  // composer replaces whatever draft is in place with the original text and
+  // the message's restored image attachments, then takes focus with the
+  // caret at the end (menu surfaces close; the expand state is untouched).
+  useEffect(() => {
+    function prefill(event: Event): void {
+      const detail = (event as CustomEvent<EditResendPrefill>).detail
+      if (disabled || detail === null || typeof detail !== 'object') return
+      if (typeof detail.text !== 'string' || !Array.isArray(detail.images)) return
+      setMenu(null)
+      menuQueryRef.current = null
+      setValue(detail.text)
+      setCaret(detail.text.length)
+      setImages(
+        detail.images.map((img) => ({
+          id: imageSeq++,
+          mimeType: img.mimeType,
+          data: img.data,
+          preview: `data:${img.mimeType};base64,${img.data}`,
+          label: 'Image'
+        }))
+      )
+      requestAnimationFrame(() => {
+        const el = textareaRef.current
+        if (el) {
+          el.selectionStart = el.selectionEnd = detail.text.length
+          el.focus()
+        }
+      })
+    }
+    window.addEventListener(PREFILL_EVENT, prefill)
+    return () => window.removeEventListener(PREFILL_EVENT, prefill)
+  }, [disabled])
 
   // The `/model` and `/thinking` built-ins open their menus from anywhere.
   useEffect(() => {

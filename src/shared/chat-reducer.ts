@@ -19,7 +19,7 @@ import type {
   ThinkingLevel
 } from './contract'
 import { sniffSkillName } from './sessions/parse.ts'
-import type { TranscriptItem } from './sessions/types.ts'
+import type { TranscriptImagePart, TranscriptItem } from './sessions/types.ts'
 import type { UsageTokens } from './usage/types.ts'
 import { HEAD_TURN_ID } from './turn-collapse'
 import { UNFINISHED_TOOL_OUTPUT } from './tool-format'
@@ -54,6 +54,13 @@ export interface UserEntry {
   /** Skill name sniffed from injected `<skill name="…">` text; null when the
    * message was not skill-driven (ticket 14 payload; ticket 23 renders it). */
   skillName: string | null
+  /** The replayed message's inline image parts, in content order (ticket 79,
+   * additive projection): the edit-resend prefill restores them into composer
+   * attachment state. ABSENT on live entries (the user_message echo carries
+   * text only — images reach the entry on the next replay), imageless
+   * messages and pre-79 payloads; consumers must treat absence as "no
+   * images", never default it. */
+  images?: TranscriptImagePart[]
 }
 
 export interface AssistantEntry {
@@ -204,7 +211,13 @@ function entryId(index: number): string {
 export function replayEntry(item: TranscriptItem): ChatEntry {
   switch (item.role) {
     case 'user':
-      return { id: item.id, role: 'user', text: item.text, skillName: item.skillName }
+      return {
+        id: item.id,
+        role: 'user',
+        text: item.text,
+        skillName: item.skillName,
+        ...(item.images !== undefined ? { images: item.images } : {})
+      }
     case 'assistant':
       return {
         id: item.id,

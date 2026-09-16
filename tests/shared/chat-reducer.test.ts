@@ -787,6 +787,20 @@ describe('chatReducer — resumed history (ticket 04)', () => {
     expect(state.error).toBeNull()
   })
 
+  it('history_loaded carries the replayed user images onto the entry (ticket 79, additive)', () => {
+    const IMAGES = [{ kind: 'image' as const, mimeType: 'image/png', data: 'aGk=' }]
+    const state = run(initialChatState(), SESSION_CREATED, {
+      type: 'history_loaded',
+      items: [{ id: 'e1', role: 'user', text: 'with a shot', timestamp: 't1', skillName: null, images: IMAGES }]
+    })
+    expect(state.entries[0]).toMatchObject({ role: 'user', text: 'with a shot', images: IMAGES })
+  })
+
+  it('history_loaded without images (imageless / pre-79 payload) leaves the field absent', () => {
+    const state = run(initialChatState(), SESSION_CREATED, HISTORY_LOADED)
+    expect((state.entries[0] as { images?: unknown }).images).toBeUndefined()
+  })
+
   it('history is replaceable — tree navigation re-emits the new leaf path', () => {
     const navigated = run(initialChatState(), SESSION_CREATED, HISTORY_LOADED, {
       type: 'history_loaded',

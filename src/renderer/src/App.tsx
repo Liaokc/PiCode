@@ -39,6 +39,7 @@ import {
   type NewTaskModelChoice
 } from '../../shared/new-task-models'
 import { toastReducer, type ToastLevel, type ToastList } from '../../shared/toast'
+import { EDIT_RESEND_TOAST, editResendPrefill } from '../../shared/edit-resend'
 import type { AccessMode, ImageAttachment, ThinkingLevel } from '../../shared/contract'
 import { parkedDraft, type ComposerDraft, type ComposerDraftEntry } from '../../shared/composer/drafts'
 import type { AuthProbeReport } from '../../shared/auth-status'
@@ -51,7 +52,7 @@ import EmptyState from './components/EmptyState'
 import SidePanel from './components/SidePanel'
 import BottomDock from './components/BottomDock'
 import ChatView, { RENAME_EVENT } from './components/ChatView'
-import { OPEN_MODEL_MENU_EVENT, OPEN_THINKING_MENU_EVENT, TOGGLE_EXPAND_EVENT } from './components/Composer'
+import { OPEN_MODEL_MENU_EVENT, OPEN_THINKING_MENU_EVENT, PREFILL_EVENT, TOGGLE_EXPAND_EVENT } from './components/Composer'
 import FollowView from './components/FollowView'
 import { useNowTick } from './components/use-now'
 import ErrorBanner from './components/ErrorBanner'
@@ -192,6 +193,11 @@ export default function App(): JSX.Element {
    * forked session's announcement (session_created) arrives — never
    * optimistically; failures clear it and surface session_command_error. */
   const forkAckRef = useRef<string | null>(null)
+  /** 编辑重发 (ticket 79): the session id whose view has an edit in flight —
+   * armed at the Edit click, consumed by that session's NEXT send (the light
+   * resend toast), disarmed by command errors. Session-scoped so switching
+   * views can never let a stale arm toast someone else's send. */
+  const editResendRef = useRef<string | null>(null)
 
   // ---- session index + sidebar state ----
   const [sessions, setSessions] = useState<SessionSummary[]>([])
@@ -414,6 +420,10 @@ export default function App(): JSX.Element {
           // later unrelated announcement can toast a success that didn't
           // happen (ticket 51). The error itself surfaces below.
           forkAckRef.current = null
+          // Ticket 79: a failed command in the armed session breaks the edit
+          // flow (e.g. the navigate was rejected) — the send that follows is
+          // a plain prompt, so the resend toast must not fire.
+          if (scopeId !== null && scopeId === editResendRef.current) editResendRef.current = null
           if (event.type === 'session_event') notify(event.event.message, 'error')
           else notify(event.message, 'error')
           break
@@ -593,6 +603,13 @@ export default function App(): JSX.Element {
         sessionId: focusedId,
         command: { type: 'prompt', text, images: images.length > 0 ? images : undefined }
       })
+      // 编辑重发 (ticket 79): the resend's send IS a normal prompt (the leaf
+      // moved at the Edit click) — the light toast fires right after it is on
+      // its way, once, for the armed session only (fork-toast precedent).
+      if (editResendRef.current !== null && editResendRef.current === focusedId) {
+        editResendRef.current = null
+        notify(EDIT_RESEND_TOAST, 'info')
+      }
       return
     }
     startTask(null, text, images)
@@ -1156,6 +1173,36 @@ export default function App(): JSX.Element {
     sendFocused({ type: 'navigate_tree', entryId })
   }
 
+  /** 编辑重发 (ticket 79, CONTEXT.md: 编辑重发): the Edit click on a settled
+   * user message. ONE flow, no confirmation dialog:
+   * ① prefill — the composer replaces its draft with the message's original
+   *    text (skill prologue stripped — 原文 is what the user typed) and its
+   *    restored image attachments (operator decision: images ride back);
+   * ② branch point — `navigate_tree` targets the USER entry id and the SDK's
+   *    native edit-and-resubmit semantics move the leaf to that message's
+   *    PARENT (first messages → resetLeaf): same file, lossless, naturally
+   *    no branch summary. (Navigating to the parent id directly would be
+   *    ambiguous — a parent that is itself a user message would move the
+   *    leaf one level too high; the user-entry target is the SDK's own edit
+   *    path.) The transcript re-replays from the parent; the edited message
+   *    and its tail stay on the abandoned branch, reachable in the tree
+   *    panel (分支无损).
+   * ③ the NEXT send runs the plain prompt path — in-place branch (Pi
+   *    sessions.md native semantics) — and fires the light resend toast
+   *    (armed here, session-scoped). Re-clicking Edit re-runs the flow from
+   *    the CURRENT leaf; only one edit arm lives at a time.
+   * Edge (accepted): a zero-output turn can leave the leaf ON the user
+   * message, where the SDK's navigate no-ops — the resend then chains after
+   * the original message instead of branching; both stay visible. */
+  function handleEditMessage(entryId: string): void {
+    if (chat.agentRunning || chat.session === null) return
+    const entry = chat.entries.find((candidate) => candidate.role === 'user' && candidate.id === entryId)
+    if (entry === undefined || entry.role !== 'user') return
+    window.dispatchEvent(new CustomEvent(PREFILL_EVENT, { detail: editResendPrefill(entry) }))
+    sendFocused({ type: 'navigate_tree', entryId })
+    editResendRef.current = focusedIdRef.current
+  }
+
   /** Fork the session at an entry (branch-history panel or message action
    * row, ticket 16). Toast discipline (ticket 51): the click itself is
    * silent — the success toast fires only when the forked session's
@@ -1516,6 +1563,7 @@ export default function App(): JSX.Element {
                 onRename={handleRenameActive}
                 onNavigateTree={handleNavigateTree}
                 onFork={handleFork}
+                onEditMessage={handleEditMessage}
                 onCloseTree={() => setTreeOpen(false)}
                 onOpenFile={handleOpenFileFromTranscript}
                 onShowInBridge={handleShowInBridge}

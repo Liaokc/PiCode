@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type JSX } from 'react'
-import { CheckIcon, CopyIcon, GitBranchIcon } from './icons'
+import { CheckIcon, CopyIcon, GitBranchIcon, PencilIcon } from './icons'
 
 interface MessageActionsProps {
   text: string
@@ -7,6 +7,12 @@ interface MessageActionsProps {
   entryId?: string
   /** Fork the session at this entry (host swaps to the new session in place). */
   onFork?: (entryId: string) => void
+  /** 编辑重发 (ticket 79): edit & resend this message. User rows only — the
+   * click prefills the composer with the message's original text + images
+   * and moves the leaf to the message's parent (in-place branch on send).
+   * Absent while the agent runs (agentRunning hides the affordance; the
+   * agent_end settle brings it back) and on assistant rows. */
+  onEdit?: () => void
   /** Timestamp after the buttons. The assistant row stamps one (screenshot
    * 04); the user bubble's row (ticket 44) is Copy-only and opts out. */
   showTime?: boolean
@@ -20,7 +26,7 @@ interface MessageActionsProps {
  * The timestamp is stamped once on mount — the contract stream carries no
  * clock, and the reducer stays time-free.
  */
-export default function MessageActions({ text, entryId, onFork, showTime = true }: MessageActionsProps): JSX.Element {
+export default function MessageActions({ text, entryId, onFork, onEdit, showTime = true }: MessageActionsProps): JSX.Element {
   const [copied, setCopied] = useState(false)
   const [time, setTime] = useState('')
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -59,6 +65,20 @@ export default function MessageActions({ text, entryId, onFork, showTime = true 
         {copied ? <CheckIcon size={13} className="msg-action-copied" /> : <CopyIcon size={13} />}
         <span>{copied ? 'Copied' : 'Copy'}</span>
       </button>
+      {onEdit !== undefined && (
+        /* Self-labeled like Copy — a visible text label takes no tooltip
+          (R3 disposition). AFTER Copy so the ticket-44 stage's first-button
+          click stays the copy. */
+        <button
+          type="button"
+          className="msg-action-btn"
+          aria-label="Edit and resend this message"
+          onClick={onEdit}
+        >
+          <PencilIcon size={13} />
+          <span>Edit</span>
+        </button>
+      )}
       {entryId !== undefined && onFork !== undefined && (
         /* Self-labeled like Copy — per the tooltip disposition rules (R3) a
           visible text label takes no tooltip. */

@@ -50,6 +50,18 @@ export interface TranscriptTextPart {
 
 export type TranscriptAssistantPart = TranscriptThinkingPart | TranscriptTextPart
 
+/** One inline base64 image block of a replayed user message (ticket 79,
+ * additive projection — reported into the host-contract smoke): the raw
+ * material of the edit-resend composer prefill (the operator ruled images
+ * ride back into the attachment state). Mirrors the session-format
+ * ImageContent the SDK persists inline in user message content. */
+export interface TranscriptImagePart {
+  kind: 'image'
+  mimeType: string
+  /** Raw base64 payload (no data: prefix) — the contract's attachment shape. */
+  data: string
+}
+
 /**
  * One renderable item of a replayed transcript (resume / tree navigation /
  * Live Follow). Structured since ticket 14: assistant items carry ordered
@@ -66,6 +78,11 @@ export type TranscriptItem =
       timestamp: string
       /** Skill name from the `<skill name="…">` injection prologue; null when plain. */
       skillName: string | null
+      /** The message's inline image parts, in content order (ticket 79,
+       * additive): present ONLY on messages that carry images — absent on
+       * imageless messages and on pre-79 payloads, so consumers must treat
+       * absence as "no images", never default it. */
+      images?: TranscriptImagePart[]
     }
   | {
       role: 'assistant'

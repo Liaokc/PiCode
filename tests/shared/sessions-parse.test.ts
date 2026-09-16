@@ -401,6 +401,95 @@ describe('extractTranscriptItems — tool result diff text (ticket 78, additive 
   })
 })
 
+describe('extractTranscriptItems — user message image parts (ticket 79, additive projection)', () => {
+  const PNG = 'iVBORw0KGgoAAAANSUhEUg=='
+  const JPEG = '/9j/4AAQSkZJRg=='
+
+  it('projects inline image content blocks onto the user item (image prefill raw material)', () => {
+    const entries: RawSessionEntry[] = [
+      {
+        type: 'message',
+        id: 'e1',
+        parentId: null,
+        timestamp: 't1',
+        message: {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'what is in this shot?' },
+            { type: 'image', data: PNG, mimeType: 'image/png' }
+          ]
+        }
+      }
+    ]
+    const items = extractTranscriptItems(entries)
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({
+      role: 'user',
+      text: 'what is in this shot?',
+      images: [{ kind: 'image', mimeType: 'image/png', data: PNG }]
+    })
+  })
+
+  it('carries every image block in content order (multi-image messages)', () => {
+    const entries: RawSessionEntry[] = [
+      {
+        type: 'message',
+        id: 'e1',
+        parentId: null,
+        timestamp: 't1',
+        message: {
+          role: 'user',
+          content: [
+            { type: 'image', data: PNG, mimeType: 'image/png' },
+            { type: 'text', text: 'two shots' },
+            { type: 'image', data: JPEG, mimeType: 'image/jpeg' }
+          ]
+        }
+      }
+    ]
+    const items = extractTranscriptItems(entries)
+    expect(items[0]).toMatchObject({
+      role: 'user',
+      images: [
+        { kind: 'image', mimeType: 'image/png', data: PNG },
+        { kind: 'image', mimeType: 'image/jpeg', data: JPEG }
+      ]
+    })
+  })
+
+  it('omits the field entirely on imageless messages (old payloads stay valid)', () => {
+    const entries: RawSessionEntry[] = [
+      { type: 'message', id: 'e1', parentId: null, timestamp: 't1', message: { role: 'user', content: text('plain') } }
+    ]
+    const items = extractTranscriptItems(entries)
+    expect(items).toHaveLength(1)
+    expect((items[0] as { images?: unknown }).images).toBeUndefined()
+  })
+
+  it('malformed image blocks never fabricate parts (defensive typing)', () => {
+    const entries: RawSessionEntry[] = [
+      {
+        type: 'message',
+        id: 'e1',
+        parentId: null,
+        timestamp: 't1',
+        message: {
+          role: 'user',
+          content: [
+            { type: 'image' },
+            { type: 'image', data: 42, mimeType: 'image/png' },
+            { type: 'image', data: PNG },
+            { type: 'text', text: 'still text-only' }
+          ]
+        }
+      }
+    ]
+    const items = extractTranscriptItems(entries)
+    expect(items).toHaveLength(1)
+    expect((items[0] as { images?: unknown }).images).toBeUndefined()
+  })
+})
+
 describe('sniffSkillName', () => {
   it('matches the exact injection shape the Pi SDK prepends to a turn message', () => {
     const injected = '<skill name="tdd" location="/x/SKILL.md">\nbody\n</skill>\n\nreal prompt'

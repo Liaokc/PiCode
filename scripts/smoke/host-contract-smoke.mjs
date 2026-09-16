@@ -39,6 +39,14 @@
  *   sentinel with accessMode:'read-only' → composer_state.accessMode is
  *   'read-only' with no set_access_mode command ever sent.
  *
+ *   Round F (ticket 79报备: user-message image projection + edit-resend
+ *   navigation) — a SEEDED session file, zero model calls:
+ *   resume → session_created(resumed) → history_loaded (image message
+ *   carries parts; imageless keeps the old shape) → navigate_tree(u2)
+ *   → history_loaded([u1,a1]) + session_tree(leaf=a1, the parent)
+ *   → navigate_tree(u1, root) → history_loaded([]) + leafId null (resetLeaf)
+ *   → shutdown → exit 0 (file lossless, no branch_summary)
+ *
  * Usage: npm run build && node scripts/smoke/host-contract-smoke.mjs
  * Expects working model auth in ~/.pi/agent (same as the pi TUI). Session
  * files land in an isolated throwaway store (PICODE_SESSION_DIR, ticket 13)
@@ -56,6 +64,12 @@ const HOST_ENTRY = path.join(path.dirname(fileURLToPath(import.meta.url)), '..',
 const STEP_TIMEOUT_MS = 90_000
 const SMOKE_LABEL = 'PICODE_SMOKE_RENAMED'
 
+// Ticket 79 round F: the seeded edit-resend fixture (written in onHostExit
+// once the isolated store is settled below).
+const STAMP_79 = '2026-09-14T10:00:00.000Z'
+const EDIT79_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+let edit79File = ''
+
 // Session isolation (ticket 13): hosts must never write the real
 // ~/.pi/agent/sessions. Use the suite-wide store when run through
 // scripts/smoke/run-all.sh (which owns its cleanup), otherwise create and
@@ -65,6 +79,7 @@ if (!process.env.PICODE_SESSION_DIR) {
   process.on('exit', () => rmSync(process.env.PICODE_SESSION_DIR, { recursive: true, force: true }))
   console.log(`SMOKE isolated session store: ${process.env.PICODE_SESSION_DIR}`)
 }
+edit79File = path.join(process.env.PICODE_SESSION_DIR, 'edit79-seeded.jsonl')
 
 const cwd = await mkdtemp(path.join(tmpdir(), 'picode-smoke-'))
 // A real file so the @-mention candidate listing has something to return.
@@ -259,6 +274,65 @@ async function onHostExit(exited, code) {
     step = 'E2 composer push'
     bumpTimeout()
     child = forkHost([cwd, 'picode:defaults=' + JSON.stringify({ accessMode: 'read-only' })], onEvent)
+    return
+  }
+  // Ticket 79报备: round F — the user-message image projection (additive)
+  // and the edit-resend tree semantics, against a SEEDED session file, so
+  // the whole round needs zero model calls. Runs after the ticket-80 E2
+  // sentinel round completes its composer_state assertions.
+  if (step === 'E2 shutdown') {
+    if (code !== 0) fail(`round E2 exit should be clean 0, got ${code}`)
+    console.log('SMOKE round E2 shutdown ok — starting round F (ticket-79 image projection + edit-resend navigation)')
+    writeFileSync(
+      edit79File,
+      [
+        JSON.stringify({ type: 'session', version: 3, id: 'edit79-fixed-id', timestamp: STAMP_79, cwd }),
+        // Root user message WITH an inline image (the projection's raw shape).
+        JSON.stringify({
+          type: 'message', id: 'e79-u1', parentId: null, timestamp: STAMP_79,
+          message: { role: 'user', content: [
+            { type: 'text', text: 'PICODE_EDIT79 what is in this shot?' },
+            { type: 'image', data: EDIT79_PNG, mimeType: 'image/png' }
+          ] }
+        }),
+        JSON.stringify({
+          type: 'message', id: 'e79-a1', parentId: 'e79-u1', timestamp: STAMP_79,
+          message: { role: 'assistant', content: [{ type: 'text', text: 'PICODE_EDIT79 first reply' }], stopReason: 'stop' }
+        }),
+        // Imageless user message (the old-payload compat shape).
+        JSON.stringify({
+          type: 'message', id: 'e79-u2', parentId: 'e79-a1', timestamp: STAMP_79,
+          message: { role: 'user', content: [{ type: 'text', text: 'PICODE_EDIT79 second message' }] }
+        }),
+        JSON.stringify({
+          type: 'message', id: 'e79-a2', parentId: 'e79-u2', timestamp: STAMP_79,
+          message: { role: 'assistant', content: [{ type: 'text', text: 'PICODE_EDIT79 second reply' }], stopReason: 'stop' }
+        })
+      ].join('\n') + '\n'
+    )
+    step = 'F session_created'
+    bumpTimeout()
+    child = forkHost([cwd, edit79File], onEvent)
+    return
+  }
+  if (step === 'F shutdown') {
+    if (code !== 0) fail(`round F exit should be clean 0, got ${code}`)
+    // 分支无损 + 天然 No summary: after the edit-resend navigations the file
+    // still carries EVERY seeded message (append-only), NO message entry was
+    // appended by the navigations themselves (the resume's own SDK
+    // bookkeeping — e.g. thinking_level_change — is the only legal tail),
+    // and no branch_summary exists.
+    const after = readFileSync(edit79File, 'utf8').split('\n').filter((l) => l.trim() !== '')
+    const messageLines = after.filter((l) => l.includes('"type":"message"'))
+    if (messageLines.length !== 4) {
+      fail(`edit-resend must not append message entries (expected 4, got ${messageLines.length})`)
+    }
+    if (after.some((l) => l.includes('"branch_summary"'))) fail('edit-resend navigation must be naturally No summary')
+    for (const id of ['e79-u1', 'e79-a1', 'e79-u2', 'e79-a2']) {
+      if (!after.some((l) => l.includes(`"${id}"`))) fail(`edit-resend lost entry ${id} — the move must be lossless`)
+    }
+    console.log('SMOKE round F shutdown ok — messages lossless, no appended branch entries, no branch_summary (天然 No summary)')
+    await finishClean(code)
     return
   }
   if (step === 'clean exit') {
@@ -888,7 +962,83 @@ function onEvent(event) {
         fail(`ticket-80: the accessMode sentinel should boot the gate into 'read-only', got ${event.accessMode}`)
       }
       console.log('SMOKE ticket-80 accessMode sentinel ok — the created session runs Read Only with no set_access_mode sent')
-      step = 'clean exit'
+      step = 'E2 shutdown'
+      child.send({ type: 'shutdown' })
+      return
+    }
+
+    // ---------- Round F: ticket 79 — image projection + edit-resend tree semantics ----------
+    case 'F session_created': {
+      if (event.type !== 'session_created') return
+      if (!event.resumed) fail('round F must open the seeded file as a resume')
+      if (event.sessionFile !== edit79File) fail(`round F resumed the wrong file: ${event.sessionFile}`)
+      console.log('SMOKE round F session ok (seeded ticket-79 fixture)')
+      // The resume replay IS the image-projection assertion: the seeded
+      // image message must carry its parts; the imageless one must keep the
+      // EXACT pre-79 item shape (field absent, not empty).
+      step = 'F history'
+      return
+    }
+    case 'F history': {
+      if (event.type !== 'history_loaded') return
+      const items = event.items
+      if (!Array.isArray(items) || items.length !== 4) fail(`round F replay must hold the 4 seeded messages, got ${JSON.stringify(items?.length)}`)
+      const u1 = items[0]
+      if (u1?.role !== 'user' || u1.id !== 'e79-u1') fail('round F replay order broken at the first user item')
+      if (!Array.isArray(u1.images) || u1.images.length !== 1) fail('ticket-79: the image message must project its image parts')
+      if (u1.images[0].kind !== 'image' || u1.images[0].mimeType !== 'image/png' || u1.images[0].data !== EDIT79_PNG) {
+        fail(`ticket-79: image part shape wrong: ${JSON.stringify(u1.images[0])}`)
+      }
+      const u2 = items[2]
+      if (u2?.role !== 'user' || u2.id !== 'e79-u2') fail('round F replay order broken at the second user item')
+      if ('images' in u2) fail('ticket-79: an imageless user item must keep the old payload shape (no images field)')
+      console.log('SMOKE ticket-79 image projection ok (image message carries parts; imageless stays field-absent)')
+      // Edit-resend navigation, non-root: navigating to the USER entry u2
+      // must land the leaf on its PARENT a1 and replay [u1, a1] — Pi's
+      // edit-and-resubmit semantics (the resent message then branches from
+      // exactly the pre-edit point).
+      step = 'F navigate parent'
+      child.send({ type: 'navigate_tree', entryId: 'e79-u2' })
+      return
+    }
+    case 'F navigate parent': {
+      if (event.type !== 'history_loaded') return
+      const items = event.items
+      if (!Array.isArray(items) || items.length !== 2) fail(`after navigating to u2 the replay must hold [u1, a1], got ${items?.length}`)
+      if (items[0]?.id !== 'e79-u1' || items[1]?.id !== 'e79-a1') fail(`wrong replay path after the u2 edit navigate: ${JSON.stringify(items.map((i) => i.id))}`)
+      if (!Array.isArray(items[0].images) || items[0].images?.length !== 1) fail('the image projection must survive the edit navigation replay')
+      console.log('SMOKE ticket-79 edit navigate (non-root) ok — leaf landed on the parent entry, replay truncated losslessly')
+      // The tree payload must agree: leaf = a1 (the session_tree arrives
+      // alongside; the NEXT navigate step drives from it).
+      step = 'F navigate tree-check'
+      child.send({ type: 'request_tree' })
+      return
+    }
+    case 'F navigate tree-check': {
+      if (event.type !== 'session_tree') return
+      if (event.tree.leafId !== 'e79-a1') fail(`the leaf must sit on the parent a1 after the edit navigate, got ${event.tree.leafId}`)
+      console.log('SMOKE ticket-79 tree leaf ok (parent landing)')
+      // Root edit: navigating to the ROOT user message u1 must resetLeaf —
+      // empty replay, null leaf (the SDK's documented re-edit-the-first-
+      // message path).
+      step = 'F navigate root'
+      child.send({ type: 'navigate_tree', entryId: 'e79-u1' })
+      return
+    }
+    case 'F navigate root': {
+      if (event.type !== 'history_loaded') return
+      const items = event.items
+      if (!Array.isArray(items) || items.length !== 0) fail(`the root edit navigate must replay an empty path, got ${items?.length}`)
+      console.log('SMOKE ticket-79 root edit navigate ok (resetLeaf, empty replay)')
+      step = 'F root tree-check'
+      child.send({ type: 'request_tree' })
+      return
+    }
+    case 'F root tree-check': {
+      if (event.type !== 'session_tree') return
+      if (event.tree.leafId !== null) fail(`the leaf must be null after the root edit navigate, got ${event.tree.leafId}`)
+      console.log('SMOKE ticket-79 tree leaf ok (null after resetLeaf)')
+      step = 'F shutdown'
       child.send({ type: 'shutdown' })
       return
     }
