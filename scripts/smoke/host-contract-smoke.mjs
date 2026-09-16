@@ -393,7 +393,8 @@ function onEvent(event) {
       // edit's tool_start arrives first; the pill gates the execution itself.
       if (event.type === 'tool_start') {
         seen.tool_start++
-        toolNames.set(event.toolCallId, event.toolName)
+        // tool_start carries `name` (toolName is the approval_required field).
+        toolNames.set(event.toolCallId, event.name)
         return
       }
       if (event.type === 'approval_required') {
