@@ -108,6 +108,15 @@
  * selected row always sits inside the visible list (scroll follow,
  * pi16-menu-no-scroll).
  *
+ * Ticket 70 adds the chip-toggle stage right after it: REAL chip presses
+ * (mousedown, mouseup, click — click() alone never fires mousedown, which
+ * is why the race hid from this suite) replay the chip-popover toggle
+ * race for each of the three chips — the mousedown half of a second press
+ * on the OWNING chip must not close its menu (the outside-close anchor
+ * exemption) while the completing click must (the toggle) — and a click
+ * inside the popover still picks while a real outside press still closes
+ * for good.
+ *
  * Any missed step times out and exits non-zero. Progress logs as
  * `SMOKE <step>` lines on stdout. Not part of `npm test`.
  */
@@ -176,6 +185,29 @@ const composerChipClickJs = (ariaPrefix: string): string => `(() => {
   chip.click()
   return true
 })()`
+
+/** Ticket 70: a REAL press on the chip whose aria-label starts with the
+ * prefix — mousedown, mouseup, click, in order, all bubbling (the synthetic
+ * click() above never fires mousedown, which is exactly why the chip-popover
+ * open/close race could hide from this suite). Mid-press splits:
+ * chipDownJs fires only the mousedown; chipPressCompletionJs finishes the
+ * press with mouseup + click — so a stage can probe the world BETWEEN the
+ * two halves of a real press. */
+const composerChipEventJs = (ariaPrefix: string, type: string): string => `(() => {
+  const chip = document.querySelector('.cmp-chip[aria-label^=${JSON.stringify(ariaPrefix)}]')
+  if (!(chip instanceof HTMLElement)) return false
+  const r = chip.getBoundingClientRect()
+  chip.dispatchEvent(new MouseEvent('${type}', {
+    bubbles: true, cancelable: true,
+    clientX: r.x + r.width / 2, clientY: r.y + r.height / 2
+  }))
+  return true
+})()`
+const composerChipDownJs = (ariaPrefix: string): string => composerChipEventJs(ariaPrefix, 'mousedown')
+const composerChipPressCompletionJs = (ariaPrefix: string): string =>
+  [composerChipEventJs(ariaPrefix, 'mouseup'), composerChipEventJs(ariaPrefix, 'click')].join(';\n')
+const composerChipPressJs = (ariaPrefix: string): string =>
+  [composerChipDownJs(ariaPrefix), composerChipPressCompletionJs(ariaPrefix)].join(';\n')
 
 /** The aria-label of the chip whose aria-label starts with the prefix ('' = absent). */
 const composerChipLabelJs = (ariaPrefix: string): string =>
@@ -701,6 +733,34 @@ export function startSmokeIfEnabled(
     // retired-slash gate must stay silent — the turn it starts dies with
     // the SIGKILL in the crash-isolation stage right after). ----
     log('menu_surface_start')
+    // Ticket 70 run-hardening: the live model sometimes answers the unknown
+    // /skill:zzzqqq by trying to LOOK IT UP with a mutating tool — the
+    // approval gate then holds the turn open forever and the menu-keyboard
+    // stage's idle wait starves. One-shot auto-deny: the FIRST gate ask on
+    // this turn is denied through the same session_command the pill UI
+    // sends (a deny terminates the turn, so the composer goes idle either
+    // way); the watch disarms on the turn's agent_end or the host's death,
+    // long before the ticket-25 stage's own gates must stay pending.
+    let gateWatch = true
+    const onGateAsk = (event: Scoped): void => {
+      if (!gateWatch) return
+      if (event.type === 'approval_required') {
+        gateWatch = false
+        log('menu_surface_gate_auto_deny', `tool=${event.toolName}`)
+        supervisor.handleParentCommand({
+          type: 'session_command',
+          sessionId: event.sessionId,
+          command: {
+            type: 'deny_tool',
+            toolCallId: event.toolCallId,
+            reason: 'smoke auto-deny: the zero-match turn must not stall the menu stages on a hallucinated tool call'
+          }
+        })
+      } else if (event.type === 'agent_end' || event.type === 'host_exit') {
+        gateWatch = false
+      }
+    }
+    observers.push(onGateAsk)
     await withWindow(getWindow, async (win) => {
       // The text menus' row classes are unique to them (the chip menus
       // share .cmp-menu-list, so that class proves nothing here).
@@ -1021,6 +1081,114 @@ export function startSmokeIfEnabled(
       await new Promise((r) => setTimeout(r, 200))
       if (!(await js(popoverGoneJs).catch(() => false))) fail('Escape never closed the model menu')
       log('menu_keyboard_done')
+      // The armed window is over either way (agent_end disarmed it; the
+      // host_exit path covers a killed host) — drop the observer for real.
+      observers.splice(observers.indexOf(onGateAsk), 1)
+    })
+
+    // ---- ticket 70: the chip-popover toggle race. The menu-keyboard
+    // stage's chip clicks go through click(), which fires NO mousedown —
+    // exactly why the race could hide here while every real mouse press
+    // hit it: the popover's document-level mousedown outside-close closed
+    // the menu, React re-rendered with menu === null, and the chip's click
+    // toggle reopened it ("click the chip to close" bounced it right
+    // back). After the fix the owning chip is exempt from the outside
+    // close, so for EACH of the three chips (access/model/thinking):
+    // opening works, the mousedown half of a second press does NOT close
+    // (exempt), and the completing click does (toggle) — the decisive
+    // mid-press probe. Plus the two neighbors: a click inside the popover
+    // still picks (the selected row — idempotent, zero state change) and a
+    // real outside press still closes for good. ----
+    log('chip_toggle_start')
+    await withWindow(getWindow, async (win) => {
+      const js = (code: string): Promise<unknown> => win.webContents.executeJavaScript(code)
+      const popoverPresentJs = `document.querySelector('.cmp-popover') !== null`
+      const waitPopover = async (want: boolean): Promise<void> => {
+        if (!(await waitForProbe(win, want ? popoverPresentJs : `!(${popoverPresentJs})`, 5_000))) {
+          fail(`the chip menu should be ${want ? 'open' : 'closed'} but never settled`)
+        }
+      }
+      // The decisive mid-press probe: after the mousedown half of a press
+      // on the OWNING chip, the menu must still be there (pre-70 it was
+      // already closed at this point — the click then reopened it).
+      for (const aria of ['Access mode:', 'Model:', 'Thinking:']) {
+        if (!(await js(composerChipPressJs(aria)).catch(() => false))) fail(`the ${aria} chip is missing for the chip-toggle stage`)
+        await waitPopover(true)
+        if (!(await js(composerChipDownJs(aria)).catch(() => false))) fail(`the ${aria} chip is missing mid-press`)
+        await new Promise((r) => setTimeout(r, 250))
+        if (!(await js(popoverPresentJs).catch(() => false))) fail(`the ${aria} popover closed on the mousedown half of the owning chip's press (the pre-70 race is back)`)
+        await js(composerChipPressCompletionJs(aria))
+        await waitPopover(false)
+        log('chip_toggle_press_closes', aria)
+      }
+
+      // A click INSIDE the popover never closes via the outside path and
+      // still picks: open the access menu, mousedown its selected row (the
+      // current tier — the menu opens on it), then complete the click. The
+      // pick is idempotent (zero state change) and closes via the pick path.
+      if (!(await js(composerChipPressJs('Access mode:')).catch(() => false))) fail('the access chip is missing for the inside-click probe')
+      await waitPopover(true)
+      const rowDown = await js(
+        `(() => {
+          const row = document.querySelector('.cmp-popover .cmp-menu-row[aria-selected="true"]')
+          if (!(row instanceof HTMLElement)) return false
+          const r = row.getBoundingClientRect()
+          row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 }))
+          return true
+        })()`
+      ).catch(() => false)
+      if (!rowDown) fail('the access menu has no selected row to press')
+      await new Promise((r) => setTimeout(r, 250))
+      if (!(await js(popoverPresentJs).catch(() => false))) fail('the access popover closed on a mousedown INSIDE it (outside-close leaked inward)')
+      const before = (await js(composerChipLabelJs('Access mode:'))) as string
+      await js(
+        `(() => {
+          const row = document.querySelector('.cmp-popover .cmp-menu-row[aria-selected="true"]')
+          if (!(row instanceof HTMLElement)) return false
+          const r = row.getBoundingClientRect()
+          for (const type of ['mouseup', 'click']) {
+            row.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 }))
+          }
+          return true
+        })()`
+      )
+      await waitPopover(false)
+      const after = (await js(composerChipLabelJs('Access mode:'))) as string
+      if (before !== after) fail(`the idempotent access pick moved the tier (${before} → ${after})`)
+      log('chip_toggle_inside_click_picks_ok')
+
+      // Neighbor chips remain real outside clicks: with the access menu
+      // open, a full press on the model chip closes access AND opens model
+      // (mousedown closes the old menu, the click toggles the new one).
+      if (!(await js(composerChipPressJs('Access mode:')).catch(() => false))) fail('the access chip is missing for the cross-chip probe')
+      await waitPopover(true)
+      if (!(await js(composerChipPressJs('Model:')).catch(() => false))) fail('the model chip is missing for the cross-chip probe')
+      if (!(await waitForProbe(win, `document.querySelector('.cmp-popover .cmp-access-row') === null`, 5_000))) fail('the access menu survived a press on the model chip')
+      if (!(await waitForProbe(win, `document.querySelector('.cmp-popover .cmp-cascade') !== null`, 5_000))) fail('the model menu never opened from the cross-chip press')
+      // And the model chip presses its OWN menu closed (exemption again).
+      await js(composerChipPressJs('Model:'))
+      await waitPopover(false)
+      log('chip_toggle_cross_chip_ok')
+
+      // A real outside press closes for good: open, then a full press on
+      // document.body (outside popover and chip alike), re-checked after a
+      // beat so a late reopen cannot hide.
+      if (!(await js(composerChipPressJs('Access mode:')).catch(() => false))) fail('the access chip is missing for the outside-close probe')
+      await waitPopover(true)
+      await js(
+        `(() => {
+          const r = document.body.getBoundingClientRect()
+          for (const type of ['mousedown', 'mouseup', 'click']) {
+            document.body.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 }))
+          }
+          return true
+        })()`
+      )
+      await waitPopover(false)
+      await new Promise((r) => setTimeout(r, 400))
+      if (!(await js(`!(${popoverPresentJs})`).catch(() => false))) fail('the access popover came back after a real outside press')
+      log('chip_toggle_outside_close_ok')
+      log('chip_toggle_done')
     })
 
     // Crash isolation: SIGKILL the host; supervisor must report it unclean —

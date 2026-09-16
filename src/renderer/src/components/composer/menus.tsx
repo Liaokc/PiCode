@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type JSX, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type JSX, type KeyboardEvent, type RefObject } from 'react'
 import type { AccessMode, ThinkingLevel } from '../../../../shared/contract'
 import { ACCESS_MODES, accessModeHint, accessModeLabel } from '../../../../shared/composer/access'
 import { clampIndex, flatMenuKey } from '../../../../shared/composer/menu-keys'
+import { shouldCloseOnOutsideMousedown } from '../../../../shared/composer/outside-close'
 import { CheckIcon, ChevronRightIcon, ShieldCheckIcon } from '../icons'
 
 /** English labels for Pi thinking levels (the dropdown under "Max"). */
@@ -26,7 +27,8 @@ export function ComposerPopover({
   onClose,
   label,
   captureKeys = false,
-  className
+  className,
+  anchorRef
 }: {
   children: JSX.Element
   align?: 'left' | 'right'
@@ -36,12 +38,20 @@ export function ComposerPopover({
   captureKeys?: boolean
   /** Extra class on the popover root (e.g. the thinking menu's narrow card). */
   className?: string
+  /** Ticket 70: the element that opened this popover (the owning chip).
+   * A mousedown on it is NOT an outside click — the chip's own click
+   * toggle owns the close (otherwise mousedown closes, click reopens,
+   * and the chip can never close its own menu). */
+  anchorRef?: RefObject<HTMLElement | null>
 }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     function onDown(event: MouseEvent): void {
-      if (ref.current && !ref.current.contains(event.target as Node)) onClose()
+      // Ticket 70: the decision is the ONE shared rule (Seam-1,
+      // outside-close.ts) — popover members never close, the owning chip
+      // is exempt (its click toggle closes), everything else closes.
+      if (shouldCloseOnOutsideMousedown({ popover: ref.current, anchor: anchorRef?.current ?? null, target: event.target })) onClose()
     }
     function onKey(event: globalThis.KeyboardEvent): void {
       if (event.key === 'Escape') {
@@ -56,7 +66,7 @@ export function ComposerPopover({
       document.removeEventListener('mousedown', onDown)
       document.removeEventListener('keydown', onKey)
     }
-  }, [onClose])
+  }, [onClose, anchorRef])
 
   return (
     <div
@@ -119,10 +129,14 @@ export function MenuHint(): JSX.Element {
 /** Access Mode chip menu — the three approval-gate tiers (NOT trust). */
 export function AccessMenu({
   current,
+  chipRef,
   onPick,
   onClose
 }: {
   current: AccessMode
+  /** The access chip that owns this menu (ticket 70: its mousedown is
+   * exempt from the outside-close — its click toggle owns the close). */
+  chipRef: RefObject<HTMLElement | null>
   onPick: (mode: AccessMode) => void
   onClose: () => void
 }): JSX.Element {
@@ -134,7 +148,7 @@ export function AccessMenu({
   }
 
   return (
-    <ComposerPopover label="Access Mode" onClose={onClose} captureKeys>
+    <ComposerPopover label="Access Mode" onClose={onClose} captureKeys anchorRef={chipRef}>
       <div className="cmp-menu-list" role="listbox" aria-label="Access Mode" onKeyDown={(e) => flatMenuKey(e, ACCESS_MODES.length, index, setIndex, (i) => pick(ACCESS_MODES[i]!), onClose)}>
         {ACCESS_MODES.map((mode, i) => (
           <MenuRow key={mode} selected={i === index} onSelect={() => pick(mode)} onHover={() => setIndex(i)}>
@@ -161,11 +175,14 @@ export function AccessMenu({
 export function ThinkingMenu({
   levels,
   current,
+  chipRef,
   onPick,
   onClose
 }: {
   levels: ThinkingLevel[]
   current: ThinkingLevel | null
+  /** The thinking chip that owns this menu (ticket 70 — see AccessMenu). */
+  chipRef: RefObject<HTMLElement | null>
   onPick: (level: ThinkingLevel) => void
   onClose: () => void
 }): JSX.Element {
@@ -177,7 +194,7 @@ export function ThinkingMenu({
   }
 
   return (
-    <ComposerPopover label="Thinking Level" align="right" onClose={onClose} captureKeys className="cmp-popover-thinking">
+    <ComposerPopover label="Thinking Level" align="right" onClose={onClose} captureKeys className="cmp-popover-thinking" anchorRef={chipRef}>
       <div
         className="cmp-menu-list"
         role="listbox"
@@ -209,12 +226,15 @@ export function ModelMenu({
   providers,
   current,
   emptyHint,
+  chipRef,
   onPick,
   onClose
 }: {
   providers: { providerId: string; name: string; models: { providerId: string; modelId: string; name: string }[] }[]
   current: { providerId: string; modelId: string } | null
   emptyHint?: string
+  /** The model chip that owns this menu (ticket 70 — see AccessMenu). */
+  chipRef: RefObject<HTMLElement | null>
   onPick: (providerId: string, modelId: string) => void
   onClose: () => void
 }): JSX.Element {
@@ -247,7 +267,7 @@ export function ModelMenu({
 
   if (providers.length === 0) {
     return (
-      <ComposerPopover label="Select model" align="right" onClose={onClose} captureKeys>
+      <ComposerPopover label="Select model" align="right" onClose={onClose} captureKeys anchorRef={chipRef}>
         <div className="cmp-menu-empty" role="status">
           {emptyHint ?? 'No models available'}
         </div>
@@ -256,7 +276,7 @@ export function ModelMenu({
   }
 
   return (
-    <ComposerPopover label="Select model" align="right" onClose={onClose} captureKeys>
+    <ComposerPopover label="Select model" align="right" onClose={onClose} captureKeys anchorRef={chipRef}>
       <div className="cmp-cascade" role="listbox" aria-label="Select model" onKeyDown={onKey}>
         <div className="cmp-cascade-col">
           {providers.map((provider, i) => (
