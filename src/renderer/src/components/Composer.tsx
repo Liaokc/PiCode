@@ -152,6 +152,13 @@ export default function Composer({
   const expanded = expandState === 'expanded'
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const sectionRef = useRef<HTMLElement | null>(null)
+  // Ticket 70: the three chip elements — handed to their menus as the
+  // outside-close anchor, so a mousedown on the owning chip no longer
+  // closes the menu (the chip's own click toggle completes the close;
+  // mousedown-close + click-toggle used to bounce the menu right back).
+  const accessChipRef = useRef<HTMLButtonElement | null>(null)
+  const modelChipRef = useRef<HTMLButtonElement | null>(null)
+  const thinkingChipRef = useRef<HTMLButtonElement | null>(null)
   const fileSeq = useRef(0)
   const fileListRequest = useRef<string | null>(null)
   const fileDebounce = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -490,13 +497,14 @@ export default function Composer({
         />
       )}
       {menu === 'access' && (
-        <AccessMenu current={chat.accessMode} onPick={onSetAccessMode} onClose={() => setMenu(null)} />
+        <AccessMenu current={chat.accessMode} chipRef={accessChipRef} onPick={onSetAccessMode} onClose={() => setMenu(null)} />
       )}
       {menu === 'model' && (
         <ModelMenu
           providers={chat.providers}
           current={chat.model}
           emptyHint={chat.modelMenuHint ?? undefined}
+          chipRef={modelChipRef}
           onPick={onSetModel}
           onClose={() => setMenu(null)}
         />
@@ -505,6 +513,7 @@ export default function Composer({
         <ThinkingMenu
           levels={chat.availableLevels}
           current={chat.thinkingLevel}
+          chipRef={thinkingChipRef}
           onPick={onSetThinkingLevel}
           onClose={() => setMenu(null)}
         />
@@ -591,6 +600,7 @@ export default function Composer({
         <Tooltip label={density === 'full' ? undefined : accessTooltip}>
           <button
             type="button"
+            ref={accessChipRef}
             className={chat.accessMode === 'full-access' ? 'cmp-chip cmp-access' : 'cmp-chip cmp-access cmp-access-soft'}
             aria-label={`Access mode: ${accessTooltip}`}
             disabled={disabled}
@@ -605,6 +615,7 @@ export default function Composer({
         <Tooltip label={density === 'minimal' ? modelTooltip : undefined}>
           <button
             type="button"
+            ref={modelChipRef}
             className="cmp-chip cmp-muted"
             aria-label={modelName !== null ? `Model: ${modelName}` : 'Select model'}
             disabled={disabled}
@@ -624,6 +635,7 @@ export default function Composer({
         <Tooltip label={density === 'full' ? undefined : thinkingTooltip}>
           <button
             type="button"
+            ref={thinkingChipRef}
             className="cmp-chip cmp-muted"
             aria-label={`Thinking: ${thinkingTooltip}`}
             disabled={disabled || chat.availableLevels.length === 0}
