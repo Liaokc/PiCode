@@ -15,7 +15,7 @@
  *   shows a styled hint instead of a blank panel).
  */
 import type { AuthProbeReport } from './auth-status.ts'
-import { ALL_THINKING_LEVELS, type ModelRef, type ProviderModels, type ThinkingLevel } from './contract.ts'
+import { ALL_THINKING_LEVELS, type AccessMode, type ModelRef, type ProviderModels, type ThinkingLevel } from './contract.ts'
 import type { SessionDefaults } from './preferences.ts'
 
 /**
@@ -200,12 +200,15 @@ export function findCatalogModel(
   return null
 }
 
-/** A model/thinking choice made in the new-task empty state (ticket 41).
- * Null fields mean the chip was left untouched — the preference defaults
- * (already riding `create_session` since ticket 11) stay in charge. */
+/** A model/thinking/access choice made in the new-task empty state (ticket
+ * 41; ticket 80 added the access tier). Null fields mean the chip was left
+ * untouched — the preference defaults (already riding `create_session` since
+ * ticket 11) stay in charge; access has no preference link, so null falls
+ * back to the gate's own DEFAULT_ACCESS_MODE. */
 export interface NewTaskModelChoice {
   model: { providerId: string; modelId: string } | null
   thinkingLevel: ThinkingLevel | null
+  accessMode: AccessMode | null
 }
 
 /**
@@ -226,6 +229,12 @@ export function mergeNewTaskDefaults(
   }
   if (choice?.thinkingLevel !== null && choice?.thinkingLevel !== undefined) {
     merged.thinkingLevel = choice.thinkingLevel
+  }
+  // Ticket 80: the access tier rides the same additive defaults field —
+  // absent stays absent (legacy payload shape; the gate applies its own
+  // fallback).
+  if (choice?.accessMode !== null && choice?.accessMode !== undefined) {
+    merged.accessMode = choice.accessMode
   }
   return Object.keys(merged).length === 0 ? null : merged
 }

@@ -231,20 +231,20 @@ describe('findCatalogModel', () => {
 describe('mergeNewTaskDefaults', () => {
   it('returns null when neither preference defaults nor an empty-state choice exist', () => {
     expect(mergeNewTaskDefaults(null, null)).toBeNull()
-    expect(mergeNewTaskDefaults(null, { model: null, thinkingLevel: null })).toBeNull()
+    expect(mergeNewTaskDefaults(null, { model: null, thinkingLevel: null, accessMode: null })).toBeNull()
   })
 
   it('keeps the preference defaults untouched without a choice', () => {
     const base: SessionDefaults = { providerId: 'a', modelId: 'm', thinkingLevel: 'low' }
-    expect(mergeNewTaskDefaults(base, { model: null, thinkingLevel: null })).toEqual(base)
+    expect(mergeNewTaskDefaults(base, { model: null, thinkingLevel: null, accessMode: null })).toEqual(base)
   })
 
   it('lets the empty-state choice override model and thinking independently (table)', () => {
     const base: SessionDefaults = { providerId: 'a', modelId: 'm', thinkingLevel: 'low' }
-    const choice = (model: NewTaskModelChoice['model'], thinkingLevel: NewTaskModelChoice['thinkingLevel']): NewTaskModelChoice => ({
-      model,
-      thinkingLevel
-    })
+    const choice = (
+      model: NewTaskModelChoice['model'],
+      thinkingLevel: NewTaskModelChoice['thinkingLevel']
+    ): NewTaskModelChoice => ({ model, thinkingLevel, accessMode: null })
     expect(mergeNewTaskDefaults(base, choice({ providerId: 'x', modelId: 'y' }, null))).toEqual({
       providerId: 'x',
       modelId: 'y',
@@ -259,10 +259,33 @@ describe('mergeNewTaskDefaults', () => {
   })
 
   it('builds defaults from a bare choice when no preference defaults exist', () => {
-    expect(mergeNewTaskDefaults(null, { model: { providerId: 'x', modelId: 'y' }, thinkingLevel: null })).toEqual({
+    expect(mergeNewTaskDefaults(null, { model: { providerId: 'x', modelId: 'y' }, thinkingLevel: null, accessMode: null })).toEqual({
       providerId: 'x',
       modelId: 'y'
     })
+  })
+
+  it('carries the empty-state access pick into the defaults (ticket 80, additive accessMode)', () => {
+    expect(mergeNewTaskDefaults(null, { model: null, thinkingLevel: null, accessMode: 'read-only' })).toEqual({
+      accessMode: 'read-only'
+    })
+    const base: SessionDefaults = { providerId: 'a', modelId: 'm', thinkingLevel: 'low' }
+    expect(mergeNewTaskDefaults(base, { model: null, thinkingLevel: null, accessMode: 'full-access' })).toEqual({
+      providerId: 'a',
+      modelId: 'm',
+      thinkingLevel: 'low',
+      accessMode: 'full-access'
+    })
+  })
+
+  it('keeps accessMode ABSENT when the access chip was left untouched (legacy payload shape)', () => {
+    const merged = mergeNewTaskDefaults(null, {
+      model: { providerId: 'x', modelId: 'y' },
+      thinkingLevel: 'max',
+      accessMode: null
+    })
+    expect(merged).toEqual({ providerId: 'x', modelId: 'y', thinkingLevel: 'max' })
+    expect('accessMode' in (merged ?? {})).toBe(false)
   })
 })
 

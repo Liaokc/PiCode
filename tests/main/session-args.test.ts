@@ -40,6 +40,36 @@ describe('encodeSessionArgs / parseSessionArgs', () => {
     })
   })
 
+  it('round-trips an accessMode-only default (ticket 80 additive increment)', () => {
+    const argv = encodeSessionArgs('/tmp/proj', null, { accessMode: 'read-only' })
+    expect(argv).toHaveLength(2)
+    expect(argv[1]?.startsWith(DEFAULTS_ARG_PREFIX)).toBe(true)
+    expect(parseSessionArgs(['node', 'host.js', ...argv])).toEqual({
+      cwd: '/tmp/proj',
+      resumeFile: null,
+      defaults: { accessMode: 'read-only' }
+    })
+  })
+
+  it('keeps legacy sentinel payloads valid — no accessMode field parses as-is (old payloads pass validation)', () => {
+    const legacy = { providerId: 'a', modelId: 'm', thinkingLevel: 'low' }
+    const argv = [DEFAULTS_ARG_PREFIX + JSON.stringify(legacy)]
+    expect(parseSessionArgs(['node', 'host.js', '/tmp/proj', ...argv])).toEqual({
+      cwd: '/tmp/proj',
+      resumeFile: null,
+      defaults: legacy
+    })
+  })
+
+  it('drops a junk accessMode from the sentinel but keeps the rest (defensive normalize)', () => {
+    const argv = [DEFAULTS_ARG_PREFIX + JSON.stringify({ thinkingLevel: 'low', accessMode: 'yolo' })]
+    expect(parseSessionArgs(['node', 'host.js', '/tmp/proj', ...argv])).toEqual({
+      cwd: '/tmp/proj',
+      resumeFile: null,
+      defaults: { thinkingLevel: 'low' }
+    })
+  })
+
   it('omits the sentinel when defaults carry no usable field', () => {
     expect(encodeSessionArgs('/tmp/proj', null, {})).toEqual(['/tmp/proj'])
     expect(parseSessionArgs(['node', 'host.js', '/tmp/proj', `${DEFAULTS_ARG_PREFIX}{bad json`])).toEqual({

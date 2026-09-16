@@ -8,7 +8,7 @@
  * Pure normalize/merge functions so the persistence layer stays thin and the
  * behavior is testable without Electron.
  */
-import type { ThinkingLevel } from './contract.ts'
+import type { AccessMode, ThinkingLevel } from './contract.ts'
 import { normalizeRecentlyClosed, type RecentlyClosedTab } from './panel-model.ts'
 import type { ReadStates } from './sessions/unread.ts'
 import type { SessionSort, SessionView } from './sessions/group.ts'
@@ -20,6 +20,11 @@ export interface SessionDefaults {
   providerId?: string
   modelId?: string
   thinkingLevel?: ThinkingLevel
+  /** Ticket 80 (additive): the access tier picked in the new-task empty
+   * state — the created session's approval gate starts there. Absent = no
+   * pick (the gate falls back to its own DEFAULT_ACCESS_MODE); old payloads
+   * without the field keep validating unchanged. */
+  accessMode?: AccessMode
 }
 
 /**

@@ -6,6 +6,8 @@
  * and every older spawn path byte-identical.
  */
 import type { SessionDefaults } from '../shared/preferences.ts'
+import { ACCESS_MODES } from '../shared/composer/access.ts'
+import type { AccessMode } from '../shared/contract.ts'
 
 export const DEFAULTS_ARG_PREFIX = 'picode:defaults='
 
@@ -18,8 +20,8 @@ export interface SessionArgs {
 /** True when at least one default field is present. */
 export function hasSessionDefaults(defaults: SessionDefaults | null | undefined): boolean {
   if (defaults === null || defaults === undefined) return false
-  const { providerId, modelId, thinkingLevel } = defaults
-  return providerId !== undefined || modelId !== undefined || thinkingLevel !== undefined
+  const { providerId, modelId, thinkingLevel, accessMode } = defaults
+  return providerId !== undefined || modelId !== undefined || thinkingLevel !== undefined || accessMode !== undefined
 }
 
 /**
@@ -50,7 +52,14 @@ export function parseSessionArgs(argv: readonly string[]): SessionArgs {
       try {
         const parsed: unknown = JSON.parse(arg.slice(DEFAULTS_ARG_PREFIX.length))
         if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-          defaults = parsed as SessionDefaults
+          const record: Record<string, unknown> = { ...(parsed as Record<string, unknown>) }
+          // Ticket 80: the additive accessMode normalizes defensively — an
+          // out-of-vocabulary value is dropped (the gate keeps its own
+          // fallback) while the rest of the payload passes unchanged.
+          if (record['accessMode'] !== undefined && !ACCESS_MODES.includes(record['accessMode'] as AccessMode)) {
+            delete record['accessMode']
+          }
+          defaults = record as SessionDefaults
         }
       } catch {
         // Malformed sentinel — ignore; Pi applies its own defaults.

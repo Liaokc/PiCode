@@ -607,7 +607,7 @@ export default function App(): JSX.Element {
     cwd: string | null,
     text: string,
     images: ImageAttachment[],
-    choice: NewTaskModelChoice = { model: null, thinkingLevel: null }
+    choice: NewTaskModelChoice = { model: null, thinkingLevel: null, accessMode: null }
   ): void {
     void (async () => {
       const project = cwd ?? (await window.picode.chat.pickWorkingDirectory())
