@@ -7439,17 +7439,11 @@ export function startSmokeIfEnabled(
         // the leaf moves to a1 (the parent) and the transcript replays
         // without the edited message and its tail.
         if (!((await js(clickEdit79(1))) as boolean)) fail('ticket-79 stage: the image message row never rendered Edit')
-        // The replay waiter arms BEFORE the click (same starvation rule as
-        // step ②: a waiter armed after a DOM probe misses the event that
-        // already flowed through while the probe polled).
-        const parentLanding = waitFor(
-          (e) => e.type === 'history_loaded' && e.sessionId === editSessionId && e.items.length === 2,
-          'ticket-79 parent-landing replay'
-        )
         // The click must visibly restructure the transcript (the leaf lands
-        // on a1 → the replay leaves ONE user block). If it doesn't, dump the
-        // full instant state — the ring alone cannot say whether the click
-        // reached the handler.
+        // on a1 → the replay leaves ONE user block) and the composer must
+        // hold the prefill. The DOM is the assertion — an event waiter here
+        // adds no proof (the replay IS what the DOM now shows) and its
+        // items-length pin can silently mismatch a wrong-target navigate.
         let landed = false
         for (let waited = 0; waited < 15_000 && !landed; waited += 200) {
           landed = (await js(`${userBlocks()} === 1`).catch(() => false)) === true
@@ -7463,7 +7457,6 @@ export function startSmokeIfEnabled(
           })`).catch(() => 'diag-failed')) as string
           fail(`ticket-79 stage: the image-message Edit click never restructured the transcript — ${diag}`)
         }
-        await parentLanding
         const imagePrefilled = await waitForProbe(
           win,
           `${composerValue()} === ${JSON.stringify('PICODE_EDIT79 second message')} && ${attachmentFigures()} === 1`,
