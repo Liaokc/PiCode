@@ -1193,7 +1193,7 @@ export function startSmokeIfEnabled(
       sessionId: ms1.sessionId,
       command: {
         type: 'prompt',
-        text: `${MULTI_MARKER}: count from 1 to 150. Output each number on its own line, one number per line. Do not summarize and do not stop early.`
+        text: `${MULTI_MARKER}: count from 1 to 150. Output each number on its own line, one number per line. Do not summarize and do not stop early. Do not use any tools — write the numbers directly in your reply text.`
       }
     })
     await waitFor((e) => e.type === 'agent_start' && e.sessionId === ms1.sessionId, 'multi agent_start 1')
@@ -2939,7 +2939,7 @@ export function startSmokeIfEnabled(
     // lines — a ~2500px bubble that makes the transcript scrollable no
     // matter how the reply comes back.
     const COUNT_PROMPT =
-      'PICODE_SCROLL_45: Count from 1 to 120. Output each number on its own line, one number per line. Do not summarize and do not stop early.\n' +
+      'PICODE_SCROLL_45: Count from 1 to 120. Output each number on its own line, one number per line. Do not summarize and do not stop early. Do not use any tools — write the numbers directly in your reply text.\n' +
       '\n'.repeat(100)
     await withWindow(getWindow, async (win) => {
       const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
@@ -3091,7 +3091,7 @@ export function startSmokeIfEnabled(
     const stick75Session = await stick75Created
     const stick75Id = stick75Session.sessionId
     const COUNT_PROMPT_75 =
-      'PICODE_SCROLL_75: Count from 1 to 1200. Output each number on its own line, one number per line. Do not summarize and do not stop early.\n' +
+      'PICODE_SCROLL_75: Count from 1 to 1200. Output each number on its own line, one number per line. Do not summarize and do not stop early. Do not use any tools — write the numbers directly in your reply text.\n' +
       '\n'.repeat(100)
     await withWindow(getWindow, async (win) => {
       const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
@@ -3264,17 +3264,21 @@ export function startSmokeIfEnabled(
       }
       log('nav_rail_empty_ok')
 
-      // First real user message: still one tick short — no rail.
+      // First real user message: still one tick short — no rail. The
+      // agent_start waiter registers BEFORE the Enter (same
+      // warm-host-fast-model race as the second send below — observed on
+      // glm-5.3-flash again 2026-09-15: the run can start inside the
+      // executeJavaScript round-trip and a waiter registered after the
+      // Enter never sees it).
+      const navFirstStart = waitFor((e) => e.type === 'agent_start' && e.sessionId === navId, 'nav_rail first agent_start')
+      const navFirstEnd = waitFor((e) => e.type === 'agent_end' && e.sessionId === navId, 'nav_rail first agent_end')
       if (!(await win.webContents.executeJavaScript(composerTypeJs(NAV_1)).catch(() => false))) {
         fail('ticket-46 stage: composer textarea missing for the first nav prompt')
       }
       await new Promise((r) => setTimeout(r, 300))
       await win.webContents.executeJavaScript(composerKeyJs('Enter'))
-      await waitFor((e) => e.type === 'agent_start' && e.sessionId === navId, 'nav_rail first agent_start')
-      await waitFor(
-        (e) => e.type === 'agent_end' && e.sessionId === navId,
-        'nav_rail first agent_end'
-      )
+      await navFirstStart
+      await navFirstEnd
       if (!(await waitForProbe(win, `(${RAIL_GONE}) && document.querySelector('.chat-thread')?.textContent.includes('PICODE_NAV_1')`, 10_000))) {
         fail('ticket-46 stage: after one user message the rail must stay hidden')
       }
@@ -5843,10 +5847,13 @@ export function startSmokeIfEnabled(
         // Surface-specific probes: the chat composer lives in .chat-dock,
         // the empty state's in .empty-state — the value probe doubles as a
         // WHERE assertion (a value probe against the wrong surface would
-        // read 'missing').
-        const chatValue74 = `document.querySelector('.chat-dock textarea.composer-input')?.value ?? 'missing'`
-        const emptyValue74 = `document.querySelector('.empty-state textarea.composer-input')?.value ?? 'missing'`
-        const chatAttachCount74 = `document.querySelectorAll('.chat-dock .composer-attachment').length`
+        // read 'missing'). The definitions carry their own parens so they
+        // compose with && inside larger probes (?? binds looser than ===,
+        // and an unwrapped `x ?? 'missing' === ''` parses as
+        // `x ?? false` — silently inverting the empty check).
+        const chatValue74 = `(document.querySelector('.chat-dock textarea.composer-input')?.value ?? 'missing')`
+        const emptyValue74 = `(document.querySelector('.empty-state textarea.composer-input')?.value ?? 'missing')`
+        const chatAttachCount74 = `(document.querySelectorAll('.chat-dock .composer-attachment').length)`
         const openNewTask74 = async (): Promise<void> => {
           await js(
             `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', code: 'KeyN', metaKey: true, bubbles: true })); true`
@@ -6050,7 +6057,17 @@ export function startSmokeIfEnabled(
 
         // ⑧ Memory-level: a renderer reload (the restart proxy) loses every
         // draft — the boot empty state and a freshly resumed A both start
-        // resting.
+        // resting. The chatSubscribed marker is flipped FALSE first: it was
+        // already 'true' on the outgoing page, and every probe below must
+        // wait for the NEW page (the outgoing page's DOM still shows the
+        // empty state — its composer was emptied by ⑦'s send — and its
+        // registry still has A in-app, where a row click is a SILENT focus
+        // switch with no announcement). A is backdated BEFORE the reload:
+        // its mtime was touched by ⑥'s send, and a fresh mtime would route
+        // the row click to read-only Follow (no announcement) instead of
+        // the resume spawn.
+        backdateMtime(fileA74)
+        await js(`document.documentElement.dataset['chatSubscribed'] = 'false'; true`)
         await win.webContents.reload()
         await waitForProbe(win, `document.documentElement.dataset['chatSubscribed'] === 'true'`, 15_000)
         if (!(await waitForProbe(win, `document.querySelector('.empty-state') !== null && ${emptyValue74} === ''`, 15_000))) {
@@ -6059,11 +6076,34 @@ export function startSmokeIfEnabled(
         if (!(await waitForProbe(win, `document.querySelector('${rowA74}') !== null`, 15_000))) {
           fail('ticket-74 stage: session A row never returned after the restart proxy')
         }
+        // The resume branch needs the row QUIET (no green live dot — the
+        // index's mtime freshness). Wait it out if a scan raced the
+        // backdate; the dot decays as soon as the next index pass lands.
+        if (
+          !(await waitForProbe(
+            win,
+            `document.querySelector('${rowA74} .sb-live-dot') === null`,
+            15_000
+          ))
+        ) {
+          fail('ticket-74 stage: session A still reads as TUI-live after the backdate')
+        }
         const reResumed74 = waitFor(
           (e) => e.type === 'session_created' && e.sessionFile === fileA74,
           'ticket-74 post-restart resume session_created'
         )
         await clickRow74(rowA74)
+        // Fast diagnostic: the click must produce the resumed chat view —
+        // report WHICH surface (if any) replaced the boot empty state
+        // instead of hanging on a bare event timeout.
+        const clickOutcome74 = await waitForProbe(
+          win,
+          `document.querySelector('.empty-state') === null`,
+          20_000
+        )
+        if (!clickOutcome74) {
+          fail('ticket-74 stage: the post-restart row click left the boot empty state untouched')
+        }
         await reResumed74
         if (
           !(await waitForProbe(
