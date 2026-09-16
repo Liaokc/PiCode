@@ -7348,6 +7348,14 @@ export function startSmokeIfEnabled(
         if (!(await js(composerTypeJs('PICODE_EDIT79 stray draft')).catch(() => false))) {
           fail('ticket-79 stage: the composer textarea is missing')
         }
+        // The replay waiter arms BEFORE the click: the host answers the
+        // navigate within milliseconds, and a waiter armed after a DOM probe
+        // would starve exactly like the round-1 stream race (the event
+        // flows through while the probe polls the renderer's later commit).
+        const rootEditReplay = waitFor(
+          (e) => e.type === 'history_loaded' && e.sessionId === editSessionId && e.items.length === 0,
+          'ticket-79 root-edit replay (empty path)'
+        )
         if (!((await js(clickEdit79(0))) as boolean)) fail('ticket-79 stage: the first user row never rendered Edit')
         const draftReplaced = await waitForProbe(
           win,
@@ -7361,10 +7369,7 @@ export function startSmokeIfEnabled(
         if (((await js(attachmentFigures())) as number) !== 0) {
           fail('ticket-79 stage: an imageless edit must not restore attachments')
         }
-        await waitFor(
-          (e) => e.type === 'history_loaded' && e.sessionId === editSessionId && e.items.length === 0,
-          'ticket-79 root-edit replay (empty path)'
-        )
+        await rootEditReplay
         if (!(await waitForProbe(win, `${userBlocks()} === 0`, 5_000))) {
           fail('ticket-79 stage: the root edit never replayed an empty transcript')
         }
@@ -7417,6 +7422,13 @@ export function startSmokeIfEnabled(
         // the leaf moves to a1 (the parent) and the transcript replays
         // without the edited message and its tail.
         if (!((await js(clickEdit79(1))) as boolean)) fail('ticket-79 stage: the image message row never rendered Edit')
+        // The replay waiter arms BEFORE the click (same starvation rule as
+        // step ②: a waiter armed after a DOM probe misses the event that
+        // already flowed through while the probe polled).
+        const parentLanding = waitFor(
+          (e) => e.type === 'history_loaded' && e.sessionId === editSessionId && e.items.length === 2,
+          'ticket-79 parent-landing replay'
+        )
         // The click must visibly restructure the transcript (the leaf lands
         // on a1 → the replay leaves ONE user block). If it doesn't, dump the
         // full instant state — the ring alone cannot say whether the click
@@ -7434,6 +7446,7 @@ export function startSmokeIfEnabled(
           })`).catch(() => 'diag-failed')) as string
           fail(`ticket-79 stage: the image-message Edit click never restructured the transcript — ${diag}`)
         }
+        await parentLanding
         const imagePrefilled = await waitForProbe(
           win,
           `${composerValue()} === ${JSON.stringify('PICODE_EDIT79 second message')} && ${attachmentFigures()} === 1`,
@@ -7443,19 +7456,24 @@ export function startSmokeIfEnabled(
           const diag = (await js(composerDiag()).catch(() => 'diag-failed')) as string
           fail(`ticket-79 stage: the image message prefill (text + attachment) never landed — ${diag}`)
         }
-        await waitFor(
-          (e) => e.type === 'history_loaded' && e.sessionId === editSessionId && e.items.length === 2,
-          'ticket-79 parent-landing replay'
-        )
-        if (!(await waitForProbe(win, `${userBlocks()} === 1`, 5_000))) {
-          fail('ticket-79 stage: the leaf never landed on the edited message\'s parent')
-        }
         log('edit_resend_prefill_image_ok')
 
         // ⑤ THE SEND: the edited text goes through the plain prompt path —
         // an in-place branch — and the light resend toast fires. The run
         // hides every Edit button; Stop brings them back with agent_end.
+        // The echo/agent_start waiters arm BEFORE Enter — the toast poll
+        // between Enter and the waits would otherwise starve on events that
+        // flowed through while it polled (the same missed-event race as the
+        // steps above).
         const RESENT = 'PICODE_EDIT79 second message EDITED — write a 300-word story about a lighthouse.'
+        const resentEcho = waitFor(
+          (e) => e.type === 'user_message' && e.sessionId === editSessionId && e.text.includes('EDITED'),
+          'ticket-79 resent user_message echo'
+        )
+        const resentStart = waitFor(
+          (e) => e.type === 'agent_start' && e.sessionId === editSessionId,
+          'ticket-79 resend agent_start'
+        )
         if (!(await js(composerTypeJs(RESENT)).catch(() => false))) {
           fail('ticket-79 stage: the composer textarea is missing for the resend')
         }
@@ -7468,11 +7486,7 @@ export function startSmokeIfEnabled(
         if (!toastSeen) fail('ticket-79 stage: the light resend toast never fired')
         log('edit_resend_toast_ok')
 
-        const resentEcho = waitFor(
-          (e) => e.type === 'user_message' && e.sessionId === editSessionId && e.text.includes('EDITED'),
-          'ticket-79 resent user_message echo'
-        )
-        await waitFor((e) => e.type === 'agent_start' && e.sessionId === editSessionId, 'ticket-79 resend agent_start')
+        await resentStart
         await resentEcho
         // agentRunning hides every Edit button (agent_start landed first —
         // the story turn streams long enough to catch the hidden state).
