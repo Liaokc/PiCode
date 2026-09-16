@@ -7316,7 +7316,9 @@ export function startSmokeIfEnabled(
           btn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
           return true
         })()`
-        const composerValue = (): string => `document.querySelector('.composer-input')?.value ?? null`
+        const composerValue = (): string => `(document.querySelector('.composer-input')?.value ?? null)`
+        const composerDiag = (): string =>
+          `JSON.stringify({ value: document.querySelector('.composer-input')?.value ?? null, figures: document.querySelectorAll('.composer-attachments figure').length, disabled: document.querySelector('.composer-input')?.disabled ?? null })`
         const attachmentFigures = (): string => `document.querySelectorAll('.composer-attachments figure').length`
 
         if (!(await waitForProbe(win, `document.querySelector('.chat-view') !== null`, 10_000))) {
@@ -7352,7 +7354,10 @@ export function startSmokeIfEnabled(
           `${composerValue()} === ${JSON.stringify('PICODE_EDIT79 first message')}`,
           5_000
         )
-        if (!draftReplaced) fail('ticket-79 stage: Edit never replaced the in-place draft with the original text')
+        if (!draftReplaced) {
+          const diag = (await js(composerDiag()).catch(() => 'diag-failed')) as string
+          fail(`ticket-79 stage: Edit never replaced the in-place draft with the original text — ${diag}`)
+        }
         if (((await js(attachmentFigures())) as number) !== 0) {
           fail('ticket-79 stage: an imageless edit must not restore attachments')
         }
@@ -7406,7 +7411,10 @@ export function startSmokeIfEnabled(
           `${composerValue()} === ${JSON.stringify('PICODE_EDIT79 second message')} && ${attachmentFigures()} === 1`,
           5_000
         )
-        if (!imagePrefilled) fail('ticket-79 stage: the image message prefill (text + attachment) never landed')
+        if (!imagePrefilled) {
+          const diag = (await js(composerDiag()).catch(() => 'diag-failed')) as string
+          fail(`ticket-79 stage: the image message prefill (text + attachment) never landed — ${diag}`)
+        }
         await waitFor(
           (e) => e.type === 'history_loaded' && e.sessionId === editSessionId && e.items.length === 2,
           'ticket-79 parent-landing replay'
