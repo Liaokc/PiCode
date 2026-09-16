@@ -9,6 +9,8 @@
  *                       pi16-zcode-skill-card reference frame anchors
  *   sc2-template-card — the prompt-template card: same treatment, same slot
  *                       (× first, then a re-pick — the replace path)
+ *   sc3-newtask-card  — the SAME card in the New Task empty state (the
+ *                       shared-composer rule: both surfaces behave alike)
  *
  * Seeding: an isolated session store (PICODE_SESSION_DIR tmpdir) with one
  * backdated session whose cwd is a seeded project carrying a REAL .pi skill
@@ -62,9 +64,10 @@ async function capture(win: BrowserWindow, name: string, state: string): Promise
 }
 
 /** React-controlled textarea — set the value through the native setter so
- * onChange fires (the smoke's composerTypeJs pattern). */
-const typeArgsJs = (text: string): string => `(() => {
-  const ta = document.querySelector('.chat-dock textarea.composer-input')
+ * onChange fires (the smoke's composerTypeJs pattern). `surface` scopes the
+ * composer (the chat view's .chat-dock vs the empty state's .empty-state). */
+const typeArgsJs = (text: string, surface = '.chat-dock'): string => `(() => {
+  const ta = document.querySelector('${surface} textarea.composer-input')
   if (!(ta instanceof HTMLTextAreaElement)) return false
   const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
   setter.call(ta, ${JSON.stringify(text)})
@@ -187,6 +190,59 @@ export function startSkillCardVisualIfEnabled(getWindow: () => BrowserWindow | n
       }
       await sleep(300)
       await capture(win, 'sc2-template-card', 'prompt-template card: same treatment, same single slot')
+
+      // Frame sc3: the New Task empty state — the shared composer stages the
+      // same card there (the chip selects the seeded project so the catalog
+      // probe enumerates the same two rows; the ticket-52 smoke flow).
+      await win.webContents.executeJavaScript(
+        `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', code: 'KeyN', metaKey: true, bubbles: true })); true`
+      )
+      if (!(await waitFor(getWindow, `document.querySelector('.empty-state textarea.composer-input') !== null`, 10_000))) {
+        throw new Error('skill-card visual: ⌘N never opened the new-task empty state')
+      }
+      await win.webContents.executeJavaScript(`document.querySelector('.newtask-chip')?.click(); true`)
+      const chipRowProbe = `(() => {
+        const rows = [...document.querySelectorAll('.newtask-pop .newtask-row')]
+        return rows.some((r) => (r.querySelector('.newtask-row-label')?.textContent ?? '').includes('skill-card-demo'))
+      })()`
+      if (!(await waitFor(getWindow, chipRowProbe, 10_000))) {
+        throw new Error('skill-card visual: the chip dropdown never listed the seeded project')
+      }
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const rows = [...document.querySelectorAll('.newtask-pop .newtask-row')]
+          const row = rows.find((r) => (r.querySelector('.newtask-row-label')?.textContent ?? '').includes('skill-card-demo'))
+          if (!(row instanceof HTMLElement)) return false
+          row.click()
+          return true
+        })()`
+      )
+      // The catalog probe enumerates the selected directory over IPC — the
+      // menu rows land late (the ticket-52 stage's poll pattern).
+      const emptyCmdProbe = `(() => {
+        const rows = [...document.querySelectorAll('.cmp-popover .cmp-cmd-row')]
+        return rows.some((r) => (r.querySelector('.cmp-cmd-name')?.textContent ?? '') === '/${SKILL_NAME}')
+      })()`
+      await win.webContents.executeJavaScript(typeArgsJs('/picode-visual', '.empty-state'))
+      if (!(await waitFor(getWindow, emptyCmdProbe, 45_000))) {
+        throw new Error('skill-card visual: the seeded rows never reached the empty-state `/` menu')
+      }
+      if (!((await win.webContents.executeJavaScript(cmdRowJs(SKILL_NAME))) as boolean)) {
+        throw new Error('skill-card visual: the empty-state skill row disappeared before the pick')
+      }
+      const emptyCardProbe = `(() => {
+        const c = document.querySelector('.empty-state .composer-command-card')
+        return c !== null && c.getAttribute('data-card-name') === ${JSON.stringify(SKILL_NAME)}
+      })()`
+      if (!(await waitFor(getWindow, emptyCardProbe, 5_000))) {
+        throw new Error('skill-card visual: the empty-state pick never staged the command card')
+      }
+      await win.webContents.executeJavaScript(typeArgsJs(ARGS_TEXT, '.empty-state'))
+      if (!(await waitFor(getWindow, `${emptyCardProbe} && document.querySelector('.empty-state textarea.composer-input')?.value === ${JSON.stringify(ARGS_TEXT)}`, 5_000))) {
+        throw new Error('skill-card visual: the empty-state card never took the args text')
+      }
+      await sleep(300)
+      await capture(win, 'sc3-newtask-card', 'New Task empty state: the same card, the same rules')
 
       console.log('VISUAL skill-card done')
       app.exit(0)

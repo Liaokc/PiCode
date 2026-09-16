@@ -89,6 +89,20 @@ interface MenuRowProps {
   children: JSX.Element
 }
 
+/** Ticket 72 (found by the electron smoke's keyboard walk): a keyboard
+ * selection change scrollIntoViews the list, and when the physical pointer
+ * happens to rest over the menu the rows slide UNDER it — Chromium fires a
+ * boundary event on the newly-under-cursor row even though the pointer
+ * never moved, and a naive onMouseEnter let that hover STEAL the keyboard
+ * selection mid-walk (the highlight kept snapping back to the row under the
+ * parked cursor). A scroll-induced enter carries the SAME clientX/Y as the
+ * last real mouse event, so hover counts only when the pointer actually
+ * moved between mouse events. Module-level: the check spans menus and
+ * remounts — a fresh popover opening under a stationary pointer is exactly
+ * the no-movement case too (the first real hover needs a real move). */
+let lastMouseX = Number.NaN
+let lastMouseY = Number.NaN
+
 /** One navigable row of a popover menu. */
 export function MenuRow({ selected, onSelect, onHover, children }: MenuRowProps): JSX.Element {
   const ref = useRef<HTMLButtonElement>(null)
@@ -109,7 +123,12 @@ export function MenuRow({ selected, onSelect, onHover, children }: MenuRowProps)
       role="option"
       aria-selected={selected}
       onClick={onSelect}
-      onMouseEnter={onHover}
+      onMouseEnter={(e) => {
+        const moved = e.clientX !== lastMouseX || e.clientY !== lastMouseY
+        lastMouseX = e.clientX
+        lastMouseY = e.clientY
+        if (moved) onHover?.()
+      }}
     >
       {children}
     </button>
