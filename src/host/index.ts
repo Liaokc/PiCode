@@ -564,8 +564,9 @@ async function handleListFiles(requestId: string, query: string): Promise<void> 
   send({ type: 'file_list', requestId, files: truncated ? [...files, FILE_LIST_TRUNCATED] : files })
 }
 
-/** Ticket 21: read-only branch readout — the one git interaction this host
- * ever makes, a pure read. Non-git workspaces degrade to null (the UI hides
+/** Ticket 21: read-only branch readout — one of the host's two git
+ * interactions, both pure reads (ticket 71 added the second: the @ candidate
+ * listing's `git ls-files`). Non-git workspaces degrade to null (the UI hides
  * the badge; no error surfaces). */
 async function handleGetBranch(): Promise<void> {
   send({ type: 'branch_info', branch: await readGitBranch(cwd) })

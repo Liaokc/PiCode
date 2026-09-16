@@ -127,6 +127,34 @@ describe('listMentionCandidates (ticket 71: git ls-files in a repo, walk otherwi
     }
   })
 
+  it('answers from the submodule repo inside a submodule (acceptance: submodule must not explode)', async () => {
+    // A submodule is its own repo — the candidate listing must answer from
+    // IT (not the parent), without writing either side.
+    const nested = join(tmpdir(), 'picode-files-submodule-src')
+    rmSync(nested, { recursive: true, force: true })
+    mkdirSync(nested)
+    const nestedGit = (...args: string[]) => execFileSync('git', args, { cwd: nested, stdio: 'ignore' })
+    nestedGit('init', '-b', 'sub-main')
+    nestedGit('config', 'user.email', 'smoke@picode.local')
+    nestedGit('config', 'user.name', 'Picode Smoke')
+    writeFileSync(join(nested, 'inner.md'), 'inside the submodule')
+    nestedGit('add', 'inner.md')
+    nestedGit('commit', '-m', 'sub root')
+    try {
+      execFileSync(
+        'git',
+        ['-c', 'protocol.file.allow=always', 'submodule', 'add', nested, 'sub'],
+        { cwd: REPO_ROOT, stdio: 'ignore' }
+      )
+      const { files, truncated } = await listMentionCandidates(join(REPO_ROOT, 'sub'))
+      expect(files).toContain('inner.md')
+      expect(files.some((f) => f.startsWith('sub/'))).toBe(false)
+      expect(truncated).toBe(false)
+    } finally {
+      rmSync(nested, { recursive: true, force: true })
+    }
+  })
+
   it('falls back to the capped walk outside a repo (decoy .git cannot answer)', async () => {
     const { files, truncated } = await listMentionCandidates(ROOT)
     expect(files).toContain('README.md')
