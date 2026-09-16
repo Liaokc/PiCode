@@ -7521,10 +7521,14 @@ export function startSmokeIfEnabled(
 
         // ⑥ The new branch + the old one, side by side in the tree panel:
         // the abandoned branch's rows still list, the resent message row
-        // exists, and exactly one row carries the current-leaf tag.
-        await js(
-          `[...document.querySelectorAll('.chat-topbar-btn')].find((el) => el.textContent?.includes('History'))?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
-        )
+        // exists, and exactly one row carries the current-leaf tag. The
+        // panel from step ③ may still be open — the History button is a
+        // TOGGLE, so only click it when no rows render.
+        if (!((await js(`document.querySelectorAll('.tree-row').length > 0`)) as boolean)) {
+          await js(
+            `[...document.querySelectorAll('.chat-topbar-btn')].find((el) => el.textContent?.includes('History'))?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
+          )
+        }
         if (!(await waitForProbe(win, `document.querySelectorAll('.tree-row').length > 0`, 5_000))) {
           fail('ticket-79 stage: the tree rows never rendered for the branch check')
         }
