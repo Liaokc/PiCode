@@ -8,7 +8,7 @@ import { applyMention, filterFiles, splitTruncatedFiles } from '../../../shared/
 import { accessModeLabel } from '../../../shared/composer/access'
 import { gateSlashCommand } from '../../../shared/composer/slash-gate'
 import { textMenuSurface } from '../../../shared/composer/menu-surface'
-import { filterCommands, pickCommand } from '../../../shared/composer/commands'
+import { filterCommands, pickCommand, composeCommandText, type ComposerCommandCard } from '../../../shared/composer/commands'
 import { clampIndex, flatMenuKey } from '../../../shared/composer/menu-keys'
 import { composerDensity, thinkingBarFraction, thinkingBarShimmers, type ComposerDensity } from '../../../shared/composer/density'
 import {
@@ -21,7 +21,7 @@ import {
 import { AccessMenu, ModelMenu, ThinkingMenu, thinkingLabel } from './composer/menus'
 import { FileMenu, SlashMenu } from './composer/list-menus'
 import ContextRing from './ContextRing'
-import { ArrowUpIcon, CloseIcon, CubeIcon, FoldIcon, GaugeIcon, PlusIcon, ShieldCheckIcon, StopIcon, UnfoldIcon } from './icons'
+import { ArrowUpIcon, CloseIcon, CubeIcon, FoldIcon, GaugeIcon, PlusIcon, ShieldCheckIcon, StopIcon, UnfoldIcon, WandIcon } from './icons'
 import QueuePanel from './QueuePanel'
 import Tooltip from './Tooltip'
 
@@ -165,6 +165,14 @@ export default function Composer({
   const [value, setValue] = useState(initialDraft?.text ?? '')
   const [caret, setCaret] = useState(initialDraft?.text.length ?? 0)
   const [images, setImages] = useState<LocalImage[]>(() => localImagesFromDraft(initialDraft))
+  /** Ticket 72 (CONTEXT.md: 技能卡 Skill Card): the command card occupying
+   * the composer's single slot — a picked skill/prompt template renders as
+   * the structured card, the args text lives in `value`, and the send
+   * recombines `/skill:name args` / `/name args` (composeCommandText —
+   * byte-identical to the raw-text era). At most one card: a re-pick
+   * replaces it, × removes it; the state changes only on pick/clear/send,
+   * never on a keystroke (the ticket-49 input-path discipline). */
+  const [card, setCard] = useState<ComposerCommandCard | null>(initialDraft?.card ?? null)
   const [queuedMode, setQueuedMode] = useState<'follow-up' | 'steer'>('follow-up')
   const [menu, setMenu] = useState<MenuState>(null)
   const [menuIndex, setMenuIndex] = useState(0)
@@ -205,7 +213,11 @@ export default function Composer({
     if (draftBridgeRef === undefined || draftOwner === undefined) return
     draftBridgeRef.current = {
       owner: draftOwner,
-      draft: composerDraft(value, images.map((img) => ({ mimeType: img.mimeType, data: img.data })))
+      draft: composerDraft(
+        value,
+        images.map((img) => ({ mimeType: img.mimeType, data: img.data })),
+        card
+      )
     }
   })
 
@@ -381,17 +393,27 @@ export default function Composer({
 
   /** Ticket 69: the ONE pick path for the open text menu — a row's mouse
    * click and the keyboard's Enter both land here, so the slash decision
-   * (insert vs built-in) and the @-mention application exist exactly once
+   * (card vs built-in) and the @-mention application exist exactly once
    * and can never diverge between mouse and keyboard. */
   function pickTextMenuRow(i: number): void {
     if (menu === 'slash') {
       const row = slashRows[i]
       if (!row) return
       const decision = pickCommand(row)
-      if (decision.kind === 'insert') updateValue(decision.text)
-      else {
+      if (decision.kind === 'card') {
+        // Ticket 72: the row stages the command card — the single slot
+        // fills (a re-pick REPLACES the card, the args were the `/query`
+        // token and are consumed by the pick). The trigger surface rules
+        // the args text, so the menu could only be open while the value
+        // was exactly that token.
+        setCard(decision.card)
+        updateValue('')
+      } else {
+        // Built-ins execute immediately (the /compact path is untouched):
+        // the whole composer resets — a staged card included.
         onBuiltinCommand(decision.name)
         setValue('')
+        setCard(null)
       }
     } else if (menu === 'files') {
       const row = fileRows[i]
@@ -463,7 +485,9 @@ export default function Composer({
   }
 
   function dispatch(): void {
-    const text = value.trim()
+    // Ticket 72: the card recombines the invocation form — `/skill:name args`
+    // / `/name args` — byte-identical to the raw-text composer's send.
+    const text = composeCommandText(card, value).trim()
     const payload = images.map((img) => ({ mimeType: img.mimeType, data: img.data }))
     if (text === '' && payload.length === 0) return
     // Ticket 38: a hand-typed retired command never reaches the session —
@@ -484,6 +508,7 @@ export default function Composer({
     setValue('')
     setCaret(0)
     setImages([])
+    setCard(null)
     setMenu(null)
     menuQueryRef.current = null
     // 输入展开 (ticket 49), collapse path ③: the message is on its way, so
@@ -575,6 +600,30 @@ export default function Composer({
           onPick={onSetThinkingLevel}
           onClose={() => setMenu(null)}
         />
+      )}
+
+      {/* 技能卡 (ticket 72, CONTEXT.md: Skill Card): the picked command as a
+          structured card above the args input — ZCode form (ZCode skill-card
+          frame: violet wand icon + name), plus the × removal the spec adds.
+          Pure rendering: the value structure (card + args) lives in state
+          and composeCommandText owns the send recombination. */}
+      {card !== null && (
+        <div className="composer-command-card" data-card-source={card.source} data-card-name={card.name}>
+          <WandIcon size={13} className="composer-command-card-icon" />
+          <span className="composer-command-card-name">{card.name}</span>
+          <button
+            type="button"
+            className="composer-command-card-remove"
+            aria-label={`Remove ${card.name}`}
+            onClick={() => {
+              setCard(null)
+              // The args text stays — × removes the command, not the message.
+              requestAnimationFrame(() => textareaRef.current?.focus())
+            }}
+          >
+            <CloseIcon size={10} />
+          </button>
+        </div>
       )}
 
       <textarea
@@ -757,7 +806,7 @@ export default function Composer({
               type="button"
               className="cmp-send"
               aria-label="Send message"
-              disabled={disabled || (value.trim() === '' && images.length === 0)}
+              disabled={disabled || (card === null && value.trim() === '' && images.length === 0)}
               onClick={dispatch}
             >
               <ArrowUpIcon />

@@ -23,11 +23,17 @@
  */
 
 import type { ImageAttachment } from '../contract'
+import type { ComposerCommandCard } from './commands'
 
-/** Unsent composer content preserved across view switches (ticket 74). */
+/** Unsent composer content preserved across view switches (ticket 74; the
+ * command card joined at ticket 72). */
 export interface ComposerDraft {
   text: string
   images: ImageAttachment[]
+  /** Ticket 72: the command card occupying the composer's single slot —
+   * the args text rides `text`; the invocation is reconstituted on send
+ * (composeCommandText). null = no card staged. */
+  card?: ComposerCommandCard | null
 }
 
 /** Which slot a mounted composer's live draft belongs to. The composer tags
@@ -46,17 +52,24 @@ export interface ComposerDraftEntry {
 }
 
 /** Build a draft; the image list is copied so later composer edits never
- * mutate a parked slot. */
-export function composerDraft(text: string, images: readonly ImageAttachment[] = []): ComposerDraft {
-  return { text, images: [...images] }
+ * mutate a parked slot. The card is copied too (the single slot is part of
+ * the draft — ticket 72). */
+export function composerDraft(
+  text: string,
+  images: readonly ImageAttachment[] = [],
+  card: ComposerCommandCard | null = null
+): ComposerDraft {
+  return { text, images: [...images], card: card === null ? null : { ...card } }
 }
 
 /** 空槽不存: a draft occupies a slot only when it has content — non-blank
- * text OR at least one attached image. Whitespace-only text without images
- * is empty (the composer's own send gate uses the same trim rule). */
+ * text OR at least one attached image OR a staged command card (the card's
+ * invocation is content even with no args typed yet — ticket 72). Whitespace-
+ * only text without images or a card is empty (the composer's own send gate
+ * uses the same trim rule). */
 export function draftIsEmpty(draft: ComposerDraft | null | undefined): boolean {
   if (draft === null || draft === undefined) return true
-  return draft.text.trim() === '' && draft.images.length === 0
+  return (draft.card ?? null) === null && draft.text.trim() === '' && draft.images.length === 0
 }
 
 /** The park rule — set and clear in one: parking a draft with content
@@ -64,5 +77,5 @@ export function draftIsEmpty(draft: ComposerDraft | null | undefined): boolean {
  * Both slot kinds run every write through this rule. */
 export function parkedDraft(draft: ComposerDraft | null | undefined): ComposerDraft | null {
   if (draft === null || draft === undefined || draftIsEmpty(draft)) return null
-  return composerDraft(draft.text, draft.images)
+  return composerDraft(draft.text, draft.images, draft.card ?? null)
 }
