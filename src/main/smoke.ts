@@ -99,6 +99,14 @@
  * ⌘N → session → ⌘N and Escape, both send paths clear their slot
  * naturally, and a renderer reload (the restart proxy) loses every draft
  * — memory-level by design.
+ * Ticket 69 adds the menu-keyboard stage right after it: ONE keyboard
+ * rule for every composer menu — the text menus (keys intercepted at the
+ * textarea) and the chip menus (keys inside the focused popover) all
+ * clamp at both ends (no wrap, no unbounded ArrowDown), Enter picks
+ * through the single pick path (the @ menu inserts the mention, the
+ * access menu lands on the highlighted tier), Escape closes, and the
+ * selected row always sits inside the visible list (scroll follow,
+ * pi16-menu-no-scroll).
  *
  * Any missed step times out and exits non-zero. Progress logs as
  * `SMOKE <step>` lines on stdout. Not part of `npm test`.
@@ -792,6 +800,228 @@ export function startSmokeIfEnabled(
       log('menu_surface_zero_match_send_ok')
     })
     log('menu_surface_done')
+
+    // ---- ticket 69: ONE keyboard rule + scroll follow. The text menus
+    // (keys intercepted at the textarea) and the chip menus (keys inside
+    // the focused popover) must behave identically: both route through the
+    // same shared flatMenuKey — ends CLAMP (the old text-menu intercept had
+    // an unbounded ArrowDown; the popovers wrapped around), Enter picks,
+    // Escape closes — and the selected row always stays inside the visible
+    // list (MenuRow scrollIntoView, pi16-menu-no-scroll). ----
+    log('menu_keyboard_start')
+    await withWindow(getWindow, async (win) => {
+      const js = (code: string): Promise<unknown> => win.webContents.executeJavaScript(code)
+      // The menu-surface stage's zero-match send started a REAL turn that
+      // streams through every probe below (its text deltas re-render the
+      // composer while the menus are being walked). The keyboard probes
+      // need a QUIET composer: wait for the turn to run out (the send
+      // button returns) before driving anything.
+      const idle = await waitForProbe(
+        win,
+        `document.querySelector('.composer .cmp-send') !== null`,
+        90_000
+      )
+      if (!idle) fail('the menu-keyboard stage never saw the composer go idle (send button missing)')
+      await new Promise((r) => setTimeout(r, 300))
+      /** Selection state of a flat menu: row count + the aria-selected index. */
+      const flatSelectionJs =
+        `(() => {
+          const rows = [...document.querySelectorAll('.cmp-popover .cmp-menu-row')]
+          return { count: rows.length, selected: rows.findIndex((r) => r.getAttribute('aria-selected') === 'true') }
+        })()`
+      /** The aria-selected row must sit fully inside its scroll list's box
+       * (the pi16-menu-no-scroll defect: the gray row pinned past the edge
+       * with the list never moving). */
+      const selectedVisibleJs =
+        `(() => {
+          const list = document.querySelector('.cmp-popover .cmp-menu-list')
+          const sel = document.querySelector('.cmp-popover .cmp-menu-row[aria-selected="true"]')
+          if (!(list instanceof HTMLElement) || !(sel instanceof HTMLElement)) return { ok: false }
+          const l = list.getBoundingClientRect()
+          const r = sel.getBoundingClientRect()
+          return { ok: r.top >= l.top - 0.5 && r.bottom <= l.bottom + 0.5 }
+        })()`
+      /** Dispatch a keydown inside the popover (React's root delegation
+       * replays it into the menu's onKeyDown). */
+      const listKeyJs = (selector: string, key: string): string =>
+        `(() => {
+          const el = document.querySelector(${JSON.stringify(selector)})
+          if (!el) return false
+          el.dispatchEvent(new KeyboardEvent('keydown', { key: '${key}', bubbles: true, cancelable: true }))
+          return true
+        })()`
+      const popoverGoneJs = `document.querySelector('.cmp-popover') === null`
+      /** Poll the flat-menu selection until rows exist (menu mounted). */
+      const waitRows = async (): Promise<{ count: number; selected: number }> => {
+        let state = { count: 0, selected: -1 }
+        for (let waited = 0; waited < 5_000; waited += 100) {
+          state = (await js(flatSelectionJs).catch(() => state)) as typeof state
+          if (state.count > 0) return state
+          await new Promise((r) => setTimeout(r, 100))
+        }
+        return state
+      }
+      /** The decisive clamp probe, bottom end: walk to the last row, then
+       * one MORE ArrowDown must leave the selection there (the wrap rule
+       * would cycle it to row 0; the old unbounded ArrowDown would run
+       * past the list). */
+      const walkDownAndPin = async (menu: string, dispatchJs: string): Promise<{ count: number; selected: number }> => {
+        let state = await waitRows()
+        if (state.count === 0) return state
+        for (let step = 0; step < state.count - 1; step++) {
+          await js(dispatchJs)
+          await new Promise((r) => setTimeout(r, 40))
+        }
+        state = (await js(flatSelectionJs)) as typeof state
+        if (state.selected !== state.count - 1) fail(`the ${menu} walk rested at ${state.selected}/${state.count - 1}`)
+        await js(dispatchJs)
+        await new Promise((r) => setTimeout(r, 80))
+        state = (await js(flatSelectionJs)) as typeof state
+        if (state.selected !== state.count - 1) fail(`one more ArrowDown past the last row moved the ${menu} selection to ${state.selected} of ${state.count} (wrap, not clamp)`)
+        return state
+      }
+      /** The decisive clamp probe, top end: walk back to row 0, then one
+       * MORE ArrowUp must stay there (wrap would cycle to the last row). */
+      const walkUpAndPin = async (menu: string, count: number, dispatchJs: string): Promise<void> => {
+        for (let step = 0; step < count - 1; step++) {
+          await js(dispatchJs)
+          await new Promise((r) => setTimeout(r, 40))
+        }
+        const state = (await js(flatSelectionJs)) as { count: number; selected: number }
+        if (state.selected !== 0) {
+          const diag = (await js(
+            `JSON.stringify({ popover: document.querySelector('.cmp-popover') !== null, rows: document.querySelectorAll('.cmp-popover .cmp-menu-row').length, value: document.querySelector('.composer-input')?.value ?? 'missing' })`
+          ).catch(() => 'diag-failed')) as string
+          fail(`the ${menu} walk up rested at ${state.selected} (count ${state.count}) — ${diag}`)
+        }
+        await js(dispatchJs)
+        await new Promise((r) => setTimeout(r, 80))
+        const pinned = (await js(flatSelectionJs)) as { count: number; selected: number }
+        if (pinned.selected !== 0) fail(`one more ArrowUp on the first row moved the ${menu} selection to ${pinned.selected} (wrap, not clamp)`)
+      }
+
+      // ① The `/` text menu — keys intercepted at the textarea, routed by
+      // the composer adapter into the shared flatMenuKey.
+      if (!(await js(composerTypeJs('/')).catch(() => false))) fail('composer textarea missing for the menu-keyboard stage')
+      const slashState = await walkDownAndPin('slash menu', composerKeyJs('ArrowDown'))
+      if (slashState.count === 0) fail('the / menu never opened for the menu-keyboard stage')
+      await walkUpAndPin('slash menu', slashState.count, composerKeyJs('ArrowUp'))
+      const slashVisible = (await js(selectedVisibleJs).catch(() => ({ ok: false }))) as { ok: boolean }
+      if (!slashVisible.ok) fail('the selected / menu row is outside the visible list (scroll follow broken)')
+      log('menu_keyboard_text_menu_ok', `rows=${slashState.count}`)
+      await js(composerKeyJs('Escape'))
+      await new Promise((r) => setTimeout(r, 200))
+
+      // ② The @ file menu — keyboard Enter picks through the composer's
+      // ONE pick path (insertion, zero session traffic — the same
+      // applyMention a row click lands in).
+      let leaked = 0
+      const onLeak = (event: Scoped): void => {
+        if (event.type === 'user_message') leaked++
+      }
+      observers.push(onLeak)
+      await js(composerClearJs)
+      if (!(await js(composerTypeJs('@')).catch(() => false))) fail('composer textarea missing for the @ keyboard-pick probe')
+      const fileState = await waitRows()
+      if (fileState.count > 0) {
+        await js(composerKeyJs('ArrowDown'))
+        await new Promise((r) => setTimeout(r, 80))
+        const picked = (await js(flatSelectionJs)) as typeof fileState
+        const path = (await js(
+          `[...document.querySelectorAll('.cmp-popover .cmp-menu-row')][${picked.selected}]?.textContent ?? ''`
+        )) as string
+        await js(composerKeyJs('Enter'))
+        await new Promise((r) => setTimeout(r, 300))
+        const value = (await js(`document.querySelector('.composer-input')?.value ?? 'missing'`)) as string
+        if (value !== `${path} `) fail(`the keyboard Enter pick never inserted the mention (composer holds ${JSON.stringify(value)}, expected ${JSON.stringify(`${path} `)})`)
+        if (!(await js(popoverGoneJs).catch(() => false))) fail('the @ menu stayed open after the keyboard pick')
+        log('menu_keyboard_file_enter_pick_ok', `rows=${fileState.count}`)
+      } else {
+        log('menu_keyboard_file_enter_pick_skipped', 'no file candidates in the smoke cwd')
+      }
+      await js(composerClearJs)
+      await new Promise((r) => setTimeout(r, 1_500))
+      observers.splice(observers.indexOf(onLeak), 1)
+      if (leaked > 0) fail(`the menu-keyboard stage leaked ${leaked} message(s) into the session`)
+
+      // ③④⑤ The three chip menus — keys live INSIDE the focused popover
+      // and flow through the same flatMenuKey: access (3 rows; keyboard
+      // Enter picks the highlighted row — the menu opens ON the current
+      // tier, so the pick is idempotent and leaves zero state change for
+      // the stages after this one), thinking, model cascade (the provider
+      // axis clamps through the same clampIndex).
+      if (!(await js(composerChipClickJs('Access mode:')).catch(() => false))) fail('the access chip never opened the access menu')
+      const accessState = await waitRows()
+      if (accessState.count !== 3) fail(`the access menu lists ${accessState.count} rows, expected 3`)
+      const pickedTitle = (await js(
+        `document.querySelector('.cmp-popover .cmp-menu-row[aria-selected="true"] .cmp-menu-title')?.textContent ?? ''`
+      )) as string
+      if (pickedTitle === '') fail('the access menu has no highlighted row title to pick')
+      await js(listKeyJs('.cmp-popover .cmp-menu-list', 'Enter'))
+      await new Promise((r) => setTimeout(r, 300))
+      if (!(await js(popoverGoneJs).catch(() => false))) fail('the access menu stayed open after the keyboard pick')
+      // The pick carried the highlighted ROW (the current tier — the menu
+      // opens on it): the chip keeps labeling that tier, and the popover
+      // closing above proves the pick path ran at all.
+      const accessPicked = await waitForProbe(
+        win,
+        `document.querySelector('.cmp-chip[aria-label^="Access mode:"]')?.getAttribute('aria-label') === 'Access mode: ' + ${JSON.stringify(pickedTitle)}`,
+        5_000
+      )
+      if (!accessPicked) fail(`the access keyboard pick never landed on the highlighted tier (${pickedTitle})`)
+      log('menu_keyboard_access_enter_pick_ok', `tier=${pickedTitle}`)
+
+      if (!(await js(composerChipClickJs('Access mode:')).catch(() => false))) fail('the access chip never reopened the access menu')
+      const accessWalk = await walkDownAndPin('access menu', listKeyJs('.cmp-popover .cmp-menu-list', 'ArrowDown'))
+      const accessVisible = (await js(selectedVisibleJs).catch(() => ({ ok: false }))) as { ok: boolean }
+      if (!accessVisible.ok) fail('the selected access row is outside the visible list')
+      await js(listKeyJs('.cmp-popover .cmp-menu-list', 'Escape'))
+      await new Promise((r) => setTimeout(r, 200))
+      if (!(await js(popoverGoneJs).catch(() => false))) fail('Escape never closed the access menu')
+      log('menu_keyboard_access_walk_ok', `rows=${accessWalk.count}`)
+
+      if (!(await js(composerChipClickJs('Thinking:')).catch(() => false))) fail('the thinking chip never opened the thinking menu')
+      const thinkingState = await walkDownAndPin('thinking menu', listKeyJs('.cmp-popover .cmp-menu-list', 'ArrowDown'))
+      if (thinkingState.count === 0) fail('the thinking menu opened with no rows')
+      await js(listKeyJs('.cmp-popover .cmp-menu-list', 'Escape'))
+      await new Promise((r) => setTimeout(r, 200))
+      log('menu_keyboard_thinking_walk_ok', `rows=${thinkingState.count}`)
+
+      if (!(await js(composerChipClickJs('Model:')).catch(() => false))) fail('the model chip never opened the model menu')
+      const cascadeStateJs =
+        `(() => {
+          const cols = [...document.querySelectorAll('.cmp-popover .cmp-cascade-col')]
+          if (cols.length === 0) return null
+          const sel = (col) => [...col.querySelectorAll('.cmp-menu-row')].findIndex((r) => r.getAttribute('aria-selected') === 'true')
+          const cnt = (col) => col.querySelectorAll('.cmp-menu-row').length
+          return { providers: cnt(cols[0]), providerSel: sel(cols[0]), models: cnt(cols[1]), modelSel: sel(cols[1]) }
+        })()`
+      let cascade = { providers: 0, providerSel: -1, models: 0, modelSel: -1 }
+      for (let waited = 0; waited < 5_000; waited += 100) {
+        const state = (await js(cascadeStateJs).catch(() => null)) as typeof cascade | null
+        if (state !== null && state.providers > 0) {
+          cascade = state
+          break
+        }
+        await new Promise((r) => setTimeout(r, 100))
+      }
+      if (cascade.providers === 0) fail('the model menu never listed providers')
+      for (let step = 0; step < cascade.providers - 1; step++) {
+        await js(listKeyJs('.cmp-popover .cmp-cascade', 'ArrowRight'))
+        await new Promise((r) => setTimeout(r, 40))
+      }
+      cascade = (await js(cascadeStateJs)) as typeof cascade
+      if (cascade.providerSel !== cascade.providers - 1) fail(`the provider walk rested at ${cascade.providerSel} of ${cascade.providers}`)
+      await js(listKeyJs('.cmp-popover .cmp-cascade', 'ArrowRight'))
+      await new Promise((r) => setTimeout(r, 80))
+      cascade = (await js(cascadeStateJs)) as typeof cascade
+      if (cascade.providerSel !== cascade.providers - 1) fail(`ArrowRight past the last provider rests at ${cascade.providerSel} of ${cascade.providers} (wrap, not clamp)`)
+      log('menu_keyboard_model_providers_ok', `providers=${cascade.providers}`)
+      await js(listKeyJs('.cmp-popover .cmp-cascade', 'Escape'))
+      await new Promise((r) => setTimeout(r, 200))
+      if (!(await js(popoverGoneJs).catch(() => false))) fail('Escape never closed the model menu')
+      log('menu_keyboard_done')
+    })
 
     // Crash isolation: SIGKILL the host; supervisor must report it unclean —
     // and scoped to exactly the session that died (ticket 20).
