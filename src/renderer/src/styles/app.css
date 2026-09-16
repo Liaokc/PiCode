@@ -25,6 +25,10 @@
   --accent-orange: #ec7931;
   --accent-blue: #4285f4;
   --accent-indigo: #3f51b5;
+  /* 技能卡 (ticket 72): ZCode-calibrated violet from the pi16-zcode-skill-card
+     reference frame (the one-shot style-constant extraction the CONTEXT.md
+     ZCode rule allows) — the command card's icon + name color. */
+  --accent-violet: #6949a2;
   --send-bg: #21211e;
   --send-bg-hover: #000000;
 
@@ -1172,6 +1176,50 @@ kbd {
 
 .composer-input:focus-visible {
   outline: none;
+}
+
+/* ---------- 技能卡 (ticket 72, pi16-zcode-skill-card): the picked command
+   as a structured card above the args input — violet wand icon + name (the
+   ZCode frame's form), plus the spec's × removal. The args text follows in
+   the textarea; the right margin clears the expand button's corner zone
+   (the same clearance rule as the input's right padding). ---------- */
+.composer-command-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 44px 0 18px;
+  max-width: calc(100% - 62px);
+  height: 22px;
+}
+
+.composer-command-card-icon {
+  color: var(--accent-violet);
+  flex: none;
+}
+
+.composer-command-card-name {
+  color: var(--accent-violet);
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-command-card-remove {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+}
+
+.composer-command-card-remove:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .composer-footer {

@@ -78,6 +78,10 @@ _Avoid_: 权限（与 trust 混淆）
 Composer 上的「最高」等下拉项，直通 Pi 的 thinkingLevel。
 _Avoid_: 推理强度
 
+**技能卡（Skill Card）**：
+Composer 输入区顶部的结构化命令卡：slash 菜单选中技能或 prompt 模板后渲染（紫罗兰魔杖图标 + 名称 + × 移除，形态对照 ZCode），参数文本跟卡后。**单槽 + 替换**——Pi 语义一条消息一个行首命令，同时最多一张卡，再选即替换；卡在场时输入 `/` 仍开菜单；发送时重组 `/skill:name args` / `/name args`，发送语义与裸文本时代逐字节一致（纯渲染层，零契约增量）；草稿随卡保留。手打 `/skill:` 前缀可剥匹配菜单技能行。New Task 与会话内两处 composer 共组件同规则。
+_Avoid_: 裸文本命令（被本卡取代的旧插入形态）、chip（含义过宽，指 Access/Model 等页脚芯片）
+
 **桥接（Bridge）**：
 把 agent 正在执行的 bash 工具输出投屏到终端标签的单向观察通道。
 _Avoid_: 共享终端（暗示双向接管）
