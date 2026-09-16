@@ -7417,6 +7417,23 @@ export function startSmokeIfEnabled(
         // the leaf moves to a1 (the parent) and the transcript replays
         // without the edited message and its tail.
         if (!((await js(clickEdit79(1))) as boolean)) fail('ticket-79 stage: the image message row never rendered Edit')
+        // The click must visibly restructure the transcript (the leaf lands
+        // on a1 → the replay leaves ONE user block). If it doesn't, dump the
+        // full instant state — the ring alone cannot say whether the click
+        // reached the handler.
+        let landed = false
+        for (let waited = 0; waited < 15_000 && !landed; waited += 200) {
+          landed = (await js(`${userBlocks()} === 1`).catch(() => false)) === true
+          if (!landed) await new Promise((r) => setTimeout(r, 200))
+        }
+        if (!landed) {
+          const diag = (await js(`JSON.stringify({
+            blocks: document.querySelectorAll('.chat-thread > .msg-user-block').length,
+            rows: [...document.querySelectorAll('.chat-thread > .msg-user-block')].map((b) => [...b.querySelectorAll('.msg-action-btn span')].map((s) => s.textContent)),
+            composer: { value: document.querySelector('.composer-input')?.value ?? null, disabled: document.querySelector('.composer-input')?.disabled ?? null }
+          })`).catch(() => 'diag-failed')) as string
+          fail(`ticket-79 stage: the image-message Edit click never restructured the transcript — ${diag}`)
+        }
         const imagePrefilled = await waitForProbe(
           win,
           `${composerValue()} === ${JSON.stringify('PICODE_EDIT79 second message')} && ${attachmentFigures()} === 1`,
