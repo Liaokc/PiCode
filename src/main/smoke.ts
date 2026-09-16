@@ -826,7 +826,18 @@ export function startSmokeIfEnabled(
         await new Promise((r) => setTimeout(r, 300))
         await win.webContents.executeJavaScript(composerKeyJs('Enter'))
         const toasted = await waitForProbe(win, toastProbe(needle), 5_000)
-        if (!toasted) fail(`typing ${typed} never raised the pointer toast (${needle})`)
+        if (!toasted) {
+          const diag = (await win.webContents.executeJavaScript(
+            `JSON.stringify({
+              value: document.querySelector('.composer-input')?.value ?? null,
+              toasts: [...document.querySelectorAll('.toast-message')].map((n) => n.textContent ?? ''),
+              menu: document.querySelectorAll('.cmp-popover .cmp-menu-row').length,
+              sendBtn: document.querySelector('.cmp-send') !== null,
+              stopBtn: document.querySelector('.cmp-stop') !== null
+            })`
+          ).catch(() => 'diag-failed')) as string
+          fail(`typing ${typed} never raised the pointer toast (${needle}) — ${diag}`)
+        }
       }
       await gateCase('/model', '/model — use the Select Model picker')
       log('slash_gate_toast_ok')
