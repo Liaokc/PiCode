@@ -32,7 +32,7 @@ export interface ComposerDraft {
   images: ImageAttachment[]
   /** Ticket 72: the command card occupying the composer's single slot —
    * the args text rides `text`; the invocation is reconstituted on send
- * (composeCommandText). null = no card staged. */
+   * (composeCommandText). null = no card staged. */
   card?: ComposerCommandCard | null
 }
 
