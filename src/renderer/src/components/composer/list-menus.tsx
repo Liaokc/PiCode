@@ -65,10 +65,14 @@ export function SlashMenu({
  * mounted only when rows exist, never a "No matching files" box.
  * Ticket 69: presentational like the slash menu — the mention application
  * lives in the composer's single pick path.
+ * Ticket 71: `truncated` appends the honest hint row at the list's tail —
+ * only a capped walk sets it, so a missing candidate is explainable. It is
+ * NOT a listbox row: keyboard selection never lands here.
  */
 export function FileMenu({
   rows,
   index,
+  truncated,
   onIndex,
   onPickRow,
   onClose
@@ -76,6 +80,8 @@ export function FileMenu({
   /** Pre-filtered rows; never empty (the composer gates on that). */
   rows: string[]
   index: number
+  /** The last candidate set was cut by the walk's entry cap. */
+  truncated?: boolean
   onIndex: (i: number) => void
   /** The one pick path (ticket 69) — mouse clicks and keyboard Enter
    * both land here, in the composer. */
@@ -98,6 +104,7 @@ export function FileMenu({
             </MenuRow>
           ))}
         </div>
+        {truncated ? <div className="cmp-menu-truncated">truncated</div> : null}
         <MenuHint />
       </>
     </ComposerPopover>

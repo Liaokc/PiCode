@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { applyMention, filterFiles, mentionQueryAt } from '../../src/shared/composer/mention'
+import { FILE_LIST_TRUNCATED } from '../../src/shared/contract'
+import { applyMention, filterFiles, mentionQueryAt, splitTruncatedFiles } from '../../src/shared/composer/mention'
 
 const FILES = [
   'src/server/routes/register.ts',
@@ -73,5 +74,39 @@ describe('filterFiles (ranking candidate paths for the @ menu)', () => {
 
   it('is case-insensitive', () => {
     expect(filterFiles(FILES, 'readme')).toEqual(['README.md'])
+  })
+})
+
+describe('splitTruncatedFiles (ticket 71: the zero-contract truncation marker)', () => {
+  it('passes a clean list through untouched', () => {
+    const clean = ['README.md', 'src/index.ts']
+    expect(splitTruncatedFiles(clean)).toEqual({ files: clean, truncated: false })
+  })
+
+  it('strips a tail marker and flags the truncation', () => {
+    const payload = ['README.md', FILE_LIST_TRUNCATED]
+    const split = splitTruncatedFiles(payload)
+    expect(split.files).toEqual(['README.md'])
+    expect(split.truncated).toBe(true)
+  })
+
+  it('does not mutate the payload array', () => {
+    const payload = ['a.txt', FILE_LIST_TRUNCATED]
+    splitTruncatedFiles(payload)
+    expect(payload).toEqual(['a.txt', FILE_LIST_TRUNCATED])
+  })
+
+  it('treats the marker as a candidate anywhere else (host only ever appends at the tail)', () => {
+    const payload = [FILE_LIST_TRUNCATED, 'a.txt']
+    expect(splitTruncatedFiles(payload)).toEqual({ files: payload, truncated: false })
+  })
+
+  it('degrades an empty list', () => {
+    expect(splitTruncatedFiles([])).toEqual({ files: [], truncated: false })
+    expect(splitTruncatedFiles([FILE_LIST_TRUNCATED])).toEqual({ files: [], truncated: true })
+  })
+
+  it('the marker cannot collide with a real path (NUL is illegal in filenames)', () => {
+    expect(FILE_LIST_TRUNCATED.includes('\u0000')).toBe(true)
   })
 })

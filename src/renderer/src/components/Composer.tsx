@@ -3,7 +3,7 @@ import type { AccessMode, ImageAttachment, ModelRef, ProviderModels, SlashComman
 import type { ChatQueue } from '../../../shared/chat-reducer'
 import type { ContextRingInput } from '../../../shared/context-ring'
 import { composerDraft, type ComposerDraft, type ComposerDraftEntry, type ComposerDraftOwner } from '../../../shared/composer/drafts'
-import { applyMention, filterFiles } from '../../../shared/composer/mention'
+import { applyMention, filterFiles, splitTruncatedFiles } from '../../../shared/composer/mention'
 import { accessModeLabel } from '../../../shared/composer/access'
 import { gateSlashCommand } from '../../../shared/composer/slash-gate'
 import { textMenuSurface } from '../../../shared/composer/menu-surface'
@@ -155,6 +155,9 @@ export default function Composer({
   const [menu, setMenu] = useState<MenuState>(null)
   const [menuIndex, setMenuIndex] = useState(0)
   const [fileOptions, setFileOptions] = useState<string[]>([])
+  /** Ticket 71: the last `file_list` reply came from a capped walk — the @
+   * menu appends the honest "truncated" hint row while this is set. */
+  const [filesTruncated, setFilesTruncated] = useState(false)
   /** 输入展开 (ticket 49): component-local, never persisted — the next turn
    * and the next session both start from the resting composer. The state
    * is the Seam-1 machine's state; `expanded` below is its boolean view. */
@@ -249,10 +252,14 @@ export default function Composer({
   }, [expanded])
 
   // `file_list` replies correlate here — request/response, not reducer state.
+  // Ticket 71: the truncation marker never reaches the candidates — the
+  // composer strips it once and keeps it as the menu's hint flag.
   useEffect(() => {
     return window.picode.chat.onHostEvent((event) => {
       if (event.type === 'file_list' && event.requestId === fileListRequest.current) {
-        setFileOptions(event.files)
+        const split = splitTruncatedFiles(event.files)
+        setFileOptions(split.files)
+        setFilesTruncated(split.truncated)
       }
     })
   }, [])
@@ -501,6 +508,7 @@ export default function Composer({
         <FileMenu
           rows={fileRows}
           index={menuIndex}
+          truncated={filesTruncated}
           onIndex={setMenuIndex}
           onPickRow={pickTextMenuRow}
           onClose={() => setMenu(null)}

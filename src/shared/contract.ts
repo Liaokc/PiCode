@@ -43,6 +43,15 @@ export const ALL_THINKING_LEVELS: readonly ThinkingLevel[] = [
  * NOT Pi project trust, which stays untouched. */
 export type AccessMode = 'full-access' | 'standard' | 'read-only'
 
+/** Ticket 71: the zero-contract truncation marker for `file_list`. When the
+ * host's candidate walk hit its entry cap (non-repo workspaces only), the
+ * marker rides as the LAST element of `files`; the composer strips it and
+ * renders the honest "truncated" hint row. The NUL prefix is the contract:
+ * no filesystem path can contain it, so it can never collide with a real
+ * candidate. `git ls-files` candidates (in-repo workspaces) are always full
+ * and never carry it. */
+export const FILE_LIST_TRUNCATED = '\u0000truncated'
+
 /** An image attachment sent with a prompt: raw base64 (no data: prefix). */
 export interface ImageAttachment {
   mimeType: string
@@ -131,7 +140,11 @@ export type ParentToHost =
   | { type: 'deny_tool'; toolCallId: string; reason: string }
   /** Manually compact the session context (`/compact`). */
   | { type: 'compact_session' }
-  /** List candidate files under the session cwd for @-mention completion. */
+  /** List candidate files under the session cwd for @-mention completion.
+   * Ticket 71: the host answers with the repo's own candidate set via
+   * read-only `git ls-files` (the branch_info precedent: zero writes) when
+   * the cwd is inside a git work tree; the capped walk stays the fallback
+   * for non-repo workspaces. Matching/ranking stays renderer-side. */
   | { type: 'list_files'; requestId: string; query: string }
   /** Ask for the git branch of the session workspace (ticket 21, READ-ONLY:
    * no checkout, no ref writes — display only). Answered with `branch_info`. */
@@ -236,7 +249,10 @@ export type SessionScopedEvent =
   | { type: 'approval_required'; toolCallId: string; toolName: string; args: Record<string, unknown> }
   /** A pending approval was resolved (approve/deny/cancelled) — ack for the pill. */
   | { type: 'approval_resolved'; toolCallId: string; approved: boolean; reason: string | null }
-  /** Reply to `list_files`; relative paths under the session cwd. */
+  /** Reply to `list_files` (ticket 71): relative paths under the session cwd
+   * — `git ls-files` (tracked + untracked-unignored) when the cwd answers as
+   * a git work tree, else the capped directory walk. A capped walk appends
+   * `FILE_LIST_TRUNCATED` as the last element (honest degradation). */
   | { type: 'file_list'; requestId: string; files: string[] }
   /** Reply to `get_branch` (ticket 21): the git branch of the session's
    * workspace, read-only. `null` = not a git repo / git unavailable — the

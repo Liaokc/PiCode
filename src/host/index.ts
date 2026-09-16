@@ -32,6 +32,7 @@ import type {
   SessionScopedEvent,
   ThinkingLevel
 } from '../shared/contract'
+import { FILE_LIST_TRUNCATED } from '../shared/contract'
 import type { SessionDefaults } from '../shared/preferences'
 import { assistantUsageOfMessage, lastAssistantUsage } from '../shared/context-ring'
 import { buildSessionTree, extractTranscriptItems, type RawSessionEntry } from '../shared/sessions/parse'
@@ -49,7 +50,7 @@ import {
   toModelRef,
   type SdkModelLike
 } from './composer-list'
-import { listRelativeFiles } from './files'
+import { listMentionCandidates } from './files'
 import { readGitBranch } from './git-branch'
 import { createApprovalGateExtension, toImageContents } from './gate-extension'
 import { HeldMessageEnd, monitorSessionManager } from './live-entry-ids'
@@ -557,8 +558,10 @@ async function handleCompact(): Promise<void> {
 
 async function handleListFiles(requestId: string, query: string): Promise<void> {
   void query // ranking happens renderer-side; the host returns the candidate set
-  const files = await listRelativeFiles(cwd)
-  send({ type: 'file_list', requestId, files })
+  const { files, truncated } = await listMentionCandidates(cwd)
+  // Ticket 71: a capped walk (non-repo workspaces) appends the zero-contract
+  // truncation marker at the tail; the git answer is full and never does.
+  send({ type: 'file_list', requestId, files: truncated ? [...files, FILE_LIST_TRUNCATED] : files })
 }
 
 /** Ticket 21: read-only branch readout — the one git interaction this host
