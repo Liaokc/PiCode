@@ -2,7 +2,7 @@ import { useState, type JSX } from 'react'
 import type { TurnFileChange } from '../../../shared/turn-files'
 import { turnFileTotals } from '../../../shared/turn-files'
 import PreviewLinkChip from './PreviewLinkChip'
-import { ChevronDownIcon, ChevronRightIcon, FileTextIcon } from './icons'
+import { BracesIcon, ChevronDownIcon, ChevronRightIcon, CodeIcon, FileTextIcon, ImageIcon } from './icons'
 
 interface TurnFileBarProps {
   /** The owning turn's id — the Review button addresses the turn-diff tab. */
@@ -19,6 +19,25 @@ interface TurnFileBarProps {
 function leafOf(path: string): string {
   const segments = path.split('/').filter((segment) => segment !== '')
   return segments[segments.length - 1] ?? path
+}
+
+/** ZCode's changed-file rows color the icon by file type (the operator's
+ * expanded-state reference frame). Approximated with the icon set on hand:
+ * doc types blue, config braces yellow, python/sql families tinted, images
+ * purple, everything else neutral. */
+function fileIconFor(path: string): { Icon: (props: { size?: number; className?: string }) => JSX.Element; cls: string } {
+  const ext = path.slice(path.lastIndexOf('.') + 1).toLowerCase()
+  if (ext === 'md' || ext === 'markdown' || ext === 'txt') return { Icon: FileTextIcon, cls: 'tfb-icon-doc' }
+  if (ext === 'json' || ext === 'yaml' || ext === 'yml' || ext === 'toml') return { Icon: BracesIcon, cls: 'tfb-icon-json' }
+  if (ext === 'py') return { Icon: CodeIcon, cls: 'tfb-icon-py' }
+  if (ext === 'ts' || ext === 'tsx' || ext === 'js' || ext === 'jsx' || ext === 'mjs' || ext === 'cjs') {
+    return { Icon: CodeIcon, cls: 'tfb-icon-ts' }
+  }
+  if (ext === 'sql' || ext === 'hql' || ext === 'q') return { Icon: CodeIcon, cls: 'tfb-icon-sql' }
+  if (ext === 'png' || ext === 'jpg' || ext === 'jpeg' || ext === 'gif' || ext === 'webp' || ext === 'svg' || ext === 'bmp') {
+    return { Icon: ImageIcon, cls: 'tfb-icon-img' }
+  }
+  return { Icon: CodeIcon, cls: 'tfb-icon-code' }
 }
 
 /** Per-file stat: "+new" for write-created rows, else the ± counts. Shared
@@ -63,9 +82,9 @@ export default function TurnFileBar({ turnId, changes, onReviewTurn, onOpenFile 
         onClick={() => setExpanded((value) => !value)}
       >
         {expanded ? (
-          <ChevronDownIcon size={12} className="turn-filebar-chevron" />
+          <ChevronDownIcon size={14} className="turn-filebar-chevron" />
         ) : (
-          <ChevronRightIcon size={12} className="turn-filebar-chevron" />
+          <ChevronRightIcon size={14} className="turn-filebar-chevron" />
         )}
         <span className="turn-filebar-summary">
           {totals.files} file{totals.files === 1 ? '' : 's'} changed
@@ -76,36 +95,40 @@ export default function TurnFileBar({ turnId, changes, onReviewTurn, onOpenFile 
       </button>
       {expanded && (
         <div className="turn-filebar-files" role="list" id={`turn-filebar-files-${turnId}`} aria-label="Files changed in this turn">
-          {changes.map((change) => (
-            <div key={change.path} role="listitem" className="turn-filebar-file">
-              <FileTextIcon size={13} className="turn-filebar-file-icon" />
-              <span className="turn-filebar-file-name">{leafOf(change.path)}</span>
-              {/* Data reveal (CONTEXT.md tooltip rule): the full path rides a
-                  native title — never the shortcut/description Tooltip. */}
-              <span className="turn-filebar-file-path" title={change.path}>
-                {change.path}
-              </span>
-              <TurnFileStat change={change} />
-              {onReviewTurn !== undefined && (
-                <button
-                  type="button"
-                  className="turn-filebar-act"
-                  aria-label={`Review diff of ${change.path}`}
-                  onClick={() => onReviewTurn(turnId)}
-                >
-                  Review
-                </button>
-              )}
-              {onOpenFile !== undefined && (
-                <PreviewLinkChip
-                  path={change.path}
-                  onOpen={onOpenFile}
-                  label={`Open ${change.path}`}
-                  className="turn-filebar-open"
-                />
-              )}
-            </div>
-          ))}
+          {changes.map((change) => {
+            const spec = fileIconFor(change.path)
+            const Icon = spec.Icon
+            return (
+              <div key={change.path} role="listitem" className="turn-filebar-file">
+                <Icon size={14} className={`turn-filebar-file-icon ${spec.cls}`} />
+                <span className="turn-filebar-file-name">{leafOf(change.path)}</span>
+                {/* Data reveal (CONTEXT.md tooltip rule): the full path rides a
+                    native title — never the shortcut/description Tooltip. */}
+                <span className="turn-filebar-file-path" title={change.path}>
+                  {change.path}
+                </span>
+                <TurnFileStat change={change} />
+                {onReviewTurn !== undefined && (
+                  <button
+                    type="button"
+                    className="turn-filebar-act"
+                    aria-label={`Review diff of ${change.path}`}
+                    onClick={() => onReviewTurn(turnId)}
+                  >
+                    Review
+                  </button>
+                )}
+                {onOpenFile !== undefined && (
+                  <PreviewLinkChip
+                    path={change.path}
+                    onOpen={onOpenFile}
+                    label={`Open ${change.path}`}
+                    className="turn-filebar-open"
+                  />
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>
