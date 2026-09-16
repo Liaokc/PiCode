@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import type { ChatEntry, ChatState } from '../../../shared/chat-reducer'
 import { isNearBottom, nextHeldAway, shouldAutoScroll } from '../../../shared/scroll-stay'
 import { groupTurns } from '../../../shared/turn-collapse'
+import type { ComposerDraft, ComposerDraftEntry } from '../../../shared/composer/drafts'
 import type { SessionTreePayload } from '../../../shared/sessions/types'
 import Composer, { type ComposerApi } from './Composer'
 import NavigatorRail from './NavigatorRail'
@@ -39,6 +40,12 @@ interface ChatViewProps {
   onToggleTurn: (turnId: string) => void
   /** Composer commands + the chat slices the composer menus render. */
   composerApi: ComposerApi
+  /** Ticket 74: the focused session's parked composer draft, restored by the
+   * composer at mount; null = start empty. */
+  initialDraft?: ComposerDraft | null
+  /** Ticket 74: the App's live-draft bridge (owner-tagged; the composer
+   * rewrites it every render, the App parks it at view-switch time). */
+  draftBridgeRef?: { current: ComposerDraftEntry | null }
   onApprove: (toolCallId: string, remember: boolean) => void
   onDeny: (toolCallId: string, reason: string) => void
 }
@@ -67,6 +74,8 @@ export default function ChatView({
   onShowInBridge,
   onToggleTurn,
   composerApi,
+  initialDraft = null,
+  draftBridgeRef,
   onApprove,
   onDeny
 }: ChatViewProps): JSX.Element {
@@ -353,6 +362,9 @@ export default function ChatView({
           }
           chat={chat}
           queue={chat.queue}
+          initialDraft={initialDraft}
+          draftBridgeRef={draftBridgeRef}
+          draftOwner={chat.session ? { kind: 'session', sessionId: chat.session.sessionId } : undefined}
           {...pinnedComposerApi}
         />
       </div>

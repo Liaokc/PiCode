@@ -11,6 +11,8 @@ import {
   type SessionRegistryState
 } from '../../src/shared/session-registry'
 import type { HostToParent, SessionScopedEvent } from '../../src/shared/contract'
+import type { RegistryAction } from '../../src/shared/session-registry'
+import { composerDraft } from '../../src/shared/composer/drafts'
 
 /** Wrap a scoped event for a session (the supervisor's tagging shape). */
 function scoped(sessionId: string, event: SessionScopedEvent): HostToParent {
@@ -20,7 +22,7 @@ function scoped(sessionId: string, event: SessionScopedEvent): HostToParent {
 const CREATED_A = scoped('s-a', { type: 'session_created', sessionId: 's-a', cwd: '/tmp/a', model: 'm1' })
 const CREATED_B = scoped('s-b', { type: 'session_created', sessionId: 's-b', cwd: '/tmp/b', model: 'm2', resumed: true })
 
-function run(state: SessionRegistryState, ...actions: HostToParent[]): SessionRegistryState {
+function run(state: SessionRegistryState, ...actions: RegistryAction[]): SessionRegistryState {
   return actions.reduce((acc, action) => registryReducer(acc, action), state)
 }
 
@@ -421,5 +423,97 @@ describe('registryReducer — branch readout (ticket 21, read-only)', () => {
       scoped('s-a', { type: 'branch_info', branch: 'feature-late' })
     )
     expect(state.sessions.find((s) => s.id === 's-a')?.branch).toBe('feature-late')
+  })
+})
+
+describe('registryReducer — composer draft slots (ticket 74, per-session 槽)', () => {
+  const DRAFT_A = composerDraft('remember the milk for s-a')
+  const DRAFT_B = composerDraft('s-b draft', [{ mimeType: 'image/png', data: 'aGk=' }])
+
+  it('starts with no draft slot (null) on a fresh entry', () => {
+    const state = run(initialRegistryState(), CREATED_A)
+    expect(state.sessions.find((s) => s.id === 's-a')?.draft).toBeNull()
+  })
+
+  it('parks a draft into the addressed session and restores it on read', () => {
+    const state = run(initialRegistryState(), CREATED_A, { type: 'set_session_draft', sessionId: 's-a', draft: DRAFT_A })
+    expect(state.sessions.find((s) => s.id === 's-a')?.draft).toEqual(DRAFT_A)
+  })
+
+  it('keeps sessions isolated — A/B drafts never cross (会话 A/B 互不串)', () => {
+    const state = run(
+      initialRegistryState(),
+      CREATED_A,
+      CREATED_B,
+      { type: 'set_session_draft', sessionId: 's-a', draft: DRAFT_A },
+      { type: 'set_session_draft', sessionId: 's-b', draft: DRAFT_B }
+    )
+    expect(state.sessions.find((s) => s.id === 's-a')?.draft).toEqual(DRAFT_A)
+    expect(state.sessions.find((s) => s.id === 's-b')?.draft).toEqual(DRAFT_B)
+  })
+
+  it('an unknown session id is ignored (no defensive entry for a park)', () => {
+    const state = run(initialRegistryState(), { type: 'set_session_draft', sessionId: 'ghost', draft: DRAFT_A })
+    expect(state.sessions).toEqual([])
+  })
+
+  it('an EMPTY draft clears the slot (空槽不存 — set and clear are one rule)', () => {
+    const parked = run(initialRegistryState(), CREATED_A, { type: 'set_session_draft', sessionId: 's-a', draft: DRAFT_A })
+    for (const empty of [composerDraft(''), composerDraft('  \n\t ')]) {
+      const cleared = run(parked, { type: 'set_session_draft', sessionId: 's-a', draft: empty })
+      expect(cleared.sessions.find((s) => s.id === 's-a')?.draft).toBeNull()
+    }
+    // Images are content: whitespace text + an image still parks.
+    const imaged = run(parked, { type: 'set_session_draft', sessionId: 's-a', draft: composerDraft(' ', DRAFT_B.images) })
+    expect(imaged.sessions.find((s) => s.id === 's-a')?.draft).toEqual(composerDraft(' ', DRAFT_B.images))
+  })
+
+  it('a later park replaces the earlier one (last write wins)', () => {
+    const state = run(
+      initialRegistryState(),
+      CREATED_A,
+      { type: 'set_session_draft', sessionId: 's-a', draft: DRAFT_A },
+      { type: 'set_session_draft', sessionId: 's-a', draft: composerDraft('replaced') }
+    )
+    expect(state.sessions.find((s) => s.id === 's-a')?.draft).toEqual(composerDraft('replaced'))
+  })
+
+  it('focus switches never touch the slots (切走切回靠它们恢复)', () => {
+    const parked = run(
+      initialRegistryState(),
+      CREATED_A,
+      CREATED_B,
+      { type: 'set_session_draft', sessionId: 's-a', draft: DRAFT_A },
+      { type: 'focus_session', sessionId: 's-b' },
+      { type: 'focus_session', sessionId: 's-a' }
+    )
+    expect(parked.sessions.find((s) => s.id === 's-a')?.draft).toEqual(DRAFT_A)
+    expect(parked.focusedId).toBe('s-a')
+  })
+
+  it('a (re-)announcement PRESERVES the draft (the resume flow parks before it announces)', () => {
+    const parked = run(initialRegistryState(), CREATED_A, { type: 'set_session_draft', sessionId: 's-a', draft: DRAFT_A })
+    const reannounced = run(parked, scoped('s-a', { type: 'session_created', sessionId: 's-a', cwd: '/tmp/a', model: 'm1', resumed: true }))
+    expect(reannounced.sessions.find((s) => s.id === 's-a')?.draft).toEqual(DRAFT_A)
+  })
+
+  it('detaching the session drops its draft with the entry', () => {
+    const parked = run(initialRegistryState(), CREATED_A, { type: 'set_session_draft', sessionId: 's-a', draft: DRAFT_A })
+    const detached = run(parked, scoped('s-a', { type: 'session_detached' }))
+    expect(detached.sessions.find((s) => s.id === 's-a')).toBeUndefined()
+  })
+
+  it('draft parking does not disturb chat folding (adjacent events still fold)', () => {
+    const state = run(
+      initialRegistryState(),
+      CREATED_A,
+      { type: 'set_session_draft', sessionId: 's-a', draft: DRAFT_A },
+      scoped('s-a', { type: 'user_message', text: 'sent' }),
+      scoped('s-a', { type: 'agent_start' })
+    )
+    const a = state.sessions.find((s) => s.id === 's-a')
+    expect(a?.chat.entries.map((e) => (e.role === 'user' ? e.text : ''))).toEqual(['sent'])
+    expect(a?.chat.agentRunning).toBe(true)
+    expect(a?.draft).toEqual(DRAFT_A)
   })
 })

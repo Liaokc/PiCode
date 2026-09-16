@@ -12,6 +12,7 @@ import { projectCommandMenu, type NewTaskCommandCatalog } from '../../../shared/
 import { projectLabel } from '../../../shared/sessions/group'
 import { initialChatState } from '../../../shared/chat-reducer'
 import type { ImageAttachment } from '../../../shared/contract'
+import { type ComposerDraft, type ComposerDraftEntry, type ComposerDraftOwner } from '../../../shared/composer/drafts'
 import Composer, { type ComposerApi, type ComposerChat } from './Composer'
 import {
   BugIcon,
@@ -24,6 +25,10 @@ import {
   ProjectsFolderIcon,
   SearchIcon
 } from './icons'
+
+/** Ticket 74: the empty state's composer always parks into the New Task
+ * single slot at the App layer — the boot empty state and ⌘N share it. */
+const NEW_TASK_DRAFT_OWNER: ComposerDraftOwner = { kind: 'new-task' }
 
 /** Quick-start chips with the reference's per-chip leading icon (screenshot 02). */
 const QUICK_START_CHIPS: ReadonlyArray<{ label: string; icon: (props: { size: number }) => JSX.Element }> = [
@@ -79,6 +84,12 @@ interface EmptyStateProps {
   onOpenFolder: () => Promise<string | null>
   /** Composer commands (slash built-ins still dispatch from the empty state). */
   composerApi: ComposerApi
+  /** Ticket 74: the parked New Task draft, restored by the composer at
+   * mount; null = start empty. The boot empty state and ⌘N share the slot. */
+  initialDraft?: ComposerDraft | null
+  /** Ticket 74: the App's live-draft bridge (owner-tagged; the composer
+   * rewrites it every render, the App parks it at view-switch time). */
+  draftBridgeRef?: { current: ComposerDraftEntry | null }
 }
 
 /**
@@ -109,7 +120,9 @@ export default function EmptyState({
   onSelectedProjectChange,
   onStart,
   onOpenFolder,
-  composerApi
+  composerApi,
+  initialDraft = null,
+  draftBridgeRef
 }: EmptyStateProps): JSX.Element {
   // `VITE_PICODE_FAKE_HOUR` pins the greeting for deterministic screenshot QA.
   const pinnedHour = Number(import.meta.env.VITE_PICODE_FAKE_HOUR)
@@ -334,6 +347,9 @@ export default function EmptyState({
           placeholder={creating ? 'Starting session…' : 'Ask anything — @ to add context, / for commands'}
           chat={chat}
           queue={idleChat.queue}
+          initialDraft={initialDraft}
+          draftBridgeRef={draftBridgeRef}
+          draftOwner={NEW_TASK_DRAFT_OWNER}
           {...composerApi}
           onSetModel={(providerId, modelId) => setModelPick({ providerId, modelId })}
           onSetThinkingLevel={(level) => setThinkingPick(level)}
