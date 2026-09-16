@@ -1,17 +1,23 @@
 # 78: 回合文件条——每回合「N files changed +X −Y」聚合
 
-**What to build:** 每回合（groupTurns 边界）在**常显段末尾**（正文下方，构图对照 pi16-zcode-turn-filebar）渲染文件更改聚合条：折叠态「N files changed +X −Y」+ 展开箭头；展开为 per-file 行（图标 + 文件名 + 路径 + ±计数 + **Review** + **Open**）。数据 = 回合内 edit/write 工具的会话记录派生：edit 的 ± 从工具结果 diff 文本解析；write 记 **"+new"** 不计行数；**同文件多次 edit 合一行**（diff 依序拼接）；read/ls 不入条；无文件更改的回合不出条；live 随工具落定增长（live 与落定同构）。**Review** = 侧板新开**回合 diff 标签**（复用既有 diff 渲染器渲染该回合 diff 文本——回合 diff 非 git diff，与 Review tab 并存）；**Open** = 既有预览深链。**撤销钮不做**（1.1 纪律维持）；文档文件不重复渲染独立卡（既有工具卡已覆盖）。**additive 投影增量**：转录条目与 live 事件携带工具结果 diff 文本（现投影丢弃——实施时报备入账）。
+**What to build:** 每回合（groupTurns 边界）在**常显段末尾**（正文下方，构图对照 pi16-zcode-turn-filebar）渲染文件更改聚合条：折叠态「N files changed +X −Y」+ 展开箭头；展开为 per-file 行（图标 + 文件名 + 路径 + ±计数 + **Review** + **Open**）。数据 = 回合内 edit/write 工具的会话记录派生：edit 的 ± 从工具结果 diff 文本解析；write 记 **"+new"** 不计行数；**同文件多次 edit 合一行**（diff 依序拼接）；read/ls 不入条；无更改回合不出条；live 随工具落定增长（live 与落定同构）。**Review** = 侧板新开**回合 diff 标签**（复用既有 diff 渲染器渲染该回合 diff 文本——回合 diff 非 git diff，与 Review tab 并存）；**Open** = 既有预览深链。**撤销钮不做**（1.1 纪律维持）；文档文件不重复渲染独立卡（既有工具卡已覆盖）。**additive 投影增量**：转录条目与 live 事件携带工具结果 diff 文本（现投影丢弃——实施时报备入账）。
 
 **背景（取证）：** 会话库实锤——Pi edit 工具结果带 `details.diff`（+/- 行级 diff），write 结果只有字节数文本；转录投影现只留 output 文本丢 details。PiCode 现状 = 逐工具卡 + git 全仓 Review tab，无回合聚合。1.1 曾记「文件更改条+撤销 超范围仅记录」，本批操作者提报转正（撤销维持不做）。证据见 `../intake-grilling.md` R10 节。
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+## Comments
 
-- [ ] Seam-1 聚合投影（edit diff 解析 / write "+new" / 同文件合并 / read 排除 / 空回合无条 / ±合计）
-- [ ] host-contract smoke：diff 投影 additive 增量（旧载荷缺字段照常通过）+ **实施时报备入账**
-- [ ] electron smoke：种子会话条渲染 + Review 开侧板回合 diff 标签 + Open 深链
-- [ ] visual harness：折叠/展开帧（对照 pi16-zcode-turn-filebar / pi16-zcode-turn-filebar-expanded）
-- [ ] 撤销不做、无更改回合不出条（界外确认）
-- [ ] 术语 rider：「回合文件条（Turn File Changes）」入 CONTEXT.md
-- [ ] 全英文文案；跑 dev app / e2e / smoke / visual 前 `ps` 自查（dev-app serialization）
+- 2026-09-16（implement session，t78-turn-filebar @ 15f5e06，based on main 44ca9ab）：**additive 契约增量报备入账**——`tool_end` 事件增 `diff?: string`（host 从 SDK result 的 `details.diff` 字符串透传；非 edit 工具与旧载荷字段缺省，host-contract smoke 断言 bash tool_end 无该字段）；`TranscriptItem` tool 变体增 `diff?: string`（parse 从落盘 toolResult 的 `details` 读）；`ToolEntry` 同步携带（replayEntry 拷贝 + tool_end 落账）。除此外 shared/contract.ts 零改动。实现 = ①Seam-1 纯模块 `src/shared/turn-files.ts`（`aggregateTurnFiles`：仅 done 态 edit/write、按 path 合一行、diff 依序拼接、write 使行变 "+new"（added=null）且此后不再计行数、无 path 防御跳过；`parseTurnDiffRows`：Pi display diff（`[+-]<pad数字> <内容>` / ` <数字> <内容>` / `      ...` 跳区标记）→ 渲染行，不可解析行降级 meta 不抛；`turnFileTotals`：N/+X/−Y，"+new" 行不计 ±）；②groupTurns 增 `TurnGroup.fileChanges`（fold + afterAnswer 全回合工具按序聚合——live 随工具落定增长、replay 同构）；③UI：TurnFileBar（折叠 summary/展开 per-file 行 + Review/Open；展开为组件本地态；answerless 有更改回合条渲染在容器后——「正文下方」的必要推广）+ TurnDiffTab（侧板新 tab kind `turn-diff`，identity=turnId；**复用既有 diff 渲染语言**：diff-line/diff-add/diff-del/diff-gutter 同一套 CSS 与行形状，但单 gutter——回合 diff 自带行号非 git 双栏；未复用 DiffView 组件本体因 ReviewFileEntry 是 git unified 形状，回合 diff 无 @@ hunk，强套需伪造行号违背显示如实）；write-only 文件在 tab 显 "+new" 无 diff 节（会话不记录 write 内容——数据源如实）；panel-model：turn-diff tab 不入 recently-closed（同 Review 的 ephemeral 语义，normalizeEntry 防御丢弃）；FollowView 同条投影（计数 only——follow 无面板 cwd 深链路径，handlers 缺省不渲染按钮）。**验证**：①vitest RED→GREEN：turn-files 14 例（解析/聚合/合计全表）+ chat-reducer 4 例（diff 落账/旧载荷缺字段同形/replay 同构）+ sessions-parse 3 例（details.diff 提取/缺省/非 diff 形状不捏造）+ turn-collapse 3 例（跨 fold/segment 聚合/无更改回合无条/running 不入条）+ panel-model 3 例（identity/label/not-trackable）——全套 1388/1388；②host-contract smoke 新 edit 回合（真模型 + 门审批）：`edit tool_end diff ok (2 diff lines)` + `bash tool_end 不带 diff 字段` + Round B resume `history_loaded ok (27 items, edit diff replayed: 2 lines)`；③electron smoke ticket-78 stage：`turn_filebar_collapsed_ok`（2 files changed +2 −1、干净回合无条、undoBtns=0）→ `turn_filebar_expanded_ok`（合并行 calls=2、write=+new、Review/Open 各 2）→ `turn_filebar_review_tab_ok`（turn-diff tab + diff add/del 行 + write 无内容注记）→ `turn_filebar_open_deeplink_ok`（预览 tab 深链）；④visual:filebar harness（fb1 折叠 / fb2 展开两帧，probe 断言后出图，对照 pi16-zcode-turn-filebar / -expanded）。全套 `npm run smoke` ALL GREEN（6 stages，292s）；typecheck 清；改动文件 eslint 清（全仓仅 64/73 遗留三处，非本票）。**审查双轴**：Standards——Review 文本按钮的 Tooltip 包装违反悬停提示两态词汇（文本钮不走 Tooltip），当场移除；TurnFileBar/TurnDiffTab 的 per-file stat 组件重复（Duplicated Code），提取共享 TurnFileStat；路径揭示走 native title（数据揭示纪律）✓；全英文 UI 文案 ✓（注释中英混排为仓库惯例）。Spec——票面七项验收全落实；「复用既有 diff 渲染器」的实现裁决（渲染语言复用而非 DiffView 组件强套）如上留档；无撤销钮（smoke 断言）；无更改回合不出条（smoke 断言）。**环境记录**：host-contract smoke 首轮挂在本票新断言——根因是 smoke 状态机读了 `event.toolName`（那是 approval_required 的字段名；tool_start 携带 `name`），非投影缺陷；修复后三轮绿。dev-app serialization 违规一次：visual:filebar 运行时 wt-70/wt-77 的 app 恰在运行（无 single-instance lock、隔离 userData，双方未互相致死）；如彼侧 stage 出现环境性 flake 建议重跑后再验。
+
+- 2026-09-16（implement session，rebase main 84c4806 后追加，@ 53fc9ca）：**操作者反馈「太丑，不照 ZCode」后重构样式**——以 `.scratch/compare/z-site-card-filebar.png`（折叠态）+ 操作者提供的 ZCode 展开态截图（桌面《截屏2026-09-14 20.21.41》）为准：①从紧凑小胶囊改为**全宽单卡片**（细边框 + 12px 圆角 + bg-card），summary 头行与文件行**同卡**、发丝线分隔（原先是头行胶囊 + 下方独立列表两张皮）；②头行/行高 52/50px、正文字号 13px（原 mono 小字胶囊）；③文件行照 ZCode：**按类型着色图标**（doc 蓝 / json 黄 {} / ts 蓝 / py 蓝 / sql 红橙 / 图紫 / 其余中性）、**semibold 文件名**（可截断）+ 灰色小字路径 + 右对齐 ± + **描边药丸 Review/Open**（原 ghost 细钮）；④chevron 14px。ZCode 头行右侧撤销钮按票面纪律不渲染。DOM 断言锚点（类名）全部保留。验证：typecheck/lint 清；visual:filebar 两帧重出（probe 全绿，fb1 折叠卡 ≡ z-site-card-filebar 构图、fb2 展开卡 ≡ 操作者展开帧构图）；electron smoke ticket-78 四锁（collapsed/expanded/review_tab/open_deeplink）单独重跑全绿（wt-80 并行运行等待其结束后才起，序列化遵守）。样式裁决留档：图标色板为手头图标集对 ZCode 彩色语言图标的近似（doc/braces/code/image 四形 × 类型色），非逐字形复刻。
+
+**Status:** ready-for-human
+
+- [x] Seam-1 聚合投影（edit diff 解析 / write "+new" / 同文件合并 / read 排除 / 空回合无条 / ±合计）— `src/shared/turn-files.ts` + `TurnGroup.fileChanges`，vitest 23 例 RED→GREEN
+- [x] host-contract smoke：diff 投影 additive 增量（旧载荷缺字段照常通过）+ **实施时报备入账** — edit 回合 `edit tool_end diff ok` + bash 无字段断言 + Round B `edit diff replayed`；增量已在上方 comment 报备
+- [x] electron smoke：种子会话条渲染 + Review 开侧板回合 diff 标签 + Open 深链 — `turn_filebar_collapsed/expanded/review_tab/open_deeplink_ok` 四锁
+- [x] visual harness：折叠/展开帧（对照 pi16-zcode-turn-filebar / pi16-zcode-turn-filebar-expanded）— `npm run visual:filebar`，fb1/fb2 probe 断言 + PNG 入 `.scratch/visual/`
+- [x] 撤销不做、无更改回合不出条（界外确认）— smoke `undoBtns === 0` + 干净回合 `bars === 1`（另一回合无条）
+- [x] 术语 rider：「回合文件条（Turn File Changes）」入 CONTEXT.md
+- [x] 全英文文案；跑 dev app / e2e / smoke / visual 前 `ps` 自查（dev-app serialization）— 文案全英文；每次运行前检查；一次并发违规如上记录（无锁、隔离存储，未互扰，建议彼侧重验）
