@@ -2,7 +2,6 @@ import { useState, type JSX } from 'react'
 import type { TurnFileChange } from '../../../shared/turn-files'
 import { turnFileTotals } from '../../../shared/turn-files'
 import PreviewLinkChip from './PreviewLinkChip'
-import Tooltip from './Tooltip'
 import { ChevronDownIcon, ChevronRightIcon, FileTextIcon } from './icons'
 
 interface TurnFileBarProps {
@@ -22,8 +21,9 @@ function leafOf(path: string): string {
   return segments[segments.length - 1] ?? path
 }
 
-/** Per-file stat: "+new" for write-created rows, else the ± counts. */
-function FileStat({ change }: { change: TurnFileChange }): JSX.Element {
+/** Per-file stat: "+new" for write-created rows, else the ± counts. Shared
+ * with the turn-diff tab (same projection, one render rule). */
+export function TurnFileStat({ change }: { change: TurnFileChange }): JSX.Element {
   if (change.added === null) {
     return <span className="file-stat file-stat-new">+new</span>
   }
@@ -85,18 +85,16 @@ export default function TurnFileBar({ turnId, changes, onReviewTurn, onOpenFile 
               <span className="turn-filebar-file-path" title={change.path}>
                 {change.path}
               </span>
-              <FileStat change={change} />
+              <TurnFileStat change={change} />
               {onReviewTurn !== undefined && (
-                <Tooltip label="Review this turn's diff">
-                  <button
-                    type="button"
-                    className="turn-filebar-act"
-                    aria-label={`Review diff of ${change.path}`}
-                    onClick={() => onReviewTurn(turnId)}
-                  >
-                    Review
-                  </button>
-                </Tooltip>
+                <button
+                  type="button"
+                  className="turn-filebar-act"
+                  aria-label={`Review diff of ${change.path}`}
+                  onClick={() => onReviewTurn(turnId)}
+                >
+                  Review
+                </button>
               )}
               {onOpenFile !== undefined && (
                 <PreviewLinkChip

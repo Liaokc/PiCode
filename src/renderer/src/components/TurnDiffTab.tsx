@@ -1,6 +1,7 @@
 import type { JSX } from 'react'
 import type { TurnFileChange } from '../../../shared/turn-files'
 import { parseTurnDiffRows, turnFileTotals } from '../../../shared/turn-files'
+import { TurnFileStat } from './TurnFileBar'
 import { FileTextIcon } from './icons'
 
 interface TurnDiffTabProps {
@@ -11,17 +12,6 @@ interface TurnDiffTabProps {
    * its session focus). The body re-resolves on every render, so a live
    * turn's tab grows with it and a settled one renders its final state. */
   changes: readonly TurnFileChange[] | null
-}
-
-function StatText({ change }: { change: TurnFileChange }): JSX.Element {
-  if (change.added === null) return <span className="file-stat file-stat-new">+new</span>
-  return (
-    <span className="file-stat">
-      {change.added > 0 && <span className="file-stat-add">+{change.added}</span>}
-      {change.removed > 0 && <span className="file-stat-del">−{change.removed}</span>}
-      {change.added === 0 && change.removed === 0 && <span className="file-stat-quiet">·</span>}
-    </span>
-  )
 }
 
 /** One diff line of the Pi display diff — same visual language as the
@@ -83,7 +73,7 @@ export default function TurnDiffTab({ turnId, changes }: TurnDiffTabProps): JSX.
                 <span className="turn-diff-file-path" title={change.path}>
                   {change.path}
                 </span>
-                <StatText change={change} />
+                <TurnFileStat change={change} />
               </div>
               {rows.length > 0 ? (
                 <div className="diff-scroll turn-diff-scroll">
