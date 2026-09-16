@@ -7384,12 +7384,23 @@ export function startSmokeIfEnabled(
         }
         const treeRow79 = (needle: string): string =>
           `[...document.querySelectorAll('.tree-row')].find((el) => el.textContent?.includes(${JSON.stringify(needle)}))`
+        // Each hop: WAIT for the row to exist before clicking — the replay's
+        // history_loaded may reach the smoke before the renderer processed
+        // the paired session_tree, and the row's very VISIBILITY depends on
+        // the new leaf (a2 hides whenever the leaf is not on its path). A
+        // blind click here silently no-ops and starves the replay wait.
+        if (!(await waitForProbe(win, `${treeRow79('PICODE_EDIT79 first reply')} !== undefined`, 5_000))) {
+          fail('ticket-79 stage: the a1 tree row never rendered for the way back')
+        }
         const backReplayA1 = waitFor(
           (e) => e.type === 'history_loaded' && e.sessionId === editSessionId && e.items.length === 2,
           'ticket-79 tree navigate-back replay (a1)'
         )
         await js(`${treeRow79('PICODE_EDIT79 first reply')}?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
         await backReplayA1
+        if (!(await waitForProbe(win, `${treeRow79('PICODE_EDIT79 second reply')} !== undefined`, 5_000))) {
+          fail('ticket-79 stage: the a2 tree row never rendered after the a1 hop')
+        }
         const backReplayA2 = waitFor(
           (e) => e.type === 'history_loaded' && e.sessionId === editSessionId && e.items.length === 4,
           'ticket-79 tree navigate-back replay (a2)'
