@@ -32,6 +32,10 @@ interface ChatViewProps {
   onRename: (name: string) => void
   onNavigateTree: (entryId: string) => void
   onFork: (entryId: string) => void
+  /** 编辑重发 (ticket 79): edit & resend a settled user message — the App
+   * prefills the composer (original text + images) and navigates the leaf to
+   * the message's parent. Undefined rendering as no Edit affordance. */
+  onEditMessage?: (entryId: string) => void
   onCloseTree: () => void
   /** Deep-link a file-arg tool call into the Preview tab (ticket 07). */
   onOpenFile?: (path: string) => void
@@ -72,6 +76,7 @@ export default function ChatView({
   onRename,
   onNavigateTree,
   onFork,
+  onEditMessage,
   onCloseTree,
   onOpenFile,
   onShowInBridge,
@@ -303,7 +308,14 @@ export default function ChatView({
                     scroll/anchor hook (ticket 46). */
                   <div className="msg-user-block" data-turn-id={turn.id}>
                     <div className="msg msg-user">{turn.userText}</div>
-                    <MessageActions text={turn.userText} showTime={false} />
+                    {/* Ticket 79: Edit joins the persistent row — hidden while
+                        the agent runs (agentRunning) and back the moment the
+                        agent_end settle lands (derived, no extra state). */}
+                    <MessageActions
+                      text={turn.userText}
+                      showTime={false}
+                      onEdit={!chat.agentRunning && onEditMessage !== undefined ? () => onEditMessage(turn.id) : undefined}
+                    />
                   </div>
                 )}
                 {turn.hasContainer && (

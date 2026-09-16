@@ -9,7 +9,7 @@
  * entry the SDK's `SessionManager.appendSessionInfo` would persist, chained to
  * the current leaf (the last entry in file order — Pi's own restore rule).
  */
-import type { SessionSummary, SessionTreeNodeDTO, TranscriptAssistantPart, TranscriptItem } from './types.ts'
+import type { SessionSummary, SessionTreeNodeDTO, TranscriptAssistantPart, TranscriptImagePart, TranscriptItem } from './types.ts'
 import { toolResultText, UNFINISHED_TOOL_OUTPUT } from '../tool-format.ts'
 
 export interface RawSessionEntry {
@@ -223,6 +223,27 @@ export function toolCalls(content: unknown): ToolCallPart[] {
   return calls
 }
 
+/** Inline base64 image blocks of a user message content value (ticket 79,
+ * additive projection): the edit-resend prefill's raw material — the session
+ * file records ImageContent inline in user message content, so the restore
+ * reads it directly. Only well-formed blocks project; anything else is
+ * skipped so the field can never carry a half-shaped part. */
+function userImageParts(content: unknown): TranscriptImagePart[] {
+  if (!Array.isArray(content)) return []
+  const parts: TranscriptImagePart[] = []
+  for (const part of content) {
+    if (typeof part !== 'object' || part === null) continue
+    const record = part as Record<string, unknown>
+    if (record['type'] !== 'image') continue
+    const mimeType = record['mimeType']
+    const data = record['data']
+    if (typeof mimeType !== 'string' || mimeType === '') continue
+    if (typeof data !== 'string' || data === '') continue
+    parts.push({ kind: 'image', mimeType, data })
+  }
+  return parts
+}
+
 /** Thinking/text parts of an assistant message content value (ticket 14). */
 function assistantParts(content: unknown): TranscriptAssistantPart[] {
   if (!Array.isArray(content)) return []
@@ -284,7 +305,17 @@ export function extractTranscriptItems(entries: RawSessionEntry[]): TranscriptIt
     if (message?.role === 'user') {
       const text = messageText(message.content)
       if (text.trim() === '') continue
-      items.push({ role: 'user', id: entry.id, text, timestamp: entry.timestamp, skillName: sniffSkillName(text) })
+      // Ticket 79 (additive): the field rides ONLY when the message carries
+      // images — imageless messages keep the exact pre-79 item shape.
+      const images = userImageParts(message.content)
+      items.push({
+        role: 'user',
+        id: entry.id,
+        text,
+        timestamp: entry.timestamp,
+        skillName: sniffSkillName(text),
+        ...(images.length > 0 ? { images } : {})
+      })
     } else if (message?.role === 'assistant') {
       // Assistant item first (live order: the message closes, then its tool
       // cards run), then one settled tool item per toolCall part.

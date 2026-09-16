@@ -135,6 +135,7 @@ import { configuredProviderIds, sortProvidersConfiguredFirst } from '../shared/p
 import { projectNewTaskCatalog } from '../shared/new-task-models'
 import { FOLLOW_TAKEOVER_REJECTED_TOAST } from '../shared/sessions/group'
 import { CWD_MISSING_ROW_TOAST } from '../shared/sessions/cwd-liveness'
+import { EDIT_RESEND_TOAST } from '../shared/edit-resend'
 import type { SessionContextActionService } from './sessions/context-actions'
 import { emitContractEvent } from './visual'
 
@@ -335,12 +336,6 @@ export function startSmokeIfEnabled(
       waiter.timer.unref?.()
       waiters.add(waiter)
     })
-  }
-
-  async function waitForDeltas(count: number): Promise<void> {
-    for (let seen = 0; seen < count; seen++) {
-      await waitFor((event) => event.type === 'text_delta', 'text_delta')
-    }
   }
 
   async function main(): Promise<void> {
@@ -581,6 +576,21 @@ export function startSmokeIfEnabled(
     // session_created back-to-back from the same host tick (announce), so a
     // late waiter would miss it.
     const agentStarted = waitFor((e) => e.type === 'agent_start', 'agent_start (pending prompt)')
+    // Round-1 stream bookkeeping, armed BEFORE the session can exist: the
+    // pending prompt starts streaming the moment session_created lands,
+    // while this stage is still walking the access-probe waits — a fast
+    // model can push its whole short reply PAST this point before any
+    // waiter in the round-1 block would arm, and the waiter model can never
+    // match an event that already flowed through (the 2026-09-16 run where
+    // the text_delta wait starved against a completed turn). The observer
+    // counts from the first event regardless of arming order.
+    let roundOneDeltas = 0
+    let roundOneEnded = false
+    const onRoundOneStream = (e: Scoped): void => {
+      if (e.type === 'text_delta') roundOneDeltas++
+      if (e.type === 'agent_end') roundOneEnded = true
+    }
+    observers.push(onRoundOneStream)
     const composerState = waitFor((e) => e.type === 'composer_state', 'composer_state (empty-state defaults)')
     const created = (await waitFor((e) => e.type === 'session_created', 'session_created (empty-state send)')) as Extract<
       Scoped,
@@ -633,15 +643,32 @@ export function startSmokeIfEnabled(
     if (restored.mode !== 'standard') fail(`the smoke access restore failed (got ${restored.mode})`)
     log('empty_state_access_restore_ok', 'tier=standard')
 
-    // Round 1: the pending prompt starts the run; abort mid-flight.
+    // Round 1: the pending prompt starts the run; abort mid-flight —
+    // unless the fast first reply already settled inside the access-probe
+    // window (the observer above saw it), in which case there is nothing
+    // left to abort and the settle IS the round's outcome.
     await agentStarted
     log('agent_start')
 
-    await waitForDeltas(ABORT_AFTER_DELTAS)
-    log('deltas_collected', `count=${ABORT_AFTER_DELTAS}`)
-
-    supervisor.handleParentCommand({ type: 'abort_turn' })
-    await waitFor((e) => e.type === 'agent_end', 'agent_end after abort')
+    for (let waited = 0; waited < STEP_TIMEOUT_MS && roundOneDeltas < ABORT_AFTER_DELTAS && !roundOneEnded; waited += 100) {
+      await new Promise((r) => setTimeout(r, 100))
+    }
+    if (roundOneDeltas < ABORT_AFTER_DELTAS && !roundOneEnded) {
+      fail(`round 1 streamed only ${roundOneDeltas} delta(s) and never settled`)
+    }
+    if (roundOneEnded) {
+      log('turn_settled_pre_abort', `deltas=${roundOneDeltas} — the fast first reply finished inside the probe window`)
+    } else {
+      log('deltas_collected', `count=${roundOneDeltas}`)
+      supervisor.handleParentCommand({ type: 'abort_turn' })
+    }
+    // The settle, order-proof: the agent_end may already have flown by when
+    // the abort was decided, so a waiter here could starve the same way.
+    for (let waited = 0; waited < STEP_TIMEOUT_MS && !roundOneEnded; waited += 100) {
+      await new Promise((r) => setTimeout(r, 100))
+    }
+    if (!roundOneEnded) fail('round 1 never settled after the abort')
+    observers.splice(observers.indexOf(onRoundOneStream), 1)
     log('aborted_ok')
 
     // Round 2: a full turn completes.
@@ -683,12 +710,15 @@ export function startSmokeIfEnabled(
       })()`
 
       // ① Both settled turns carry the persistent row, and the user row's
-      // shape is Copy-only: exactly one button, no Fork.
+      // shape is Copy + Edit (ticket 79 joined the row; Copy stays FIRST so
+      // the click below keeps copying): exactly two buttons, no Fork.
       if (!(await waitForProbe(win, `document.querySelectorAll('.chat-thread > .msg-user-block').length >= 2`, 10_000))) {
         fail('ticket-44 stage: the user message blocks never rendered')
       }
       const btnCount = (await js(lastBlock(`return block.querySelectorAll('.msg-action-btn').length`))) as number | null
-      if (btnCount !== 1) fail(`ticket-44 stage: the user action row must carry exactly one button (Copy), saw ${String(btnCount)}`)
+      if (btnCount !== 2) {
+        fail(`ticket-44 stage: the user action row must carry exactly two buttons (Copy + ticket-79 Edit), saw ${String(btnCount)}`)
+      }
       log('user_copy_row_shape_ok')
 
       // ② Real clipboard round-trip: focus the window for real, park a
@@ -788,9 +818,26 @@ export function startSmokeIfEnabled(
         }
         await new Promise((r) => setTimeout(r, 300))
         await win.webContents.executeJavaScript(composerKeyJs('Escape'))
+        // The Escape's setMenu(null) must COMMIT before Enter lands: a
+        // back-to-back Enter reads the pre-commit closure where the menu is
+        // still open and flatMenuKey turns the keystroke into a row pick
+        // (row 0 = /compact → a real compaction, no pointer toast — the
+        // 2026-09-16 double failure). One commit gap between the two keys.
+        await new Promise((r) => setTimeout(r, 300))
         await win.webContents.executeJavaScript(composerKeyJs('Enter'))
         const toasted = await waitForProbe(win, toastProbe(needle), 5_000)
-        if (!toasted) fail(`typing ${typed} never raised the pointer toast (${needle})`)
+        if (!toasted) {
+          const diag = (await win.webContents.executeJavaScript(
+            `JSON.stringify({
+              value: document.querySelector('.composer-input')?.value ?? null,
+              toasts: [...document.querySelectorAll('.toast-message')].map((n) => n.textContent ?? ''),
+              menu: document.querySelectorAll('.cmp-popover .cmp-menu-row').length,
+              sendBtn: document.querySelector('.cmp-send') !== null,
+              stopBtn: document.querySelector('.cmp-stop') !== null
+            })`
+          ).catch(() => 'diag-failed')) as string
+          fail(`typing ${typed} never raised the pointer toast (${needle}) — ${diag}`)
+        }
       }
       await gateCase('/model', '/model — use the Select Model picker')
       log('slash_gate_toast_ok')
@@ -7218,6 +7265,306 @@ export function startSmokeIfEnabled(
       rmSync(seedProject77, { recursive: true, force: true })
     }
     log('ctx_ring_done')
+
+    // ---- ticket 79: Edit & Resend — the Edit click on a settled user
+    // message prefills the composer (original text + restored image) and
+    // navigates the leaf to the message's parent (SDK edit-and-resubmit);
+    // the send branches in place with the light toast; agentRunning hides
+    // the button and the agent_end settle brings it back; the old branch
+    // stays reachable in the tree panel. Seeded file + resume = the same
+    // driver ticket 43 uses; ONE real model turn supplies the Stop leg. ----
+    log('edit_resend_start')
+    const editProject79 = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-edit79-'))
+    try {
+      const editStore79 = process.env['PICODE_SESSION_DIR']
+      if (!editStore79) fail('ticket-79 stage: PICODE_SESSION_DIR is not set')
+      const stamp79 = new Date().toISOString()
+      const editFile79 = path.join(editStore79, 'edit79.jsonl')
+      const editPng79 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+      writeFileSync(
+        editFile79,
+        [
+          JSON.stringify({ type: 'session', version: 3, id: 'edit79-electron-id', timestamp: stamp79, cwd: editProject79 }),
+          JSON.stringify({
+            type: 'message', id: 'e79-u1', parentId: null, timestamp: stamp79,
+            message: { role: 'user', content: [{ type: 'text', text: 'PICODE_EDIT79 first message' }] }
+          }),
+          JSON.stringify({
+            type: 'message', id: 'e79-a1', parentId: 'e79-u1', timestamp: stamp79,
+            message: { role: 'assistant', content: [{ type: 'text', text: 'PICODE_EDIT79 first reply' }], stopReason: 'stop' }
+          }),
+          // The image-carrying message: the prefill must restore its inline
+          // base64 ImageContent as a composer attachment (operator decision:
+          // images ride back).
+          JSON.stringify({
+            type: 'message', id: 'e79-u2', parentId: 'e79-a1', timestamp: stamp79,
+            message: { role: 'user', content: [
+              { type: 'text', text: 'PICODE_EDIT79 second message' },
+              { type: 'image', data: editPng79, mimeType: 'image/png' }
+            ] }
+          }),
+          JSON.stringify({
+            type: 'message', id: 'e79-a2', parentId: 'e79-u2', timestamp: stamp79,
+            message: { role: 'assistant', content: [{ type: 'text', text: 'PICODE_EDIT79 second reply' }], stopReason: 'stop' }
+          })
+        ].join('\n') + '\n'
+      )
+
+      supervisor.handleParentCommand({ type: 'resume_session', sessionFile: editFile79, cwd: editProject79 })
+      const created79 = (await waitFor(
+        (e) => e.type === 'session_created' && e.sessionFile === editFile79,
+        'ticket-79 resume session_created'
+      )) as Extract<Scoped, { type: 'session_created' }>
+      const editSessionId = created79.sessionId
+      await waitFor((e) => e.type === 'history_loaded' && e.sessionId === editSessionId, 'ticket-79 resume replay')
+
+      await withWindow(getWindow, async (win) => {
+        const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+        const toastCount = (needle: string): string =>
+          `[...document.querySelectorAll('.toast-message')].filter((n) => (n.textContent ?? '').includes(${JSON.stringify(needle)})).length`
+        const userBlocks = (): string => `document.querySelectorAll('.chat-thread > .msg-user-block').length`
+        /** Click the Edit button of the index-th user block. */
+        const clickEdit79 = (index: number): string => `(() => {
+          const blocks = document.querySelectorAll('.chat-thread > .msg-user-block')
+          const block = blocks[${index}]
+          if (!(block instanceof HTMLElement)) return false
+          const btn = [...block.querySelectorAll('.msg-action-btn')].find((b) => b.textContent?.includes('Edit'))
+          if (!(btn instanceof HTMLElement)) return false
+          btn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+          return true
+        })()`
+        const composerValue = (): string => `(document.querySelector('.composer-input')?.value ?? null)`
+        const composerDiag = (): string =>
+          `JSON.stringify({ value: document.querySelector('.composer-input')?.value ?? null, figures: document.querySelectorAll('.composer-attachments figure').length, disabled: document.querySelector('.composer-input')?.disabled ?? null })`
+        const attachmentFigures = (): string => `document.querySelectorAll('.composer-attachments figure').length`
+
+        if (!(await waitForProbe(win, `document.querySelector('.chat-view') !== null`, 10_000))) {
+          fail('ticket-79 stage: the resumed session never reached the chat view')
+        }
+        if (!(await waitForProbe(win, `${userBlocks()} === 2`, 10_000))) {
+          fail('ticket-79 stage: the two seeded user blocks never rendered')
+        }
+
+        // ① Row shape: Copy + Edit on every settled user block (all-English
+        // labels; the ticket-44 stage pins Copy-first). No agent is running,
+        // so Edit is on.
+        const labels79 = (await js(`(() => {
+          const block = document.querySelectorAll('.chat-thread > .msg-user-block')[1]
+          if (!(block instanceof HTMLElement)) return null
+          return [...block.querySelectorAll('.msg-action-btn span')].map((s) => s.textContent ?? '')
+        })()`)) as string[] | null
+        if (labels79 === null || labels79.join(',') !== 'Copy,Edit') {
+          fail(`ticket-79 stage: the user row shape must be Copy+Edit, got ${JSON.stringify(labels79)}`)
+        }
+        log('edit_resend_row_shape_ok')
+
+        // ② Draft replacement + imageless edit: a stray draft sits in the
+        // composer; clicking Edit on the ROOT message u1 replaces it with
+        // u1's original text (no attachments), and the navigate resets the
+        // leaf (SDK resetLeaf) — the transcript replays empty.
+        if (!(await js(composerTypeJs('PICODE_EDIT79 stray draft')).catch(() => false))) {
+          fail('ticket-79 stage: the composer textarea is missing')
+        }
+        // The replay waiter arms BEFORE the click: the host answers the
+        // navigate within milliseconds, and a waiter armed after a DOM probe
+        // would starve exactly like the round-1 stream race (the event
+        // flows through while the probe polls the renderer's later commit).
+        const rootEditReplay = waitFor(
+          (e) => e.type === 'history_loaded' && e.sessionId === editSessionId && e.items.length === 0,
+          'ticket-79 root-edit replay (empty path)'
+        )
+        if (!((await js(clickEdit79(0))) as boolean)) fail('ticket-79 stage: the first user row never rendered Edit')
+        const draftReplaced = await waitForProbe(
+          win,
+          `${composerValue()} === ${JSON.stringify('PICODE_EDIT79 first message')}`,
+          5_000
+        )
+        if (!draftReplaced) {
+          const diag = (await js(composerDiag()).catch(() => 'diag-failed')) as string
+          fail(`ticket-79 stage: Edit never replaced the in-place draft with the original text — ${diag}`)
+        }
+        if (((await js(attachmentFigures())) as number) !== 0) {
+          fail('ticket-79 stage: an imageless edit must not restore attachments')
+        }
+        await rootEditReplay
+        if (!(await waitForProbe(win, `${userBlocks()} === 0`, 5_000))) {
+          fail('ticket-79 stage: the root edit never replayed an empty transcript')
+        }
+        log('edit_resend_draft_replace_ok')
+
+        // ③ The old branch stays reachable: after the root edit the leaf is
+        // null (the panel shows u1/a1), so the way back is two hops — click
+        // the a1 row (leaf → a1), then the a2 row (leaf → a2, the old leaf)
+        // and the full transcript returns. Assistant rows navigate to
+        // themselves (user rows carry the edit semantics, landing on the
+        // parent — exactly what ② exercised).
+        await js(
+          `[...document.querySelectorAll('.chat-topbar-btn')].find((el) => el.textContent?.includes('History'))?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
+        )
+        if (!(await waitForProbe(win, `document.querySelectorAll('.tree-row').length > 0`, 5_000))) {
+          fail('ticket-79 stage: the tree rows never rendered')
+        }
+        const treeRow79 = (needle: string): string =>
+          `[...document.querySelectorAll('.tree-row')].find((el) => el.textContent?.includes(${JSON.stringify(needle)}))`
+        // Each hop: WAIT for the row to exist before clicking — the replay's
+        // history_loaded may reach the smoke before the renderer processed
+        // the paired session_tree, and the row's very VISIBILITY depends on
+        // the new leaf (a2 hides whenever the leaf is not on its path). A
+        // blind click here silently no-ops and starves the replay wait.
+        if (!(await waitForProbe(win, `${treeRow79('PICODE_EDIT79 first reply')} !== undefined`, 5_000))) {
+          fail('ticket-79 stage: the a1 tree row never rendered for the way back')
+        }
+        const backReplayA1 = waitFor(
+          (e) => e.type === 'history_loaded' && e.sessionId === editSessionId && e.items.length === 2,
+          'ticket-79 tree navigate-back replay (a1)'
+        )
+        await js(`${treeRow79('PICODE_EDIT79 first reply')}?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
+        await backReplayA1
+        if (!(await waitForProbe(win, `${treeRow79('PICODE_EDIT79 second reply')} !== undefined`, 5_000))) {
+          fail('ticket-79 stage: the a2 tree row never rendered after the a1 hop')
+        }
+        const backReplayA2 = waitFor(
+          (e) => e.type === 'history_loaded' && e.sessionId === editSessionId && e.items.length === 4,
+          'ticket-79 tree navigate-back replay (a2)'
+        )
+        await js(`${treeRow79('PICODE_EDIT79 second reply')}?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
+        await backReplayA2
+        if (!(await waitForProbe(win, `${userBlocks()} === 2`, 5_000))) {
+          fail('ticket-79 stage: navigating back to the old leaf never restored the transcript')
+        }
+        log('edit_resend_old_branch_reachable_ok')
+
+        // ④ THE EDIT: click Edit on the image message u2. The composer must
+        // prefill its original text AND restore the image as an attachment;
+        // the leaf moves to a1 (the parent) and the transcript replays
+        // without the edited message and its tail.
+        if (!((await js(clickEdit79(1))) as boolean)) fail('ticket-79 stage: the image message row never rendered Edit')
+        // The click must visibly restructure the transcript (the leaf lands
+        // on a1 → the replay leaves ONE user block) and the composer must
+        // hold the prefill. The DOM is the assertion — an event waiter here
+        // adds no proof (the replay IS what the DOM now shows) and its
+        // items-length pin can silently mismatch a wrong-target navigate.
+        let landed = false
+        for (let waited = 0; waited < 15_000 && !landed; waited += 200) {
+          landed = (await js(`${userBlocks()} === 1`).catch(() => false)) === true
+          if (!landed) await new Promise((r) => setTimeout(r, 200))
+        }
+        if (!landed) {
+          const diag = (await js(`JSON.stringify({
+            blocks: document.querySelectorAll('.chat-thread > .msg-user-block').length,
+            rows: [...document.querySelectorAll('.chat-thread > .msg-user-block')].map((b) => [...b.querySelectorAll('.msg-action-btn span')].map((s) => s.textContent)),
+            composer: { value: document.querySelector('.composer-input')?.value ?? null, disabled: document.querySelector('.composer-input')?.disabled ?? null }
+          })`).catch(() => 'diag-failed')) as string
+          fail(`ticket-79 stage: the image-message Edit click never restructured the transcript — ${diag}`)
+        }
+        const imagePrefilled = await waitForProbe(
+          win,
+          `${composerValue()} === ${JSON.stringify('PICODE_EDIT79 second message')} && ${attachmentFigures()} === 1`,
+          5_000
+        )
+        if (!imagePrefilled) {
+          const diag = (await js(composerDiag()).catch(() => 'diag-failed')) as string
+          fail(`ticket-79 stage: the image message prefill (text + attachment) never landed — ${diag}`)
+        }
+        log('edit_resend_prefill_image_ok')
+
+        // ⑤ THE SEND: the edited text goes through the plain prompt path —
+        // an in-place branch — and the light resend toast fires. The run
+        // hides every Edit button; Stop brings them back with agent_end.
+        // The echo/agent_start waiters arm BEFORE Enter — the toast poll
+        // between Enter and the waits would otherwise starve on events that
+        // flowed through while it polled (the same missed-event race as the
+        // steps above).
+        const RESENT = 'PICODE_EDIT79 second message EDITED — write a 300-word story about a lighthouse.'
+        const resentEcho = waitFor(
+          (e) => e.type === 'user_message' && e.sessionId === editSessionId && e.text.includes('EDITED'),
+          'ticket-79 resent user_message echo'
+        )
+        const resentStart = waitFor(
+          (e) => e.type === 'agent_start' && e.sessionId === editSessionId,
+          'ticket-79 resend agent_start'
+        )
+        if (!(await js(composerTypeJs(RESENT)).catch(() => false))) {
+          fail('ticket-79 stage: the composer textarea is missing for the resend')
+        }
+        await js(composerKeyJs('Enter'))
+        let toastSeen = false
+        for (let waited = 0; waited < 5_000 && !toastSeen; waited += 100) {
+          toastSeen = ((await js(toastCount(EDIT_RESEND_TOAST)).catch(() => 0)) as number) > 0
+          if (!toastSeen) await new Promise((r) => setTimeout(r, 100))
+        }
+        if (!toastSeen) fail('ticket-79 stage: the light resend toast never fired')
+        log('edit_resend_toast_ok')
+
+        await resentStart
+        await resentEcho
+        // agentRunning hides every Edit button (agent_start landed first —
+        // the story turn streams long enough to catch the hidden state).
+        if (!(await waitForProbe(win, `${userBlocks()} >= 1 && [...document.querySelectorAll('.chat-thread > .msg-user-block')].every((b) => b.querySelectorAll('.msg-action-btn').length === 1)`, 10_000))) {
+          fail('ticket-79 stage: the Edit buttons never hid while the agent ran')
+        }
+        log('edit_resend_hidden_while_running_ok')
+
+        // The Stop leg (acceptance, verbatim): the click aborts the turn and
+        // the agent_end settle must bring the buttons BACK — no stuck-hidden
+        // state.
+        await js(`document.querySelector('.cmp-stop')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
+        await waitFor((e) => e.type === 'agent_end' && e.sessionId === editSessionId, 'ticket-79 stop agent_end')
+        if (!(await waitForProbe(win, `${userBlocks()} === 2 && [...document.querySelectorAll('.chat-thread > .msg-user-block')].every((b) => b.querySelectorAll('.msg-action-btn').length === 2)`, 10_000))) {
+          fail('ticket-79 stage: the Edit buttons never came back after the Stop agent_end')
+        }
+        const resentText = (await js(
+          `[...document.querySelectorAll('.chat-thread > .msg-user-block .msg-user')].map((n) => n.textContent ?? '').find((t) => t.includes('EDITED')) ?? null`
+        )) as string | null
+        if (resentText === null) fail('ticket-79 stage: the resent message bubble never rendered')
+        log('edit_resend_stop_restore_ok')
+
+        // ⑥ The new branch + the old one, side by side in the tree panel:
+        // the abandoned branch's rows still list, the resent message row
+        // exists, and exactly one row carries the current-leaf tag. The
+        // panel from step ③ may still be open (the History button is a
+        // TOGGLE — only click it when no rows render), and the payload is
+        // STALE: a prompt does not push a session_tree, so the stage asks
+        // for a fresh tree explicitly before asserting the new row.
+        if (!((await js(`document.querySelectorAll('.tree-row').length > 0`)) as boolean)) {
+          await js(
+            `[...document.querySelectorAll('.chat-topbar-btn')].find((el) => el.textContent?.includes('History'))?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
+          )
+        }
+        const freshTree79 = waitFor(
+          (e) => e.type === 'session_tree' && e.sessionId === editSessionId,
+          'ticket-79 fresh session_tree for the branch check'
+        )
+        supervisor.handleParentCommand({
+          type: 'session_command',
+          sessionId: editSessionId,
+          command: { type: 'request_tree' }
+        })
+        await freshTree79
+        if (!(await waitForProbe(win, `document.querySelectorAll('.tree-row').length > 0`, 5_000))) {
+          fail('ticket-79 stage: the tree rows never rendered for the branch check')
+        }
+        const treeShape79 = (await js(`(() => {
+          const texts = [...document.querySelectorAll('.tree-row .tree-row-text')].map((el) => el.textContent ?? '')
+          return {
+            oldMessage: texts.some((t) => t.includes('PICODE_EDIT79 second message')),
+            oldReply: texts.some((t) => t.includes('PICODE_EDIT79 second reply')),
+            resent: texts.some((t) => t.includes('EDITED')),
+            leafTags: document.querySelectorAll('.tree-leaf-tag').length
+          }
+        })()`)) as { oldMessage: boolean; oldReply: boolean; resent: boolean; leafTags: number } | null
+        if (treeShape79 === null) fail('ticket-79 stage: the tree shape probe never ran')
+        if (!treeShape79.oldMessage || !treeShape79.oldReply) {
+          fail('ticket-79 stage: the abandoned branch is not reachable in the tree panel')
+        }
+        if (!treeShape79.resent) fail('ticket-79 stage: the resent message row is missing from the tree')
+        if (treeShape79.leafTags !== 1) fail(`ticket-79 stage: exactly one current tag expected, got ${treeShape79.leafTags}`)
+        log('edit_resend_tree_branches_ok')
+      })
+    } finally {
+      rmSync(editProject79, { recursive: true, force: true })
+    }
+    log('edit_resend_done')
 
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
     const livePids = supervisor.hostPids
