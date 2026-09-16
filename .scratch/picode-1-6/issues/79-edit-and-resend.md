@@ -6,13 +6,17 @@
 
 **Blocked by:** 78（两票同改转录投影与行渲染区段——弱邻接转显式串行）.
 
-**Status:** ready-for-agent
+## Comments
 
-- [ ] Seam-1 用户条目图片还原投影（有图/无图/多图 → 附件态）
-- [ ] host-contract smoke：用户条目图片投影 additive（旧载荷兼容）+ **实施时报备入账**
-- [ ] electron smoke：hover Edit → 预填（含带图消息附件还原）→ 发送 → 新分支 + toast + 树面板旧分支可达
-- [ ] agentRunning 隐藏；**点 Stop 后 agent_end 落地按钮即回**（显式验收）
-- [ ] steer/follow-up 落定消息可编辑；草稿在位时点 Edit 直接替换
-- [ ] 分支无损（旧分支回看不丢数据）
-- [ ] 术语 rider：「编辑重发（Edit & Resend）」入 CONTEXT.md
-- [ ] 全英文文案；跑 dev app / e2e / smoke / visual 前 `ps` 自查（dev-app serialization）
+- 2026-09-16（implement session，t79-edit-resend @ 977abda，based on main e3a961a 含 t80）：**additive 投影增量报备入账**——`TranscriptItem` user 变体增 `images?: TranscriptImagePart[]`（parse `userImageParts` 从落盘 user message content 的内联 base64 ImageContent 直读，按 content 序；缺字段 = 无图消息照常，旧载荷照常校验）；`UserEntry` 同步携带 `images?`（replayEntry 拷贝；live `user_message` 回声不带图——图片随下次 replay 落账）；除此外 shared/contract.ts 零改动（零新契约）。实现 = ①Seam-1 纯模块 `src/shared/edit-resend.ts`（`editResendPrefill`：原文 = 剥离技能注入序言的用户原话（shape 失配防御直传）+ 图片部件还原附件态——操作者拍板图片回填；`EDIT_RESEND_TOAST` 定版「Resent as a new branch — the old branch stays in History.」）；②UI：MessageActions 增 `onEdit`（Edit 钮列 Copy 之后——ticket-44 stage 首钮 click 保持 Copy；agentRunning 时 ChatView 不传回调=隐藏，agent_end 落地自动复现——纯派生零状态）；Composer 增 `PREFILL_EVENT` 监听（草稿在位整体替换 + 原图重建附件卡 + 聚焦尾 caret，菜单面关；展开态不动）；App `handleEditMessage` = 预填 + `navigate_tree` 以 **user entry id** 为目标 + session 级 toast 臂（发送后轻 toast；`session_command_error` 对同 session 解除臂；切 session 比对 focusedId 不误发）。**导航语义裁决**：navigate_tree 目标 = user entry 本身而非父 entry id——SDK navigateTree 对 user 目标的原生 edit-and-resubmit 分支把叶移到其父（根消息走 resetLeaf，SDK 文档原句「re-edit the first user message」）；直达父 id 有歧义（父本身是 user 消息时 SDK 会再多移一层到祖父——steer/零输出回合链上真实存在）且根消息无父 id 可表达。**已知边界**：零输出回合可能停在叶=user 消息，navigate no-op，重发变链后追加（两条均可见）——SDK 原生同款行为，留档接受。**验证**：①vitest RED→GREEN：sessions-parse 4 例（有图/多图/无图缺字段/畸形块不投影）+ chat-reducer 2 例（replay 携带图/旧载荷缺字段）+ edit-resend 6 例（原文剥离/防御/图片回填/live 降级/toast 定版）——全套 1452/1452；②host-contract smoke 新 **Round F**（种子会话零模型调用；接在 t80 rebase 进来的 Round E/E2 accessMode sentinel 之后）：`image projection ok`（带图 item 携带 parts、无图 item 字段缺省）+ `edit navigate (non-root) ok`（叶落父 entry，replay [u1,a1] 无损截断）+ `root edit navigate ok (resetLeaf, empty replay)` + 树 leafId null + 落盘断言 4 条 message 无增无 branch_summary（分支无损、天然 No summary）；③electron smoke ticket-79 stage **八锁全绿（run23，EXIT=0，全階段通过）**：`row_shape_ok`（Copy+Edit 两钮）→ `draft_replace_ok`（草稿整体替换+无附件）→ `old_branch_reachable_ok`（树面板双跳回 a1/a2 旧分支）→ `prefill_image_ok`（u2 原文+图片附件还原）→ `toast_ok`（轻 toast 定版文案）→ `hidden_while_running_ok` → `stop_restore_ok`（**Stop 后 agent_end 落地按钮即回，验收写死项**）→ `tree_branches_ok`（新旧分支行并存、leaf tag 唯一）。④**smoke 基建修复随票落账**（均为既有阶段的结构性缺陷，今在快模型+负载下必然暴露）：round-1 流式记账改 pre-armed observer（waiter 模型在 t80 access 探测窗口内饿死——run6 实锤）；gateCase Escape→Enter 加 React 提交间隙（背靠背击键让 Enter 在菜单上选中 /compact 触发真实 compaction——run15/16/17 实锤）；本票 stage 内全部事件等待器改为先于触发动作武装 + 探测以 DOM 为准（missed-event 饿死类）。**范围外记录（1.1 纪律）**：树面板开着时不随会话增长自动刷新（prompt 不推 session_tree——重发后需重开面板或其它动作才见新行）；如需跟进另立票。⑤其余跨阶段偶发失败（ticket-52/60/76、menu-keyboard、multi 等）在 14 轮中漂移出现且互斥通过，确认为机器负载/模型延迟类环境 flake，非本票缺陷。typecheck 清；改动文件 eslint 清；dev-app serialization 遵守（每次运行前 ps 自查，wt-72 运行中则等待；WeChat 前台活跃期间焦点类阶段必挂——run3/5/6/7 归因）。
+
+**Status:** ready-for-human
+
+- [x] Seam-1 用户条目图片还原投影（有图/无图/多图 → 附件态）— `TranscriptImagePart` + `UserEntry.images`，vitest RED→GREEN（有图/多图/无图缺字段/畸形块/live 降级）
+- [x] host-contract smoke：用户条目图片投影 additive（旧载荷兼容）+ **实施时报备入账** — Round F：带图 item 携带 parts + 无图 item 字段缺省 + 编辑导航/树叶/resetLeaf/落盘无损断言；增量已在上方 comment 报备
+- [x] electron smoke：hover Edit → 预填（含带图消息附件还原）→ 发送 → 新分支 + toast + 树面板旧分支可达 — 八锁全绿（run23 EXIT=0，全阶段通过）：row_shape/draft_replace/old_branch_reachable/prefill_image/toast/hidden_while_running/stop_restore/tree_branches
+- [x] agentRunning 隐藏；**点 Stop 后 agent_end 落地按钮即回**（显式验收）— 纯派生（ChatView 按 agentRunning 传回调）；smoke 断言已入 stage（hidden_while_running / stop_restore）
+- [x] steer/follow-up 落定消息可编辑；草稿在位时点 Edit 直接替换 — 落定 user 消息同一路径（均携真实 entry id）；草稿替换已入 stage 断言（edit_resend_draft_replace_ok）
+- [x] 分支无损（旧分支回看不丢数据）— host-contract Round F 落盘断言（4 message 无增无 branch_summary）+ 树面板双跳回 stage 锁
+- [x] 术语 rider：「编辑重发（Edit & Resend）」入 CONTEXT.md
+- [x] 全英文文案；跑 dev app / e2e / smoke / visual 前 `ps` 自查（dev-app serialization）— 文案全英文；每次运行前检查
