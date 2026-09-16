@@ -19,15 +19,26 @@
  * machine is table-testable without a live session.
  */
 
+import type { UsageTokens } from '../shared/usage/types'
+
 /** Whether a pending assistant message_end still owes the stream a send.
  * The boolean result tells the caller to emit (with the id it read back
- * for `settle`, without one for `flush`). */
+ * for `settle`, without one for `flush`). Ticket 77: the hold also carries
+ * the finished message's ring usage — the caller reads it back with
+ * `takeUsage` (read-and-clear) after a successful settle/flush and rides it
+ * on the contract event. */
 export class HeldMessageEnd {
   private held = false
+  /** Ticket 77: the held message's valid usage (host-projected);
+   * undefined when the message carried none. Cleared by `takeUsage` and
+   * overwritten by every `hold`, so a stale payload can never leak into a
+   * later event. */
+  private usage: UsageTokens | undefined = undefined
 
   /** The SDK's assistant message_end arrived; hold the contract event. */
-  hold(): void {
+  hold(usage?: UsageTokens): void {
     this.held = true
+    this.usage = usage
   }
 
   /** The entry persisted — release (the caller sends the id it read back). */
@@ -43,6 +54,14 @@ export class HeldMessageEnd {
     if (!this.held) return false
     this.held = false
     return true
+  }
+
+  /** Ticket 77: read-and-clear the held usage — valid right after a
+   * successful settle/flush, undefined when the message carried none. */
+  takeUsage(): UsageTokens | undefined {
+    const usage = this.usage
+    this.usage = undefined
+    return usage
   }
 }
 

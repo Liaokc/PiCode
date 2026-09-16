@@ -20,6 +20,7 @@ import type {
 } from './contract'
 import { sniffSkillName } from './sessions/parse.ts'
 import type { TranscriptItem } from './sessions/types.ts'
+import type { UsageTokens } from './usage/types.ts'
 import { HEAD_TURN_ID } from './turn-collapse'
 import { UNFINISHED_TOOL_OUTPUT } from './tool-format'
 
@@ -162,6 +163,12 @@ export interface ChatState {
   slashCommands: SlashCommandItem[]
   /** Live steering/follow-up queue (queue_update echoes). */
   queue: ChatQueue
+  /** Ticket 77 (context ring): the most recent VALID assistant usage, pushed
+   * on `message_end` (live) and `history_loaded` (replay) under the
+   * TUI-calibrated validity rule the host applies (shared/context-ring.ts).
+   * A pure projection — aborted/errored messages leave it untouched, a new
+   * session resets it, compaction needs no special case. */
+  lastUsage: UsageTokens | null
 }
 
 export function initialChatState(): ChatState {
@@ -178,7 +185,8 @@ export function initialChatState(): ChatState {
     accessMode: 'standard',
     providers: [],
     slashCommands: [],
-    queue: { steering: [], followUp: [] }
+    queue: { steering: [], followUp: [] },
+    lastUsage: null
   }
 }
 
@@ -424,6 +432,10 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         entries: event.items.map(replayEntry),
         expandedTurns: new Set(),
         erroredTurns: new Set(),
+        // Ticket 77: the replayed leaf path's own ring occupancy — null when
+        // the host omitted the field (legacy payload) or the path records no
+        // valid usage (tree navigation re-derives from the new path).
+        lastUsage: event.usage ?? null,
         error: null
       }
 
@@ -484,12 +496,20 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     }
 
     case 'message_end': {
+      // Ticket 77: the finished message's valid usage advances the context
+      // ring regardless of the transcript shape — the usage projection is
+      // its own concern; its absence (aborted/errored/legacy) keeps the
+      // last value.
+      const lastUsage = event.usage ?? state.lastUsage
       const last = state.entries[state.entries.length - 1]
-      if (!isStreamingAssistant(last)) return state
+      if (!isStreamingAssistant(last)) {
+        return lastUsage === state.lastUsage ? state : { ...state, lastUsage }
+      }
       // Ticket 51: the host backfills the real session entry id (read back
       // at persistence) so the fork anchor addresses the actual entry.
       return {
         ...state,
+        lastUsage,
         entries: [
           ...state.entries.slice(0, -1),
           { ...last, id: event.entryId ?? last.id, streaming: false, parts: last.parts.map(closeThinking) }

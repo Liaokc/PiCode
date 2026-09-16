@@ -44,6 +44,7 @@ import { startChronologyVisualIfEnabled, isolateChronologyUserData } from './vis
 import { startRailStackVisualIfEnabled, isolateRailStackUserData } from './visual-rail-stack'
 import { startThinkingVisualIfEnabled, isolateThinkingUserData } from './visual-thinking'
 import { startExpandVisualIfEnabled, isolateExpandUserData } from './visual-expand'
+import { startContextRingVisualIfEnabled, isolateContextRingUserData } from './visual-context-ring'
 import { startTreeVisualIfEnabled, isolateTreeUserData } from './visual-tree'
 import { startApprovalVisualIfEnabled } from './visual-approval'
 import { startUsageVisualIfEnabled } from './visual-usage'
@@ -91,6 +92,9 @@ isolateFoldUserData()
 // Ticket-49 composer-expand harness — same throwaway-userData rule (no-op
 // unless PICODE_VISUAL_EXPAND=1).
 isolateExpandUserData()
+// Ticket-77 context-ring harness — same throwaway-userData rule (no-op
+// unless PICODE_VISUAL_CONTEXT_RING=1).
+isolateContextRingUserData()
 // Ticket-43 history-tree harness — same throwaway-userData rule (no-op
 // unless PICODE_VISUAL_TREE=1).
 isolateTreeUserData()
@@ -381,6 +385,9 @@ app.whenReady().then(() => {
   startFoldVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-49 composer-expand harness — same seeding constraint.
   startExpandVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  // Ticket-77 context-ring harness — same seeding constraint (two fresh
+  // sessions land in the isolated store before the index reads it).
+  startContextRingVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-43 history-tree harness — same seeding constraint.
   startTreeVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-50 codeblock-label harness — contract-stream injection, no store writes.

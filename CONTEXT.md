@@ -158,6 +158,10 @@ _Avoid_: 插件（ZCode 的 plugin 语义绑死其市场体系，不借用）；
 mermaid 围栏闭合且解析成功后渲染的图形卡（票 59，ZCode streamdown 管线同型）：小写 mono mermaid 标签头 + 右上操作钮组（download SVG/PNG/MMD 下拉、copy 源码、fullscreen）+ 渲染体 panZoom（滚轮缩放、拖拽平移、角部缩放控件）；fullscreen 为根层浮层、Esc 退；渲染主题用 mermaid 库默认浅色（深色全应用范围外）。**操作者批准的 ZCode 偏离**：ZCode 取证为 sticky 钮组，但卡片被转录滚动卷走时 sticky 头行悬停叠在自家图内容上——操作者拍板头行随卡滚走、不钉住。流式未闭合（mermaid 需全文）与解析失败均回退为代码卡——lang 标签照常、不弹错误 toast；mermaid 依赖按图型懒加载分片（动态 import），主包零增量。
 _Avoid_: 代码卡（回退态才是代码卡）；预览（是正式渲染非浮层预览）。
 
+**上下文圆环（Context Ring）**：
+Composer 模型 chip 左侧的小圆环（票 77，ZCode 同型）：会话上下文占用的纯投影——最近一条有效 assistant usage（input + output + cacheRead + cacheWrite 四元组全计入，即 usage.total 的 ADR-0002 口径）÷ 当前模型 contextWindow。ready 态 hover 弹**数据弹层**（非 Tooltip 组件）：百分比 + used/limit + IN/OUT/cacheRead/cacheWrite 四元组 + 缓存命中率（cacheRead/(input+cacheRead)）；无有效 usage 或窗口未知显**灰环**、无 hover（无分母不造百分比——数据源如实原则）。纯投影零特判：compaction 后自然取最新 usage；中断/出错的消息不留 usage。仅 ChatView（FollowView 无 composer、New Task 无会话可量——回底钮先例）。
+_Avoid_: 进度条（环不表达任务进度）；容量条（形态是环）；Tooltip（数据揭示不走悬停提示组件）；统计（Usage 是全局消耗口径，圆环只投影当前会话占用）。
+
 ## Constraints（词汇化的边界）
 
 **红线**：

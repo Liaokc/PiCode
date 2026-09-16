@@ -86,4 +86,18 @@ describe('model grouping for the cascade menu', () => {
       name: 'Claude Opus 4.5'
     })
   })
+
+  it('toModelRef copies a finite contextWindow additively (ticket 77) and drops unusable values', () => {
+    expect(toModelRef({ provider: 'p', id: 'm', name: 'M', contextWindow: 200_000 })).toEqual({
+      providerId: 'p',
+      modelId: 'm',
+      name: 'M',
+      contextWindow: 200_000
+    })
+    // Legacy shape: the field stays ABSENT (additive means absent, not null).
+    expect('contextWindow' in toModelRef({ provider: 'p', id: 'm', name: 'M' })).toBe(false)
+    for (const bad of [Number.NaN, 0, -5, Number.POSITIVE_INFINITY]) {
+      expect('contextWindow' in toModelRef({ provider: 'p', id: 'm', name: 'M', contextWindow: bad })).toBe(false)
+    }
+  })
 })

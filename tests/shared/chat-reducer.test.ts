@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { chatReducer, initialChatState, type ChatState, type UserEntry } from '../../src/shared/chat-reducer'
 import type { ChatAction } from '../../src/shared/chat-reducer'
 import type { HostToParent } from '../../src/shared/contract'
+import type { UsageTokens } from '../../src/shared/usage/types'
 import type { TranscriptItem } from '../../src/shared/sessions/types'
 import { UNFINISHED_TOOL_OUTPUT } from '../../src/shared/tool-format'
 import { groupTurns } from '../../src/shared/turn-collapse'
@@ -60,7 +61,8 @@ describe('chatReducer — session lifecycle', () => {
       accessMode: 'standard',
       providers: [],
       slashCommands: [],
-      queue: { steering: [], followUp: [] }
+      queue: { steering: [], followUp: [] },
+      lastUsage: null
     })
   })
 
@@ -750,6 +752,72 @@ describe('chatReducer — resumed history (ticket 04)', () => {
     expect(texts).toEqual(['earlier question', 'earlier answer', 'hello', 'Hel there'])
     const last = state.entries[state.entries.length - 1]
     expect(last?.role === 'assistant' && last.streaming).toBe(false)
+  })
+})
+
+describe('chatReducer — context-ring usage (ticket 77)', () => {
+  const RING_USAGE: UsageTokens = { input: 40_000, output: 2_000, cacheRead: 24_000, cacheWrite: 0, total: 66_000 }
+
+  it('message_end with usage records the ring occupancy (pure projection)', () => {
+    const state = run(initialChatState(), SESSION_CREATED, ...streamedTurn(' there'), {
+      type: 'message_end',
+      usage: RING_USAGE
+    })
+    expect(state.lastUsage).toEqual(RING_USAGE)
+  })
+
+  it('message_end without usage keeps the previous value (aborted/errored messages)', () => {
+    const state = run(initialChatState(), SESSION_CREATED, ...streamedTurn(' there'), {
+      type: 'message_end',
+      usage: RING_USAGE
+    })
+    const kept = run(state, { type: 'agent_start' }, { type: 'message_start' }, { type: 'text_delta', delta: 'x' }, { type: 'message_end' })
+    expect(kept.lastUsage).toEqual(RING_USAGE)
+  })
+
+  it('a NEWER usage replaces the older one (multi-call turns advance the ring)', () => {
+    const newer: UsageTokens = { input: 50_000, output: 3_000, cacheRead: 30_000, cacheWrite: 0, total: 83_000 }
+    const state = run(initialChatState(), SESSION_CREATED, { type: 'message_end', usage: RING_USAGE }, {
+      type: 'message_end',
+      usage: newer
+    })
+    expect(state.lastUsage).toEqual(newer)
+  })
+
+  it('history_loaded starts the ring from the replayed leaf path (additive field)', () => {
+    const state = run(initialChatState(), SESSION_CREATED, { type: 'history_loaded', items: [], usage: RING_USAGE })
+    expect(state.lastUsage).toEqual(RING_USAGE)
+  })
+
+  it('history_loaded without usage (legacy payload / no valid usage) degrades to the grey idle ring', () => {
+    const state = run(initialChatState(), SESSION_CREATED, { type: 'history_loaded', items: [] })
+    expect(state.lastUsage).toBeNull()
+  })
+
+  it('session_created resets the ring occupancy with the fresh transcript (rebuild)', () => {
+    const state = run(initialChatState(), SESSION_CREATED, { type: 'message_end', usage: RING_USAGE })
+    const rebuilt = chatReducer(state, { ...SESSION_CREATED, sessionId: 's-2' })
+    expect(rebuilt.lastUsage).toBeNull()
+  })
+
+  it('tree navigation re-derives the ring from the new leaf path', () => {
+    const navigated = run(initialChatState(), SESSION_CREATED, { type: 'message_end', usage: RING_USAGE }, {
+      type: 'history_loaded',
+      items: []
+    })
+    expect(navigated.lastUsage).toBeNull()
+  })
+
+  it('the ring value survives settle/host-exit paths untouched (pure projection)', () => {
+    const state = run(
+      initialChatState(),
+      SESSION_CREATED,
+      { type: 'message_end', usage: RING_USAGE },
+      { type: 'agent_start' },
+      { type: 'turn_error', message: 'boom' },
+      { type: 'host_exit', clean: false, code: 1, signal: null }
+    )
+    expect(state.lastUsage).toEqual(RING_USAGE)
   })
 })
 

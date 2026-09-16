@@ -33,6 +33,7 @@ import type {
   ThinkingLevel
 } from '../shared/contract'
 import type { SessionDefaults } from '../shared/preferences'
+import { assistantUsageOfMessage, lastAssistantUsage } from '../shared/context-ring'
 import { buildSessionTree, extractTranscriptItems, type RawSessionEntry } from '../shared/sessions/parse'
 import type { SessionTreePayload } from '../shared/sessions/types'
 import { toolResultText } from '../shared/tool-format'
@@ -132,10 +133,16 @@ function sendTree(): void {
   send({ type: 'session_tree', tree: treePayload() })
 }
 
-/** Transcript of the leaf path (compaction-aware), replayed on resume/navigate/fork. */
+/** Transcript of the leaf path (compaction-aware), replayed on resume/navigate/fork.
+ * Ticket 77: the event also carries the path's most recent valid assistant
+ * usage (the same walk the TUI's context readout rests on, minus the
+ * trailing-estimate term — the ring's numerator口径, shared/context-ring.ts). */
 function sendHistory(): void {
   const pathEntries = runtime!.session.sessionManager.buildContextEntries() as unknown as SessionEntry[]
-  send({ type: 'history_loaded', items: extractTranscriptItems(pathEntries as unknown as RawSessionEntry[]) })
+  const items = extractTranscriptItems(pathEntries as unknown as RawSessionEntry[])
+  const usage = lastAssistantUsage(pathEntries)
+  if (usage !== undefined) send({ type: 'history_loaded', items, usage })
+  else send({ type: 'history_loaded', items })
 }
 
 function wireSessionEvents(agentSession: AgentSession): void {
@@ -146,9 +153,13 @@ function wireSessionEvents(agentSession: AgentSession): void {
   const unsubscribe = agentSession.subscribe((event: AgentSessionEvent) => {
     // Ticket 51: a held message_end whose entry never persisted flushes
     // id-less BEFORE anything can reorder the stream (the assistant hold
-    // itself is the one message_end case that must not flush).
+    // itself is the one message_end case that must not flush). Ticket 77:
+    // the flushed event still rides the finished message's ring usage —
+    // the message completed even when its entry never landed.
     if (!(event.type === 'message_end' && event.message.role === 'assistant') && heldMessageEnd.flush()) {
-      send({ type: 'message_end' })
+      const flushedUsage = heldMessageEnd.takeUsage()
+      if (flushedUsage !== undefined) send({ type: 'message_end', usage: flushedUsage })
+      else send({ type: 'message_end' })
     }
     switch (event.type) {
       case 'agent_start':
@@ -202,8 +213,10 @@ function wireSessionEvents(agentSession: AgentSession): void {
         if (event.message.role !== 'assistant') break
         // Ticket 51: held — the contract event is released by the
         // appendMessage monitor at the persistence moment, carrying the
-        // real session entry id the fork anchor needs.
-        heldMessageEnd.hold()
+        // real session entry id the fork anchor needs. Ticket 77: the hold
+        // also carries the message's ring usage under the TUI-calibrated
+        // validity rule (aborted/errored/usage-less → undefined).
+        heldMessageEnd.hold(assistantUsageOfMessage(event.message))
         // Hold the error: auto-retry may still recover; only a run that ends
         // in failure surfaces `turn_error` (see `agent_end` below).
         if (event.message.stopReason === 'error') {
@@ -282,7 +295,11 @@ function onMessageAppended(message: Parameters<SessionManager['appendMessage']>[
     return
   }
   if (message.role === 'assistant' && heldMessageEnd.settle()) {
-    send({ type: 'message_end', entryId })
+    // Ticket 77: the released event rides the message's ring usage when the
+    // message carried one (the host already applied the validity rule).
+    const usage = heldMessageEnd.takeUsage()
+    if (usage !== undefined) send({ type: 'message_end', entryId, usage })
+    else send({ type: 'message_end', entryId })
   }
 }
 
