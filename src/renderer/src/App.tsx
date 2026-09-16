@@ -41,6 +41,7 @@ import { toastReducer, type ToastLevel, type ToastList } from '../../shared/toas
 import type { AccessMode, ImageAttachment, ThinkingLevel } from '../../shared/contract'
 import { parkedDraft, type ComposerDraft, type ComposerDraftEntry } from '../../shared/composer/drafts'
 import type { AuthProbeReport } from '../../shared/auth-status'
+import { configuredProviderIds, sortProvidersConfiguredFirst } from '../../shared/provider-sort'
 import { selectCommandCatalog, type NewTaskCommandCatalog } from '../../shared/new-task-commands'
 import type { SessionSummary, TranscriptItem } from '../../shared/sessions/types'
 import TitleBar from './components/TitleBar'
@@ -1254,6 +1255,22 @@ export default function App(): JSX.Element {
     [settings.auth]
   )
 
+  // ---- ticket 76: configured providers first, unconfigured after,
+  // alphabetical within each group — the settings Models section AND both
+  // composer model-menu sources (the live session's contract-pushed catalog
+  // and the new-task projection) share the rule. The renderer joins the
+  // auth-probe report it already holds; a missing/empty report degrades to
+  // the incoming order. Zero new contract.
+  const configuredIds = useMemo(() => configuredProviderIds(settings.auth), [settings.auth])
+  const newTaskProviders = useMemo(
+    () => sortProvidersConfiguredFirst(newTaskCatalog?.providers ?? [], configuredIds),
+    [newTaskCatalog, configuredIds]
+  )
+  const chatForView = useMemo(
+    () => ({ ...chat, providers: sortProvidersConfiguredFirst(chat.providers, configuredIds) }),
+    [chat, configuredIds]
+  )
+
   // ---- ticket 52: the new-task empty state's command catalog ----
   // One pushed catalog per probed directory (main debounces + caches; the
   // probe host enumerates the resource loader for that cwd). The EmptyState
@@ -1441,7 +1458,7 @@ export default function App(): JSX.Element {
                 draftBridgeRef={composerDraftRef}
                 initialDraft={newTaskDraft}
                 recentProjects={recentWorkspaceList}
-                providers={newTaskCatalog?.providers ?? []}
+                providers={newTaskProviders}
                 model={newTaskChip.model}
                 thinkingLevel={newTaskChip.thinkingLevel}
                 modelIsDefault={newTaskChip.modelSource === 'pi-fallback'}
@@ -1461,7 +1478,7 @@ export default function App(): JSX.Element {
               // every switch restores from the parked per-session slot.
               <ChatView
                 key={focusedId ?? 'chat'}
-                chat={chat}
+                chat={chatForView}
                 creating={creating}
                 cwdMissing={focusedCwdMissing}
                 draftBridgeRef={composerDraftRef}

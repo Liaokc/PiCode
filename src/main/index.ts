@@ -342,7 +342,7 @@ app.whenReady().then(() => {
     },
     onHostLog: (stream, chunk) => console.log(`[host ${stream}]`, chunk.trimEnd())
   })
-  smokeHooks = startSmokeIfEnabled(supervisor, smokeWindow, contextActions)
+  smokeHooks = startSmokeIfEnabled(supervisor, smokeWindow, contextActions, () => settings.authReport(false))
   // System notifications for background-session approval gates (ticket 25):
   // the renderer asks only for sessions whose pill is not on screen; the
   // click deep-links back to the waiting session and approves nothing.

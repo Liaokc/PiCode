@@ -1,4 +1,4 @@
-import { useEffect, useState, type JSX, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type JSX, type KeyboardEvent, type ReactNode } from 'react'
 import {
   authHealth,
   type AuthHealth,
@@ -8,6 +8,7 @@ import {
 } from '../../../../shared/auth-status'
 import type { ThinkingLevel } from '../../../../shared/contract'
 import type { AppPreferences } from '../../../../shared/preferences'
+import { configuredProviderIds, sortProvidersConfiguredFirst } from '../../../../shared/provider-sort'
 import { flatMenuKey, THINKING_LABELS } from '../composer/menus'
 import { useNowTick } from '../use-now'
 import { ChevronRightIcon, CubeIcon, LoaderIcon, RefreshIcon } from '../icons'
@@ -57,6 +58,11 @@ function modelsForProvider(models: readonly ModelCatalogEntry[], providerId: str
  * NEW sessions, and the read-only per-provider sign-in status. Login itself
  * stays in the Pi TUI — unconfigured or expired rows guide there and never
  * offer a PiCode login flow (spec: no OAuth/API-key GUI).
+ *
+ * Ticket 76: every provider list in the section (sign-in rows and the
+ * default-model cascade) is ordered configured-first, alphabetical within
+ * each group — joined from this report's own credential rows (zero new
+ * contract); a missing/empty report degrades to the registry order.
  */
 export default function ModelsSection({ preferences, auth, authScanning, onSetPreferences, onRefreshAuth }: ModelsSectionProps): JSX.Element {
   const now = useNowTick(30_000)
@@ -65,6 +71,10 @@ export default function ModelsSection({ preferences, auth, authScanning, onSetPr
   useEffect(() => {
     if (auth === null && !authScanning) onRefreshAuth()
   }, [auth, authScanning, onRefreshAuth])
+  const providers = useMemo(
+    () => sortProvidersConfiguredFirst(auth?.providers ?? [], configuredProviderIds(auth)),
+    [auth]
+  )
   return (
     <div className="settings-page">
       <header className="settings-page-header">
@@ -74,7 +84,7 @@ export default function ModelsSection({ preferences, auth, authScanning, onSetPr
 
       <section className="settings-card">
         <h2 className="settings-card-title">Defaults for new tasks</h2>
-        <DefaultModelRow preferences={preferences} auth={auth} now={now} onSetPreferences={onSetPreferences} />
+        <DefaultModelRow preferences={preferences} auth={auth} providers={providers} now={now} onSetPreferences={onSetPreferences} />
         <ThinkingLevelRow preferences={preferences} onSetPreferences={onSetPreferences} />
       </section>
 
@@ -105,7 +115,7 @@ export default function ModelsSection({ preferences, auth, authScanning, onSetPr
           <div className="settings-note">No providers found in the Pi registry.</div>
         ) : (
           <ul className="auth-list" aria-label="Provider sign-in status">
-            {auth.providers.map((provider) => (
+            {providers.map((provider) => (
               <AuthRow key={provider.providerId} provider={provider} now={now} />
             ))}
           </ul>
@@ -161,18 +171,21 @@ type PickerStep = { step: 'closed' } | { step: 'provider' } | { step: 'model'; p
 function DefaultModelRow({
   preferences,
   auth,
+  providers,
   now,
   onSetPreferences
 }: {
   preferences: AppPreferences
   auth: AuthProbeReport | null
+  /** Ticket 76: the section's provider order (configured-first) — shared
+   * with the sign-in list so both lists never disagree. */
+  providers: ProviderAuthStatus[]
   now: number
   onSetPreferences: (patch: Partial<AppPreferences>) => void
 }): JSX.Element {
   const [picker, setPicker] = useState<PickerStep>({ step: 'closed' })
   const [highlight, setHighlight] = useState(0)
 
-  const providers = auth?.providers ?? []
   const models = picker.step === 'model' && auth !== null ? modelsForProvider(auth.models, picker.providerId) : []
   const current = preferences.defaultModel
   const currentName = current

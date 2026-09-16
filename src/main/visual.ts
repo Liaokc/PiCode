@@ -826,6 +826,11 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       })
       emit({
         type: 'models_available',
+        // Ticket 76: the payload keeps registry order with unconfigured
+        // providers mixed in; the renderer joins the fake-settings auth
+        // report and sorts configured-first, alphabetical within each group
+        // (asserted below — pi16-model-menu-providers rebuilt, bella no
+        // longer sinking).
         providers: [
           {
             providerId: 'bella',
@@ -837,9 +842,24 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
             ]
           },
           {
+            providerId: 'github-copilot',
+            name: 'GitHub Copilot',
+            models: [{ providerId: 'github-copilot', modelId: 'gpt-4.1', name: 'GPT-4.1' }]
+          },
+          {
+            providerId: 'google',
+            name: 'Google',
+            models: [{ providerId: 'google', modelId: 'gemini-3-pro', name: 'Gemini 3 Pro' }]
+          },
+          {
             providerId: 'openai',
             name: 'OpenAI',
             models: [{ providerId: 'openai', modelId: 'gpt-5.1', name: 'GPT-5.1' }]
+          },
+          {
+            providerId: 'zai',
+            name: 'Z.ai',
+            models: [{ providerId: 'zai', modelId: 'glm-4.6', name: 'GLM-4.6' }]
           }
         ],
         current: { providerId: 'bella', modelId: 'GLM-5.3', name: 'GLM-5.3' }
@@ -886,6 +906,31 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       )
       await sleep(400)
       await captureMenu(win, '4b-model-menu', { providers: '.cmp-cascade-col .cmp-menu-row' })
+      // Ticket 76: the provider column sorted configured-first (Bella,
+      // Google, OpenAI — then unconfigured GitHub Copilot, Z.ai), the
+      // current provider located and check-marked on open, and the model
+      // column inside the group untouched (models_available order kept).
+      {
+        const cols = (await win.webContents.executeJavaScript(
+          `[...document.querySelectorAll('.cmp-popover .cmp-cascade-col')].map((col) => [...col.querySelectorAll('.cmp-menu-row')].map((n) => ({ title: n.querySelector('.cmp-menu-title')?.textContent ?? '', checked: n.querySelector('.cmp-menu-check') !== null, selected: n.classList.contains('cmp-menu-row-selected') })))`
+        )) as Array<Array<{ title: string; checked: boolean; selected: boolean }>>
+        const providerTitles = cols[0]?.map((row) => row.title) ?? []
+        const expectedProviders = ['Bella', 'Google', 'OpenAI', 'GitHub Copilot', 'Z.ai']
+        if (JSON.stringify(providerTitles) !== JSON.stringify(expectedProviders)) {
+          throw new Error(`visual 4b-model-menu: provider order wrong: ${JSON.stringify(providerTitles)}`)
+        }
+        const checked = cols[0]?.findIndex((row) => row.checked) ?? -1
+        const selected = cols[0]?.findIndex((row) => row.selected) ?? -1
+        if (checked !== 0 || selected !== 0) {
+          throw new Error(`visual 4b-model-menu: current provider not located/highlighted (checked=${checked}, selected=${selected})`)
+        }
+        const modelTitles = cols[1]?.map((row) => row.title) ?? []
+        const expectedModels = ['GLM-5.1', 'GLM-5.3', 'GLM-5.3-flash']
+        if (JSON.stringify(modelTitles) !== JSON.stringify(expectedModels)) {
+          throw new Error(`visual 4b-model-menu: model column reordered: ${JSON.stringify(modelTitles)}`)
+        }
+        console.log(`VISUAL probe 4b-model-menu: provider order ok (${providerTitles.join(', ')})`)
+      }
       // Close the cascade so the approval-pill shot shows the pill alone.
       await win.webContents.executeJavaScript(
         `(() => {
