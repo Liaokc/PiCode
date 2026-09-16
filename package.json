@@ -39,6 +39,7 @@
     "visual:mermaid": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_MERMAID=1 electron .",
     "visual:codecard": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_CODECARD=1 electron .",
     "visual:worked": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_WORKED=1 electron .",
+    "visual:filebar": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_FILEBAR=1 electron .",
     "visual:chronology": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_CHRONOLOGY=1 electron .",
     "visual:thinking": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_THINKING=1 electron .",
     "visual:cwd": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_CWD=1 electron .",

@@ -9,6 +9,8 @@
  *   → prompt → approval_required (gate) → approve+remember → tool_start
  *   → tool_update? → tool_end → agent_end
  *   → prompt → NO approval_required (remembered) → tool_end → agent_end
+ *   → prompt → edit round: approval_required → approve → tool_end WITH the
+ *   result diff text (ticket 78 additive projection) → agent_end
  *   → set_access_mode read-only → prompt → NO approval_required (auto-deny)
  *   → agent_end → set_access_mode standard → prompt → approval_required
  *   → deny-with-reason → agent_end (terminate)
@@ -84,6 +86,11 @@ let providersCache = []
 let currentModel = null
 let thinkingLevelsCache = []
 let currentThinkingLevel = null
+// Ticket 78: the edit round's diff-bearing tool_end (Round B re-asserts the
+// replayed projection) and the tool-name map for tool_end correlation (the
+// tool_end event names only its call id).
+let editDiffSeen = null
+const toolNames = new Map()
 const composerPush = { composer_state: false, models_available: false, slash_commands: false }
 // Ticket 77: the additive context-ring increments, reported at implementation
 // time — ModelRef.contextWindow? on the model catalog, message_end.usage? on
@@ -357,10 +364,65 @@ function onEvent(event) {
       else if (event.type === 'tool_end') {
         seen.tool_end++
         if (event.isError) fail('remembered bash round ended in error')
+        // Ticket 78 additive discipline: a non-edit tool result carries NO
+        // diff field — the projection increment stays edit-only, and old
+        // payloads (field absent) keep validating byte-for-byte.
+        if (event.diff !== undefined) fail('bash tool_end must not carry a diff field (additive discipline)')
       } else if (event.type === 'agent_end') {
         seen.agent_end++
         if (seen.tool_start < 2) fail('remember round never ran bash')
         console.log('SMOKE remember ok — bash ran without a second ask')
+        console.log('SMOKE diff projection: prompting an edit round (ticket 78)')
+        step = 'A agent_start 4d'
+        child.send({
+          type: 'prompt',
+          text: 'Use the edit tool to change alpha.txt: replace the text "mention me" with "mention me edited". Then report the result.'
+        })
+      }
+      return
+    }
+    case 'A agent_start 4d': {
+      if (event.type === 'agent_start') {
+        step = 'A edit tools 4d'
+        console.log('SMOKE agent_start (edit round — diff projection)')
+      }
+      return
+    }
+    case 'A edit tools 4d': {
+      // The SDK emits tool_execution_start BEFORE the gate hook runs, so the
+      // edit's tool_start arrives first; the pill gates the execution itself.
+      if (event.type === 'tool_start') {
+        seen.tool_start++
+        toolNames.set(event.toolCallId, event.toolName)
+        return
+      }
+      if (event.type === 'approval_required') {
+        if (event.toolName !== 'edit') fail(`the edit round should ask about edit, asked about ${event.toolName}`)
+        console.log('SMOKE approval_required ok for edit — approving')
+        child.send({ type: 'approve_tool', toolCallId: event.toolCallId, remember: false })
+        return
+      }
+      if (event.type === 'tool_end') {
+        seen.tool_end++
+        if (toolNames.get(event.toolCallId) !== 'edit') return
+        if (event.isError) fail('the smoke edit round ended in error')
+        // THE contract assertion (ticket 78): the edit tool_end carries the
+        // display diff text from the SDK result's details.diff — a real
+        // replacement has at least one + row and one − row.
+        if (typeof event.diff !== 'string' || event.diff === '') {
+          fail('edit tool_end must carry the result diff text (ticket 78 additive projection)')
+        }
+        if (!event.diff.includes('+') || !event.diff.includes('-')) {
+          fail(`edit diff text should contain +/- rows, got: ${JSON.stringify(event.diff.slice(0, 120))}`)
+        }
+        editDiffSeen = event.diff
+        console.log(`SMOKE edit tool_end diff ok (${event.diff.split('\n').length} diff lines)`)
+        return
+      }
+      if (event.type === 'agent_end') {
+        seen.agent_end++
+        if (editDiffSeen === null) fail('the edit round never produced a diff-bearing tool_end')
+        console.log('SMOKE diff projection ok — edit diff rode the live event')
         console.log('SMOKE read-only tier: switching access mode')
         step = 'A readonly mode'
         child.send({ type: 'set_access_mode', mode: 'read-only' })
@@ -595,13 +657,21 @@ function onEvent(event) {
       if (event.usage !== null) assertUsageShape(event.usage, 'history_loaded.usage')
       ring.historyUsage = event.usage ?? null
       console.log(`SMOKE ticket-77 history_loaded.usage ok (total ${ring.historyUsage?.total ?? 'null'})`)
+      // Ticket 78: the replay projection rides the same additive increment —
+      // the round's edit call comes back with the recorded details.diff as
+      // the item's diff text, isomorphic with the live event.
+      const editReplayed = event.items.find((i) => i.role === 'tool' && i.name === 'edit')
+      if (editReplayed === undefined) fail('resume replay must carry the round-A edit call (ticket 78)')
+      if (typeof editReplayed.diff !== 'string' || !editReplayed.diff.includes('+')) {
+        fail(`replayed edit item must carry the recorded diff text, got: ${JSON.stringify(editReplayed.diff).slice(0, 120)}`)
+      }
       firstEntryId = event.items[0].id
       // Navigate to the second item (an assistant entry): Pi moves the leaf
       // exactly onto non-user-message targets (user-message targets instead
       // move the leaf to the entry's parent for re-editing).
       navTargetId = event.items[1]?.id ?? null
       if (!navTargetId) fail('history should contain at least two items')
-      console.log(`SMOKE history_loaded ok (${event.items.length} items)`)
+      console.log(`SMOKE history_loaded ok (${event.items.length} items, edit diff replayed: ${editReplayed.diff.split('\n').length} lines)`)
       step = 'B renamed ack' // resume's session_tree may arrive meanwhile — ignored
       child.send({ type: 'set_session_label', name: SMOKE_LABEL })
       return

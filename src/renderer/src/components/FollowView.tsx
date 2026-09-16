@@ -3,6 +3,7 @@ import { replayEntry } from '../../../shared/chat-reducer'
 import { groupTurns } from '../../../shared/turn-collapse'
 import type { TranscriptItem } from '../../../shared/sessions/types'
 import TurnContainer from './TurnContainer'
+import TurnFileBar from './TurnFileBar'
 import AnswerBlock from './AnswerBlock'
 
 interface FollowViewProps {
@@ -92,6 +93,12 @@ export default function FollowView({ title, items, live, onStop, onOpen }: Follo
                 />
               )}
               {turn.answer !== null && <AnswerBlock turn={turn} />}
+              {turn.fileChanges.length > 0 && (
+                /* Ticket 78: the same bar projection as the chat view, counts
+                   only — a read-only follow has neither the turn-diff panel
+                   path nor a workspace to deep-link previews against. */
+                <TurnFileBar turnId={turn.id} changes={turn.fileChanges} />
+              )}
             </div>
           ))}
         </div>

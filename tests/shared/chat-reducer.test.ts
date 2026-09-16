@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chatReducer, initialChatState, type ChatState, type UserEntry } from '../../src/shared/chat-reducer'
+import { chatReducer, initialChatState, replayEntry, type ChatState, type UserEntry } from '../../src/shared/chat-reducer'
 import type { ChatAction } from '../../src/shared/chat-reducer'
 import type { HostToParent } from '../../src/shared/contract'
 import type { UsageTokens } from '../../src/shared/usage/types'
@@ -652,6 +652,63 @@ describe('chatReducer — tool calls', () => {
     expect(state.error).toEqual({ kind: 'host', message: 'Agent host exited unexpectedly (exit code 1).', cwd: '/tmp/proj' })
     expect(state.entries[0]).toMatchObject({ id: 'tc-1', state: 'error' })
     expect(state.agentRunning).toBe(false)
+  })
+})
+
+describe('chatReducer — tool result diff text (ticket 78, additive projection)', () => {
+  const EDIT_START: HostToParent = {
+    type: 'tool_start',
+    toolCallId: 'ed-1',
+    name: 'edit',
+    args: { path: 'src/a.ts', edits: [] }
+  }
+  const DIFF = '+ 13   "old": false,'
+
+  it('tool_end records the result diff text on the tool entry (live path)', () => {
+    const state = run(
+      initialChatState(),
+      EDIT_START,
+      { type: 'tool_end', toolCallId: 'ed-1', output: 'Successfully replaced 1 block(s) in src/a.ts.', isError: false, diff: DIFF }
+    )
+    expect(state.entries[0]).toMatchObject({ id: 'ed-1', state: 'done', diff: DIFF })
+  })
+
+  it('tool_end without a diff (old payload shape) keeps the entry diff-less — additive only', () => {
+    const state = run(initialChatState(), EDIT_START, {
+      type: 'tool_end',
+      toolCallId: 'ed-1',
+      output: 'Successfully replaced 1 block(s) in src/a.ts.',
+      isError: false
+    })
+    expect((state.entries[0] as { diff?: string }).diff).toBeUndefined()
+  })
+
+  it('replayEntry copies the structured item diff text (replay isomorphic with live)', () => {
+    const item: TranscriptItem = {
+      role: 'tool',
+      id: 'ed-1',
+      timestamp: 't',
+      name: 'edit',
+      args: { path: 'src/a.ts' },
+      output: 'ok',
+      isError: false,
+      diff: DIFF
+    }
+    const entry = replayEntry(item)
+    expect((entry as { diff?: string }).diff).toBe(DIFF)
+  })
+
+  it('replayEntry leaves the diff undefined when the item predates the projection', () => {
+    const item: TranscriptItem = {
+      role: 'tool',
+      id: 'ed-1',
+      timestamp: 't',
+      name: 'edit',
+      args: { path: 'src/a.ts' },
+      output: 'ok',
+      isError: false
+    }
+    expect((replayEntry(item) as { diff?: string }).diff).toBeUndefined()
   })
 })
 

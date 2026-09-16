@@ -41,6 +41,7 @@
  */
 
 import type { ApprovalEntry, ChatEntry, ThinkingPart, ToolEntry, UserEntry } from './chat-reducer'
+import { aggregateTurnFiles, type TurnFileChange } from './turn-files'
 
 /** Turn id for entries that arrive before any user message (defensive — the
  * live path always echoes the user message before run content). */
@@ -107,6 +108,12 @@ export interface TurnGroup {
    * card will convert into (zero jump). Empty when the turn ends on its
    * answer or produces no text at all. */
   afterAnswer: TurnWorkItem[]
+  /** The turn's aggregated file changes (ticket 78): every settled edit/write
+   * call in the TURN — fold body and after-answer segment alike — folded into
+   * per-file rows for the "N files changed +X −Y" bar. Empty when the turn
+   * changed no files (无更改回合不出条). Live turns grow it as tools settle.
+   * Pure projection of `work` + `answer` + `afterAnswer`'s tool entries. */
+  fileChanges: TurnFileChange[]
   /** The turn currently streaming: container renders expanded and ticking. */
   live: boolean
   /** A pending approval INSIDE the container body keeps it open (auto-open).
@@ -255,6 +262,10 @@ export function groupTurns(entries: ChatEntry[], agentRunning: boolean): TurnGro
 
   const groups = drafts.map((draft) => {
     const { work, answer, afterAnswer } = splitTurn(draft.raw)
+    // Ticket 78: the whole turn's tool entries in transcript order — the
+    // fold body's tools, then the after-answer segment's — feed the file
+    // change aggregation. splitTurn reorders nothing within each list.
+    const toolsInOrder = [...work, ...afterAnswer].flatMap((item) => (item.kind === 'tool' ? [item.entry] : []))
     return {
       id: draft.id,
       user: draft.user,
@@ -263,6 +274,7 @@ export function groupTurns(entries: ChatEntry[], agentRunning: boolean): TurnGro
       work,
       answer,
       afterAnswer,
+      fileChanges: aggregateTurnFiles(toolsInOrder),
       live: false,
       // Ticket 56: only a pill INSIDE the fold keeps it open. A pending pill
       // in the after-answer segment renders below the answer and must not

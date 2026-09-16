@@ -4564,6 +4564,192 @@ export function startSmokeIfEnabled(
     }
     log('turn_chronology_done')
 
+    // ---- ticket 78: the turn file bar — a settled structured replay
+    // (the ticket-53 precedent, no model call) seeds one session with a
+    // mixed turn (fold-internal edit + post-answer edit + read + write), a
+    // clean turn (read + text only) and a plain text turn. The bar renders
+    // collapsed on the mixed turn ONLY (无更改回合不出条), expands to per-file
+    // rows (+new for the write, ± from the replayed diff text), Review opens
+    // the side panel's turn-diff tab with the diff lines, and Open deep-links
+    // the existing Preview tab. No undo control exists anywhere (1.1). ----
+    log('turn_filebar_start')
+    {
+      const FB_DIFF_A = ['      ...', '  3   const a = 1;', '- 4   const b = 2;', '+ 4   const b = 20;', '  5   export { a, b }'].join('\n')
+      const FB_DIFF_B = '+ 9   const c = 3'
+      const FB_ANSWER = 'PICODE_FB_ANSWER: files updated, all checks pass'
+      const FB_CLEAN_ANSWER = 'PICODE_FB_CLEAN_ANSWER: nothing needed changing here'
+      // Real files so the Open deep link lands on readable previews.
+      const fbDir = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-filebar-'))
+      writeFileSync(path.join(fbDir, 'turnbar_alpha.ts'), 'const a = 1;\nconst b = 2;\nexport { a, b }\n')
+      try {
+        emitContractEvent({
+          type: 'session_created',
+          sessionId: 'smoke-turn-filebar',
+          cwd: fbDir,
+          model: 'claude-opus-4-5',
+          resumed: true
+        })
+        emitContractEvent({
+          type: 'history_loaded',
+          items: [
+            { role: 'user', id: 'fb-u1', text: 'Update the constants.', timestamp: 't1', skillName: null },
+            {
+              role: 'tool',
+              id: 'fb-t1',
+              timestamp: 't2',
+              name: 'edit',
+              args: { path: 'turnbar_alpha.ts' },
+              output: 'Successfully replaced 1 block(s) in turnbar_alpha.ts.',
+              isError: false,
+              diff: FB_DIFF_A
+            },
+            {
+              role: 'assistant',
+              id: 'fb-a1',
+              timestamp: 't3',
+              text: FB_ANSWER,
+              parts: [{ kind: 'text', text: FB_ANSWER }]
+            },
+            {
+              role: 'tool',
+              id: 'fb-t2',
+              timestamp: 't4',
+              name: 'edit',
+              args: { path: 'turnbar_alpha.ts' },
+              output: 'Successfully replaced 1 block(s) in turnbar_alpha.ts.',
+              isError: false,
+              diff: FB_DIFF_B
+            },
+            {
+              role: 'tool',
+              id: 'fb-t3',
+              timestamp: 't5',
+              name: 'read',
+              args: { path: 'turnbar_alpha.ts' },
+              output: 'const a = 1...',
+              isError: false
+            },
+            {
+              role: 'tool',
+              id: 'fb-t4',
+              timestamp: 't6',
+              name: 'write',
+              args: { path: 'turnbar_beta.md' },
+              output: 'Successfully wrote to turnbar_beta.md',
+              isError: false
+            },
+            { role: 'user', id: 'fb-u2', text: 'Now check the other file.', timestamp: 't7', skillName: null },
+            {
+              role: 'tool',
+              id: 'fb-t5',
+              timestamp: 't8',
+              name: 'read',
+              args: { path: 'turnbar_beta.md' },
+              output: '# beta',
+              isError: false
+            },
+            {
+              role: 'assistant',
+              id: 'fb-a2',
+              timestamp: 't9',
+              text: FB_CLEAN_ANSWER,
+              parts: [{ kind: 'text', text: FB_CLEAN_ANSWER }]
+            }
+          ]
+        })
+        await withWindow(getWindow, async (win) => {
+          const sig = `(() => ({
+            bars: document.querySelectorAll('.turn-filebar').length,
+            summaries: [...document.querySelectorAll('.turn-filebar-summary')].map((el) => el.textContent ?? ''),
+            adds: [...document.querySelectorAll('.turn-filebar-header .file-stat-add')].map((el) => el.textContent ?? ''),
+            dels: [...document.querySelectorAll('.turn-filebar-header .file-stat-del')].map((el) => el.textContent ?? ''),
+            expanded: document.querySelectorAll('.turn-filebar[data-expanded]').length,
+            fileRows: document.querySelectorAll('.turn-filebar-file').length,
+            fileNames: [...document.querySelectorAll('.turn-filebar-file-name')].map((el) => el.textContent ?? ''),
+            newStats: [...document.querySelectorAll('.turn-filebar-file .file-stat-new')].map((el) => el.textContent ?? ''),
+            reviewBtns: document.querySelectorAll('.turn-filebar-act').length,
+            openChips: document.querySelectorAll('.turn-filebar-open').length,
+            undoBtns: document.querySelectorAll('.turn-filebar [aria-label*="ndo"], .turn-filebar-undo').length
+          }))()`
+
+          // ① Collapsed bar on the mixed turn ONLY; the clean turn shows none.
+          const collapsed = (await waitForProbe(
+            win,
+            `${sig}.bars === 1 && ${sig}.expanded === 0 && ${sig}.fileRows === 0 &&
+             ${sig}.summaries.join() === '2 files changed' && ${sig}.adds.join() === '+2' && ${sig}.dels.join() === '−1' &&
+             ${sig}.undoBtns === 0 &&
+             document.body.textContent.includes('${FB_CLEAN_ANSWER}')`,
+            10_000
+          )) as boolean
+          if (!collapsed) {
+            const diag = (await win.webContents.executeJavaScript(sig).catch(() => 'unavailable')) as string
+            fail(`ticket-78 stage: the collapsed bar never rendered as 2 files changed +2 −1; DOM: ${diag}`)
+          }
+          log('turn_filebar_collapsed_ok')
+
+          // ② Expand: per-file rows — merged edit row (2 calls), the write
+          // as +new, Review + Open affordances, read nowhere.
+          await win.webContents.executeJavaScript(
+            `(() => { const el = document.querySelector('.turn-filebar-header'); if (el instanceof HTMLElement) el.click(); return true })()`
+          )
+          const expanded = (await waitForProbe(
+            win,
+            `${sig}.expanded === 1 && ${sig}.fileRows === 2 && ${sig}.reviewBtns === 2 && ${sig}.openChips === 2 &&
+             ${sig}.fileNames.join() === 'turnbar_alpha.ts,turnbar_beta.md' && ${sig}.newStats.join() === '+new'`,
+            10_000
+          )) as boolean
+          if (!expanded) {
+            const diag = (await win.webContents.executeJavaScript(sig).catch(() => 'unavailable')) as string
+            fail(`ticket-78 stage: the expanded bar never showed 2 file rows with Review/Open; DOM: ${diag}`)
+          }
+          log('turn_filebar_expanded_ok')
+
+          // ③ Review: the side panel opens a turn-diff tab rendering the
+          // turn's diff text in the diff renderer's language (NOT git).
+          await win.webContents.executeJavaScript(
+            `(() => { const el = document.querySelector('.turn-filebar-act'); if (el instanceof HTMLElement) el.click(); return true })()`
+          )
+          const reviewOpened = (await waitForProbe(
+            win,
+            `document.querySelectorAll('[data-panel-tab*="turn-diff"]').length === 1 &&
+             document.querySelectorAll('.panel-tab-body:not(.panel-tab-body-hidden) .turn-diff-view').length === 1 &&
+             document.querySelectorAll('.turn-diff-file').length === 2 &&
+             document.querySelectorAll('.turn-diff-file .diff-line.diff-add').length >= 2 &&
+             document.querySelectorAll('.turn-diff-file .diff-line.diff-del').length >= 1 &&
+             document.body.textContent.includes('New file — the session records no content for writes.')`,
+            10_000
+          )) as boolean
+          if (!reviewOpened) {
+            const diag = (await win.webContents.executeJavaScript(
+              `JSON.stringify({
+                tabs: [...document.querySelectorAll('[data-panel-tab]')].map((el) => el.getAttribute('data-panel-tab')),
+                bodies: document.querySelectorAll('.turn-diff-view').length,
+                files: document.querySelectorAll('.turn-diff-file').length
+              })`
+            ).catch(() => 'unavailable')) as string
+            fail(`ticket-78 stage: the turn-diff tab never opened with the turn's diffs; DOM: ${diag}`)
+          }
+          log('turn_filebar_review_tab_ok')
+
+          // ④ Open: the existing preview deep link — a file tab for the
+          // edited file opens alongside the turn-diff tab.
+          await win.webContents.executeJavaScript(
+            `(() => { const el = document.querySelector('.turn-filebar-file .turn-filebar-open'); if (el instanceof HTMLElement) el.click(); return true })()`
+          )
+          const openLinked = (await waitForProbe(
+            win,
+            `[...document.querySelectorAll('[data-panel-tab]')].some((el) => (el.getAttribute('data-panel-tab') ?? '').includes('turnbar_alpha.ts'))`,
+            10_000
+          )) as boolean
+          if (!openLinked) fail('ticket-78 stage: the Open chip never deep-linked the preview tab')
+          log('turn_filebar_open_deeplink_ok')
+        })
+      } finally {
+        rmSync(fbDir, { recursive: true, force: true })
+      }
+    }
+    log('turn_filebar_done')
+
     // ---- ticket 51: live-path fork — real entry ids + toast ack regime.
     // A brand-new session (never resumed) takes two real turns; forking the
     // settled answer must land (the anchor is now the REAL session entry id

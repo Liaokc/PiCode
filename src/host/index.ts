@@ -200,11 +200,20 @@ function wireSessionEvents(agentSession: AgentSession): void {
         break
       }
       case 'tool_execution_end': {
+        // Ticket 78 (additive projection): when the SDK result carries a
+        // string `details.diff` (the edit tool's display diff), it rides the
+        // tool_end event as `diff` — the turn file bar's raw material. Every
+        // other tool (and every older result shape) leaves the field absent,
+        // so pre-78 renderer payloads keep validating unchanged.
+        const result = event.result as { details?: unknown } | undefined
+        const details = isRecord(result?.details) ? result?.details : undefined
+        const diff = typeof details?.['diff'] === 'string' ? details['diff'] : undefined
         send({
           type: 'tool_end',
           toolCallId: event.toolCallId,
           output: toolResultText(event.result),
-          isError: event.isError === true
+          isError: event.isError === true,
+          ...(diff !== undefined ? { diff } : {})
         })
         break
       }

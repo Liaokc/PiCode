@@ -81,6 +81,10 @@ export interface ToolEntry {
   args: Record<string, unknown>
   state: ToolState
   output: string
+  /** The result's display diff text (ticket 78, additive): carried by edit
+   * tool_end events and structured replay items; undefined on every other
+   * tool and on pre-78 payloads. Raw material of the turn file bar. */
+  diff?: string
 }
 
 export type ApprovalState = 'pending' | 'approved' | 'denied'
@@ -219,7 +223,8 @@ export function replayEntry(item: TranscriptItem): ChatEntry {
         name: item.name,
         args: item.args,
         state: item.isError ? 'error' : 'done',
-        output: item.output
+        output: item.output,
+        ...(item.diff !== undefined ? { diff: item.diff } : {})
       }
   }
 }
@@ -539,13 +544,15 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         return updateToolEntry(ensureToolEntry(state, event.toolCallId, pill.toolName, pill.args), event.toolCallId, (entry) => ({
           ...entry,
           state: event.isError ? 'error' : 'done',
-          output: event.output
+          output: event.output,
+          ...(event.diff !== undefined ? { diff: event.diff } : {})
         }))
       }
       return updateToolEntry(state, event.toolCallId, (entry) => ({
         ...entry,
         state: event.isError ? 'error' : 'done',
-        output: event.output
+        output: event.output,
+        ...(event.diff !== undefined ? { diff: event.diff } : {})
       }))
     }
 

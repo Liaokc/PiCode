@@ -241,6 +241,12 @@ function assistantParts(content: unknown): TranscriptAssistantPart[] {
   return parts
 }
 
+/** The toolResult message's recorded `details` object, when it is a record. */
+function resultDetails(message: NonNullable<RawSessionEntry['message']>): Record<string, unknown> | null {
+  const details = message['details']
+  return typeof details === 'object' && details !== null && !Array.isArray(details) ? (details as Record<string, unknown>) : null
+}
+
 /**
  * Structured transcript items for resume replay and the Live Follow payload
  * (ticket 14): user/assistant text plus thinking parts, tool calls with their
@@ -248,19 +254,27 @@ function assistantParts(content: unknown): TranscriptAssistantPart[] {
  * live transcript. toolResult messages are folded into their toolCall's item
  * (last result wins); a call without any result degrades to the same settled
  * error card the live path produces. TUI bash-mode and other message roles
- * stay out of the replay, as do non-message entries.
+ * stay out of the replay, as do non-message entries. Ticket 78 (additive):
+ * a recorded `details.diff` string rides the item as `diff` — the turn file
+ * bar's raw material; absent on every other result shape.
  */
 export function extractTranscriptItems(entries: RawSessionEntry[]): TranscriptItem[] {
   // Pass 1: final result per tool call id (a retried call would append a
   // second result — the last one wins).
-  const results = new Map<string, { output: string; isError: boolean }>()
+  const results = new Map<string, { output: string; isError: boolean; diff?: string }>()
   for (const entry of entries) {
     if (entry.type !== 'message') continue
     const message = entry.message
     if (message?.role !== 'toolResult') continue
     const toolCallId = typeof message.toolCallId === 'string' ? message.toolCallId : ''
     if (toolCallId === '') continue
-    results.set(toolCallId, { output: toolResultText(message.content), isError: message.isError === true })
+    const details = resultDetails(message)
+    const diff = typeof details?.['diff'] === 'string' ? details['diff'] : undefined
+    results.set(toolCallId, {
+      output: toolResultText(message.content),
+      isError: message.isError === true,
+      ...(diff !== undefined ? { diff } : {})
+    })
   }
 
   const items: TranscriptItem[] = []
@@ -291,7 +305,8 @@ export function extractTranscriptItems(entries: RawSessionEntry[]): TranscriptIt
           name: call.name,
           args: call.args,
           output: result !== undefined ? result.output : UNFINISHED_TOOL_OUTPUT,
-          isError: result !== undefined ? result.isError : true
+          isError: result !== undefined ? result.isError : true,
+          ...(result?.diff !== undefined ? { diff: result.diff } : {})
         })
       }
     }
