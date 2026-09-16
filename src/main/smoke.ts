@@ -818,6 +818,12 @@ export function startSmokeIfEnabled(
         }
         await new Promise((r) => setTimeout(r, 300))
         await win.webContents.executeJavaScript(composerKeyJs('Escape'))
+        // The Escape's setMenu(null) must COMMIT before Enter lands: a
+        // back-to-back Enter reads the pre-commit closure where the menu is
+        // still open and flatMenuKey turns the keystroke into a row pick
+        // (row 0 = /compact → a real compaction, no pointer toast — the
+        // 2026-09-16 double failure). One commit gap between the two keys.
+        await new Promise((r) => setTimeout(r, 300))
         await win.webContents.executeJavaScript(composerKeyJs('Enter'))
         const toasted = await waitForProbe(win, toastProbe(needle), 5_000)
         if (!toasted) fail(`typing ${typed} never raised the pointer toast (${needle})`)
