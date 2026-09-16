@@ -1299,6 +1299,153 @@ kbd {
   color: var(--accent-orange);
 }
 
+/* ---- Ticket 77 上下文圆环 (Context Ring): the model chip's left-hand
+   occupancy ring (ZCode context ring, pi16-context-ring). A 15px SVG ring:
+   the light track is always there; the darker neutral arc carries the
+   usage fraction from 12 o'clock clockwise. The grey states (idle = no
+   usage, no-window = unknown window) render the track only — and grant NO
+   hover (the data popover needs a numerator AND a denominator; anything
+   else would be invented data). */
+.ctx-ring-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.ctx-ring {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  cursor: default;
+}
+
+.ctx-ring-track {
+  stroke: var(--bg-active);
+}
+
+.ctx-ring-arc {
+  stroke: var(--text-secondary);
+}
+
+/* The data popover (pi16-context-ring-hover): a card docked ABOVE the ring,
+   centered on it like the ZCode original — the header carries used/limit
+   and the percentage, the thin bar mirrors the arc in the accent blue, the
+   token quadruple lists IN/OUT/cacheRead/cacheWrite, and the divider hides
+   the cache hit rate row. It is deliberately NOT the Tooltip component
+   (CONTEXT.md: data reveals don't ride it). */
+.ctx-ring-pop {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translate(-50%, 4px);
+  z-index: 70;
+  width: 300px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 12px 36px rgba(30, 30, 25, 0.14);
+  padding: 12px 14px;
+  opacity: 0;
+  transition: opacity 130ms ease, transform 130ms ease;
+  pointer-events: none;
+  cursor: default;
+}
+
+.ctx-ring-pop-open {
+  opacity: 1;
+  transform: translate(-50%, 0);
+  pointer-events: auto;
+}
+
+.ctx-ring-pop-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ctx-ring-pop-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ctx-ring-pop-total {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.ctx-ring-pop-bar {
+  margin-top: 8px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-active);
+  overflow: hidden;
+}
+
+.ctx-ring-pop-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent-blue);
+}
+
+.ctx-ring-pop-rows {
+  margin: 10px 0 0;
+}
+
+.ctx-ring-pop-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 0;
+}
+
+.ctx-ring-pop-row dt {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.ctx-ring-pop-row dd {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.ctx-ring-pop-hit {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.ctx-ring-pop-hit-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.ctx-ring-pop-hit-value {
+  font-size: 12px;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ctx-ring-pop {
+    transition: none;
+  }
+}
+
 .cmp-muted {
   color: var(--text-primary);
   font-size: 13px;

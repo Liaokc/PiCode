@@ -85,6 +85,34 @@ let currentModel = null
 let thinkingLevelsCache = []
 let currentThinkingLevel = null
 const composerPush = { composer_state: false, models_available: false, slash_commands: false }
+// Ticket 77: the additive context-ring increments, reported at implementation
+// time — ModelRef.contextWindow? on the model catalog, message_end.usage? on
+// the live path, history_loaded.usage? on the replay path. Old payloads
+// missing the fields stay valid; the smoke pins the shapes and the presence
+// against the real SDK.
+const ring = { modelRefs: 0, withWindow: 0, messageEnds: 0, withUsage: 0, lastLiveUsage: null, historyUsage: undefined }
+function assertUsageShape(usage, where) {
+  if (typeof usage !== 'object' || usage === null) fail(`${where}: usage must be an object`)
+  for (const key of ['input', 'output', 'cacheRead', 'cacheWrite', 'total']) {
+    if (typeof usage[key] !== 'number' || !Number.isFinite(usage[key]) || usage[key] < 0) {
+      fail(`${where}: usage.${key} must be a non-negative finite number, got ${JSON.stringify(usage[key])}`)
+    }
+  }
+  const quad = usage.input + usage.output + usage.cacheRead + usage.cacheWrite
+  if (usage.total <= 0) fail(`${where}: usage.total must be positive (the validity rule drops empty records)`)
+  if (Math.abs(usage.total - quad) > Math.max(quad, usage.total) * 0.05) {
+    fail(`${where}: usage.total ${usage.total} diverges from the quadruple sum ${quad} beyond tolerance`)
+  }
+}
+function assertModelRefShape(ref, where) {
+  if (typeof ref !== 'object' || ref === null) fail(`${where}: model ref must be an object`)
+  // Purely additive: the field may stay ABSENT (legacy shape) — but when it
+  // rides along it must be a positive finite number.
+  if (ref.contextWindow === undefined) return
+  if (typeof ref.contextWindow !== 'number' || !Number.isFinite(ref.contextWindow) || ref.contextWindow <= 0) {
+    fail(`${where}: contextWindow must be a positive finite number, got ${JSON.stringify(ref.contextWindow)}`)
+  }
+}
 const seen = {
   agent_start: 0,
   text_delta: 0,
@@ -170,10 +198,32 @@ function onEvent(event) {
   if (event.type === 'models_available') {
     providersCache = event.providers ?? []
     currentModel = event.current
+    // Ticket 77报备: every catalog model ref — shape-validate contextWindow
+    // (absent stays legal) and count how many carry it.
+    for (const provider of providersCache) {
+      for (const ref of provider.models ?? []) {
+        assertModelRefShape(ref, 'models_available')
+        ring.modelRefs++
+        if (ref.contextWindow !== undefined) ring.withWindow++
+      }
+    }
+    if (event.current !== null) assertModelRefShape(event.current, 'models_available.current')
   }
   if (event.type === 'composer_state') {
     thinkingLevelsCache = event.availableLevels ?? []
     currentThinkingLevel = event.thinkingLevel
+    if (event.model !== null) assertModelRefShape(event.model, 'composer_state.model')
+  }
+  // Ticket 77报备: every live message_end — shape-validate the additive
+  // usage when it rides along, and remember the last one for the run-end
+  // presence assertion.
+  if (event.type === 'message_end') {
+    ring.messageEnds++
+    if (event.usage !== undefined) {
+      assertUsageShape(event.usage, 'message_end.usage')
+      ring.withUsage++
+      ring.lastLiveUsage = event.usage
+    }
   }
 
   switch (step) {
@@ -494,6 +544,19 @@ function onEvent(event) {
         fail(`branch_info should report ${JSON.stringify(expectedBranch)}, got ${JSON.stringify(event.branch)}`)
       }
       console.log(`SMOKE branch_info ok (branch=${JSON.stringify(event.branch)})`)
+      // Ticket 77报备 (context-ring increments): the runtime catalog must
+      // carry the additive contextWindow (the pi-ai Model always has one —
+      // the model-config default fills omitted values), and the real model
+      // calls above must have surfaced at least one valid message_end.usage.
+      if (ring.withWindow === 0) {
+        fail(`ticket-77: none of the ${ring.modelRefs} catalog model refs carried contextWindow — the host must read it from the pi-ai Model`)
+      }
+      if (ring.withUsage === 0) {
+        fail('ticket-77: no message_end ever carried usage — the live ring path is dead')
+      }
+      console.log(
+        `SMOKE ticket-77 additive increments ok — ${ring.withWindow}/${ring.modelRefs} model refs carry contextWindow, ${ring.withUsage}/${ring.messageEnds} message_ends carry usage (last total ${ring.lastLiveUsage?.total ?? '-'})`
+      )
       console.log(`SMOKE contract events ok: ${JSON.stringify(seen)}`)
       step = 'A shutdown'
       child.send({ type: 'shutdown' })
@@ -526,6 +589,12 @@ function onEvent(event) {
       if (!bashReplayed) {
         fail('resume replay must carry the round-A bash call with its final output (ticket 14)')
       }
+      // Ticket 77报备: the replay event carries the leaf path's ring usage —
+      // round A made real model calls, so it MUST be present here.
+      if (event.usage === undefined) fail('ticket-77: history_loaded must carry the additive usage after real model calls')
+      if (event.usage !== null) assertUsageShape(event.usage, 'history_loaded.usage')
+      ring.historyUsage = event.usage ?? null
+      console.log(`SMOKE ticket-77 history_loaded.usage ok (total ${ring.historyUsage?.total ?? 'null'})`)
       firstEntryId = event.items[0].id
       // Navigate to the second item (an assistant entry): Pi moves the leaf
       // exactly onto non-user-message targets (user-message targets instead
@@ -555,6 +624,9 @@ function onEvent(event) {
     }
     case 'B nav history': {
       if (event.type !== 'history_loaded') return
+      // Ticket 77: a replayed path without any valid usage must degrade the
+      // field to null (never a malformed record); shape-check when present.
+      if (event.usage !== undefined && event.usage !== null) assertUsageShape(event.usage, 'B nav history usage')
       console.log('SMOKE tree navigation: leaf path replayed')
       step = 'B nav tree'
       return
@@ -582,6 +654,7 @@ function onEvent(event) {
     case 'C history': {
       if (event.type !== 'history_loaded') return
       if (!Array.isArray(event.items) || event.items.length === 0) fail('forked history should not be empty')
+      if (event.usage !== undefined && event.usage !== null) assertUsageShape(event.usage, 'C history usage')
       console.log(`SMOKE fork history ok (${event.items.length} item(s))`)
       step = 'clean exit'
       child.send({ type: 'shutdown' })

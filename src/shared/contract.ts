@@ -17,6 +17,7 @@
  */
 import type { SessionDefaults } from './preferences.ts'
 import type { SessionTreePayload, TranscriptItem } from './sessions/types.ts'
+import type { UsageTokens } from './usage/types.ts'
 
 // ---- ticket 05: composer + approval gate shared vocabulary ----
 
@@ -53,6 +54,13 @@ export interface ModelRef {
   providerId: string
   modelId: string
   name: string
+  /** Ticket 77 (purely additive, reported into the host-contract smoke): the
+   * model's context window in tokens, read from the pi-ai Model by the host
+   * (the runtime fills the model config's optional field with a 128k
+   * default). ABSENT on legacy payloads and on the new-task projection —
+   * consumers must treat absence as "window unknown" (the context ring
+   * degrades to its grey no-window ring, never to an invented percentage). */
+  contextWindow?: number
 }
 
 /** Provider grouping for the cascading model menu (Pi available models). */
@@ -152,8 +160,12 @@ export type SessionScopedEvent =
     }
   /** Session creation failed in the host process (which then exits). */
   | { type: 'session_error'; message: string }
-  /** Replay of an existing session's transcript (resume / tree navigation). */
-  | { type: 'history_loaded'; items: TranscriptItem[] }
+  /** Replay of an existing session's transcript (resume / tree navigation).
+   * `usage` (ticket 77, additive): the leaf path's most recent VALID assistant
+   * usage under the TUI-calibrated rule (shared/context-ring.ts) — the
+   * resumed context ring's starting value. ABSENT on legacy payloads and
+   * null when the path records no valid usage; both mean "grey idle ring". */
+  | { type: 'history_loaded'; items: TranscriptItem[]; usage?: UsageTokens | null }
   /** The session's entry tree (resume, navigation, rename, request_tree). */
   | { type: 'session_tree'; tree: SessionTreePayload }
   /** The session's label was written back successfully. */
@@ -186,8 +198,12 @@ export type SessionScopedEvent =
   /** The currently open assistant message finished. `entryId` (ticket 51,
    * additive): the real session entry id of the finished message, read back
    * when the host persisted it — the fork anchor depends on it; absent →
-   * synthetic id fallback (aborted-turn shapes). */
-  | { type: 'message_end'; entryId?: string }
+   * synthetic id fallback (aborted-turn shapes). `usage` (ticket 77,
+   * additive): the finished message's usage under the TUI-calibrated
+   * validity rule (shared/context-ring.ts); ABSENT on legacy payloads and on
+   * aborted/errored/usage-less messages — the renderer keeps its previous
+   * value then. */
+  | { type: 'message_end'; entryId?: string; usage?: UsageTokens }
   /** The agent run finished; streaming state must settle. */
   | { type: 'agent_end' }
   /** The turn failed (model/API/preflight error); partial output is preserved. */

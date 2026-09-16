@@ -66,10 +66,20 @@ export interface SdkModelLike {
   provider: string
   id: string
   name: string
+  /** Ticket 77 (additive): the pi-ai Model's context window in tokens (the
+   * runtime model always carries one — the model config's optional field
+   * defaults to 128k). Copied onto the ModelRef when usable. */
+  contextWindow?: number
 }
 
 export function toModelRef(model: SdkModelLike): ModelRef {
-  return { providerId: model.provider, modelId: model.id, name: model.name }
+  const ref: ModelRef = { providerId: model.provider, modelId: model.id, name: model.name }
+  // Ticket 77: additive copy — absent (not null) on models without a usable
+  // window, so legacy payloads and consumers keep validating.
+  if (typeof model.contextWindow === 'number' && Number.isFinite(model.contextWindow) && model.contextWindow > 0) {
+    ref.contextWindow = model.contextWindow
+  }
+  return ref
 }
 
 /** Group available models by provider, first-seen provider order kept. */

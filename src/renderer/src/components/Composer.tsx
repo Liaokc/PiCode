@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type JSX, type KeyboardEvent } from 'react'
 import type { AccessMode, ImageAttachment, ModelRef, ProviderModels, SlashCommandItem, ThinkingLevel } from '../../../shared/contract'
 import type { ChatQueue } from '../../../shared/chat-reducer'
+import type { ContextRingInput } from '../../../shared/context-ring'
 import { composerDraft, type ComposerDraft, type ComposerDraftEntry, type ComposerDraftOwner } from '../../../shared/composer/drafts'
 import { applyMention, filterFiles } from '../../../shared/composer/mention'
 import { accessModeLabel } from '../../../shared/composer/access'
@@ -18,6 +19,7 @@ import {
 } from '../../../shared/composer/expand'
 import { AccessMenu, ModelMenu, ThinkingMenu, thinkingLabel } from './composer/menus'
 import { FileMenu, SlashMenu } from './composer/list-menus'
+import ContextRing from './ContextRing'
 import { ArrowUpIcon, CloseIcon, CubeIcon, FoldIcon, GaugeIcon, PlusIcon, ShieldCheckIcon, StopIcon, UnfoldIcon } from './icons'
 import QueuePanel from './QueuePanel'
 import Tooltip from './Tooltip'
@@ -78,6 +80,13 @@ interface ComposerProps extends ComposerApi {
   /** Ticket 74: which slot this composer's draft belongs to; required for
    * the bridge to carry an entry (an unowned bridge write is skipped). */
   draftOwner?: ComposerDraftOwner
+  /** Ticket 77 (context ring, CONTEXT.md: 上下文圆环): the ring's raw inputs.
+   * ONLY the ChatView surface passes it (回底钮先例: FollowView has no
+   * composer, the New Task empty state has no session to measure) — absent
+   * or null renders no ring at all, so the shared component stays
+   * surface-honest. The Seam-1 model (`shared/context-ring`) owns every
+   * grey/arc/hover decision. */
+  contextRing?: ContextRingInput | null
 }
 
 type MenuState = 'slash' | 'files' | 'access' | 'model' | 'thinking' | null
@@ -122,6 +131,7 @@ export default function Composer({
   initialDraft = null,
   draftBridgeRef,
   draftOwner,
+  contextRing,
   onSend,
   onSteer,
   onFollowUp,
@@ -612,6 +622,7 @@ export default function Composer({
           </button>
         </Tooltip>
         <span className="composer-spring" />
+        {contextRing != null && <ContextRing input={contextRing} />}
         <Tooltip label={density === 'minimal' ? modelTooltip : undefined}>
           <button
             type="button"

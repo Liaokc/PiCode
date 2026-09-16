@@ -6610,6 +6610,320 @@ export function startSmokeIfEnabled(
     }
     log('draft_preserve_done')
 
+    // ---- ticket 77: the context ring (CONTEXT.md: 上下文圆环) — the model
+    // chip's left-hand occupancy ring, ChatView-only. Four surfaces locked
+    // end to end: ① the resumed user-only session shows the GREY idle ring
+    // and grants no hover; ② the resumed session whose file carries a
+    // seeded assistant usage renders the READY ring from history_loaded
+    // (the replay path) with the exact quadruple + cache hit rate; ③ the
+    // live path: an injected composer_state (contextWindow 200000) + a
+    // streamed message_end (usage) advance the arc to exact fractions;
+    // ④ the out-of-scope confirmations — the New Task empty state and the
+    // Live Follow view render NO ring at all (only the chat surface mounts
+    // one). Seeded files, no extra model calls (the ticket-55 injection
+    // precedent, but through the REAL resume pipeline for ①/②). ----
+    log('ctx_ring_start')
+    const store77 = process.env['PICODE_SESSION_DIR']
+    if (!store77) fail('ticket-77 stage: PICODE_SESSION_DIR is not set')
+    const seedProject77 = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-seed77-'))
+    const QUIET_MARKER_77 = 'PICODE_77_RING quiet session'
+    const USAGE_MARKER_77 = 'PICODE_77_RING usage session'
+    const FOLLOW_MARKER_77 = 'PICODE_77_RING running elsewhere'
+    try {
+      // ① The quiet target: a fresh hand-written session (the visual-harness
+      // seed shape — proven openable by the resume chain) with ONE user turn
+      // and NOTHING else — no assistant usage anywhere in the path, so the
+      // ring must degrade to grey. NOTE: a copy of the host-written template
+      // would carry the template's REAL assistant usage — the grey leg needs
+      // a genuinely usage-less file. Its own fresh project (exists → normal
+      // row, resume spawn target; own group → above the ticket-39 Show-more
+      // cut); backdated = quiet resume.
+      const quietFile77 = path.join(store77, 'ring77-quiet.jsonl')
+      {
+        const stamp = new Date().toISOString()
+        writeFileSync(
+          quietFile77,
+          [
+            JSON.stringify({ type: 'session', version: 3, id: randomUUID(), timestamp: stamp, cwd: seedProject77 }),
+            JSON.stringify({
+              type: 'message',
+              id: `t77q-${randomUUID().slice(0, 8)}`,
+              parentId: null,
+              timestamp: stamp,
+              message: { role: 'user', content: [{ type: 'text', text: QUIET_MARKER_77 }] }
+            })
+          ].join('\n') + '\n'
+        )
+      }
+      backdateMtime(quietFile77)
+
+      // ② The usage target: the same fresh shape PLUS an assistant message
+      // whose usage is the whole ring story: 40k in + 2k out + 24k cacheRead
+      // = 66,000 of an (injected later) 200,000 window; hit rate
+      // 24,000/(40,000+24,000) = 37.5%. stopReason 'stop' — the validity
+      // rule lets it through.
+      const usageFile77 = path.join(store77, 'ring77-usage.jsonl')
+      {
+        const stamp = new Date().toISOString()
+        const userEntry = {
+          type: 'message',
+          id: `t77u-${randomUUID().slice(0, 8)}`,
+          parentId: null,
+          timestamp: stamp,
+          message: { role: 'user', content: [{ type: 'text', text: USAGE_MARKER_77 }] }
+        }
+        const assistantEntry = {
+          type: 'message',
+          id: `t77a-${randomUUID().slice(0, 8)}`,
+          parentId: userEntry.id,
+          timestamp: stamp,
+          message: {
+            role: 'assistant',
+            content: [{ type: 'text', text: 'Seeded ring usage: 66,000 tokens of context.' }],
+            stopReason: 'stop',
+            usage: { input: 40_000, output: 2_000, cacheRead: 24_000, cacheWrite: 0, totalTokens: 66_000 }
+          }
+        }
+        writeFileSync(
+          usageFile77,
+          [
+            JSON.stringify({ type: 'session', version: 3, id: randomUUID(), timestamp: stamp, cwd: seedProject77 }),
+            JSON.stringify(userEntry),
+            JSON.stringify(assistantEntry)
+          ].join('\n') + '\n'
+        )
+      }
+      backdateMtime(usageFile77)
+
+      // ④'s follow target: seeded FRESH — its mtime says a TUI is writing it
+      // right now, so the click takes the Live Follow branch (no composer,
+      // hence no ring — the structural out-of-scope confirmation).
+      const followFile77 = path.join(store77, 'ring77-follow.jsonl')
+      {
+        const stamp = new Date().toISOString()
+        writeFileSync(
+          followFile77,
+          [
+            JSON.stringify({ type: 'session', version: 3, id: randomUUID(), timestamp: stamp, cwd: seedProject77 }),
+            JSON.stringify({
+              type: 'message',
+              id: `t77f-${randomUUID().slice(0, 8)}`,
+              parentId: null,
+              timestamp: stamp,
+              message: { role: 'user', content: [{ type: 'text', text: FOLLOW_MARKER_77 }] }
+            })
+          ].join('\n') + '\n'
+        )
+      }
+
+      await withWindow(getWindow, async (win) => {
+        const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+        const sidebarPresent77 = `(document.querySelector('.sidebar') !== null)`
+        if (!((await js(sidebarPresent77)) as boolean)) {
+          await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', metaKey: true, bubbles: true })); true`)
+          await waitForProbe(win, sidebarPresent77, 5_000)
+        }
+        const quietRow77 = `[data-file="${quietFile77}"]`
+        const usageRow77 = `[data-file="${usageFile77}"]`
+        const followRow77 = `[data-file="${followFile77}"]`
+        for (const [row, label] of [
+          [quietRow77, 'quiet'],
+          [usageRow77, 'usage'],
+          [followRow77, 'follow']
+        ] as Array<[string, string]>) {
+          if (!(await waitForProbe(win, `document.querySelector('${row}') !== null`, 15_000))) {
+            fail(`ticket-77 stage: the ${label} row never reached the sidebar`)
+          }
+        }
+        const clickRow77 = async (row: string): Promise<void> => {
+          await js(`document.querySelector('${row}')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
+        }
+        const switchedTo77 = (row: string, marker: string): string =>
+          `document.querySelector('.empty-state') === null &&
+           [...document.querySelectorAll('.main-zone .msg-user')].some((n) => (n.textContent ?? '').includes(${JSON.stringify(marker)})) &&
+           (document.querySelector('${row}')?.classList.contains('sb-task-active') ?? false)`
+        const ringInDock77 = `.chat-dock .ctx-ring`
+        const hoverRing77 = async (): Promise<void> => {
+          await js(
+            `document.querySelector('${ringInDock77}')?.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); true`
+          )
+        }
+        const leaveRing77 = async (): Promise<void> => {
+          await js(
+            `document.querySelector('${ringInDock77}')?.dispatchEvent(new MouseEvent('mouseout', { bubbles: true })); true`
+          )
+        }
+
+        // ① The quiet resume: grey idle ring, NO arc, and hover opens
+        // NOTHING (无 usage 灰环无 hover).
+        const resumedQuiet77 = waitFor(
+          (e) => e.type === 'session_created' && e.sessionFile === quietFile77,
+          'ticket-77 quiet resume session_created'
+        )
+        await clickRow77(quietRow77)
+        await resumedQuiet77
+        if (!(await waitForProbe(win, switchedTo77(quietRow77, QUIET_MARKER_77), 15_000))) {
+          fail('ticket-77 stage: the quiet session never took over the main zone')
+        }
+        if (!(await waitForProbe(win, `document.querySelector('${ringInDock77}[data-ring-mode="idle"]') !== null`, 10_000))) {
+          const diag = (await js(
+            `JSON.stringify({
+              ring: document.querySelector('.ctx-ring') !== null,
+              mode: document.querySelector('.ctx-ring')?.dataset['ringMode'] ?? null,
+              wrap: document.querySelector('.ctx-ring-wrap')?.outerHTML?.slice(0, 240) ?? null,
+              chatDock: document.querySelector('.chat-dock') !== null,
+              emptyState: document.querySelector('.empty-state') !== null,
+              followBadge: document.querySelector('.follow-badge') !== null
+            })`
+          ).catch(() => 'unavailable')) as string
+          fail(`ticket-77 stage: the user-only resumed session never showed the grey idle ring; DOM: ${diag}`)
+        }
+        if (!((await js(`document.querySelector('${ringInDock77} .ctx-ring-arc') === null`)) as boolean)) {
+          fail('ticket-77 stage: the idle ring must render the track only, never an arc')
+        }
+        await hoverRing77()
+        await new Promise((r) => setTimeout(r, 600))
+        if (!((await js(`document.querySelector('.ctx-ring-pop') === null`)) as boolean)) {
+          fail('ticket-77 stage: the idle ring opened a hover popover — 无 usage 灰环无 hover is law')
+        }
+        log('ctx_ring_idle_ok')
+
+        // ② The usage resume (history_loaded.usage replay path): the READY
+        // ring with the seeded numbers — 66,000 used, 37.5% hit rate — and
+        // the exact quadruple in the popover. The percentage stays
+        // window-dependent (the resumed session's REAL model window), so
+        // only the numerator is pinned here; ③ pins the exact fraction.
+        const resumedUsage77 = waitFor(
+          (e) => e.type === 'session_created' && e.sessionFile === usageFile77,
+          'ticket-77 usage resume session_created'
+        )
+        await clickRow77(usageRow77)
+        await resumedUsage77
+        if (!(await waitForProbe(win, switchedTo77(usageRow77, USAGE_MARKER_77), 15_000))) {
+          fail('ticket-77 stage: the usage session never took over the main zone')
+        }
+        if (
+          !(await waitForProbe(
+            win,
+            `document.querySelector('${ringInDock77}[data-ring-mode="ready"]') !== null && Number(document.querySelector('${ringInDock77}')?.dataset['ringFraction'] ?? '0') > 0`,
+            10_000
+          ))
+        ) {
+          fail('ticket-77 stage: the seeded usage never rendered the ready ring from the replay path')
+        }
+        await hoverRing77()
+        if (!(await waitForProbe(win, `document.querySelector('.ctx-ring-pop-open') !== null`, 5_000))) {
+          fail('ticket-77 stage: the ready ring never opened the hover popover')
+        }
+        const popProbe77 = `(() => {
+          const total = document.querySelector('.ctx-ring-pop .ctx-ring-pop-total')?.textContent ?? ''
+          const rows = [...document.querySelectorAll('.ctx-ring-pop .ctx-ring-pop-row')].map((r) => r.textContent ?? '').join('|')
+          const hit = document.querySelector('.ctx-ring-pop .ctx-ring-pop-hit-value')?.textContent ?? ''
+          const barWidth = document.querySelector('.ctx-ring-pop .ctx-ring-pop-bar-fill')?.style.width ?? ''
+          return JSON.stringify({ total, rows, hit, barWidth })
+        })()`
+        const pop77 = JSON.parse((await js(popProbe77)) as string) as {
+          total: string
+          rows: string
+          hit: string
+          barWidth: string
+        }
+        if (!pop77.total.startsWith('66,000 / ')) fail(`ticket-77 stage: popover total must start '66,000 / ', got ${pop77.total}`)
+        if (pop77.rows !== 'IN40,000|OUT2,000|cacheRead24,000|cacheWrite0') {
+          fail(`ticket-77 stage: popover quadruple wrong, got ${pop77.rows}`)
+        }
+        if (pop77.hit !== '37.5%') fail(`ticket-77 stage: cache hit rate must be 37.5%, got ${pop77.hit}`)
+        if (pop77.barWidth === '' || pop77.barWidth === '0%') fail(`ticket-77 stage: the popover bar never filled, got ${pop77.barWidth}`)
+        await leaveRing77()
+        if (!(await waitForProbe(win, `document.querySelector('.ctx-ring-pop-open') === null`, 5_000))) {
+          fail('ticket-77 stage: the popover never closed after the mouse left the ring')
+        }
+        log('ctx_ring_resume_usage_ok')
+
+        // ③ The live path with EXACT numbers: inject the smoke model's
+        // window (200,000) through composer_state, then a streamed turn
+        // whose message_end carries a 100,000-token usage — the arc must
+        // read exactly 0.5 and the popover exactly '100,000 / 200,000
+        // (50%)' with all four quadruple members.
+        emitContractEvent({
+          type: 'composer_state',
+          model: { providerId: 'picode-smoke', modelId: 'ring-model', name: 'Ring Model', contextWindow: 200_000 },
+          thinkingLevel: null,
+          availableLevels: ['off', 'high'],
+          accessMode: 'standard'
+        })
+        emitContractEvent({ type: 'user_message', text: 'PICODE_77_RING live turn' })
+        emitContractEvent({ type: 'agent_start' })
+        emitContractEvent({ type: 'message_start' })
+        emitContractEvent({ type: 'text_delta', delta: 'Half the window.' })
+        emitContractEvent({
+          type: 'message_end',
+          usage: { input: 25_000, output: 5_000, cacheRead: 25_000, cacheWrite: 45_000, total: 100_000 }
+        })
+        emitContractEvent({ type: 'agent_end' })
+        if (!(await waitForProbe(win, `document.querySelector('${ringInDock77}[data-ring-fraction="0.5000"]') !== null`, 10_000))) {
+          const diag = (await js(
+            `JSON.stringify({ mode: document.querySelector('${ringInDock77}')?.dataset['ringMode'], fraction: document.querySelector('${ringInDock77}')?.dataset['ringFraction'] })`
+          ).catch(() => 'unavailable')) as string
+          fail(`ticket-77 stage: the live message_end usage never drove the arc to 0.5 (saw ${diag})`)
+        }
+        await hoverRing77()
+        if (!(await waitForProbe(win, `document.querySelector('.ctx-ring-pop-open') !== null`, 5_000))) {
+          fail('ticket-77 stage: the live ring never opened the hover popover')
+        }
+        const livePop77 = JSON.parse((await js(popProbe77)) as string) as { total: string; rows: string; hit: string; barWidth: string }
+        if (livePop77.total !== '100,000 / 200,000 (50%)') {
+          fail(`ticket-77 stage: live popover total must be '100,000 / 200,000 (50%)', got ${livePop77.total}`)
+        }
+        if (livePop77.rows !== 'IN25,000|OUT5,000|cacheRead25,000|cacheWrite45,000') {
+          fail(`ticket-77 stage: live popover quadruple wrong, got ${livePop77.rows}`)
+        }
+        if (livePop77.hit !== '50%') fail(`ticket-77 stage: live hit rate must be 50%, got ${livePop77.hit}`)
+        if (livePop77.barWidth !== '50%') fail(`ticket-77 stage: live bar width must be 50%, got ${livePop77.barWidth}`)
+        await leaveRing77()
+        log('ctx_ring_live_ok')
+
+        // ④a New Task 界外确认: the empty state's composer renders NO ring
+        // (the shared component gets no contextRing input there).
+        await js(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', code: 'KeyN', metaKey: true, bubbles: true })); true`)
+        if (!(await waitForProbe(win, `document.querySelector('.empty-state') !== null`, 5_000))) {
+          fail('ticket-77 stage: ⌘N never opened the new-task empty state')
+        }
+        if (!((await js(`document.querySelector('.empty-state .ctx-ring') === null && document.querySelector('.ctx-ring') === null`)) as boolean)) {
+          fail('ticket-77 stage: the New Task empty state must render no context ring (ChatView-only)')
+        }
+        log('ctx_ring_newtask_absent_ok')
+
+        // ④b Follow 界外确认: the live-elsewhere row opens the read-only
+        // follow view — no composer, hence no ring anywhere.
+        await clickRow77(followRow77)
+        if (
+          !(await waitForProbe(
+            win,
+            `document.querySelector('.empty-state') === null && document.querySelector('.follow-badge') !== null && document.querySelector('.ctx-ring') === null`,
+            10_000
+          ))
+        ) {
+          fail('ticket-77 stage: the follow view must render no context ring (ChatView-only)')
+        }
+        // Point back at the focused (usage) row to exit Follow.
+        await clickRow77(usageRow77)
+        if (
+          !(await waitForProbe(
+            win,
+            `document.querySelector('.follow-badge') === null && document.querySelector('${ringInDock77}[data-ring-mode="ready"]') !== null`,
+            10_000
+          ))
+        ) {
+          fail('ticket-77 stage: clicking the focused row never exited Follow back to the ring session')
+        }
+        log('ctx_ring_follow_absent_ok')
+      })
+    } finally {
+      rmSync(seedProject77, { recursive: true, force: true })
+    }
+    log('ctx_ring_done')
+
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
     const livePids = supervisor.hostPids
     if (livePids.length < 2) fail(`expected at least 2 live hosts before quit, saw ${livePids.length}`)

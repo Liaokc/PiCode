@@ -365,6 +365,10 @@ export default function ChatView({
           initialDraft={initialDraft}
           draftBridgeRef={draftBridgeRef}
           draftOwner={chat.session ? { kind: 'session', sessionId: chat.session.sessionId } : undefined}
+          /* Ticket 77 (context ring): the ChatView-only ring input — the most
+             recent assistant usage (reducer-pushed) over the current model's
+             context window (ModelRef.contextWindow, absent → null). */
+          contextRing={{ usage: chat.lastUsage, contextWindow: chat.model?.contextWindow ?? null }}
           {...pinnedComposerApi}
         />
       </div>
