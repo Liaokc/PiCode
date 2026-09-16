@@ -7,7 +7,8 @@ import {
   resolveNewTaskThinkingLevels,
   type NewTaskModelChoice
 } from '../../../shared/new-task-models'
-import { type ModelRef, type ProviderModels, type ThinkingLevel } from '../../../shared/contract'
+import { type AccessMode, type ModelRef, type ProviderModels, type ThinkingLevel } from '../../../shared/contract'
+import { DEFAULT_ACCESS_MODE } from '../../../shared/composer/access'
 import { projectCommandMenu, type NewTaskCommandCatalog } from '../../../shared/new-task-commands'
 import { projectLabel } from '../../../shared/sessions/group'
 import { initialChatState } from '../../../shared/chat-reducer'
@@ -105,6 +106,12 @@ interface EmptyStateProps {
  * auth-probe catalog, the thinking menu offers all seven Pi levels, and the
  * chips show the chained default (preference → Pi fallback, tagged). Picks
  * made here override the chain and ride `create_session`'s defaults.
+ *
+ * Ticket 80: the access chip joined the pick chain — a tier picked in the
+ * menu is local state (the api's sendFocused handler would silently drop
+ * it: the New Task empty state has no host), the chip reflects it at once
+ * (untouched = the gate's own fallback, tagged "default"), and the pick
+ * rides `create_session`'s defaults. Never persisted across restarts.
  */
 export default function EmptyState({
   creating,
@@ -135,8 +142,16 @@ export default function EmptyState({
   // Ticket 41: model/thinking picks made in the empty state. null = the chip
   // still follows the chained default; an explicit pick overrides it and
   // rides create_session's defaults (the pending-chain precedent, ticket 17).
+  // Ticket 80: the access tier picked in the empty state — the same local
+  // pick chain as model/thinking (the menu's onPick used to pass straight
+  // through to the session's sendFocused, which drops it with no host in
+  // the New Task empty state). null = the chip shows the gate's own
+  // DEFAULT_ACCESS_MODE, tagged "default"; the pick rides create_session's
+  // defaults. Local state only — never persisted across restarts (same
+  // lifecycle as the model/thinking picks).
   const [modelPick, setModelPick] = useState<{ providerId: string; modelId: string } | null>(null)
   const [thinkingPick, setThinkingPick] = useState<ThinkingLevel | null>(null)
+  const [accessPick, setAccessPick] = useState<AccessMode | null>(null)
 
   /** The displayed model: the explicit pick, else the chained default. The
    * thinking menu (and the chip's level) follow IT — the probe catalog
@@ -166,6 +181,11 @@ export default function EmptyState({
     availableLevels: [...shownLevels],
     modelIsDefault: modelPick === null && modelIsDefault && model !== null,
     thinkingIsDefault: thinkingPick === null && thinkingIsDefault,
+    // Ticket 80: no pick = the gate's own fallback tier (tagged "default");
+    // an explicit pick — including Standard — drops the tag and rides the
+    // create defaults.
+    accessMode: accessPick ?? DEFAULT_ACCESS_MODE,
+    accessIsDefault: accessPick === null,
     modelMenuHint,
     // Ticket 52: the `/` menu lists the REAL prompt templates + skills for
     // the selected directory (no session-domain built-ins — the first
@@ -353,8 +373,12 @@ export default function EmptyState({
           {...composerApi}
           onSetModel={(providerId, modelId) => setModelPick({ providerId, modelId })}
           onSetThinkingLevel={(level) => setThinkingPick(level)}
+          // Ticket 80: the access pick is LOCAL here — overriding the api's
+          // sendFocused handler (which silently drops with no host in the
+          // New Task empty state, ticket-41 pick-chain precedent).
+          onSetAccessMode={(mode) => setAccessPick(mode)}
           onSend={(text, images) =>
-            onStart(selected, text, images, { model: modelPick, thinkingLevel: thinkingPick })
+            onStart(selected, text, images, { model: modelPick, thinkingLevel: thinkingPick, accessMode: accessPick })
           }
         />
       </div>

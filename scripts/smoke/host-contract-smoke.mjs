@@ -32,6 +32,13 @@
  *   session_created → list_files → file_list (cap cut zzz/late.txt,
  *   FILE_LIST_TRUNCATED at the tail) → shutdown → exit 0
  *
+ *   Round E (ticket 80报备: the additive SessionDefaults.accessMode on the
+ *   spawn sentinel) — two fresh forks, no model calls:
+ *   legacy-shape sentinel (no accessMode) → composer_state.accessMode stays
+ *   the gate's own 'standard' (old payloads validate, fallback intact);
+ *   sentinel with accessMode:'read-only' → composer_state.accessMode is
+ *   'read-only' with no set_access_mode command ever sent.
+ *
  * Usage: npm run build && node scripts/smoke/host-contract-smoke.mjs
  * Expects working model auth in ~/.pi/agent (same as the pi TUI). Session
  * files land in an isolated throwaway store (PICODE_SESSION_DIR, ticket 13)
@@ -231,8 +238,27 @@ async function onHostExit(exited, code) {
   }
   if (step === 'D shutdown') {
     if (code !== 0) fail(`round D exit should be clean 0, got ${code}`)
-    console.log('SMOKE round D shutdown ok')
-    await finishClean(code)
+    // Ticket 80报备: round E — the additive SessionDefaults.accessMode rides
+    // the spawn sentinel. First a LEGACY-shape sentinel (ticket-11 fields
+    // only, no accessMode) — it must validate as-is and leave the gate at
+    // its own 'standard' fallback.
+    console.log('SMOKE round D shutdown ok — starting round E (legacy sentinel, no accessMode)')
+    step = 'E composer push'
+    bumpTimeout()
+    child = forkHost(
+      [cwd, 'picode:defaults=' + JSON.stringify({ providerId: 'no-such-provider', modelId: 'no-such-model', thinkingLevel: 'minimal' })],
+      onEvent
+    )
+    return
+  }
+  // Then the ticket-80 increment itself: an accessMode-only sentinel must
+  // boot the gate straight into that tier.
+  if (step === 'E shutdown') {
+    if (code !== 0) fail(`round E exit should be clean 0, got ${code}`)
+    console.log('SMOKE round E shutdown ok — starting round E2 (sentinel with accessMode: read-only)')
+    step = 'E2 composer push'
+    bumpTimeout()
+    child = forkHost([cwd, 'picode:defaults=' + JSON.stringify({ accessMode: 'read-only' })], onEvent)
     return
   }
   if (step === 'clean exit') {
@@ -254,7 +280,7 @@ async function finishClean(code) {
   // — the pure builder turns the jsonl the SDK actually wrote into
   // per-call payloads (entry = one model call, usage columns per ADR-0002).
   await verifySessionTraceContract()
-  console.log('SMOKE PASS host contract smoke complete (chat loop + tool round + resume/rename/tree/fork + candidate states)')
+  console.log('SMOKE PASS host contract smoke complete (chat loop + tool round + resume/rename/tree/fork + candidate states + ticket-80 access sentinel)')
   process.exit(0)
 }
 
@@ -839,6 +865,30 @@ function onEvent(event) {
       if (files.length !== 1501) fail(`ticket-71: expected 1500 walk entries + marker, got ${files.length}`)
       console.log('SMOKE ticket-71 non-repo walk+cap ok (cap cut zzz, marker at tail, honest degradation)')
       step = 'D shutdown'
+      child.send({ type: 'shutdown' })
+      return
+    }
+
+    // ---------- Round E (ticket 80): legacy sentinel — accessMode absent ----------
+    case 'E composer push': {
+      if (event.type !== 'composer_state') return
+      if (event.accessMode !== 'standard') {
+        fail(`ticket-80 legacy payload: the gate should stay at its 'standard' fallback, got ${event.accessMode}`)
+      }
+      console.log('SMOKE ticket-80 legacy sentinel ok — old payload validates, gate fallback intact (standard)')
+      step = 'E shutdown'
+      child.send({ type: 'shutdown' })
+      return
+    }
+
+    // ---------- Round E2 (ticket 80): sentinel with accessMode ----------
+    case 'E2 composer push': {
+      if (event.type !== 'composer_state') return
+      if (event.accessMode !== 'read-only') {
+        fail(`ticket-80: the accessMode sentinel should boot the gate into 'read-only', got ${event.accessMode}`)
+      }
+      console.log('SMOKE ticket-80 accessMode sentinel ok — the created session runs Read Only with no set_access_mode sent')
+      step = 'clean exit'
       child.send({ type: 'shutdown' })
       return
     }

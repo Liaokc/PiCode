@@ -409,7 +409,13 @@ async function createSession(): Promise<void> {
     // Seeds apply to the INITIAL creation only — in-host replacements (fork)
     // re-run this factory and must inherit the branched session's model.
     const seed = pendingSeed ? newSessionSeedOptions(services) : {}
+    // Ticket 80: the access tier picked in the new-task empty state rides the
+    // same defaults — PiCode's own approval gate starts there (the tiers gate
+    // PiCode's tool approvals; the SDK has no access-mode session option).
+    // Same rule as the model/thinking seeds: initial creation only.
+    const accessSeed = pendingSeed ? newSessionAccessMode() : null
     pendingSeed = false
+    if (accessSeed !== null) gate.setMode(accessSeed)
     const result = await sdk.createAgentSessionFromServices({
       services,
       sessionManager: opts.sessionManager,
@@ -425,6 +431,18 @@ async function createSession(): Promise<void> {
   })
   wireSessionEvents(runtime.session)
   announceCurrentSession(Boolean(resumeFile))
+}
+
+/**
+ * Ticket 80: the access tier picked in the new-task empty state rides the
+ * defaults sentinel — the created session's approval gate starts there.
+ * Same rule as the model/thinking seeds: fresh sessions only, resumes never
+ * receive defaults. null = no pick (the gate keeps its own
+ * DEFAULT_ACCESS_MODE).
+ */
+function newSessionAccessMode(): AccessMode | null {
+  if (resumeFile || newSessionDefaults === null) return null
+  return newSessionDefaults.accessMode ?? null
 }
 
 /**

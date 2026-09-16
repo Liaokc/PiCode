@@ -213,6 +213,26 @@ const composerChipPressJs = (ariaPrefix: string): string =>
 const composerChipLabelJs = (ariaPrefix: string): string =>
   `document.querySelector('.cmp-chip[aria-label^=${JSON.stringify(ariaPrefix)}]')?.getAttribute('aria-label') ?? ''`
 
+/** Click the open menu's row whose .cmp-menu-title equals the given text
+ * (the flat menus — access/thinking — render one row per entry). */
+const pickAccessRowJs = (title: string): string => `(() => {
+  const rows = [...document.querySelectorAll('.cmp-popover .cmp-menu-list .cmp-menu-row')]
+  const row = rows.find((r) => (r.querySelector('.cmp-menu-title')?.textContent ?? '') === ${JSON.stringify(title)})
+  if (!(row instanceof HTMLElement)) return false
+  row.click()
+  return true
+})()`
+
+/** Ticket 80 probe: the access chip shows exactly this tier, with the
+ * "default" tag present/absent. Self-contained (no ?? composition — the
+ * label helper's `?? ''` cannot mix with && unparenthesized). */
+const accessChipIsJs = (label: string, tagged: boolean): string => `(() => {
+  const chip = document.querySelector('.cmp-chip[aria-label^="Access mode:"]')
+  if (!(chip instanceof HTMLElement)) return false
+  const hasTag = chip.querySelector('.cmp-chip-default') !== null
+  return chip.getAttribute('aria-label') === ${JSON.stringify(label)} && hasTag === ${tagged}
+})()`
+
 export function smokeEnabled(): boolean {
   return process.env['PICODE_SMOKE'] === '1'
 }
@@ -506,6 +526,45 @@ export function startSmokeIfEnabled(
       if (thinkingLabel !== `Thinking: ${firstLevel}`) fail('the empty-state thinking pick never reached the chip')
       log('empty_state_thinking_pick_ok', `level=${firstLevel}`)
 
+      // ④b (ticket 80): the access chip joined the empty-state pick chain.
+      // Untouched, it shows the gate's own fallback tier tagged "default";
+      // picking Read Only reflects on the chip AT ONCE (the local pick —
+      // the old passthrough dropped the command silently in the empty
+      // state) and rides create_session's defaults.
+      const accessPrefix = 'Access mode:'
+      let accessLabel = ''
+      for (let waited = 0; waited < 5_000; waited += 100) {
+        accessLabel = (await win.webContents.executeJavaScript(composerChipLabelJs(accessPrefix)).catch(() => '')) as string
+        if (accessLabel.startsWith(accessPrefix)) break
+        await new Promise((r) => setTimeout(r, 100))
+      }
+      if (accessLabel !== 'Access mode: Standard') {
+        fail(`the empty-state access chip should show the gate's Standard fallback, got ${JSON.stringify(accessLabel)}`)
+      }
+      const accessTagged = (await win.webContents.executeJavaScript(
+        `document.querySelector('.cmp-chip[aria-label^="${accessPrefix}"] .cmp-chip-default')?.textContent ?? ''`
+      ).catch(() => '')) as string
+      if (accessTagged !== 'default') fail('the untouched access chip does not carry the default tag')
+      log('empty_state_access_default_ok', accessLabel)
+      if (!(await win.webContents.executeJavaScript(composerChipClickJs(accessPrefix)).catch(() => false))) {
+        fail('the access chip never opened the access menu in the empty state')
+      }
+      if (!(await win.webContents.executeJavaScript(pickAccessRowJs('Read Only')).catch(() => false))) {
+        fail('the empty-state access menu never offered Read Only')
+      }
+      let accessAfter = ''
+      for (let waited = 0; waited < 5_000; waited += 100) {
+        accessAfter = (await win.webContents.executeJavaScript(composerChipLabelJs(accessPrefix)).catch(() => '')) as string
+        if (accessAfter === 'Access mode: Read Only') break
+        await new Promise((r) => setTimeout(r, 100))
+      }
+      if (accessAfter !== 'Access mode: Read Only') fail(`the access pick never reached the chip (got ${JSON.stringify(accessAfter)})`)
+      const accessTagGone = (await win.webContents.executeJavaScript(
+        `document.querySelector('.cmp-chip[aria-label^="${accessPrefix}"] .cmp-chip-default')?.textContent ?? ''`
+      ).catch(() => '')) as string
+      if (accessTagGone !== '') fail('the default tag survived an explicit access pick')
+      log('empty_state_access_pick_ok', 'tier=read-only')
+
       // ⑤ Send from the empty state: the session is created from HERE, with
       // the picks riding the defaults and the prompt riding the pending
       // chain. The smoke's pick-directory short-circuit answers the folder
@@ -548,6 +607,31 @@ export function startSmokeIfEnabled(
       'empty_state_thinking_rides_ok',
       `thinking=${String(composer.thinkingLevel)} levels=${composer.availableLevels.join(',')}`
     )
+    // Ticket 80: the access pick rides create_session's defaults — the
+    // created session's gate opens on the picked tier with NO
+    // set_access_mode command ever sent.
+    if (composer.accessMode !== 'read-only') {
+      fail(`the empty-state access pick did not ride into the session (got ${String(composer.accessMode)})`)
+    }
+    log('empty_state_access_rides_ok', 'tier=read-only')
+    // The session view's own chip projects the picked tier (composer_state →
+    // chat state → the same chip the in-session menus read).
+    const inSessionAccess = await waitForProbe(
+      win,
+      `document.querySelector('.cmp-chip[aria-label^="Access mode:"]')?.getAttribute('aria-label') === 'Access mode: Read Only'`,
+      5_000
+    )
+    if (!inSessionAccess) fail('the created session view never showed the picked tier on its access chip')
+    log('empty_state_access_session_chip_ok', 'tier=read-only')
+    // Restored to standard right after so every later stage runs on the
+    // same baseline as before.
+    supervisor.handleParentCommand({ type: 'set_access_mode', mode: 'standard' })
+    const restored = (await waitFor((e) => e.type === 'access_mode_changed', 'access_mode_changed (smoke restore)')) as Extract<
+      Scoped,
+      { type: 'access_mode_changed' }
+    >
+    if (restored.mode !== 'standard') fail(`the smoke access restore failed (got ${restored.mode})`)
+    log('empty_state_access_restore_ok', 'tier=standard')
 
     // Round 1: the pending prompt starts the run; abort mid-flight.
     await agentStarted
@@ -6730,6 +6814,22 @@ export function startSmokeIfEnabled(
         }
         log('draft_preserve_newtask_send_clear_ok')
 
+        // Ticket 80 (cross-seam borrow): the New Task empty state is on
+        // screen — pick Read Only on the access chip. The pick is
+        // component-local state, so the restart proxy below must DROP it:
+        // the boot empty state comes back with the gate's fallback tier
+        // tagged "default" (never persisted — the model/thinking lifecycle).
+        if (!(await js(composerChipClickJs('Access mode:')).catch(() => false))) {
+          fail('ticket-80 stage: the access chip never opened the access menu before the restart proxy')
+        }
+        if (!(await js(pickAccessRowJs('Read Only')).catch(() => false))) {
+          fail('ticket-80 stage: the access menu never offered Read Only before the restart proxy')
+        }
+        if (!(await waitForProbe(win, accessChipIsJs('Access mode: Read Only', false), 5_000))) {
+          fail('ticket-80 stage: the access pick never landed on the chip before the restart proxy')
+        }
+        log('access_pick_before_restart_ok', 'tier=read-only')
+
         // ⑧ Memory-level: a renderer reload (the restart proxy) loses every
         // draft — the boot empty state and a freshly resumed A both start
         // resting. The chatSubscribed marker is flipped FALSE first: it was
@@ -6748,6 +6848,15 @@ export function startSmokeIfEnabled(
         if (!(await waitForProbe(win, `document.querySelector('.empty-state') !== null && ${emptyValue74} === ''`, 15_000))) {
           fail('ticket-74 stage: after the restart proxy the boot empty state composer is not resting')
         }
+        // Ticket 80 — probed NOW, while the boot empty state is still on
+        // screen (before the row click switches away): the pre-restart
+        // access pick is gone — the fresh empty state shows the gate's own
+        // fallback tier, tagged "default" (component-local state never
+        // survives the restart proxy — the model/thinking pick lifecycle).
+        if (!(await waitForProbe(win, accessChipIsJs('Access mode: Standard', true), 10_000))) {
+          fail('ticket-80 stage: the access pick survived the restart proxy (or the fallback lost its default tag)')
+        }
+        log('access_pick_restart_reset_ok')
         if (!(await waitForProbe(win, `document.querySelector('${rowA74}') !== null`, 15_000))) {
           fail('ticket-74 stage: session A row never returned after the restart proxy')
         }

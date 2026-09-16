@@ -37,6 +37,11 @@ export interface ComposerChat {
    * slices never set these: every contract-pushed value is the session's own. */
   modelIsDefault?: boolean
   thinkingIsDefault?: boolean
+  /** Ticket 80 (new-task empty state): the displayed access tier is the
+   * gate's own fallback (no pick made) — the chip tags it "default". The
+   * same rule as modelIsDefault/thinkingIsDefault; in-session slices never
+   * set it (the session's tier is its own state). */
+  accessIsDefault?: boolean
   /** Styled hint for the model menu when the catalog is empty (ticket 41:
    * the blank dropdown is replaced everywhere a menu finds no providers). */
   modelMenuHint?: string | null
@@ -626,6 +631,7 @@ export default function Composer({
           >
             <ShieldCheckIcon />
             {density === 'full' && <span>{accessModeLabel(chat.accessMode)}</span>}
+            {density === 'full' && chat.accessIsDefault && <span className="cmp-chip-default">default</span>}
             {density !== 'minimal' && <span className="cmp-caret">⌄</span>}
           </button>
         </Tooltip>
