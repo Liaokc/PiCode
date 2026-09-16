@@ -17,13 +17,20 @@
  *   → prompt → steer → queue_update×2 → follow-up → queue_update
  *   → clear_queue → queue_update → agent_end
  *   → set_thinking_level → thinking_level_changed; set_model → model_changed
- *   → list_files → file_list → get_branch → branch_info → shutdown → exit 0
+ *   → list_files → file_list (ticket 71 repo state: git ls-files candidates,
+ *   pi16-at-no-match hit, gitignored excluded, zero-write proven)
+ *   → get_branch → branch_info → shutdown → exit 0
  *
  *   Round B (ticket 04: resume / rename / tree / fork against the SAME file)
  *   resume → session_created(resumed) → history_loaded → session_tree
  *   → set_session_label → session_renamed → request_tree → session_tree
  *   → navigate_tree → history_loaded + session_tree(leaf moved)
  *   → fork_session → session_created(new file) → history_loaded → exit 0
+ *
+ *   Round D (ticket 71: the NON-repo candidate state) — a fresh cwd that is
+ *   never git-initialized, so the host falls back to the capped walk:
+ *   session_created → list_files → file_list (cap cut zzz/late.txt,
+ *   FILE_LIST_TRUNCATED at the tail) → shutdown → exit 0
  *
  * Usage: npm run build && node scripts/smoke/host-contract-smoke.mjs
  * Expects working model auth in ~/.pi/agent (same as the pi TUI). Session
@@ -54,7 +61,7 @@ if (!process.env.PICODE_SESSION_DIR) {
 
 const cwd = await mkdtemp(path.join(tmpdir(), 'picode-smoke-'))
 // A real file so the @-mention candidate listing has something to return.
-const { writeFileSync } = await import('node:fs')
+const { mkdirSync, writeFileSync, readFileSync } = await import('node:fs')
 writeFileSync(path.join(cwd, 'alpha.txt'), 'mention me')
 
 // Ticket 21: the branch readout roundtrip. With git available the workspace
@@ -62,8 +69,8 @@ writeFileSync(path.join(cwd, 'alpha.txt'), 'mention me')
 // without git the same roundtrip must degrade to branch_info(null).
 const SMOKE_BRANCH = 'picode-smoke-branch'
 let expectedBranch = SMOKE_BRANCH
+const { execFileSync } = await import('node:child_process')
 try {
-  const { execFileSync } = await import('node:child_process')
   const git = (...args) => execFileSync('git', args, { cwd, stdio: 'ignore' })
   git('init', '-b', SMOKE_BRANCH)
   git('config', 'user.email', 'smoke@picode.local')
@@ -75,6 +82,43 @@ try {
   expectedBranch = null
   console.log('SMOKE git unavailable — branch readout must degrade to null')
 }
+
+// Ticket 71: the @-mention candidate fixtures, in BOTH smoke states.
+//
+// Repo state (when git is available): the candidates must come from
+// read-only `git ls-files` — tracked (cached) + untracked-unignored (others)
+// — and the pi16-at-no-match reconstruction must HIT: 1500 alphabetical-early
+// files exhaust the walk's entry cap before `zzz/` is ever reached, so only
+// a git-backed candidate set can offer `zzz/target.ts`.
+writeFileSync(path.join(cwd, 'beta.txt'), 'tracked candidate')
+writeFileSync(path.join(cwd, '.gitignore'), 'ignored-dir/\n')
+mkdirSync(path.join(cwd, 'ignored-dir'), { recursive: true })
+writeFileSync(path.join(cwd, 'ignored-dir', 'buried.txt'), 'gitignored')
+mkdirSync(path.join(cwd, 'aaa'), { recursive: true })
+for (let i = 0; i < 1500; i++) writeFileSync(path.join(cwd, 'aaa', `file-${String(i).padStart(4, '0')}.txt`), 'bulk')
+mkdirSync(path.join(cwd, 'zzz'), { recursive: true })
+writeFileSync(path.join(cwd, 'zzz', 'target.ts'), 'the pi16 hit')
+if (expectedBranch !== null) {
+  execFileSync('git', ['add', 'beta.txt', '.gitignore'], { cwd, stdio: 'ignore' })
+}
+// Zero-write proof baseline (ticket 71 red line): captured AFTER all setup
+// git commands, BEFORE any list_files roundtrip. `git ls-files` is pure
+// plumbing — unlike `git status` it must never refresh the index.
+const repoIndexPath = path.join(cwd, '.git', 'index')
+let repoIndexBytes = expectedBranch !== null ? readFileSync(repoIndexPath) : null
+
+// Ticket 71 round D workspace: a NON-repo cwd (never git-initialized) where
+// the walk fallback runs — and the entry cap must cut `zzz/late.txt` while
+// the truncation marker rides at the candidate list's tail.
+const walkCwd = await mkdtemp(path.join(tmpdir(), 'picode-smoke-'))
+mkdirSync(path.join(walkCwd, 'aaa'), { recursive: true })
+for (let i = 0; i < 1500; i++) writeFileSync(path.join(walkCwd, 'aaa', `file-${String(i).padStart(4, '0')}.txt`), 'bulk')
+mkdirSync(path.join(walkCwd, 'zzz'), { recursive: true })
+writeFileSync(path.join(walkCwd, 'zzz', 'late.txt'), 'beyond the cap')
+
+// Ticket 71: the zero-contract truncation marker — imported from the
+// contract so the smoke and the host cannot drift apart.
+const { FILE_LIST_TRUNCATED } = await import('../../src/shared/contract.ts')
 
 let child = null
 let step = 'A session_created'
@@ -174,22 +218,44 @@ async function onHostExit(exited, code) {
     child = forkHost([cwd, sessionFile], onEvent)
     return
   }
+  if (step === 'C shutdown') {
+    if (code !== 0) fail(`round C exit should be clean 0, got ${code}`)
+    // Ticket 71: round D — the NON-repo candidate state. The walk fallback
+    // runs here and the entry cap must cut the zzz/ files with the
+    // truncation marker riding at the list's tail.
+    console.log('SMOKE round C shutdown ok — starting round D (non-repo walk+cap state)')
+    step = 'D session_created'
+    bumpTimeout()
+    child = forkHost([walkCwd], onEvent)
+    return
+  }
+  if (step === 'D shutdown') {
+    if (code !== 0) fail(`round D exit should be clean 0, got ${code}`)
+    console.log('SMOKE round D shutdown ok')
+    await finishClean(code)
+    return
+  }
   if (step === 'clean exit') {
-    if (code !== 0) fail(`expected clean exit 0, got ${code}`)
-    // Ticket 33: the SessionSummary contract against a REAL SDK-written file
-    // — birthtime-derived createdAt rides along as a PURE ADDITION (every
-    // legacy field keeps its shape and meaning), and degrades to null when
-    // the platform reports no birthtime.
-    await verifySessionSummaryContract()
-    // Ticket 36: the call-trace payload contract against the SAME real file
-    // — the pure builder turns the jsonl the SDK actually wrote into
-    // per-call payloads (entry = one model call, usage columns per ADR-0002).
-    await verifySessionTraceContract()
-    console.log('SMOKE PASS host contract smoke complete (chat loop + tool round + resume/rename/tree/fork)')
-    process.exit(0)
+    await finishClean(code)
+    return
   }
   console.error(`SMOKE FAIL host exited during step '${step}' with code ${code}`)
   process.exit(1)
+}
+
+async function finishClean(code) {
+  if (code !== 0) fail(`expected clean exit 0, got ${code}`)
+  // Ticket 33: the SessionSummary contract against a REAL SDK-written file
+  // — birthtime-derived createdAt rides along as a PURE ADDITION (every
+  // legacy field keeps its shape and meaning), and degrades to null when
+  // the platform reports no birthtime.
+  await verifySessionSummaryContract()
+  // Ticket 36: the call-trace payload contract against the SAME real file
+  // — the pure builder turns the jsonl the SDK actually wrote into
+  // per-call payloads (entry = one model call, usage columns per ADR-0002).
+  await verifySessionTraceContract()
+  console.log('SMOKE PASS host contract smoke complete (chat loop + tool round + resume/rename/tree/fork + candidate states)')
+  process.exit(0)
 }
 
 function onEvent(event) {
@@ -596,6 +662,27 @@ function onEvent(event) {
       if (!Array.isArray(event.files) || !event.files.includes('alpha.txt')) {
         fail(`file_list should contain alpha.txt, got ${JSON.stringify(event.files)}`)
       }
+      // Ticket 71: the two candidate states, asserted against the REAL host.
+      if (expectedBranch !== null) {
+        // Repo state: candidates come from read-only `git ls-files`.
+        if (!event.files.includes('beta.txt')) fail('ticket-71: the tracked (cached) candidate beta.txt is missing — git ls-files path dead?')
+        if (!event.files.includes('zzz/target.ts')) {
+          fail('ticket-71: pi16-at-no-match reconstruction failed — the file beyond the walk cap must surface from git ls-files')
+        }
+        if (event.files.includes('ignored-dir/buried.txt')) fail('ticket-71: a gitignored entry must never be a candidate')
+        if (event.files.includes(FILE_LIST_TRUNCATED)) fail('ticket-71: the git answer is full — no truncation marker may ride it')
+        console.log(`SMOKE ticket-71 repo candidates ok (git ls-files: ${event.files.length} paths, tracked+untracked, ignored excluded, pi16 hit)`)
+        // The zero-write red line, proven: ls-files must not touch the index.
+        const indexAfter = readFileSync(repoIndexPath)
+        if (!indexAfter.equals(repoIndexBytes)) fail('ticket-71: the candidate listing WROTE the git index — the read-only red line is broken')
+        console.log('SMOKE ticket-71 git zero-write ok (index bytes unchanged)')
+      } else {
+        // git unavailable: the init failed, so this cwd is a plain walk
+        // state — the cap must cut zzz/ and the marker must ride the tail.
+        if (!event.files.includes(FILE_LIST_TRUNCATED)) fail('ticket-71: a 1500-entry walk must append the truncation marker')
+        if (event.files.includes('zzz/target.ts')) fail('ticket-71: the walk cap must cut zzz/target.ts')
+        console.log(`SMOKE ticket-71 walk-state candidates ok (${event.files.length} paths, cap cut, marker at tail)`)
+      }
       console.log('SMOKE file_list ok (alpha.txt listed)')
       step = 'A branch'
       child.send({ type: 'get_branch' })
@@ -727,7 +814,31 @@ function onEvent(event) {
       if (!Array.isArray(event.items) || event.items.length === 0) fail('forked history should not be empty')
       if (event.usage !== undefined && event.usage !== null) assertUsageShape(event.usage, 'C history usage')
       console.log(`SMOKE fork history ok (${event.items.length} item(s))`)
-      step = 'clean exit'
+      step = 'C shutdown'
+      child.send({ type: 'shutdown' })
+      return
+    }
+
+    // ---------- Round D: ticket 71, the NON-repo candidate state ----------
+    case 'D session_created': {
+      if (event.type !== 'session_created') return
+      if (!event.sessionId) fail('round D session_created missing id')
+      console.log('SMOKE round D session ok (non-repo walk state)')
+      step = 'D files'
+      child.send({ type: 'list_files', requestId: 'smoke-files-walk', query: 'late' })
+      return
+    }
+    case 'D files': {
+      if (event.type !== 'file_list') return
+      if (event.requestId !== 'smoke-files-walk') fail(`file_list for the wrong request: ${event.requestId}`)
+      const files = event.files
+      if (!Array.isArray(files)) fail('round D file_list must carry an array')
+      if (files.includes('zzz/late.txt')) fail('ticket-71: the walk cap must cut zzz/late.txt — aaa/ exhausts the 1500-entry cap first')
+      if (!files.includes('aaa/file-0000.txt')) fail('ticket-71: the alphabetically-first walk files must be candidates')
+      if (files[files.length - 1] !== FILE_LIST_TRUNCATED) fail('ticket-71: a capped walk must append the truncation marker at the tail')
+      if (files.length !== 1501) fail(`ticket-71: expected 1500 walk entries + marker, got ${files.length}`)
+      console.log('SMOKE ticket-71 non-repo walk+cap ok (cap cut zzz, marker at tail, honest degradation)')
+      step = 'D shutdown'
       child.send({ type: 'shutdown' })
       return
     }

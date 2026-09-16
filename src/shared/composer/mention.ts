@@ -5,6 +5,7 @@
  */
 
 import { fuzzyScore } from './fuzzy'
+import { FILE_LIST_TRUNCATED } from '../contract.ts'
 
 /** The active @-mention query ending exactly at `caret`, or null. The token
  * must start at the text beginning or after whitespace; the query is the
@@ -29,6 +30,18 @@ export function applyMention(text: string, caret: number, path: string): { text:
 }
 
 export const FILE_MENU_LIMIT = 8
+
+/** Ticket 71: split the wire payload of a `file_list` reply into the actual
+ * candidates and the truncation flag. The host appends `FILE_LIST_TRUNCATED`
+ * as the last element when its walk hit the cap (repo workspaces never do —
+ * `git ls-files` is full); the marker must never reach the ranking or the
+ * menu rows, so the composer strips it exactly once, here. */
+export function splitTruncatedFiles(files: readonly string[]): { files: string[]; truncated: boolean } {
+  if (files.length > 0 && files[files.length - 1] === FILE_LIST_TRUNCATED) {
+    return { files: files.slice(0, -1), truncated: true }
+  }
+  return { files: [...files], truncated: false }
+}
 
 /** Rank host-delivered relative paths for the @ menu: basename matches beat
  * deeper path matches; both fuzzily ranked. */
