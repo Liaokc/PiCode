@@ -7522,13 +7522,25 @@ export function startSmokeIfEnabled(
         // ⑥ The new branch + the old one, side by side in the tree panel:
         // the abandoned branch's rows still list, the resent message row
         // exists, and exactly one row carries the current-leaf tag. The
-        // panel from step ③ may still be open — the History button is a
-        // TOGGLE, so only click it when no rows render.
+        // panel from step ③ may still be open (the History button is a
+        // TOGGLE — only click it when no rows render), and the payload is
+        // STALE: a prompt does not push a session_tree, so the stage asks
+        // for a fresh tree explicitly before asserting the new row.
         if (!((await js(`document.querySelectorAll('.tree-row').length > 0`)) as boolean)) {
           await js(
             `[...document.querySelectorAll('.chat-topbar-btn')].find((el) => el.textContent?.includes('History'))?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
           )
         }
+        const freshTree79 = waitFor(
+          (e) => e.type === 'session_tree' && e.sessionId === editSessionId,
+          'ticket-79 fresh session_tree for the branch check'
+        )
+        supervisor.handleParentCommand({
+          type: 'session_command',
+          sessionId: editSessionId,
+          command: { type: 'request_tree' }
+        })
+        await freshTree79
         if (!(await waitForProbe(win, `document.querySelectorAll('.tree-row').length > 0`, 5_000))) {
           fail('ticket-79 stage: the tree rows never rendered for the branch check')
         }
