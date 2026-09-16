@@ -338,12 +338,6 @@ export function startSmokeIfEnabled(
     })
   }
 
-  async function waitForDeltas(count: number): Promise<void> {
-    for (let seen = 0; seen < count; seen++) {
-      await waitFor((event) => event.type === 'text_delta', 'text_delta')
-    }
-  }
-
   async function main(): Promise<void> {
     log('start', `cwd=${cwd} pid=${process.pid}`)
 
@@ -582,6 +576,21 @@ export function startSmokeIfEnabled(
     // session_created back-to-back from the same host tick (announce), so a
     // late waiter would miss it.
     const agentStarted = waitFor((e) => e.type === 'agent_start', 'agent_start (pending prompt)')
+    // Round-1 stream bookkeeping, armed BEFORE the session can exist: the
+    // pending prompt starts streaming the moment session_created lands,
+    // while this stage is still walking the access-probe waits — a fast
+    // model can push its whole short reply PAST this point before any
+    // waiter in the round-1 block would arm, and the waiter model can never
+    // match an event that already flowed through (the 2026-09-16 run where
+    // the text_delta wait starved against a completed turn). The observer
+    // counts from the first event regardless of arming order.
+    let roundOneDeltas = 0
+    let roundOneEnded = false
+    const onRoundOneStream = (e: Scoped): void => {
+      if (e.type === 'text_delta') roundOneDeltas++
+      if (e.type === 'agent_end') roundOneEnded = true
+    }
+    observers.push(onRoundOneStream)
     const composerState = waitFor((e) => e.type === 'composer_state', 'composer_state (empty-state defaults)')
     const created = (await waitFor((e) => e.type === 'session_created', 'session_created (empty-state send)')) as Extract<
       Scoped,
@@ -634,15 +643,32 @@ export function startSmokeIfEnabled(
     if (restored.mode !== 'standard') fail(`the smoke access restore failed (got ${restored.mode})`)
     log('empty_state_access_restore_ok', 'tier=standard')
 
-    // Round 1: the pending prompt starts the run; abort mid-flight.
+    // Round 1: the pending prompt starts the run; abort mid-flight —
+    // unless the fast first reply already settled inside the access-probe
+    // window (the observer above saw it), in which case there is nothing
+    // left to abort and the settle IS the round's outcome.
     await agentStarted
     log('agent_start')
 
-    await waitForDeltas(ABORT_AFTER_DELTAS)
-    log('deltas_collected', `count=${ABORT_AFTER_DELTAS}`)
-
-    supervisor.handleParentCommand({ type: 'abort_turn' })
-    await waitFor((e) => e.type === 'agent_end', 'agent_end after abort')
+    for (let waited = 0; waited < STEP_TIMEOUT_MS && roundOneDeltas < ABORT_AFTER_DELTAS && !roundOneEnded; waited += 100) {
+      await new Promise((r) => setTimeout(r, 100))
+    }
+    if (roundOneDeltas < ABORT_AFTER_DELTAS && !roundOneEnded) {
+      fail(`round 1 streamed only ${roundOneDeltas} delta(s) and never settled`)
+    }
+    if (roundOneEnded) {
+      log('turn_settled_pre_abort', `deltas=${roundOneDeltas} — the fast first reply finished inside the probe window`)
+    } else {
+      log('deltas_collected', `count=${roundOneDeltas}`)
+      supervisor.handleParentCommand({ type: 'abort_turn' })
+    }
+    // The settle, order-proof: the agent_end may already have flown by when
+    // the abort was decided, so a waiter here could starve the same way.
+    for (let waited = 0; waited < STEP_TIMEOUT_MS && !roundOneEnded; waited += 100) {
+      await new Promise((r) => setTimeout(r, 100))
+    }
+    if (!roundOneEnded) fail('round 1 never settled after the abort')
+    observers.splice(observers.indexOf(onRoundOneStream), 1)
     log('aborted_ok')
 
     // Round 2: a full turn completes.
