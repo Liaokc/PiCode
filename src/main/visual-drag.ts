@@ -1,9 +1,10 @@
 /**
  * Sidebar drag-reorder visual-QA harness (ticket 84). Enabled with
- * PICODE_VISUAL=1 plus PICODE_VISUAL_DRAG=1. NOT part of `npm test` — a
- * human compares the captures against the ZCode sidebar drag composition;
- * the harness itself ASSERTS its structural probes (filter-harness
- * precedent, exit 1 on any violation):
+ * PICODE_VISUAL_DRAG=1 alone — deliberately NOT paired with PICODE_VISUAL=1:
+ * the base frame harness pins exact sidebar-row counts (its 2d fork-frame
+ * assertion), so the two must not share a store/window. Standalone like
+ * visual:settings; the harness ASSERTS its structural probes (filter-harness
+ * precedent, exit 1 on any violation) and owns the process exit:
  *
  *   1. Two seeded project groups render in the Updated arrangement.
  *   2. ONE session-row drag (row body, within its own group) reorders the
@@ -152,13 +153,27 @@ export function startDragVisualIfEnabled(getWindow: () => BrowserWindow | null):
 
       // ① Row drag within api-server: api-old above api-new — the FIRST
       //    drag auto-enters Manual (sort flips without any dropdown click).
+      //    The base PICODE_VISUAL harness also seeds a fresh 'visual-tui-
+      //    live' row into the same project dir, so the assertions here (and
+      //    below) pin the RELATIVE order, never the exact row set.
       await dragTopHalf(win, '[data-file$="visual-drag-api-old.jsonl"]', '[data-file$="visual-drag-api-new.jsonl"]')
       const reordered = await waitFor(
         getWindow,
-        `${rowsOfGroup('api-server')}.join(',') === 'visual-drag-api-old.jsonl,visual-drag-api-new.jsonl'`,
+        `(() => { const r = ${rowsOfGroup('api-server')}; return r.indexOf('visual-drag-api-old.jsonl') !== -1 && r.indexOf('visual-drag-api-old.jsonl') < r.indexOf('visual-drag-api-new.jsonl') })()`,
         5_000
       )
-      assert(reordered, 'the row drag never reordered api-server')
+      if (!reordered) {
+        const diag = (await win.webContents.executeJavaScript(
+          `JSON.stringify({
+            api: ${rowsOfGroup('api-server')},
+            web: ${rowsOfGroup('web-app')},
+            view: document.querySelector('.sb-section-label-projects') !== null,
+            draggables: [...document.querySelectorAll('.sb-task[draggable="true"]')].length
+          })`,
+          true
+        ).catch(() => 'diag-failed')) as string
+        throw new Error(`drag visual: the row drag never reordered api-server; DOM: ${diag}`)
+      }
       await capture(win, 'd1-row-dragged')
 
       // ② The dropdown: Manual is checked (the auto-entry), Updated still
@@ -193,6 +208,12 @@ export function startDragVisualIfEnabled(getWindow: () => BrowserWindow | null):
         5_000
       )
       assert(groupsUp, 'the grip drag never moved api-server above web-app')
+      // The base PICODE_VISUAL harness runs concurrently on this window and
+      // can leave a popover open — close whatever is open before the frame.
+      await win.webContents.executeJavaScript(
+        `document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); true`
+      )
+      await sleep(300)
       await capture(win, 'd3-group-dragged')
 
       // ④ Stage hygiene for the visual run: back to Updated.
@@ -210,7 +231,7 @@ export function startDragVisualIfEnabled(getWindow: () => BrowserWindow | null):
       console.log('VISUAL drag harness done')
       app.exit(0)
     } catch (err) {
-      console.error(String(err))
+      console.error(`VISUAL drag FAIL ${String(err)}`)
       app.exit(1)
     } finally {
       rmSync(path.join(tmpdir(), `picode-visual-drag-userdata-${process.pid}`), { recursive: true, force: true })
