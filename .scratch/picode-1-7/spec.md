@@ -1,4 +1,4 @@
-# PiCode 1.7 — 子智能体供面 × MCP 管理 × 回合时间序 × 拖拽重排 × 作曲家修缮 × 七缺陷
+# PiCode 1.7 — 子智能体供面 × MCP 管理 × 回合时间序 × 拖拽重排 × 作曲家修缮 × 技能泡 × 七缺陷
 
 Status: ready-for-agent
 
@@ -14,10 +14,11 @@ v1.6.0 验收后的真实使用判定——**七处缺陷、四处交付行为�
 - **Composer 体验簇**：输入内容多时新行被附件图片遮盖；展开钮遮住输入框滚动条；图片无法放大确认；展开/收起无动画；点击按钮后焦点滞留（橙色圈 + Enter 被按钮吃掉、不发送）。
 - **侧栏与导航**：工作容器折叠/展开时锚定行为不定（观感怪）；发送消息不落底（排队注入路径完全不滚）；侧栏 ⋮⋮ 是幽灵图标而 ZCode 同位是真拖拽句柄；titlebar ‹ › 是写死 disabled 的死钮；History 下拉点开后再点不收（票 70 同构竞态）。
 - **表格压缩**：markdown 表格压在 360px 内内滚才能看全（ZCode 参照实为完整展示）。
+- **技能调用显示**：只发技能时用户泡是空灰盒；技能使用行在容器体内、落定折叠即被吞——调用了什么技能在最终布局里不可见。
 
 ## Solution
 
-十八项需求（R1–R18），全部对齐实证参照（ZCode 实拍帧/bundle 键表 / Pi 包文档 / 会话记录形态）：
+十九项需求（R1–R19），全部对齐实证参照（ZCode 实拍帧/bundle 键表 / Pi 包文档 / 会话记录形态）：
 
 0. **回合信息面三修**：文件条 settled-only（R1）；live 回合纯时间序单流、落定态维持「最终正文+折叠容器」的 ZCode 构图（R15）；发送消息气泡渲染图片缩略图（R17，与 R14 同增量）。
 1. **子智能体供面（R5）**：侧板「Subagents 目录 tab」（Running/Ended 两段、状态徽标、Show 20 more；父会话记录重放为主源 + async 工件 live 增补；嵌套只显顶层）→ 点击行开「子代理对话 tab」（一子代理一 tab：运行中可 steer、已结束只读）；停止钮带确认框；侧板开合钮运行计数徽标。host 经 pi-subagents 的 in-process RPC 桥接（additive 增量）。
@@ -25,6 +26,7 @@ v1.6.0 验收后的真实使用判定——**七处缺陷、四处交付行为�
 3. **Composer 簇**：图片永不遮盖新行（R7，复现定位先行）；展开钮让位滚动条（R8）；图片放大预览浮层（R9，退出=空格/❌/Esc/遮罩）；展开收起动画（R10）；按钮焦点纪律——激活后 blur 归还 composer、focus 圈仅 Tab 键盘可见（R16）。
 4. **侧栏与导航**：容器折叠锚定规则（R6：离底=栏头不动、吸底=底不动）；发送落底——sendPin 改闩、四路发送全覆盖（R13）；侧栏拖拽重排（R11：组内会话序+组间序、Manual 第三排序项、组行 grip 转正句柄、Timeline/置顶不拖、跨项目移动=红线不做）；删 titlebar ‹ ›（R12）。
 5. **表格与杂项**：表格完整展示（R2：去 cap、删 preview 浮层、工具栏留复制/CSV/TSV）；Edit 图片 live 还原（R14：user_message echo 增图片部件，additive）；History 点不收修复（R18：票 70 同款豁免）。
+6. **技能泡重构（R19）**：用户泡成为组合块——技能渲染（有技能时）+ 用户文本（有时）+ 图片缩略图（R17）；skill-only 空灰盒消失；容器体内技能 marker 行退役——技能故事由泡承载（容器外，live/落定常驻）。
 
 ## User Stories
 
@@ -162,6 +164,14 @@ v1.6.0 验收后的真实使用判定——**七处缺陷、四处交付行为�
 79. As an operator with the History dropdown open, I want clicking History again to close it, so that toggle semantics hold.
 80. As an operator, I want outside clicks and Esc to close it as before, so that dismissal paths are unchanged.
 
+### R19 技能泡重构
+
+81. As an operator who sends only a skill, I want the bubble to render the skill invocation inside it, so that no empty box appears.
+82. As an operator who sends a skill with a message, I want the bubble to show both the skill rendering and my text, so that the invocation and my words read together.
+83. As an operator reading a settled turn, I want the skill invocation visible outside the collapsed container, so that what was invoked is never hidden.
+84. As an operator, I want the skill marker absent from the container body, so that the invocation is not shown twice.
+85. As an operator copying a skill message, I want Copy to carry my own words as before, so that copy semantics stay unchanged.
+
 ## Implementation Decisions
 
 - **R1 文件条 settled 门**：回合分组的文件条聚合仅在**落定回合**产出（live 回合不再携带），渲染门随分组模型走——live 全程无条、agent_end 落地即原位出现；Stop/中断/出错回合照出（更改是事实投影）；FollowView 同规则。零契约。
@@ -182,15 +192,16 @@ v1.6.0 验收后的真实使用判定——**七处缺陷、四处交付行为�
 - **R16 焦点纪律**：鼠标激活与菜单键盘选择完成后按钮立即 blur、焦点归还 composer 输入框；focus 圈仅 :focus-visible（纯键盘 Tab）呈现；全局清扫交互控件。Tab 圈保留（Q19 确认）。
 - **R17 气泡缩略图**：用户气泡渲染已附图片缩略图条（回放数据已在投影中；live 靠 R14 增量）；点缩略图开 R9 预览浮层。
 - **R18 History toggle**：外点关闭豁免 owning 钮（票 70 同款）或等价实现；展开态再点必收、真外点照关、Esc 照关。
+- **R19 技能泡重构**：用户泡升级为组合块——技能部分（魔杖 icon + Skill + 名字，复用既有 marker 视觉）+ 用户文本部分 + 图片缩略图（R17），三部分按存在性组合；skill-only 泡内只渲染技能（空灰盒消失）；技能+文字泡内两者都渲染；**容器体内技能 marker 行退役**（不再双显——技能故事由泡承载，泡在容器外 live/落定常驻，折叠不再吞）；Copy 语义不变（拷用户原话）；Edit 动作行随泡块不变；与 R15 无冲突（泡是回合头静态块不进流）。**操作者批准的 ZCode 偏离**：ZCode 把技能渲染为容器内 work item（bundle `chat.toolCall.skill.*`），本设计由泡承载。
 - 术语随票入 CONTEXT.md：「子智能体目录（Subagent Directory）」「子代理对话（Subagent Transcript）」「Manual 排序（Manual Sort）」「图片预览（Image Preview）」「MCP 节（MCP Section）」+「回合正文/常显段/过程叙述」live 语义修订——草案见 `intake-grilling.md`。UI 文案全英文（词汇表约束不变）。
 
 ## Testing Decisions
 
 - 延续仓库原则：**好测试只测外部行为**——给定会话快照/契约事件/DOM 坐标，断言状态与可见输出；不测内部调用序列、不测 CSS 字节。
 - **零新缝**，全落既有四缝：
-  - **Seam-1 表驱动 vitest**（纯模型/投影族）：R1 文件条 settled 聚合门；R3 MCP 配置层合并与写入目标解析；R4 状态快照投影（含无会话降级）；R5 目录投影（会话记录重放 + 工件合并 + 状态映射表 + Show 20 more + 嵌套折叠）；R6 锚定位置差数学；R11 手动顺序模型（drag 进 Manual/切回/持久化形状/Timeline 排除）；R13 闩式决策表（四路发送 × 到底 × 上滑接管）；R14/R17 live 条目图片落账（echo 缺席兼容）；R15 live 时间序分组（无提升/落定同构）；R18 toggle 状态机（若收敛纯模型）。
+  - **Seam-1 表驱动 vitest**（纯模型/投影族）：R1 文件条 settled 聚合门；R19 泡组合块模型（技能/文字/图片三段按存在性组合）；R3 MCP 配置层合并与写入目标解析；R4 状态快照投影（含无会话降级）；R5 目录投影（会话记录重放 + 工件合并 + 状态映射表 + Show 20 more + 嵌套折叠）；R6 锚定位置差数学；R11 手动顺序模型（drag 进 Manual/切回/持久化形状/Timeline 排除）；R13 闩式决策表（四路发送 × 到底 × 上滑接管）；R14/R17 live 条目图片落账（echo 缺席兼容）；R15 live 时间序分组（无提升/落定同构）；R18 toggle 状态机（若收敛纯模型）。
   - **host-contract smoke**：三个 additive 增量到时报备入账并验证旧载荷兼容（既有惯例）——R4 MCP 状态事件、R5 子代理桥接事件与 steer/stop 命令、R14 user_message images 字段；R3 OAuth 触发链（host 侧）。
-  - **electron smoke**：R1 落定出条/live 无条；R2 表格全高无内滚 + 浮层已删；R5 目录开合/对话 tab/steer 发送/确认停止/徽标；R6 锚定两态；R7 带图多行输入现场（**复现脚本 = 第一验收项**）；R9 预览四退出；R13 四路发送落底 + 上滑接管；R14 Stop→Edit 带图还原（live 场景——正是本次缺陷现场）；R15 live 流时间序 + 落定构图；R16 点击后 Enter 仍发送 + Tab 圈；R17 气泡缩略图 + 预览；R18 History 再点必收。
+  - **electron smoke**：R1 落定出条/live 无条；R19 skill-only 泡渲染技能、技能+文字泡双段、容器内无 marker；R2 表格全高无内滚 + 浮层已删；R5 目录开合/对话 tab/steer 发送/确认停止/徽标；R6 锚定两态；R7 带图多行输入现场（**复现脚本 = 第一验收项**）；R9 预览四退出；R13 四路发送落底 + 上滑接管；R14 Stop→Edit 带图还原（live 场景——正是本次缺陷现场）；R15 live 流时间序 + 落定构图；R16 点击后 Enter 仍发送 + Tab 圈；R17 气泡缩略图 + 预览；R18 History 再点必收。
   - **visual harness**：R2 表格帧；R5 目录/对话 tab 帧（对照 z17-subagent-dir / z17-subagent-chat）；R9 预览帧；R11 拖拽指示帧；R15 live/落定两态帧（对照 pi17-container-*）。
 - 性能红线：R5 目录 live 刷新零轮询（事件驱动）；R11 拖拽零全列表重挂载（局部移动）；R15 不增流式路径渲染次数；R16 blur 不破坏既有菜单键盘导航（票 68/69 基座）。
 
@@ -210,10 +221,11 @@ v1.6.0 验收后的真实使用判定——**七处缺陷、四处交付行为�
 - **R→票映射纪律**（/to-tickets 时执行）：本 spec **每条 R（R1–R18）必须映射到至少一张票**——1.3 R11 掉票教训，1.5/1.6 已在 tracker 注明并执行。
 - **缝确认**（2026-09-17，随本 spec 发布报备）：零新缝——全落既有四缝（1.5/1.6 先例：复触发视为无异议）。三个 additive 契约/投影增量（R4 MCP 状态事件、R5 子代理桥接、R14/R17 user_message images）实施时报备入账。
 - **ADR 检查**：无新 ADR——R5/R4 桥接走 ADR-0003 host 架构内的 inline extension + ADR-0006 注册表框架（子代理宿主于会话 host 进程，不改进程拓扑）；R3 配置写入与 Packages 节同类（Pi 配置文件，非会话文件——ADR-0002 纪律不破）；R11/R13/R15/R16 均为既有显示/交互模型的可逆修订。
-- **依赖与波次提示（/to-tickets 用）**：同文件群 A（composer 群 R7→R8→R9→R10→R16）强串行；同文件群 B（转录/回合群 R15→R1→R6）串行、R18 独立；同文件群 C（侧栏 R11 独占、R12 独立）；R5 大项建议拆 2–3 票（桥接+目录 / 对话+steer / 停止+徽标）；R3/R4 拆两票（Q4 拍板）；R14+R17 同增量可同票或紧邻；R9 为 R17 预览的前置。
+- **依赖与波次提示（/to-tickets 用）**：同文件群 A（composer 群 R7→R8→R9→R10→R16）强串行；同文件群 B（转录/回合群 R15→R1→R6→R19）串行、R18 独立；同文件群 C（侧栏 R11 独占、R12 独立）；R5 大项建议拆 2–3 票（桥接+目录 / 对话+steer / 停止+徽标）；R3/R4 拆两票（Q4 拍板）；R14+R17+R19 同渲染区段（用户条目/泡）可同票或紧邻；R9 为 R17 预览的前置。
 - **操作者待办**：贴图原件复制入 `.scratch/compare/`（pi17-*）；实施期 dev app / smoke 遵守 dev-app serialization（每票验收项内嵌 ps 自查——1.5 起口径）；merge-ticket.sh 已含 picode-1-7（无需再补）。
 
 ## Comments
 
 - 2026-09-17 (requirements intake → /to-spec): 17 痛点四轮二十问定稿（Q1–Q8 / Q9–Q14 / Q15–Q17 / Q18–Q20）；两处改判（Q5 OAuth、Q8③ 确认框）与一处加码（Q12 拖拽）已入册。全记录：`intake-grilling.md`。工单编号 81 起全局连续。
 - 2026-09-17 (缝确认)：零新缝——全落既有四缝，已随 spec 发布向操作者报备（1.5/1.6 先例）。
+- 2026-09-17 (R19 增补，Round 5)：skill-only 空泡 + 技能行被折叠吞（第 18 条痛点）；操作者细化改判 = **重构消息泡**（泡 = 技能渲染 + 用户文本组合块，容器内 marker 退役），非原推荐「删泡」。定稿见 R19；记录见 `intake-grilling.md` Round 5。
