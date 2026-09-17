@@ -2619,7 +2619,8 @@ export function startSmokeIfEnabled(
     //     regression guard: a deep-linked tab BODY renders even inside the
     //     closed (visibility-hidden) pane, so only the open shell state
     //     proves the re-expansion really happened.
-    // No model call (seeded workspace + real DOM only); the recently closed
+    // One settle turn (the multi-stage precedent: the sidebar row needs the
+    // session file on disk) + a seeded workspace; the recently closed
     // preference is cleaned up and the panel is left closed.
     log('panel_collapse_86_start')
     const seed86 = seedPanelWorkspace()
@@ -2631,6 +2632,15 @@ export function startSmokeIfEnabled(
           'panel-86 session_created'
         )) as Extract<Scoped, { type: 'session_created' }>
         if (!seeded86.sessionFile) fail('ticket-86 stage: the seeded session did not report its file')
+        // The sidebar row must exist for the leg-④ deep link — the multi
+        // stage's precedent: a settle turn puts the file on disk so the
+        // index lists the session.
+        supervisor.handleParentCommand({
+          type: 'session_command',
+          sessionId: seeded86.sessionId,
+          command: { type: 'prompt', text: 'Reply with exactly: PICODE_SMOKE_OK' }
+        })
+        await waitFor((e) => e.type === 'agent_end' && e.sessionId === seeded86.sessionId, 'panel-86 settle agent_end')
         log('panel_86_session_ok', seeded86.sessionId)
 
         const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
@@ -2779,6 +2789,9 @@ export function startSmokeIfEnabled(
         const OPEN_TRACE_MENU_86 = `(() => {
           const row = document.querySelector('[data-file="${seeded86.sessionFile}"]')
           if (!(row instanceof Element)) return false
+          // The seeded project's group sits at the bottom of a long sidebar —
+          // a contextmenu dispatched at an off-screen rect opens nothing.
+          row.scrollIntoView({ block: 'center' })
           const r = row.getBoundingClientRect()
           row.dispatchEvent(new MouseEvent('contextmenu', {
             bubbles: true, cancelable: true,
@@ -2786,8 +2799,11 @@ export function startSmokeIfEnabled(
           }))
           return true
         })(); true`
-        if (!(await waitForProbe(win, OPEN_TRACE_MENU_86 + ` && document.querySelector('.sb-context-menu') !== null`, 10_000))) {
-          fail('ticket-86 stage: the sidebar context menu never opened for View call trace')
+        if (!(await waitForProbe(win, OPEN_TRACE_MENU_86 + ` && document.querySelector('.sb-context-menu') !== null`, 15_000))) {
+          const sidebar86 = (await js(
+            `JSON.stringify({ taskRows: document.querySelectorAll('.sb-task').length, files: Array.from(document.querySelectorAll('[data-file]')).slice(0, 30).map((el) => el.getAttribute('data-file')) })`
+          )) as string
+          fail(`ticket-86 stage: the sidebar context menu never opened for View call trace; sidebar: ${sidebar86}`)
         }
         await js(
           `[...document.querySelectorAll('.sb-context-item')].find((el) => el.textContent === 'View call trace')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
@@ -3010,6 +3026,14 @@ export function startSmokeIfEnabled(
       })()`
       if (!(await waitForProbe(win, traceTabProbe, 10_000))) {
         fail('View call trace never opened an active Trace tab in the side panel (ticket 36)')
+      }
+      // Ticket 86 regression guard: the deep link must have AUTO-EXPANDED
+      // the panel shell. The tab body renders even inside the closed
+      // (visibility-hidden) pane, so the shell state is the only proof —
+      // the preceding ticket-86 stage leaves the panel collapsed with zero
+      // tabs, making this re-expansion non-vacuous.
+      if (((await js(`(() => { const p = document.querySelector('.side-panel'); return p !== null && !p.hasAttribute('data-closed') })()`)) as boolean) !== true) {
+        fail('ticket-36 stage: the trace deep link left the panel shell collapsed (ticket-86 re-expand regression)')
       }
       log('trace_tab_open_ok')
 
