@@ -2,8 +2,6 @@ import type { Dispatch, JSX } from 'react'
 import type { DockAction } from '../../../shared/dock-model'
 import type { ShellUiAction, ShellUiState } from '../../../shared/layout-model'
 import {
-  ChevronLeftIcon,
-  ChevronRightIcon,
   GearIcon,
   PanelBottomIcon,
   PanelLeftIcon,
@@ -51,12 +49,6 @@ export default function TitleBar({ ui, dispatch, dispatchDock }: TitleBarProps):
               <PanelLeftIcon />
             </button>
           </Tooltip>
-          <button type="button" className="tb-btn tb-btn-disabled" aria-label="Back" disabled>
-            <ChevronLeftIcon />
-          </button>
-          <button type="button" className="tb-btn tb-btn-disabled" aria-label="Forward" disabled>
-            <ChevronRightIcon />
-          </button>
         </div>
       )}
 

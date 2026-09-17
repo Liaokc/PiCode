@@ -141,14 +141,9 @@ kbd {
   color: var(--text-secondary);
 }
 
-.tb-btn:not(.tb-btn-disabled):hover {
+.tb-btn:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
-}
-
-.tb-btn-disabled {
-  opacity: 0.45;
-  cursor: default;
 }
 
 .titlebar-title {
