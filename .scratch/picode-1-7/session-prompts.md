@@ -2,7 +2,7 @@
 
 > 每个工单一个新 pi 会话、一个 worktree、一条分支。本手册每块都可独立复制粘贴。
 > 约定详情见 `AGENTS.md › Parallel development (git worktrees)`。
-> 总 spec：`.scratch/picode-1-7/spec.md`（R1–R30 决议与验收口径；**每条 R 1:1 映射进票，81–108**（107 文件浏览器票为另一 intake 通道增补、无 R 簇）——R5 拆三票、R7/R8/R10 合 81、R14/R17/R19 合 97）。
+> 总 spec：`.scratch/picode-1-7/spec.md`（R1–R30 决议与验收口径；**每条 R 1:1 映射进票，81–108**（107 文件浏览器、109 visual fixture 修缮为各 intake 通道增补票、无 R 簇）——R5 拆三票、R7/R8/R10 合 81、R14/R17/R19 合 97）。
 > 需求定稿全记录（23 痛点 × 六轮 25 问 + file:line 根因 + Pi 包取证 + ZCode bundle 键表 + 两处改判/一处加码）：`.scratch/picode-1-7/intake-grilling.md`。
 > 证据帧：`.scratch/compare/pi17-*`（操作者待复制——会话内贴图无法落盘）+ `icon-proposals/`（V2 定稿）。
 > 术语新增（子智能体目录/子代理对话/Manual 排序/图片预览/MCP 节 → 各票 rider；回合正文/常显段/过程叙述 live 语义修订 → 票 82）随票入 CONTEXT.md。
@@ -43,6 +43,7 @@ cd ~/PiCode && bash scripts/merge-ticket.sh <NN>
 | | **82** live 纯时间序（B 群头 · **词条修订 rider**） | turn-collapse 分组 + ChatView | 无 |
 | | **83** History toggle 修复 | TreePanel | 无 |
 | **W2** | **84** 侧栏拖拽重排（C 群头） | Sidebar + group.ts + 偏好结构 | 无 |
+| | **109** visual 4e/4f fixture 排序免疫 | visual.ts fixture 区 + .scratch/visual 帧 | 无 |
 | | **85** 删幽灵箭头 | TitleBar | 无 |
 | | **86** 零标签自动折叠 | layout/panel 模型联动 | 无 |
 | **W3** | **87** 表格完整展示 | Markdown 表格 | 无 |
@@ -68,7 +69,7 @@ cd ~/PiCode && bash scripts/merge-ticket.sh <NN>
 | | **106** 新卡片秒出 | registry 乐观注入 + 对账 | **95** |
 | | **107** 文件浏览器实时刷新 + 置顶行 View files | Sidebar 置顶行 + FileBrowser（watch 通路则契约增量） | **84** |
 
-> 群分：A（composer 群 81→91→98）/ B（转录群 82→92→94→97→103→108）/ C（侧栏群 84→95→106；107 文件浏览器 W9）/ D（子代理 90→99→101）/ 独立快线 83/85/86/87/88/89→96/93/100→104/105。
+> 群分：A（composer 群 81→91→98）/ B（转录群 82→92→94→97→103→108）/ C（侧栏群 84→95→106；107 文件浏览器 W9）/ D（子代理 90→99→101）/ 独立快线 83/85/86/87/88/89→96/93/100→104/105/109（109 = visual fixture 修缮，与在飞票零碰撞面）。
 > **防冲突纪律**（同 v1.1–v1.6，三件事）：
 > 1. 每票合入 main 后，其余活跃 worktree **立即** `git rebase main`；
 > 2. contract / app.css / CONTEXT.md / smoke.ts **只增不改**（追加自己的区段/词条/阶段，不动别人行）；
@@ -686,6 +687,30 @@ cd .worktrees/wt-108-timer-continuity && npm install
 ②Worked 时长显示——落定回合统一 chevron 右侧、含重放回合（票 14 口径修订）。
 数据 = 条目时间戳派生（ADR-0002）；FollowView 同规。
 流程同 T81（merge-ticket.sh 108）。
+```
+
+---
+
+## T109 — visual 4e/4f fixture 排序免疫 + 全量重捕获（W2 追加，无阻塞）
+
+```bash
+cd ~/PiCode
+git worktree add .worktrees/wt-109-transcript-fixture -b t109-transcript-fixture main
+cd .worktrees/wt-109-transcript-fixture && npm install
+```
+
+```text
+/implement .scratch/picode-1-7/issues/109-transcript-4e-fixture.md
+
+规矩：同 T81（分支 t109-transcript-fixture）。
+
+核心：①4e/4f fixture 当前 provider 从 bella/GLM-5.3 改 prov-11/m-11（"Provider 11"
+在排序世界与未排序世界都位于 index 11——双世界免疫，论证留档）；②重跑全量
+visual:transcript 全绿 + 重捕获 9 帧（4e/4f/5…/9…，标题栏无箭头残留）。
+零产品代码改动、零契约增量；bisect 不可用（69 合并起每 checkout 同型失败）。
+环境：electron 运行需 unset ELECTRON_RUN_AS_NODE + PATH 前置 /usr/local/bin；
+跑 harness 前 ps 自查 serialization。
+流程同 T81（merge-ticket.sh 109）。
 ```
 
 ---
