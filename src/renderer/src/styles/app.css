@@ -1146,6 +1146,51 @@ kbd {
   overflow-y: auto;
 }
 
+/* Ticket 81 R8: past the auto-grow cap the input scrolls INTERNALLY, and a
+   native overlay scrollbar would draw its thumb at the card's right edge —
+   the exact strip where the expand button sits (approved position, ticket
+   58), leaving the bar's top segment invisible and ungrabbable. A custom
+   scrollbar replaces it: a real, always-visible gutter whose TRACK is inset
+   34px from the top — the button's footprint ends 32px into the card
+   (top 6 + height 26; +2px cushion), so the thumb's travel never enters it
+   and the full bar stays visible and draggable along its whole range. */
+.composer-input::-webkit-scrollbar {
+  width: 10px;
+}
+
+.composer-input::-webkit-scrollbar-track {
+  margin-top: 34px;
+  margin-bottom: 4px;
+  background: transparent;
+}
+
+.composer-input::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.composer-input::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint);
+}
+
+/* Ticket 81 R10: expand/collapse glides with the panes' calibrated motion
+   (ticket 40: --pane-motion-duration ease-out — sidebar/side-panel feel).
+   The data-expand-anim marker arms the height transition ONLY for the
+   toggle path (set by transitionExpand, dropped on settle); the
+   per-keystroke auto-grow re-pins its height silently. Reduced motion cuts
+   to the instant end state — the panes' own rule. */
+.composer-input[data-expand-anim] {
+  transition: height var(--pane-motion-duration) ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-input[data-expand-anim] {
+    transition: none;
+  }
+}
+
 /* Ticket 49 输入展开: the persistent expand button at the card's top-right
    (operator-approved position — ZCode has no such button). Card-colored
    background so input text flowing beneath stays masked; the icon flips to

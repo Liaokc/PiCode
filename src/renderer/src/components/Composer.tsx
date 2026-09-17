@@ -12,7 +12,9 @@ import { filterCommands, pickCommand, composeCommandText, type ComposerCommandCa
 import { clampIndex, flatMenuKey } from '../../../shared/composer/menu-keys'
 import { composerDensity, thinkingBarFraction, thinkingBarShimmers, type ComposerDensity } from '../../../shared/composer/density'
 import {
+  COMPOSER_EXPAND_ANIM_SETTLE_MS,
   composerAutoGrowHeight,
+  composerCaretReveal,
   composerExpandHeight,
   reduceComposerExpand,
   type ComposerExpandEvent,
@@ -200,6 +202,9 @@ export default function Composer({
   /** Ticket 68: the query the open text menu was last synced with — the
    * keyboard-selection reset and the candidate refetch ride on its change. */
   const menuQueryRef = useRef<string | null>(null)
+  /** Ticket 81 R10: the expand-glide settle timer (drops the animation
+   * marker and settles the caret at the final height). */
+  const expandAnimTimer = useRef<number | null>(null)
 
   // Ticket 74: publish the live draft (owner-tagged) after every commit —
   // the App parks the latest entry into the matching slot at view-switch
@@ -252,18 +257,51 @@ export default function Composer({
   // textarea without a single setState — no per-keystroke render storm
   // (the ticket 30/46 red line). Every decision is the Seam-1 projection
   // (expand.ts); this only measures and applies.
+  //
+  // Ticket 81 R10: a TOGGLE commit (expanded flipped) must let the armed
+  // glide see exactly ONE height write. The collapsed measure's `auto`
+  // round-trip forces a recalc on the live element — under the armed
+  // transition that recalc poisons the before-change style and the collapse
+  // snaps — so toggle commits measure on a detached MIRROR instead and
+  // write the pinned height once. Typing commits keep the direct measure
+  // (no armed transition rides them; a leftover 300ms marker merely makes
+  // a mid-glide re-pin glide, which is benign).
+  const lastExpandedRef = useRef(expanded)
   useLayoutEffect(() => {
     const el = textareaRef.current
+    const toggled = expanded !== lastExpandedRef.current
+    lastExpandedRef.current = expanded
     if (!el) return
-    if (expanded) {
-      applyExpandHeight(el)
+    if (toggled) {
+      // R10: the expand/collapse glide — ONE height write under the armed
+      // transition. Scroll settling is deferred to the marker's cleanup
+      // (a mid-glide box clamps every scroll write).
+      if (expanded) {
+        applyExpandHeight(el)
+      } else {
+        el.style.height = `${measureCollapsedHeight(el)}px`
+      }
       return
     }
-    // Measure honestly: reset to auto first — a clamped element reports its
-    // clamped client height as scrollHeight, never the smaller content, so
-    // shrinking would stick at the cap without the reset.
+    // Typing commit: measure honestly — reset to auto first, a clamped
+    // element reports its clamped client height as scrollHeight, never the
+    // smaller content, so shrinking would stick at the cap without the
+    // reset.
+    //
+    // Ticket 81 R7: the auto reset also collapses the box to its content,
+    // which clamps the scrolled view back to the top the moment the draft
+    // passes the 160px cap — every keystroke snapped the viewport to the
+    // top of the draft and the caret line stayed below the fold (with the
+    // attachment strip docked right beneath the input, that read as "my new
+    // lines are covered by the images"). Snapshot the scroll position
+    // across the measure, restore it after re-pinning, then guarantee the
+    // caret's line is fully in view (Seam-1: composerCaretReveal). All
+    // imperative DOM writes — the input path gains no setState.
+    const savedScrollTop = el.scrollTop
     el.style.height = 'auto'
     el.style.height = `${composerAutoGrowHeight(el.scrollHeight)}px`
+    el.scrollTop = savedScrollTop
+    revealComposerCaret(el)
   }, [value, expanded])
 
   // While expanded, a window resize re-projects the expanded height against
@@ -462,11 +500,39 @@ export default function Composer({
   /** 输入展开 (ticket 49): apply one expand-machine event (Seam-1). Every
    * path — the button's toggle, the global ⌘E chord (ticket 57), and all
    * collapse routes — goes through here; afterwards the textarea takes
-   * focus back so the keyboard (or post-send) flow keeps going. */
+   * focus back so the keyboard (or post-send) flow keeps going.
+   *
+   * Ticket 81 R10: the height change rides the panes' calibrated glide
+   * (--pane-motion-duration ease-out). The data-expand-anim attribute arms
+   * the CSS transition for EXACTLY this change and is dropped on settle
+   * (timeout; reduced motion never fires transitionend, so the timeout is
+   * the only cleanup there) — the per-keystroke auto-grow above never
+   * animates. The settle also re-runs the R7 caret reveal: mid-glide the
+   * box clamps every scroll write, so the caret can only be settled once
+   * the final height is reached. */
   const transitionExpand = useCallback((event: ComposerExpandEvent): void => {
+    const el = textareaRef.current
+    if (el) {
+      el.setAttribute('data-expand-anim', '')
+      if (expandAnimTimer.current !== null) window.clearTimeout(expandAnimTimer.current)
+      expandAnimTimer.current = window.setTimeout(() => {
+        expandAnimTimer.current = null
+        el.removeAttribute('data-expand-anim')
+        revealComposerCaret(el)
+      }, COMPOSER_EXPAND_ANIM_SETTLE_MS)
+    }
     setExpandState((current) => reduceComposerExpand(current, event))
     requestAnimationFrame(() => textareaRef.current?.focus())
   }, [])
+
+  // R10 hygiene: an unmount mid-glide must not leave the settle timer
+  // writing to the detached textarea.
+  useEffect(
+    () => () => {
+      if (expandAnimTimer.current !== null) window.clearTimeout(expandAnimTimer.current)
+    },
+    []
+  )
 
   // 输入展开 (ticket 57): the App shell resolves the global ⌘E chord and
   // dispatches it to the mounted composer (see TOGGLE_EXPAND_EVENT). The
@@ -856,6 +922,43 @@ function mainRegionHeight(el: HTMLTextAreaElement | null): number {
  * one shared apply for the layout effect and the resize listener. */
 function applyExpandHeight(el: HTMLTextAreaElement | null): void {
   if (el) el.style.height = `${composerExpandHeight(mainRegionHeight(el))}px`
+}
+
+/** Ticket 81 R7: guarantee the caret's line sits fully inside the scrolled
+ * view. Pure geometry over the live measurement (Seam-1 owns the decision —
+ * composerCaretReveal); null means already visible, no write. A detached
+ * element (unmount mid-glide) measures NaN and never moves. */
+function revealComposerCaret(el: HTMLTextAreaElement | null): void {
+  if (!el) return
+  const cs = getComputedStyle(el)
+  const lineHeight = parseFloat(cs.lineHeight)
+  const padTop = parseFloat(cs.paddingTop)
+  const reveal = composerCaretReveal({
+    lineTopPx: padTop + (el.value.slice(0, el.selectionStart ?? el.value.length).split('\n').length - 1) * lineHeight,
+    lineHeightPx: lineHeight,
+    scrollTopPx: el.scrollTop,
+    clientHeightPx: el.clientHeight
+  })
+  if (reveal !== null) el.scrollTop = reveal
+}
+
+/** Ticket 81 R10: the collapsed-height measurement for a toggle commit —
+ * taken on a detached mirror of the input so the LIVE element never
+ * recalculates mid-measure (an `auto` round-trip under the armed glide
+ * transition kills the collapse animation; the mirror renders nothing and
+ * is removed before the next frame). Same insertion context (sibling of
+ * the input inside the card) keeps width, font, and padding honest. */
+function measureCollapsedHeight(el: HTMLTextAreaElement): number {
+  const mirror = el.cloneNode(true) as HTMLTextAreaElement
+  mirror.removeAttribute('data-expand-anim')
+  mirror.style.position = 'absolute'
+  mirror.style.visibility = 'hidden'
+  mirror.style.height = 'auto'
+  mirror.style.transition = 'none'
+  el.parentNode?.insertBefore(mirror, el.nextSibling)
+  const height = composerAutoGrowHeight(mirror.scrollHeight)
+  mirror.remove()
+  return height
 }
 
 function readFileAsDataUrl(file: File): Promise<string> {

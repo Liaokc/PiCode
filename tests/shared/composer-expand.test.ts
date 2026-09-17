@@ -5,6 +5,7 @@ import {
   COMPOSER_INPUT_MAX_PX,
   COMPOSER_INPUT_MIN_PX,
   composerAutoGrowHeight,
+  composerCaretReveal,
   composerExpandHeight,
   reduceComposerExpand,
   type ComposerExpandEvent,
@@ -130,5 +131,63 @@ describe('reduceComposerExpand — ticket 57: the global ⌘E chord is its own e
 
   it('the key event is self-inverting: expanded → collapsed (⌘E again retracts)', () => {
     expect(reduceComposerExpand('expanded', 'key')).toBe('collapsed')
+  })
+})
+
+describe('composerCaretReveal — ticket 81 R7: the caret line stays visible across the auto-grow re-measure', () => {
+  const view = (lineTop: number, scrollTop: number, clientH = 160): number | null =>
+    composerCaretReveal({ lineTopPx: lineTop, lineHeightPx: 21, scrollTopPx: scrollTop, clientHeightPx: clientH })
+
+  it('the caret line already fully in view → no scroll (null)', () => {
+    // padding 16 + line 2 × 21 = 58, viewport [0, 160].
+    expect(view(58, 0)).toBeNull()
+  })
+
+  it('the caret line exactly filling the viewport bottom → no scroll (null)', () => {
+    // line bottom = 160 = scrollTop + clientHeight — containment is inclusive.
+    expect(view(139, 0)).toBeNull()
+  })
+
+  it('the caret line below the fold → align its bottom to the viewport bottom', () => {
+    // padding 16 + line 11 × 21 = 247 (the repro scene: 12-line draft at the cap).
+    expect(view(247, 0)).toBe(268 - 160)
+  })
+
+  it('the caret line above the scrolled view → align its top to the viewport top', () => {
+    // scrolled to line 11 (scrollTop 108); the caret moved to line 1 (top 37).
+    expect(view(37, 108)).toBe(37)
+  })
+
+  it('returns whole pixels (pixel-aligned scroll positions render crisp)', () => {
+    expect(view(247.4, 0)).toBe(Math.round(268.4 - 160))
+  })
+
+  it('junk measurements never move the view (null)', () => {
+    expect(composerCaretReveal({ lineTopPx: Number.NaN, lineHeightPx: 21, scrollTopPx: 0, clientHeightPx: 160 })).toBeNull()
+    expect(
+      composerCaretReveal({ lineTopPx: 58, lineHeightPx: Number.NaN, scrollTopPx: 0, clientHeightPx: 160 })
+    ).toBeNull()
+    expect(
+      composerCaretReveal({ lineTopPx: 58, lineHeightPx: 21, scrollTopPx: Number.NaN, clientHeightPx: 160 })
+    ).toBeNull()
+    expect(
+      composerCaretReveal({ lineTopPx: 58, lineHeightPx: 21, scrollTopPx: 0, clientHeightPx: Number.NaN })
+    ).toBeNull()
+  })
+
+  it('a broken geometry (non-positive line height or viewport) never moves the view (null)', () => {
+    expect(view(58, 0, 0)).toBeNull()
+    expect(
+      composerCaretReveal({ lineTopPx: 58, lineHeightPx: 0, scrollTopPx: 0, clientHeightPx: 160 })
+    ).toBeNull()
+    expect(
+      composerCaretReveal({ lineTopPx: 58, lineHeightPx: -21, scrollTopPx: 0, clientHeightPx: 160 })
+    ).toBeNull()
+  })
+
+  it('the reveal is idempotent: applying it once makes the next call a no-op', () => {
+    const first = view(247, 0)
+    expect(first).not.toBeNull()
+    expect(view(247, first as number)).toBeNull()
   })
 })
