@@ -1,11 +1,28 @@
-import { type JSX } from 'react'
+import { memo, type JSX } from 'react'
 import type { TurnGroup, TurnWorkItem } from '../../../shared/turn-collapse'
 import { useElapsedSeconds } from './use-elapsed-seconds'
 import { ChevronDownIcon, ChevronRightIcon, LoaderIcon, WandIcon } from './icons'
 import ApprovalPill from './ApprovalPill'
+import Markdown from './Markdown'
 import NarrationRow from './NarrationRow'
 import ThinkingRow from './ThinkingRow'
 import ToolCard from './ToolCard'
+
+/**
+ * One inline text block of the live chronological stream (ticket 82): the
+ * same markdown the settled answer renders, at the position where it
+ * streamed inside the expanded container — never promoted, never demoted.
+ * Memoized so settled stream blocks never re-parse on streaming deltas (the
+ * R15 red line: the streaming path must not gain render work — only the
+ * still-streaming tail re-parses, exactly like the pre-82 answer did).
+ */
+const StreamTextRow = memo(function StreamTextRow({ text, streaming }: { text: string; streaming: boolean }): JSX.Element {
+  return (
+    <div className="msg turn-stream-text">
+      <Markdown text={text} streaming={streaming} />
+    </div>
+  )
+})
 
 interface TurnWorkRowsProps {
   /** The items in transcript order — the container's fold body or the
@@ -23,13 +40,14 @@ interface TurnWorkRowsProps {
 }
 
 /**
- * The work rows of a turn in transcript order — thinking, interim narration,
- * tool cards, approval pills. Shared by the fold container body and the
- * always-visible after-answer segment (tickets 53/56 — the segment carries
- * every row kind since ticket 56) so both render the same row shapes with
+ * The work rows of a turn in transcript order — thinking, inline stream
+ * text (live, ticket 82), interim narration (settled), tool cards, approval
+ * pills. Shared by the fold container body — which is the WHOLE turn's
+ * chronological single stream while live (ticket 82) — and the settled
+ * after-answer segment (ticket 56), so both render the same row shapes with
  * the same handlers. Post-answer thinking renders as the same collapsed
- * ThinkingRow the fold uses; a pending pill in the segment shows the same
- * controls a fold pill always had.
+ * ThinkingRow the fold uses; a pending pill in the settled segment shows the
+ * same controls a fold pill always had.
  */
 export function TurnWorkRows({ items, onOpenFile, onShowInBridge, onApprove, onDeny }: TurnWorkRowsProps): JSX.Element {
   return (
@@ -38,6 +56,8 @@ export function TurnWorkRows({ items, onOpenFile, onShowInBridge, onApprove, onD
         switch (item.kind) {
           case 'thinking':
             return <ThinkingRow key={item.key} part={item.part} />
+          case 'text':
+            return <StreamTextRow key={item.key} text={item.text} streaming={item.streaming} />
           case 'narration':
             return <NarrationRow key={item.key} text={item.text} />
           case 'tool':
@@ -72,11 +92,14 @@ interface TurnContainerProps {
 /**
  * The per-turn Worked container (ticket 23, ZCode evidence
  * `z-turn-collapse-expanded.png` / collapsed `已工作 24 秒 ›`; permanence
- * revised by ticket 55): one "Working · Ns" row per turn; opening it reveals
- * that turn's skill marker, thinking rows, interim narration (ticket 53) and
- * tool cards. The answer — the turn's LAST text block (ticket 53) — renders
- * outside; every row that ran after the answer joins the always-visible
- * after-answer segment below it, outside the fold too (ticket 56).
+ * revised by ticket 55, live semantics by ticket 82): one "Working · Ns" row
+ * per turn. While the turn streams, the opened body IS the turn's whole
+ * chronological single stream — thinking rows, inline text blocks (full
+ * markdown, ticket 82), tool cards, approval pills, in transcript order;
+ * nothing is promoted below the container and nothing re-splits while
+ * streaming. At settle the container folds and the ticket-53/56 composition
+ * appears: the last text block lifts below as the answer, earlier text stays
+ * inside as narration, post-answer rows join the always-visible segment.
  *
  * Ticket 55: EVERY turn with a user bubble owns this row — live
  * "Working · Ns" from the silent period (before the first work item) on,

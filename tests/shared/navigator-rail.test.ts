@@ -117,6 +117,23 @@ describe('railAnchors (one tick per real user message, incl. steer/follow-up)', 
     expect(anchors[1].replyText).toBe('')
   })
 
+  it('previews no reply while the turn streams — the answer exists only settled (ticket 82)', () => {
+    const state = fold(
+      initialChatState(),
+      SESSION_CREATED,
+      USER('streaming now'),
+      { type: 'agent_start' },
+      { type: 'message_start' },
+      { type: 'text_delta', delta: 'Working on it…' }
+    )
+    const anchors = railAnchors(groupTurns(state.entries, state.agentRunning))
+    expect(anchors).toHaveLength(1)
+    expect(anchors[0].live).toBe(true)
+    // No promotion while live (ticket 82): the rail preview stays honest and
+    // empty until the turn settles and the answer exists.
+    expect(anchors[0].replyText).toBe('')
+  })
+
   it('skips the defensive head segment (entries before any user message)', () => {
     const state = fold(
       initialChatState(),

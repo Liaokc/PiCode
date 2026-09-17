@@ -4809,16 +4809,21 @@ export function startSmokeIfEnabled(
     }
     log('worked_container_done')
 
-    // ---- ticket 56: turn chronology — the after-answer segment (常显段). A
-    // scripted LIVE turn streams past the approval gate (the bg-approval
-    // precedent for the gate shape, the ticket-53/55 stages for the
-    // contract-stream injection — no model call): the pending pill parks
-    // BELOW the answer at the exact slot its tool card will occupy; the
-    // approved decision converts the pill IN PLACE (two states, one slot,
-    // zero jump — pi15-approval-above-answer, fixed); a thinking block after
-    // the tool result renders below it in the segment, never back in the
-    // fold (pi15-post-answer-thinking-misplaced, fixed); the segment keeps
-    // its composition and order across settling — live 与落定同位. ----
+    // ---- ticket 56 + ticket 82: turn chronology. A scripted LIVE turn
+    // streams past the approval gate (the bg-approval precedent for the gate
+    // shape, the ticket-53/55 stages for the contract-stream injection — no
+    // model call). Ticket 82 revised the live shape: the turn streams as a
+    // PURE CHRONOLOGICAL SINGLE STREAM inside the expanded container — text
+    // blocks inline between the tool rows, no promoted answer below, no
+    // after-answer segment while live, no demotion re-split; the pending
+    // pill parks INLINE in the stream at the exact slot its tool card will
+    // occupy, and the approved decision converts the pill IN PLACE (two
+    // states, one slot, zero jump — pi15-approval-above-answer, fixed; the
+    // post-answer thinking renders inline below the tool —
+    // pi15-post-answer-thinking-misplaced, fixed). At settle the
+    // ticket-53/56 composition appears in one move: the answer below the
+    // collapsed container, the tool + thinking in the segment below it
+    // (常显段) — live 与落定同构 through the shared projection. ----
     log('turn_chronology_start')
     {
       const ANSWER = 'PICODE_TC_ANSWER: the deploy plan is ready'
@@ -4831,8 +4836,13 @@ export function startSmokeIfEnabled(
       })
       await withWindow(getWindow, async (win) => {
         const sig = `(() => ({
+          open: document.querySelectorAll('.turn-container-open').length,
           answers: document.querySelectorAll('.msg-assistant .md').length,
           answerText: document.querySelector('.msg-assistant .md')?.textContent ?? '',
+          answerAll: [...document.querySelectorAll('.msg-assistant .md')].map((el) => el.textContent ?? '').join('|'),
+          streamTexts: document.querySelectorAll('.turn-container .turn-stream-text .md').length,
+          streamText: document.querySelector('.turn-container .turn-stream-text .md')?.textContent ?? '',
+          streamAll: [...document.querySelectorAll('.turn-container .turn-stream-text .md')].map((el) => el.textContent ?? '').join('|'),
           segPills: document.querySelectorAll('.turn-after-answer .approval-pill-pending').length,
           segApproved: document.querySelectorAll('.turn-after-answer .approval-pill-approved').length,
           foldPills: document.querySelectorAll('.turn-container .approval-pill-pending').length,
@@ -4840,12 +4850,15 @@ export function startSmokeIfEnabled(
           foldTools: document.querySelectorAll('.turn-container .tool-card').length,
           segThinking: document.querySelectorAll('.turn-after-answer .thinking-row').length,
           segThinkingOpen: document.querySelectorAll('.turn-after-answer .thinking-row-open').length,
-          foldThinking: document.querySelectorAll('.turn-container .thinking-row').length
+          foldThinking: document.querySelectorAll('.turn-container .thinking-row').length,
+          foldNarration: document.querySelectorAll('.turn-container .turn-narration-row').length,
+          turns: document.querySelectorAll('.turn-container').length
         }))()`
         const diag = async (): Promise<string> =>
-          (await win.webContents.executeJavaScript(sig).catch(() => 'unavailable')) as string
+          (await win.webContents.executeJavaScript(`JSON.stringify(${sig})`).catch(() => 'unavailable')) as string
 
-        // Live turn: the answer streams first, then the gate asks.
+        // Live turn: the answer text streams FIRST — inline inside the
+        // container's chronological stream — then the gate asks.
         emitContractEvent({ type: 'user_message', text: 'PICODE_TC_PROMPT: deploy the service' })
         emitContractEvent({ type: 'agent_start' })
         emitContractEvent({ type: 'message_start' })
@@ -4853,26 +4866,33 @@ export function startSmokeIfEnabled(
         emitContractEvent({ type: 'message_end' })
         emitContractEvent({ type: 'approval_required', toolCallId: 'tc-gate-1', toolName: 'bash', args: { command: 'deploy' } })
 
-        // ① Pending pill BELOW the answer — in the after-answer segment,
-        // never in the fold above it.
-        const pillBelow = (await waitForProbe(
+        // ① Pure chronological single stream: the text is INLINE inside the
+        // open container (no promoted answer below it), and the pending pill
+        // parks in the stream at its tool's future slot — never in any
+        // below-answer segment (ticket 82 revises the ticket-56 live shape).
+        const streamInline = (await waitForProbe(
           win,
-          `${sig}.answers === 1 && ${sig}.answerText.includes('${ANSWER}') &&
-           ${sig}.segPills === 1 && ${sig}.foldPills === 0 && ${sig}.segTools === 0 && ${sig}.segThinking === 0`,
+          `${sig}.open === 1 && ${sig}.answers === 0 && ${sig}.streamTexts === 1 &&
+           ${sig}.streamText.includes('${ANSWER}') && ${sig}.foldPills === 1 &&
+           ${sig}.segPills === 0 && ${sig}.segTools === 0 && ${sig}.segThinking === 0 &&
+           ${sig}.foldTools === 0 && ${sig}.foldThinking === 0`,
           10_000
         )) as boolean
-        if (!pillBelow) fail(`ticket-56 stage: the pending pill never parked below the answer; DOM: ${await diag()}`)
-        log('turn_chronology_pill_below_answer_ok')
+        if (!streamInline) fail(`ticket-82 stage: the live turn is not a pure chronological single stream; DOM: ${await diag()}`)
+        log('turn_chronology_live_inline_ok')
 
-        // Record a segment row's slot: parent segment, child index, geometry.
-        // null when the row is absent (a missing slot is a stage failure, so
-        // every reader checks before destructure).
-        const readSlot = async (selector: string): Promise<{ top: number; left: number; index: number } | null> => {
+        // Record a stream row's slot: parent container, child index,
+        // geometry. null when the row is absent (a missing slot is a stage
+        // failure, so every reader checks before destructure). While live the
+        // rows sit in the container body (ticket 82); after settling the
+        // segment rows sit in .turn-after-answer — the container parameter
+        // selects the parent at read time.
+        const readSlot = async (selector: string, container: string): Promise<{ top: number; left: number; index: number } | null> => {
           const raw = (await win.webContents.executeJavaScript(
             `(() => {
               const el = document.querySelector('${selector}')
               if (!(el instanceof Element)) return null
-              const seg = el.closest('.turn-after-answer')
+              const seg = el.closest('${container}')
               const r = el.getBoundingClientRect()
               return JSON.stringify({ top: r.top, left: r.left, index: seg ? Array.prototype.indexOf.call(seg.children, el) : -1 })
             })()`
@@ -4884,88 +4904,151 @@ export function startSmokeIfEnabled(
             return null
           }
         }
-        const pillSlot = await readSlot('.turn-after-answer .approval-pill-pending')
-        if (pillSlot === null) fail('ticket-56 stage: the pending pill vanished before its slot was read')
+        const pillSlot = await readSlot('.turn-container .approval-pill-pending', '.turn-container-body')
+        if (pillSlot === null) fail('ticket-82 stage: the pending pill vanished before its slot was read')
 
         // ② Two states, one slot: replay the host's post-approve sequence
         // (approval_resolved → tool_start → tool_end; the reducer converts
         // the pill at the SAME entry index). The approved mini-pill and the
-        // finished tool card must occupy the pill's exact slot.
+        // finished tool card must occupy the pill's exact slot IN THE STREAM.
         emitContractEvent({ type: 'approval_resolved', toolCallId: 'tc-gate-1', approved: true, reason: null })
         const approvedInPlace = (await waitForProbe(
           win,
-          `${sig}.segApproved === 1 && ${sig}.segPills === 0 && ${sig}.segTools === 0`,
+          `${sig}.foldPills === 0 && ${sig}.segApproved === 0 && ${sig}.segPills === 0 && ${sig}.foldTools === 0`,
           10_000
         )) as boolean
-        if (!approvedInPlace) fail(`ticket-56 stage: the approved mini-pill left the segment; DOM: ${await diag()}`)
+        if (!approvedInPlace) fail(`ticket-82 stage: the approved mini-pill left the stream; DOM: ${await diag()}`)
         emitContractEvent({ type: 'tool_start', toolCallId: 'tc-gate-1', name: 'bash', args: { command: 'deploy' } })
         emitContractEvent({ type: 'tool_end', toolCallId: 'tc-gate-1', output: 'deployed', isError: false })
         const toolInPlace = (await waitForProbe(
           win,
-          `${sig}.segTools === 1 && ${sig}.segApproved === 0 && ${sig}.segPills === 0 && ${sig}.foldTools === 0`,
+          `${sig}.foldTools === 1 && ${sig}.segTools === 0 && ${sig}.foldPills === 0 && ${sig}.segApproved === 0`,
           10_000
         )) as boolean
-        if (!toolInPlace) fail(`ticket-56 stage: the tool card never took the pill's slot; DOM: ${await diag()}`)
-        const toolSlot = await readSlot('.turn-after-answer .tool-card')
-        // Zero jump: same segment child index, same geometry (±2px — the
+        if (!toolInPlace) fail(`ticket-82 stage: the tool card never took the pill's stream slot; DOM: ${await diag()}`)
+        const toolSlot = await readSlot('.turn-container .tool-card', '.turn-container-body')
+        // Zero jump: same container child index, same geometry (±2px — the
         // live header's ticking digits must not move the slot).
         if (toolSlot === null || toolSlot.index !== pillSlot.index || Math.abs(toolSlot.top - pillSlot.top) > 2 || Math.abs(toolSlot.left - pillSlot.left) > 2) {
           fail(
-            `ticket-56 stage: approval two-state jump — pill top ${pillSlot.top}/idx ${pillSlot.index} vs tool top ${String(toolSlot?.top ?? 'missing')}/idx ${String(toolSlot?.index ?? 'missing')}`
+            `ticket-82 stage: approval two-state jump — pill top ${pillSlot.top}/idx ${pillSlot.index} vs tool top ${String(toolSlot?.top ?? 'missing')}/idx ${String(toolSlot?.index ?? 'missing')}`
           )
         }
         log('turn_chronology_two_states_one_slot_ok', `top ${pillSlot.top} → ${toolSlot.top}`)
 
-        // ③ Post-answer thinking: streams after the tool result, renders in
-        // the segment BELOW the tool — never back in the fold, never above
-        // the answer. Collapsed single line, expandable to the full text.
+        // ③ Thinking that streams after the tool result renders INLINE below
+        // the tool, inside the stream — never promoted above anything
+        // (pi15-post-answer-thinking-misplaced stays fixed, now in-stream).
+        // Collapsed single line, expandable to the full text.
         emitContractEvent({ type: 'message_start' })
         emitContractEvent({ type: 'thinking_delta', delta: 'PICODE_TC_THINKING: health check passed, wrap up' })
         emitContractEvent({ type: 'thinking_end', durationMs: 4800 })
         emitContractEvent({ type: 'message_end' })
         const thinkingBelow = (await waitForProbe(
           win,
-          `${sig}.segThinking === 1 && ${sig}.segThinkingOpen === 0 && ${sig}.foldThinking === 0 && ${sig}.segTools === 1`,
+          `${sig}.foldThinking === 1 && ${sig}.segThinking === 0 && ${sig}.segThinkingOpen === 0 && ${sig}.foldTools === 1`,
           10_000
         )) as boolean
-        if (!thinkingBelow) fail(`ticket-56 stage: the post-answer thinking never rendered below the tool; DOM: ${await diag()}`)
-        const thinkingSlot = await readSlot('.turn-after-answer .thinking-row')
-        if (thinkingSlot === null || thinkingSlot.index !== 1) {
-          fail(`ticket-56 stage: the thinking row must trail the tool in the segment (idx ${String(thinkingSlot?.index ?? 'missing')})`)
+        if (!thinkingBelow) fail(`ticket-82 stage: the post-tool thinking never rendered inline below the tool; DOM: ${await diag()}`)
+        const thinkingSlot = await readSlot('.turn-container .thinking-row', '.turn-container-body')
+        if (thinkingSlot === null || thinkingSlot.index !== 2) {
+          fail(`ticket-82 stage: the thinking row must trail the tool in the stream (idx ${String(thinkingSlot?.index ?? 'missing')})`)
         }
         // Expand the collapsed thinking row — the full reasoning text shows.
         await win.webContents.executeJavaScript(
-          `(() => { const el = document.querySelector('.turn-after-answer .thinking-row-header'); if (el instanceof HTMLElement) el.click(); return true })()`
+          `(() => { const el = document.querySelector('.turn-container .thinking-row-header'); if (el instanceof HTMLElement) el.click(); return true })()`
         )
         const expanded = (await waitForProbe(
           win,
-          `${sig}.segThinkingOpen === 1 && document.querySelector('.turn-after-answer .thinking-row-body')?.textContent.includes('PICODE_TC_THINKING')`,
+          `document.querySelector('.turn-container .thinking-row-body')?.textContent.includes('PICODE_TC_THINKING')`,
           10_000
         )) as boolean
-        if (!expanded) fail('ticket-56 stage: the segment thinking row never expanded to its full text')
-        log('turn_chronology_thinking_below_ok')
+        if (!expanded) fail('ticket-82 stage: the stream thinking row never expanded to its full text')
+        log('turn_chronology_live_thinking_inline_ok')
 
-        // ④ Settle: the segment persists with the same composition and order —
-        // tool leading, thinking trailing, nothing back in the fold (live 与
-        // 落定同位). Absolute Y is not comparable across settle: the answer's
-        // persistent action row (ticket-44/53 settled rendering) appears at
-        // the same moment — the zero-jump geometry assertion lives in ②,
-        // where the pill→tool conversion changes nothing else.
+        // ④ Settle: the ticket-53/56 composition appears in one move — the
+        // text lifts below the folded container as the answer, the tool and
+        // thinking join the after-answer segment (常显段) in stream order:
+        // tool leading, thinking trailing, nothing left inside the fold.
         emitContractEvent({ type: 'agent_end' })
         const settled = (await waitForProbe(
           win,
-          `${sig}.segTools === 1 && ${sig}.segThinking === 1 && ${sig}.foldTools === 0 && ${sig}.foldThinking === 0 && ${sig}.segPills === 0`,
+          `${sig}.answers === 1 && ${sig}.answerText.includes('${ANSWER}') && ${sig}.streamTexts === 0 &&
+           ${sig}.open === 0 && ${sig}.segTools === 1 && ${sig}.segThinking === 1 &&
+           ${sig}.foldTools === 0 && ${sig}.foldThinking === 0 && ${sig}.segPills === 0`,
           10_000
         )) as boolean
-        if (!settled) fail(`ticket-56 stage: settling re-ordered the after-answer segment; DOM: ${await diag()}`)
-        const settledToolSlot = await readSlot('.turn-after-answer .tool-card')
-        const settledThinkingSlot = await readSlot('.turn-after-answer .thinking-row')
+        if (!settled) fail(`ticket-82 stage: settling did not produce the answer + segment composition; DOM: ${await diag()}`)
+        const settledToolSlot = await readSlot('.turn-after-answer .tool-card', '.turn-after-answer')
+        const settledThinkingSlot = await readSlot('.turn-after-answer .thinking-row', '.turn-after-answer')
         if (settledToolSlot === null || settledToolSlot.index !== 0 || settledThinkingSlot === null || settledThinkingSlot.index !== 1) {
           fail(
-            `ticket-56 stage: the settled segment lost its order — tool idx ${String(settledToolSlot?.index ?? 'missing')}, thinking idx ${String(settledThinkingSlot?.index ?? 'missing')}`
+            `ticket-82 stage: the settled segment lost its order — tool idx ${String(settledToolSlot?.index ?? 'missing')}, thinking idx ${String(settledThinkingSlot?.index ?? 'missing')}`
           )
         }
         log('turn_chronology_settled_same_position_ok')
+
+        // ⑤ Append-only, no rotation on a NEW text block (the pi17 operator
+        // complaint, scripted): a second LIVE turn streams text → tool →
+        // text. The first text keeps its inline slot, the tool keeps the
+        // slot it happened in, the new tail appends — nothing is promoted,
+        // nothing demotes, no graying carousel. (Turn 1's settled segment
+        // from ①–④ persists below its answer — segTools/segThinking === 1 —
+        // which doubles as the live-no-segment contrast.) Settling lifts the
+        // LAST text below the fold as the answer; opening the fold shows the
+        // time order preserved inside it: first text as narration, tool
+        // before it.
+        const FIRST = 'PICODE_TC_FIRST: mid-turn status update'
+        const SECOND = 'PICODE_TC_SECOND: the iteration concludes here'
+        emitContractEvent({ type: 'user_message', text: 'PICODE_TC_PROMPT_2: iterate once more' })
+        emitContractEvent({ type: 'agent_start' })
+        emitContractEvent({ type: 'message_start' })
+        emitContractEvent({ type: 'text_delta', delta: FIRST })
+        emitContractEvent({ type: 'message_end' })
+        emitContractEvent({ type: 'tool_start', toolCallId: 'tc-mid', name: 'bash', args: { command: 'verify' } })
+        emitContractEvent({ type: 'tool_end', toolCallId: 'tc-mid', output: 'ok', isError: false })
+        emitContractEvent({ type: 'message_start' })
+        emitContractEvent({ type: 'text_delta', delta: SECOND })
+        const noRotation = (await waitForProbe(
+          win,
+          `${sig}.turns === 2 && ${sig}.open === 1 && ${sig}.answers === 1 && ${sig}.streamTexts === 2 &&
+           ${sig}.streamAll.indexOf('${FIRST}') >= 0 && ${sig}.streamAll.indexOf('${SECOND}') > ${sig}.streamAll.indexOf('${FIRST}') &&
+           ${sig}.foldTools === 1 && ${sig}.segTools === 1 && ${sig}.segThinking === 1`,
+          10_000
+        )) as boolean
+        if (!noRotation) fail(`ticket-82 stage: the second text block rotated the stream; DOM: ${await diag()}`)
+        const midToolSlot = await readSlot('.turn-container .tool-card', '.turn-container-body')
+        if (midToolSlot === null || midToolSlot.index !== 1) {
+          fail(`ticket-82 stage: the tool must sit between the two inline texts (idx ${String(midToolSlot?.index ?? 'missing')})`)
+        }
+        log('turn_chronology_no_rotation_ok')
+
+        // Settle the second turn: the LAST text lifts below the fold as the
+        // answer, the first text folds back in as narration, the tool stays
+        // inside the fold — the settled shape the ticket-53 stage asserts for
+        // replays, now produced by a live settle.
+        emitContractEvent({ type: 'agent_end' })
+        const settledSplit = (await waitForProbe(
+          win,
+          `${sig}.turns === 2 && ${sig}.open === 0 && ${sig}.answers === 2 &&
+           ${sig}.answerAll.indexOf('${SECOND}') > ${sig}.answerAll.indexOf('PICODE_TC_ANSWER') &&
+           !${sig}.answerAll.includes('${FIRST}') && ${sig}.streamTexts === 0 && ${sig}.foldTools === 0`,
+          10_000
+        )) as boolean
+        if (!settledSplit) fail(`ticket-82 stage: the settled split lost the second turn's shape; DOM: ${await diag()}`)
+        // Open the second turn's fold: the first text reads as narration, the
+        // tool before it — chronological inside the fold too.
+        await win.webContents.executeJavaScript(
+          `(() => { const hs = document.querySelectorAll('.turn-container-header'); const el = hs[1]; if (el instanceof HTMLElement) el.click(); return true })()`
+        )
+        const foldOrder = (await waitForProbe(
+          win,
+          `${sig}.open === 1 && ${sig}.foldNarration === 1 && ${sig}.foldTools === 1 &&
+           document.querySelectorAll('.turn-container')[1]?.querySelector('.turn-narration-row')?.textContent.includes('${FIRST}')`,
+          10_000
+        )) as boolean
+        if (!foldOrder) fail(`ticket-82 stage: the settled fold did not preserve the stream order; DOM: ${await diag()}`)
+        log('turn_chronology_settled_fold_order_ok')
       })
     }
     log('turn_chronology_done')

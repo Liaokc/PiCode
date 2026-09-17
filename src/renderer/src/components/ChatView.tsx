@@ -339,6 +339,9 @@ export default function ChatView({
                   />
                 )}
                 {turn.answer !== null && (
+                  /* Ticket 53/82: the settled answer below the fold — a live
+                    turn carries no answer (its text streams inline in the
+                    container); at agent_end the last text part lifts here. */
                   <AnswerBlock
                     turn={turn}
                     onFork={onFork}

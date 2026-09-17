@@ -43,7 +43,13 @@ function streamedWorkTurn(toolId = 'tc-1'): HostToParent[] {
 
 describe('turn grouping (groupTurns) — ticket 53 answer split', () => {
   it('table · last text block: the settled answer is the turn\u0027s LAST text part only', () => {
-    const state = fold(initialChatState(), SESSION_CREATED, USER('fix the bug'), ...streamedWorkTurn())
+    const state = fold(
+      initialChatState(),
+      SESSION_CREATED,
+      USER('fix the bug'),
+      ...streamedWorkTurn(),
+      { type: 'agent_end' }
+    )
     const turns = groupTurns(state.entries, state.agentRunning)
     expect(turns).toHaveLength(1)
     const turn = turns[0]
@@ -183,7 +189,7 @@ describe('turn grouping (groupTurns) — ticket 53 answer split', () => {
     expect(turn.afterAnswer).toEqual([])
   })
 
-  it('table · streaming tail: the in-flight last text streams as the answer, earlier text already folded', () => {
+  it('table · live stream: every text block is an inline stream item in transcript order — no answer, no segment (ticket 82)', () => {
     const state = fold(
       initialChatState(),
       SESSION_CREATED,
@@ -196,9 +202,29 @@ describe('turn grouping (groupTurns) — ticket 53 answer split', () => {
       { type: 'text_delta', delta: 'part two' }
     )
     const [turn] = groupTurns(state.entries, true)
-    expect(turn.answer).toMatchObject({ text: 'part two', streaming: true })
-    expect(turn.work.map((w) => w.kind)).toEqual(['thinking', 'narration', 'thinking'])
-    expect(turn.work[1]).toMatchObject({ kind: 'narration', text: 'part one.' })
+    // Pure chronological single stream: no temporary answer is promoted
+    // below the container, no after-answer segment exists while live.
+    expect(turn.answer).toBeNull()
+    expect(turn.afterAnswer).toEqual([])
+    expect(turn.work.map((w) => w.kind)).toEqual(['thinking', 'text', 'thinking', 'text'])
+    expect(turn.work[1]).toMatchObject({ kind: 'text', text: 'part one.', streaming: false })
+    expect(turn.work[3]).toMatchObject({ kind: 'text', text: 'part two', streaming: true })
+  })
+
+  it('table · settle transition: agent_end re-splits the SAME entries into the ticket-53/56 shape in one move (ticket 82)', () => {
+    const liveState = fold(initialChatState(), SESSION_CREATED, USER('fix the bug'), { type: 'agent_start' }, ...streamedWorkTurn())
+    const [live] = groupTurns(liveState.entries, true)
+    expect(live.answer).toBeNull()
+    expect(live.work.map((w) => w.kind)).toEqual(['thinking', 'text', 'tool', 'text'])
+
+    const settledState = fold(liveState, { type: 'agent_end' })
+    const [settled] = groupTurns(settledState.entries, settledState.agentRunning)
+    // Byte-identical to the pre-82 settled shape: the last text lifts below
+    // the container as the answer, earlier text stays foldable narration,
+    // the segment stays empty.
+    expect(settled.answer?.text).toBe('All green.')
+    expect(settled.work.map((w) => w.kind)).toEqual(['thinking', 'narration', 'tool'])
+    expect(settled.afterAnswer).toEqual([])
   })
 
   it('table · no-text turn: thinking and tools alone leave the answer null (no answer block)', () => {
@@ -221,7 +247,7 @@ describe('turn grouping (groupTurns) — ticket 53 answer split', () => {
     expect(turn.hasWork).toBe(true)
   })
 
-  it('table · errored turn: the partial tail text is still the answer, narration stays folded', () => {
+  it('table · errored turn: turn_error settles the run — the partial tail text becomes the answer, narration stays folded', () => {
     const state = fold(
       initialChatState(),
       SESSION_CREATED,
@@ -234,7 +260,8 @@ describe('turn grouping (groupTurns) — ticket 53 answer split', () => {
       { type: 'text_delta', delta: 'partial' },
       { type: 'turn_error', message: 'model overloaded' }
     )
-    const [turn] = groupTurns(state.entries, true)
+    // turn_error settles (agentRunning=false): the settled split applies.
+    const [turn] = groupTurns(state.entries, state.agentRunning)
     expect(turn.answer).toMatchObject({ text: 'partial', streaming: false })
     expect(turn.work.map((w) => w.kind)).toEqual(['narration'])
   })
@@ -353,12 +380,12 @@ describe('turn grouping (groupTurns) — ticket 53 answer split', () => {
     expect(turn.answer?.entryId).toBe('m3')
   })
 
-  it('table · demotion re-split: a new text block demotes the old answer to narration, rolls the segment back and CLEARS it (ticket 53 rule, reaffirmed)', () => {
-    // Stream to an answer with a post-answer tool (the segment holds it),
-    // then let a NEW text block start streaming: the old answer is 中途的正文
-    // — it must fold into the container as narration, the tool that entered
-    // the segment rolls back into the fold, and the segment clears.
-    const withSegment = fold(
+  it('table · no re-split while live: a new text block appends to the stream — nothing promotes, nothing demotes (ticket 82)', () => {
+    // Stream text then a tool, then let a NEW text block start: the pure
+    // chronological stream is append-only. The first text keeps its slot as
+    // an inline stream item, the tool keeps the slot it happened in, the new
+    // tail appends — no demotion carousel, no segment churn.
+    const midStream = fold(
       initialChatState(),
       SESSION_CREATED,
       USER('iterate'),
@@ -369,21 +396,21 @@ describe('turn grouping (groupTurns) — ticket 53 answer split', () => {
       { type: 'tool_start', toolCallId: 'tc-mid2', name: 'bash', args: { command: 'ls' } },
       { type: 'tool_end', toolCallId: 'tc-mid2', output: 'files', isError: false }
     )
-    const [before] = groupTurns(withSegment.entries, true)
-    expect(before.answer?.text).toBe('First cut.')
-    expect(before.afterAnswer.map((item) => item.kind)).toEqual(['tool'])
+    const [before] = groupTurns(midStream.entries, true)
+    expect(before.answer).toBeNull()
+    expect(before.work.map((w) => w.kind)).toEqual(['text', 'tool'])
 
-    const demoted = fold(withSegment, { type: 'message_start' }, { type: 'text_delta', delta: 'Second cut' })
-    const [turn] = groupTurns(demoted.entries, true)
-    expect(turn.answer).toMatchObject({ text: 'Second cut', streaming: true })
-    expect(turn.work.map((w) => [w.kind, (w as { text?: string }).text ?? (w as { entry?: { id: string } }).entry?.id])).toEqual([
-      ['narration', 'First cut.'],
-      ['tool', 'tc-mid2']
-    ])
+    const after = fold(midStream, { type: 'message_start' }, { type: 'text_delta', delta: 'Second cut' })
+    const [turn] = groupTurns(after.entries, true)
+    expect(turn.answer).toBeNull()
     expect(turn.afterAnswer).toEqual([])
+    expect(turn.work.map((w) => w.kind)).toEqual(['text', 'tool', 'text'])
+    expect(turn.work[0]).toMatchObject({ kind: 'text', text: 'First cut.', streaming: false })
+    expect(turn.work[1]).toMatchObject({ kind: 'tool', entry: { id: 'tc-mid2' } })
+    expect(turn.work[2]).toMatchObject({ kind: 'text', text: 'Second cut', streaming: true })
   })
 
-  it('table · demotion re-split: a pending pill rolled back into the fold re-engages the auto-open', () => {
+  it('table · no re-split while live: a pending pill keeps its inline slot and the stream auto-stays open (ticket 82)', () => {
     const withPill = fold(
       initialChatState(),
       SESSION_CREATED,
@@ -394,14 +421,14 @@ describe('turn grouping (groupTurns) — ticket 53 answer split', () => {
       { type: 'message_end' },
       { type: 'approval_required', toolCallId: 'tc-roll', toolName: 'bash', args: { command: 'reset' } }
     )
-    const [inSegment] = groupTurns(withPill.entries, true)
-    expect(inSegment.pendingApproval).toBe(false)
-    const demoted = fold(withPill, { type: 'message_start' }, { type: 'text_delta', delta: 'New plan' })
-    const [turn] = groupTurns(demoted.entries, true)
-    // The pill now precedes the (new) answer — it is fold content again, so
-    // the fold must open for it exactly like a pre-answer gate ask.
-    expect(turn.work.map((w) => w.kind)).toEqual(['narration', 'approval'])
-    expect(turn.afterAnswer).toEqual([])
+    const [live] = groupTurns(withPill.entries, true)
+    expect(live.work.map((w) => w.kind)).toEqual(['text', 'approval'])
+    expect(live.pendingApproval).toBe(true)
+    const after = fold(withPill, { type: 'message_start' }, { type: 'text_delta', delta: 'New plan' })
+    const [turn] = groupTurns(after.entries, true)
+    // The pill never rolls back — the stream is append-only; the pill keeps
+    // the slot its tool card will occupy, and the gate ask keeps the fold open.
+    expect(turn.work.map((w) => w.kind)).toEqual(['text', 'approval', 'text'])
     expect(turn.pendingApproval).toBe(true)
   })
 
@@ -427,10 +454,10 @@ describe('turn grouping (groupTurns) — ticket 53 answer split', () => {
     expect(resolved.pendingApproval).toBe(false)
   })
 
-  it('table · pending approval AFTER the answer parks in the after-answer segment — its tool\'s future slot (ticket 56)', () => {
-    // pi15-approval-above-answer, fixed shape: the gate asks after the answer
-    // streamed. The pill renders below the answer — the exact slot its tool
-    // card will occupy — never folded back above the answer.
+  it('table · pending approval parks in the live stream at its tool\'s future slot (ticket 82 revises the ticket-56 live shape)', () => {
+    // The gate asks after text streamed: the pill is INLINE in the
+    // chronological stream — the exact slot its tool card will occupy —
+    // never promoted above or below anything.
     const state = fold(
       initialChatState(),
       SESSION_CREATED,
@@ -442,21 +469,22 @@ describe('turn grouping (groupTurns) — ticket 53 answer split', () => {
       { type: 'approval_required', toolCallId: 'tc-gate', toolName: 'bash', args: { command: 'deploy' } }
     )
     const [turn] = groupTurns(state.entries, true)
-    expect(turn.answer?.text).toBe('Ready to deploy.')
-    expect(turn.afterAnswer.map((item) => item.kind)).toEqual(['approval'])
-    expect(turn.afterAnswer[0]).toMatchObject({ kind: 'approval', entry: { id: 'tc-gate', state: 'pending' } })
-    expect(turn.work).toEqual([])
-    // The pill renders below the answer without the fold — a pending pill in
-    // the segment must not force the container open (and could not keep it
-    // open across the decision without a layout jump).
-    expect(turn.pendingApproval).toBe(false)
-    expect(turn.hasWork).toBe(false)
+    expect(turn.answer).toBeNull()
+    expect(turn.afterAnswer).toEqual([])
+    expect(turn.work.map((w) => w.kind)).toEqual(['text', 'approval'])
+    expect(turn.work[1]).toMatchObject({ kind: 'approval', entry: { id: 'tc-gate', state: 'pending' } })
+    // The pill lives inside the fold (the whole stream is the fold while
+    // live) — it keeps the container open for the decision.
+    expect(turn.pendingApproval).toBe(true)
+    expect(turn.hasWork).toBe(true)
   })
 
-  it('table · approval two states, one slot: the approved pill converts IN PLACE to the tool card — no re-sort', () => {
+  it('table · approval two states, one slot: the pill converts IN PLACE to the tool card in the live stream, then joins the settled segment (ticket 82)', () => {
     // The host sequence after a real approve: approval_resolved(approved),
     // then tool_start (the reducer converts the pill at the SAME entry
-    // index). The segment slot holds first the pill, then the card.
+    // index). While live, the stream slot holds first the pill, then the
+    // card; at settle the tool joins the after-answer segment below the
+    // answer — the ticket-56 settled shape, byte-identical.
     const pending = fold(
       initialChatState(),
       SESSION_CREATED,
@@ -469,8 +497,8 @@ describe('turn grouping (groupTurns) — ticket 53 answer split', () => {
     )
     const resolved = fold(pending, { type: 'approval_resolved', toolCallId: 'tc-gate', approved: true, reason: null })
     const [resolvedTurn] = groupTurns(resolved.entries, true)
-    expect(resolvedTurn.afterAnswer).toHaveLength(1)
-    expect(resolvedTurn.afterAnswer[0]).toMatchObject({ kind: 'approval', entry: { id: 'tc-gate', state: 'approved' } })
+    expect(resolvedTurn.work).toHaveLength(2)
+    expect(resolvedTurn.work[1]).toMatchObject({ kind: 'approval', entry: { id: 'tc-gate', state: 'approved' } })
 
     const executed = fold(
       resolved,
@@ -478,12 +506,17 @@ describe('turn grouping (groupTurns) — ticket 53 answer split', () => {
       { type: 'tool_end', toolCallId: 'tc-gate', output: 'deployed', isError: false }
     )
     const [executedTurn] = groupTurns(executed.entries, true)
-    // Same single slot below the answer: the pill became the tool card. The
-    // segment neither grew a duplicate row nor reordered.
-    expect(executedTurn.afterAnswer).toHaveLength(1)
-    expect(executedTurn.afterAnswer[0]).toMatchObject({ kind: 'tool', entry: { id: 'tc-gate', state: 'done' } })
-    expect(executedTurn.work).toEqual([])
-    expect(executedTurn.answer?.text).toBe('Ready to deploy.')
+    // Same single stream slot: the pill became the tool card. The stream
+    // neither grew a duplicate row nor reordered.
+    expect(executedTurn.work).toHaveLength(2)
+    expect(executedTurn.work[1]).toMatchObject({ kind: 'tool', entry: { id: 'tc-gate', state: 'done' } })
+
+    const settledState = fold(executed, { type: 'agent_end' })
+    const [settled] = groupTurns(settledState.entries, false)
+    expect(settled.answer?.text).toBe('Ready to deploy.')
+    expect(settled.work).toEqual([])
+    expect(settled.afterAnswer).toHaveLength(1)
+    expect(settled.afterAnswer[0]).toMatchObject({ kind: 'tool', entry: { id: 'tc-gate', state: 'done' } })
   })
 
   it('table · pending approval BEFORE the answer stays foldable work — the fold auto-opens for it', () => {
@@ -864,6 +897,29 @@ describe('groupTurns — turn file changes (ticket 78)', () => {
     )
     const [turn] = groupTurns(state.entries, false)
     expect(turn.fileChanges).toEqual([])
+  })
+
+  it('table · live stream file data: tools on both sides of inline texts aggregate in transcript order (ticket 82)', () => {
+    const state = fold(
+      initialChatState(),
+      SESSION_CREATED,
+      USER('change files'),
+      { type: 'agent_start' },
+      { type: 'tool_start', toolCallId: 'e1', name: 'edit', args: { path: 'src/a.ts' } },
+      { type: 'tool_end', toolCallId: 'e1', output: 'ok', isError: false, diff: EDIT_DIFF_A },
+      { type: 'message_start' },
+      { type: 'text_delta', delta: 'Halfway.' },
+      { type: 'message_end' },
+      { type: 'tool_start', toolCallId: 'e2', name: 'edit', args: { path: 'src/a.ts' } },
+      { type: 'tool_end', toolCallId: 'e2', output: 'ok', isError: false, diff: EDIT_DIFF_B }
+    )
+    const [turn] = groupTurns(state.entries, true)
+    expect(turn.answer).toBeNull()
+    // Every settled tool in the stream feeds the bar — the inline text
+    // between them reorders nothing.
+    expect(turn.fileChanges).toEqual([
+      { path: 'src/a.ts', added: 2, removed: 1, diff: `${EDIT_DIFF_A}\n${EDIT_DIFF_B}`, calls: 2 }
+    ])
   })
 
   it('a still-running edit does not enter the bar yet — it grows as tools SETTLE (live 同构)', () => {

@@ -1,26 +1,32 @@
 /**
  * Turn-collapse model (ticket 23, split rules revised by tickets 53 and 56,
- * container permanence by ticket 55): the transcript folds each turn's
- * pre-answer work — thinking rows, interim narration, tool cards, approval
- * pills, skill marker — into a single "Working · Ns" / "Worked · Ns"
- * container row. ZCode-evidence behavior with ONE operator-approved deviation
- * (ticket 55):
+ * container permanence by ticket 55, live chronology by ticket 82): the
+ * transcript folds each turn's work — thinking rows, tool cards, approval
+ * pills, skill marker and (settled only) interim narration — into a single
+ * "Working · Ns" / "Worked · Ns" container row. ZCode-evidence behavior with
+ * ONE operator-approved deviation (ticket 55):
  *
  *   - turn boundary = the user message; everything after it (thinking, tools,
  *     approvals, assistant text) belongs to that turn;
- *   - the turn's ANSWER is its LAST text part — a positional rule, not a
- *     semantic one (ticket 53, ZCode `latestAssistantTextRow` alignment).
- *     Earlier text parts are INTERIM NARRATION and fold into the container;
- *   - EVERY row after the answer — tool, thinking or approval — joins the
- *     always-visible after-answer segment (常显段) below the answer, in
- *     transcript order, live and settled at the same position (ticket 56
- *     revises ticket 53's tools-only Q11a cut to the ZCode
- *     `assistantFollowingRows` shape). The pending approval parks in the
- *     segment at the very slot its tool card will occupy; the reducer
- *     converts the pill in place, so the two states share one slot — zero
- *     jump. A new text block re-splits: the old answer demotes to narration,
- *     segment rows roll back into the container, the segment clears
- *     (中途的正文不能是最后的正文 — ticket 53 rule, operator reaffirmed);
+ *   - a LIVE turn (ticket 82, revising the tickets-53/56 live semantics)
+ *     renders as a pure chronological single stream: every assistant text
+ *     block is an inline stream item between the tool/thinking/approval rows
+ *     in transcript order, streaming with the expanded container. NOTHING is
+ *     promoted to a temporary answer below the container, there is no
+ *     always-visible segment while live, and NOTHING re-splits while
+ *     streaming — a new text block appends where it happens (no demotion
+ *     carousel). A pending approval parks in the stream at the very slot its
+ *     tool card will occupy; the reducer converts the pill in place, so the
+ *     two states share one slot — zero jump;
+ *   - a SETTLED turn's ANSWER is its LAST text part — a positional rule, not
+ *     a semantic one (ticket 53, ZCode `latestAssistantTextRow` alignment).
+ *     Earlier text parts are INTERIM NARRATION and fold into the container.
+ *     The split runs in one move at settle (agent_end) and never changes
+ *     afterwards;
+ *   - in a SETTLED turn every row after the answer — tool, thinking or
+ *     approval — joins the always-visible after-answer segment (常显段) below
+ *     the answer, in transcript order (ticket 56 revises ticket 53's
+ *     tools-only Q11a cut to the ZCode `assistantFollowingRows` shape);
  *   - EVERY turn with a user bubble owns its container row — live
  *     "Working · Ns" from the silent period on, settled "Worked · Ns",
  *     replayed "Worked" (ticket 14 rule). ZCode drops the row for zero-work
@@ -62,16 +68,18 @@ export function stripSkillPrologue(text: string, skillName: string | null): stri
   return stripped === text ? text : stripped.replace(/^[\r\n]+/, '')
 }
 
-/** One item inside the collapsed container: a thinking part, an interim
- * narration text block (ticket 53), a tool card or an approval pill, in
- * transcript order. */
+/** One item inside the container: a thinking part, an inline stream text
+ * block (LIVE only, ticket 82), an interim narration text block (SETTLED
+ * only, ticket 53), a tool card or an approval pill, in transcript order. */
 export type TurnWorkItem =
   | { kind: 'thinking'; key: string; part: ThinkingPart }
+  | { kind: 'text'; key: string; entryId: string; text: string; streaming: boolean }
   | { kind: 'narration'; key: string; entryId: string; text: string }
   | { kind: 'tool'; key: string; entry: ToolEntry }
   | { kind: 'approval'; key: string; entry: ApprovalEntry }
 
-/** The turn's answer (ticket 53): exactly the turn's LAST text part. The
+/** The turn's answer (ticket 53): exactly the turn's LAST text part — a
+ * SETTLED-state concept only (ticket 82: live turns promote nothing). The
  * entry id is the fork anchor (ticket 16) — the last text-bearing entry, the
  * same anchor the pre-53 "all texts are the answer" shape produced. */
 export interface TurnAnswerPart {
@@ -94,19 +102,26 @@ export interface TurnGroup {
   /** Bubble display text: the raw user message with the skill prologue
    * stripped (raw text stays on the entry — display-only derivation). */
   userText: string
-  /** Thinking rows, interim narration, tool cards and approval pills that
-   * precede the answer — hidden while collapsed (ticket 56: post-answer rows
-   * no longer fold here; they join the after-answer segment). */
+  /** Thinking rows, tool cards and approval pills, plus the turn's text
+   * blocks — whose shape depends on the turn's state (ticket 82): LIVE turns
+   * carry inline stream `text` items here (the whole turn in one
+   * chronological stream); SETTLED turns carry earlier text parts as
+   * `narration` (hidden while collapsed, ticket 56: post-answer rows no
+   * longer fold here; they join the after-answer segment). */
   work: TurnWorkItem[]
   /** The turn's answer: its last text part, or null when the turn produced
-   * no assistant text. At most one — 有且仅有一个 (ticket 53). */
+   * no assistant text. At most one — 有且仅有一个 (ticket 53). SETTLED-STATE
+   * ONLY (ticket 82): null while the turn is live — nothing streams below
+   * the container; at agent_end the last text part lifts out as the answer.
+   */
   answer: TurnAnswerPart | null
   /** The always-visible AFTER-ANSWER SEGMENT (常显段, ticket 56): every
    * non-text row that came after the answer — tools, thinking, approvals —
-   * in transcript order, rendered below the answer, live and settled at the
-   * same position. The pending approval parks here at the slot its tool
-   * card will convert into (zero jump). Empty when the turn ends on its
-   * answer or produces no text at all. */
+   * in transcript order, rendered below the answer. SETTLED-STATE ONLY
+   * (ticket 82): empty while live — every row streams inside the container's
+   * chronological single stream instead. The settled pending approval parks
+   * here at the slot its tool card will convert into (zero jump); while live
+   * the pill parks inline in the stream at the same slot. */
   afterAnswer: TurnWorkItem[]
   /** The turn's aggregated file changes (ticket 78): every settled edit/write
    * call in the TURN — fold body and after-answer segment alike — folded into
@@ -116,11 +131,13 @@ export interface TurnGroup {
   fileChanges: TurnFileChange[]
   /** The turn currently streaming: container renders expanded and ticking. */
   live: boolean
-  /** A pending approval INSIDE the container body keeps it open (auto-open).
-   * A pending pill in the after-answer segment never forces the fold: it is
-   * already visible below the answer, and opening the fold for it would slam
-   * it shut again the moment the decision resolves — a jump across the very
-   * slot the pill↔card pair must share (ticket 56). */
+  /** A pending approval inside the container keeps it open (auto-open). A
+   * pending pill in a settled turn's after-answer segment never forces the
+   * fold: it is already visible below the answer, and opening the fold for
+   * it would slam it shut again the moment the decision resolves — a jump
+   * across the very slot the pill↔card pair must share (ticket 56). While
+   * live (ticket 82) every pill is inside the stream, so a gate ask always
+   * re-engages the open — even over a manual mid-stream collapse. */
   pendingApproval: boolean
   /** The container BODY holds foldable content: the skill marker or at least
    * one work item (after-answer rows don't count — they render without the
@@ -135,9 +152,10 @@ export interface TurnGroup {
   hasContainer: boolean
 }
 
-/** One transcript item before the positional split — the raw material the
- * decision table (last text block / narration / post-answer tools) cuts into
- * work / answer / afterAnswer. */
+/** One transcript item before the state split — the raw material the state
+ * decides between: the live turn streams it verbatim as the chronological
+ * single stream (ticket 82), the settled decision table (last text block /
+ * narration / post-answer rows) cuts it into work / answer / afterAnswer. */
 type RawItem =
   | { kind: 'thinking'; key: string; part: ThinkingPart }
   | { kind: 'text'; key: string; entryId: string; text: string; streaming: boolean }
@@ -160,20 +178,18 @@ interface TurnDraft {
 }
 
 /**
- * The split decision table (ticket 53, revised by ticket 56), applied to one
- * turn's raw items in transcript order. The LAST text item becomes the
+ * The SETTLED split decision table (ticket 53, revised by ticket 56), applied
+ * to one turn's raw items in transcript order. The LAST text item becomes the
  * answer; earlier text items become narration work; EVERY non-text row after
  * that text — tool, thinking or approval — joins the always-visible
  * after-answer segment (常显段, ZCode assistantFollowingRows shape — ticket 56
  * widens ticket 53's tools-only Q11a cut); everything before it stays
  * foldable work.
  *
- * The table re-splits on every call, which IS the demotion rule (ticket 53,
- * reaffirmed by the operator): the moment a new text block starts streaming,
- * lastText moves to it — the old answer becomes narration, rows that had
- * entered the segment roll back into the container, and the segment itself
- * clears (nothing trails the new, still-streaming tail). 中途的正文不能是
- * 最后的正文 — time order holds at every instant.
+ * Ticket 82 moves this table out of the streaming path: it applies exactly
+ * ONCE, at settle (agent_end) — the promotion/demotion re-split it used to
+ * perform on every new text block is retired. While the turn streams,
+ * chronologicalTurn keeps everything inline in time order.
  */
 function splitTurn(raw: RawItem[]): Pick<TurnGroup, 'work' | 'answer' | 'afterAnswer'> {
   const lastText = raw.findLastIndex((item) => item.kind === 'text')
@@ -201,8 +217,27 @@ function splitTurn(raw: RawItem[]): Pick<TurnGroup, 'work' | 'answer' | 'afterAn
 }
 
 /**
+ * The LIVE stream (ticket 82): pure chronological single stream. Every raw
+ * item — thinking, text, tool, approval — stays in transcript order as
+ * container content; text blocks become inline `text` stream items (the
+ * same markdown the settled answer renders), never gray narration. No
+ * answer is promoted below the container, no after-answer segment exists,
+ * and the stream is append-only: a new text block lands where it happens,
+ * so nothing ever jumps. The settled re-split (splitTurn) runs once at
+ * settle and produces the final answer + segment in one move.
+ */
+function chronologicalTurn(raw: readonly RawItem[]): Pick<TurnGroup, 'work' | 'answer' | 'afterAnswer'> {
+  // RawItem's members are structurally the TurnWorkItem shapes — the `text`
+  // member becomes the inline stream block verbatim.
+  const work: TurnWorkItem[] = [...raw]
+  return { work, answer: null, afterAnswer: [] }
+}
+
+/**
  * Group the flat transcript into turns. `agentRunning` marks the last group
- * live (the run may still stream into it). Pure — no time, no I/O.
+ * live (the run may still stream into it): the live turn takes the pure
+ * chronological single stream (ticket 82), settled turns take the positional
+ * split (ticket 53/56) unchanged. Pure — no time, no I/O.
  */
 export function groupTurns(entries: ChatEntry[], agentRunning: boolean): TurnGroup[] {
   const drafts: TurnDraft[] = []
@@ -260,11 +295,17 @@ export function groupTurns(entries: ChatEntry[], agentRunning: boolean): TurnGro
     }
   }
 
-  const groups = drafts.map((draft) => {
-    const { work, answer, afterAnswer } = splitTurn(draft.raw)
-    // Ticket 78: the whole turn's tool entries in transcript order — the
-    // fold body's tools, then the after-answer segment's — feed the file
-    // change aggregation. splitTurn reorders nothing within each list.
+  const groups = drafts.map((draft, index) => {
+    // Liveness is known BEFORE the split (ticket 82): the last turn streams
+    // while the agent runs. The live turn renders the pure chronological
+    // single stream — no answer promotion, no segment, no re-split while
+    // streaming; settled turns keep the ticket-53/56 split byte-identical.
+    const live = agentRunning && index === drafts.length - 1
+    const { work, answer, afterAnswer } = live ? chronologicalTurn(draft.raw) : splitTurn(draft.raw)
+    // Ticket 78: the whole turn's tool entries in transcript order — fold
+    // body and after-answer segment alike — feed the file change aggregation.
+    // splitTurn reorders nothing within each list; the live stream holds
+    // every tool in `work` already.
     const toolsInOrder = [...work, ...afterAnswer].flatMap((item) => (item.kind === 'tool' ? [item.entry] : []))
     return {
       id: draft.id,
@@ -275,23 +316,17 @@ export function groupTurns(entries: ChatEntry[], agentRunning: boolean): TurnGro
       answer,
       afterAnswer,
       fileChanges: aggregateTurnFiles(toolsInOrder),
-      live: false,
-      // Ticket 56: only a pill INSIDE the fold keeps it open. A pending pill
-      // in the after-answer segment renders below the answer and must not
-      // force the container — otherwise the fold (opened for the pill) would
-      // slam shut the moment the decision resolves, jumping the very slot
-      // the two-state pill↔card pair must share.
+      live,
+      // Ticket 56/82: only a pill inside the fold keeps it open. While live
+      // every pill IS inside the fold (the whole stream is), so a gate ask
+      // always re-engages the open — even over a manual mid-stream collapse.
+      // A settled pending pill below the answer renders without the fold and
+      // must not force the container (otherwise the fold opened for it would
+      // slam shut on the decision, jumping the two-state slot).
       pendingApproval: work.some((item) => item.kind === 'approval' && item.entry.state === 'pending'),
       hasWork: draft.skillName !== null || work.length > 0,
-      hasContainer: draft.user !== null || draft.skillName !== null || work.length > 0
+      hasContainer: draft.user !== null || draft.skillName !== null || work.length > 0 || live
     }
   })
-  if (agentRunning && groups.length > 0) {
-    const last = groups[groups.length - 1]
-    last.live = true
-    // A streaming turn keeps its container row even when nothing has streamed
-    // into it yet — the head segment included (ticket-23 live shell stands).
-    last.hasContainer = true
-  }
   return groups
 }
