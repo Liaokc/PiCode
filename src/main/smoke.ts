@@ -4271,6 +4271,268 @@ export function startSmokeIfEnabled(
     })
     log('composer_expand_done')
 
+    // ---- ticket 81: composer layout — the pi17 scene. Drives the shared
+    // in-session composer with 4 pasted images + one input event per typed
+    // line (the same per-event measure cycle a keystroke rides) and asserts
+    // the three layout repairs end to end:
+    // ① R7: at the 160px auto-grow cap the caret's line stays fully inside
+    //    the scrolled viewport (the auto-grow re-measure must never snap
+    //    the view back to the top), and the attachment strip never
+    //    overlaps the input rect in either state (band and cap).
+    // ② R8: past the cap the input carries a REAL visible scrollbar (a
+    //    reserved classic gutter, not a transient overlay), its travel
+    //    starts BELOW the expand button's approved footprint (ticket 58 —
+    //    the button ends 32px into the card, the track is inset 34px),
+    //    dragging the thumb with real mouse events scrolls the input, and
+    //    the button stays hittable at its approved position.
+    // ③ R10: expand/collapse glides through intermediate heights (the
+    //    panes' --pane-motion-duration curve; click+sample in ONE page
+    //    script — an executeJavaScript roundtrip outlives the 200ms glide),
+    //    and under an emulated prefers-reduced-motion (CDP) it cuts
+    //    straight to the end state.
+    // No model call (geometry + typing only); the composer is left cleared.
+    log('composer_layout_81_start')
+    await withWindow(getWindow, async (win) => {
+      const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+      const composerInput81 = `document.querySelector('.chat-dock textarea.composer-input')`
+      if (!(await waitForProbe(win, `${composerInput81} !== null && ${composerInput81}.clientHeight === 74`, 10_000))) {
+        fail('ticket-81 stage: the in-session composer never settled at the 74px floor')
+      }
+      /** The geometry probe: caret-line visibility is arithmetic on the
+       * scrolled viewport; strip overlap is a rect intersection test; the
+       * gutter width tells overlay (0) from the styled classic scrollbar. */
+      const SAMPLE_81 = `(() => {
+        const ta = document.querySelector('.chat-dock textarea.composer-input')
+        const strip = document.querySelector('.chat-dock .composer-attachments')
+        if (!(ta instanceof HTMLTextAreaElement)) return null
+        const cs = getComputedStyle(ta)
+        const lineHeight = parseFloat(cs.lineHeight)
+        const padTop = parseFloat(cs.paddingTop)
+        const r = ta.getBoundingClientRect()
+        const stripR = strip instanceof HTMLElement ? strip.getBoundingClientRect() : null
+        const caret = ta.selectionStart ?? ta.value.length
+        const lineIndex = ta.value.slice(0, caret).split('\\n').length - 1
+        const caretTop = padTop + lineIndex * lineHeight
+        return JSON.stringify({
+          scrollTop: ta.scrollTop, clientH: ta.clientHeight, scrollH: ta.scrollHeight, boxH: r.height,
+          gutter: ta.offsetWidth - ta.clientWidth, lineIndex, caretTop,
+          caretVisible: caretTop >= ta.scrollTop - 0.5 && caretTop + lineHeight <= ta.scrollTop + ta.clientHeight + 0.5,
+          taTop: r.top, taRight: r.right,
+          overlapStrip: stripR
+            ? stripR.top < r.bottom - 0.5 && stripR.bottom > r.top + 0.5 && stripR.left < r.right - 0.5 && stripR.right > r.left + 0.5
+            : false,
+          attachCount: document.querySelectorAll('.chat-dock .composer-attachment').length
+        })
+      })()`
+      const sample81 = async (): Promise<{
+        scrollTop: number; clientH: number; scrollH: number; boxH: number; gutter: number
+        lineIndex: number; caretTop: number; caretVisible: boolean
+        taTop: number; taRight: number; overlapStrip: boolean; attachCount: number
+      }> => JSON.parse(String(await js(SAMPLE_81)))
+
+      // The pi17 scene: 4 images onto the in-session composer (the ticket-74
+      // paste driver; real decodable 1×1 PNGs so the cards render).
+      const pasted81 = (await js(`(() => {
+        const ta = document.querySelector('.chat-dock textarea.composer-input')
+        if (!(ta instanceof HTMLTextAreaElement)) return false
+        const bytes = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='), (c) => c.charCodeAt(0))
+        const dt = new DataTransfer()
+        for (let i = 1; i <= 4; i++) dt.items.add(new File([bytes], 'picode81-' + i + '.png', { type: 'image/png' }))
+        ta.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+        return true
+      })()`)) as boolean
+      if (!pasted81) fail('ticket-81 stage: the composer textarea is missing for the image paste')
+      if (!(await waitForProbe(win, `document.querySelectorAll('.chat-dock .composer-attachment').length === 4`, 10_000))) {
+        fail('ticket-81 stage: the 4 pasted images never rendered attachment cards')
+      }
+
+      /** ONE line per input event (native setter + input event). */
+      const typeLine81 = async (line: string): Promise<void> => {
+        await js(`(() => {
+          const ta = document.querySelector('.chat-dock textarea.composer-input')
+          if (!(ta instanceof HTMLTextAreaElement)) return false
+          const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+          setter.call(ta, ta.value === '' ? ${JSON.stringify(line)} : ta.value + '\\n' + ${JSON.stringify(line)})
+          ta.dispatchEvent(new Event('input', { bubbles: true }))
+          return true
+        })()`)
+        await new Promise((r) => setTimeout(r, 120))
+      }
+
+      // R7 band leg: 3 lines — box follows the content, caret visible, no
+      // strip overlap.
+      for (const line of ['Ticket 81 line one.', 'Ticket 81 line two.', 'Ticket 81 line three.']) await typeLine81(line)
+      const band81 = await sample81()
+      if (!(!band81.overlapStrip && band81.caretVisible && band81.attachCount === 4)) {
+        fail(`ticket-81 stage: the band state broke (overlap ${band81.overlapStrip}, caretVisible ${band81.caretVisible}, attach ${band81.attachCount})`)
+      }
+      log('composer_layout_81_band_ok')
+
+      // R7 cap leg: type past the 160px pin — the operator's exact moment.
+      for (let i = 4; i <= 12; i++) await typeLine81(`Ticket 81 cap line ${i} of the long draft.`)
+      const cap81 = await sample81()
+      if (cap81.boxH !== 160 || cap81.scrollH <= cap81.clientH) {
+        fail(`ticket-81 stage: the draft never pinned the 160px cap with internal scroll (box ${cap81.boxH}, scrollH ${cap81.scrollH})`)
+      }
+      if (cap81.overlapStrip) fail('ticket-81 stage: the attachment strip overlaps the input at the cap')
+      if (!cap81.caretVisible) {
+        fail(
+          `ticket-81 stage: the caret line is below the fold at the cap (scrollTop ${cap81.scrollTop}, line ${cap81.lineIndex}, caretTop ${cap81.caretTop}, clientH ${cap81.clientH})`
+        )
+      }
+      log('composer_layout_81_cap_caret_ok')
+
+      // R8: visible classic scrollbar + travel clear of the button + a real
+      // thumb drag + the button still hittable.
+      if (cap81.gutter !== 10) {
+        fail(`ticket-81 stage: the scrollable input must reserve the 10px styled scrollbar gutter (gutter ${cap81.gutter})`)
+      }
+      const btnGeom81 = JSON.parse(String(await js(`(() => {
+        const ta = document.querySelector('.chat-dock textarea.composer-input')
+        const btn = document.querySelector('.chat-dock .composer-expand')
+        if (!(ta instanceof HTMLTextAreaElement) || !(btn instanceof HTMLElement)) return null
+        return JSON.stringify({ btnBottom: btn.getBoundingClientRect().bottom, taTop: ta.getBoundingClientRect().top })
+      })()`))) as { btnBottom: number; taTop: number } | null
+      if (btnGeom81 === null || btnGeom81.btnBottom > btnGeom81.taTop + 35) {
+        fail(`ticket-81 stage: the expand button's footprint overlaps the scrollbar travel (bottom ${String(btnGeom81?.btnBottom)}, travel top ${String(btnGeom81 === null ? null : btnGeom81.taTop + 34)})`)
+      }
+      const btnHit81 = (await js(`(() => {
+        const btn = document.querySelector('.chat-dock .composer-expand')
+        if (!(btn instanceof HTMLElement)) return 'missing'
+        const r = btn.getBoundingClientRect()
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+        return hit !== null && (hit === btn || btn.contains(hit)) ? 'button' : 'other'
+      })()`)) as string
+      if (btnHit81 !== 'button') fail(`ticket-81 stage: the expand button is no longer hittable (${btnHit81})`)
+      // Real drag: park at the top, grab the thumb's computed center, pull.
+      const dragPoint81 = JSON.parse(String(await js(`(() => {
+        const ta = document.querySelector('.chat-dock textarea.composer-input')
+        if (!(ta instanceof HTMLTextAreaElement)) return null
+        ta.scrollTop = 0
+        const gutter = ta.offsetWidth - ta.clientWidth
+        const trackTop = 34
+        const trackH = ta.clientHeight - trackTop - 4
+        const scrollRange = ta.scrollHeight - ta.clientHeight
+        const thumbH = Math.max(trackH * (ta.clientHeight / ta.scrollHeight), 20)
+        const thumbY = trackTop + (ta.scrollTop / Math.max(scrollRange, 1)) * (trackH - thumbH) + thumbH / 2
+        const r = ta.getBoundingClientRect()
+        return JSON.stringify({ x: Math.round(r.right - gutter / 2), y: Math.round(r.top + thumbY) })
+      })()`))) as { x: number; y: number } | null
+      if (dragPoint81 === null) fail('ticket-81 stage: the drag staging never read the thumb geometry')
+      const scrollBefore81 = (await js(`${composerInput81}?.scrollTop ?? -1`)) as number
+      await win.webContents.sendInputEvent({ type: 'mouseDown', x: dragPoint81.x, y: dragPoint81.y, button: 'left', clickCount: 1 })
+      await new Promise((r) => setTimeout(r, 60))
+      await win.webContents.sendInputEvent({ type: 'mouseMove', x: dragPoint81.x, y: dragPoint81.y + 40 })
+      await new Promise((r) => setTimeout(r, 60))
+      await win.webContents.sendInputEvent({ type: 'mouseUp', x: dragPoint81.x, y: dragPoint81.y + 40, button: 'left', clickCount: 1 })
+      await new Promise((r) => setTimeout(r, 120))
+      const scrollAfter81 = (await js(`${composerInput81}?.scrollTop ?? -1`)) as number
+      if (!(scrollAfter81 > scrollBefore81 + 2)) {
+        fail(`ticket-81 stage: dragging the scrollbar thumb never scrolled the input (${scrollBefore81} → ${scrollAfter81})`)
+      }
+      log('composer_layout_81_scrollbar_ok')
+
+      // R10: expand glides (click + sampler in ONE page script), settles at
+      // the projected half-zone height; Esc collapse glides back to the cap.
+      const startH81 = cap81.boxH
+      const zoneH81 = (await js(`document.querySelector('.chat-view')?.clientHeight ?? 0`)) as number
+      const targetH81 = Math.round(Math.min(Math.max(zoneH81 / 2, 280), 560))
+      const sampler81 = `new Promise((resolve) => {
+        const samples = []
+        const t0 = performance.now()
+        const timer = setInterval(() => {
+          const ta = document.querySelector('.chat-dock textarea.composer-input')
+          samples.push(ta ? ta.clientHeight : null)
+          if (performance.now() - t0 >= 450) { clearInterval(timer); resolve(JSON.stringify(samples)) }
+        }, 12)
+      })`
+      const expandSamples81 = JSON.parse(
+        String(await js(
+          [
+            `document.querySelector('.chat-dock .composer-expand')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))`,
+            sampler81
+          ].join(';')
+        ))
+      ) as number[]
+      if (expandSamples81.filter((h) => h !== null && h > startH81 && h < targetH81).length < 2) {
+        fail(`ticket-81 stage: expanding never glided through intermediate heights (samples ${expandSamples81.slice(0, 8).join(',')})`)
+      }
+      if (
+        !(await waitForProbe(
+          win,
+          `(() => {
+            const ta = document.querySelector('.chat-dock textarea.composer-input')
+            const zone = document.querySelector('.chat-view')
+            return ta !== null && zone !== null && ta.clientHeight === Math.round(Math.min(Math.max(zone.clientHeight / 2, 280), 560))
+          })()`,
+          5_000
+        ))
+      ) {
+        fail(`ticket-81 stage: the expansion never settled at the projected half-zone height (${targetH81})`)
+      }
+      const collapseSamples81 = JSON.parse(
+        String(await js(
+          [
+            `(() => {
+              const ta = document.querySelector('.chat-dock textarea.composer-input')
+              if (ta instanceof HTMLTextAreaElement) {
+                ta.focus()
+                ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+              }
+            })()`,
+            sampler81
+          ].join(';')
+        ))
+      ) as number[]
+      if (collapseSamples81.filter((h) => h !== null && h > 160 && h < targetH81).length < 2) {
+        fail(`ticket-81 stage: collapsing never glided through intermediate heights (samples ${collapseSamples81.slice(0, 8).join(',')})`)
+      }
+      if (!(await waitForProbe(win, `${composerInput81}.clientHeight === 160`, 5_000))) {
+        fail('ticket-81 stage: the collapse never re-settled at the 160px auto-grow clamp')
+      }
+      log('composer_layout_81_glide_ok')
+
+      // R10 reduced-motion: CDP-emulated prefers-reduced-motion cuts the
+      // glide to the instant end state (the panes' own convention).
+      try {
+        const dbg = win.webContents.debugger
+        await dbg.attach()
+        await dbg.sendCommand('Emulation.setEmulatedMedia', {
+          features: [{ name: 'prefers-reduced-motion', value: 'reduce' }]
+        })
+        await new Promise((r) => setTimeout(r, 100))
+        const reducedSamples81 = JSON.parse(
+          String(await js(
+            [
+              `document.querySelector('.chat-dock .composer-expand')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))`,
+              sampler81
+            ].join(';')
+          ))
+        ) as number[]
+        if (reducedSamples81.filter((h) => h !== null && h > startH81 && h < targetH81).length !== 0) {
+          fail(`ticket-81 stage: prefers-reduced-motion must cut the expand straight to the end state (samples ${reducedSamples81.slice(0, 6).join(',')})`)
+        }
+        await dbg.sendCommand('Emulation.setEmulatedMedia', {
+          features: [{ name: 'prefers-reduced-motion', value: '' }]
+        })
+        await dbg.detach()
+      } catch (err) {
+        fail(`ticket-81 stage: the reduced-motion leg could not run (CDP emulation failed: ${String(err)})`)
+      }
+      log('composer_layout_81_reduced_motion_ok')
+
+      // Leave the composer clean for the later stages.
+      await win.webContents.executeJavaScript(composerClearJs)
+      await js(`(() => {
+        document.querySelectorAll('.chat-dock .composer-attachment-remove').forEach((b) => (b instanceof HTMLElement) && b.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+        return true
+      })()`)
+      if (!(await waitForProbe(win, `document.querySelectorAll('.chat-dock .composer-attachment').length === 0`, 5_000))) {
+        fail('ticket-81 stage: the staged attachments never cleared for the later stages')
+      }
+    })
+    log('composer_layout_81_done')
+
     // ---- ticket 53: turn answer split — a settled long turn shows its LAST
     // text block as the answer; earlier narration folds into the Worked
     // container (hidden collapsed, work rows when opened) and the tool that

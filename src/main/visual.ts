@@ -59,6 +59,7 @@ import { foldVisualEnabled } from './visual-fold'
 import { codeblockVisualEnabled } from './visual-codeblock'
 import { mermaidVisualEnabled } from './visual-mermaid'
 import { expandVisualEnabled } from './visual-expand'
+import { composerLayoutVisualEnabled } from './visual-composer-layout'
 import { skillCardVisualEnabled } from './visual-skill-card'
 import { answerVisualEnabled } from './visual-answer'
 import { workedVisualEnabled } from './visual-worked-container'
@@ -211,6 +212,8 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
   if (mermaidVisualEnabled()) return
   // And for the composer-expand harness (ticket 49).
   if (expandVisualEnabled()) return
+  // And for the composer-layout harness (ticket 81).
+  if (composerLayoutVisualEnabled()) return
   // And for the command-card harness (ticket 72).
   if (skillCardVisualEnabled()) return
   // And for the answer-split harness (ticket 53).

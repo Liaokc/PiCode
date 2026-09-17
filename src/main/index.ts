@@ -45,6 +45,7 @@ import { startFilebarVisualIfEnabled, isolateFilebarUserData } from './visual-fi
 import { startRailStackVisualIfEnabled, isolateRailStackUserData } from './visual-rail-stack'
 import { startThinkingVisualIfEnabled, isolateThinkingUserData } from './visual-thinking'
 import { startExpandVisualIfEnabled, isolateExpandUserData } from './visual-expand'
+import { startComposerLayoutVisualIfEnabled, isolateComposerLayoutUserData } from './visual-composer-layout'
 import { startSkillCardVisualIfEnabled, isolateSkillCardUserData } from './visual-skill-card'
 import { startContextRingVisualIfEnabled, isolateContextRingUserData } from './visual-context-ring'
 import { startTreeVisualIfEnabled, isolateTreeUserData } from './visual-tree'
@@ -94,6 +95,9 @@ isolateFoldUserData()
 // Ticket-49 composer-expand harness — same throwaway-userData rule (no-op
 // unless PICODE_VISUAL_EXPAND=1).
 isolateExpandUserData()
+// Ticket-81 composer-layout harness — same throwaway-userData rule (no-op
+// unless PICODE_VISUAL_COMPOSER_LAYOUT=1).
+isolateComposerLayoutUserData()
 // Ticket-72 command-card harness — same throwaway-userData rule (no-op
 // unless PICODE_VISUAL_SKILL_CARD=1).
 isolateSkillCardUserData()
@@ -394,6 +398,8 @@ app.whenReady().then(() => {
   startFoldVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-49 composer-expand harness — same seeding constraint.
   startExpandVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  // Ticket-81 composer-layout harness — same seeding constraint.
+  startComposerLayoutVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-72 command-card harness — same seeding constraint (the seeded
   // session lands in the isolated store before the index reads it).
   startSkillCardVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))

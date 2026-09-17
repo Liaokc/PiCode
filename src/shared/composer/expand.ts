@@ -26,6 +26,12 @@ export const COMPOSER_EXPAND_MIN_PX = 280
 /** The expanded cap — never swallows the main zone, however tall it is. */
 export const COMPOSER_EXPAND_MAX_PX = 560
 
+/** The expand/collapse glide's settle budget: strictly longer than the panes'
+ * calibrated --pane-motion-duration (200ms), so the animation-marker cleanup
+ * runs only after transitionend could have fired (reduced motion never fires
+ * it — the timeout is the only cleanup there). */
+export const COMPOSER_EXPAND_ANIM_SETTLE_MS = 300
+
 /**
  * Content measurement → rendered input height, clamped [74, 160]. NaN —
  * the one junk measurement — collapses to the floor so a broken reading
@@ -70,4 +76,38 @@ const EXPAND_TRANSITIONS: Readonly<Record<ComposerExpandState, Readonly<Record<C
 
 export function reduceComposerExpand(state: ComposerExpandState, event: ComposerExpandEvent): ComposerExpandState {
   return EXPAND_TRANSITIONS[state][event]
+}
+
+/**
+ * The scroll position that keeps the caret's line fully visible inside the
+ * scrolled input, or null when it already is (no write). Ticket 81 R7: the
+ * auto-grow re-measure resets height to auto, which clamps the scrolled
+ * view back to the top at the 160px cap — after re-pinning, the caret's
+ * line must be scrolled back into view or the newest typed line stays below
+ * the fold (with attachments docked right beneath the input that reads as
+ * "the strip covers my new lines").
+ *
+ * Coordinates: `lineTopPx` is the caret line's flow position from the scroll
+ * origin (padding top + line index × line height); visibility is exact
+ * containment in [scrollTop, scrollTop + clientHeight]. Junk (NaN/∞) or a
+ * non-positive line height/viewport yields null — a broken reading never
+ * moves the view. Whole pixels out (scrollTop takes fractional values, but
+ * pixel-aligned positions render crisp).
+ */
+export function composerCaretReveal(input: {
+  lineTopPx: number
+  lineHeightPx: number
+  scrollTopPx: number
+  clientHeightPx: number
+}): number | null {
+  const { lineTopPx, lineHeightPx, scrollTopPx, clientHeightPx } = input
+  if (![lineTopPx, lineHeightPx, scrollTopPx, clientHeightPx].every((n) => Number.isFinite(n))) return null
+  if (lineHeightPx <= 0 || clientHeightPx <= 0) return null
+  const lineBottomPx = lineTopPx + lineHeightPx
+  if (lineTopPx >= scrollTopPx && lineBottomPx <= scrollTopPx + clientHeightPx) return null
+  // One line is smaller than any real viewport, so at most one edge can
+  // violate: below the fold → align the line's bottom to the viewport
+  // bottom; above the fold → align its top to the viewport top.
+  if (lineTopPx < scrollTopPx) return Math.round(lineTopPx)
+  return Math.round(lineBottomPx - clientHeightPx)
 }
