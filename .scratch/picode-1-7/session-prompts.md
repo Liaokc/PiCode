@@ -35,7 +35,7 @@ cd ~/PiCode && bash scripts/merge-ticket.sh <NN>
 # 其余活跃 worktree 逐个 git rebase main
 ```
 
-## 波次表（8 波；每波 ≤3 并发，遵守 AGENTS.md serialization）
+## 波次表（9 波；每波 ≤3 并发，遵守 AGENTS.md serialization）
 
 | 波次 | 工单 | 碰撞面要点 | 阻塞 |
 |---|---|---|---|
@@ -65,8 +65,9 @@ cd ~/PiCode && bash scripts/merge-ticket.sh <NN>
 | | **104** 运行中重命名 | host handleRename 守卫 | **100** |
 | **W9** | **105** 终端即聚焦 | TerminalDock focus | 无 |
 | | **106** 新卡片秒出 | registry 乐观注入 + 对账 | **95** |
+| | **107** 文件浏览器实时刷新 + 置顶行 View files | Sidebar 置顶行 + FileBrowser（watch 通路则契约增量） | **84** |
 
-> 群分：A（composer 群 81→91→98）/ B（转录群 82→92→94→97→103）/ C（侧栏群 84→95→106）/ D（子代理 90→99→101）/ 独立快线 83/85/86/87/88/89→96/93/100→104/105。
+> 群分：A（composer 群 81→91→98）/ B（转录群 82→92→94→97→103）/ C（侧栏群 84→95→106；107 文件浏览器+置顶行候 84，排 W9）/ D（子代理 90→99→101）/ 独立快线 83/85/86/87/88/89→96/93/100→104/105。
 > **防冲突纪律**（同 v1.1–v1.6，三件事）：
 > 1. 每票合入 main 后，其余活跃 worktree **立即** `git rebase main`；
 > 2. contract / app.css / CONTEXT.md / smoke.ts **只增不改**（追加自己的区段/词条/阶段，不动别人行）；
@@ -642,6 +643,28 @@ cd .worktrees/wt-106-instant-card && npm install
 语义生效）；session_created 对账替换；boot 失败移除占位 + toast 如实；
 占位卡不显未知量、不伪装已确认；索引轮询不动；与拖拽排序（84）共存。
 流程同 T81（merge-ticket.sh 106）。
+```
+
+---
+
+## T107 — 文件浏览器实时刷新 + 置顶行 View files（W9，Blocked by 84）
+
+```bash
+cd ~/PiCode
+git worktree add .worktrees/wt-107-fb-refresh-pinned-viewfiles -b t107-fb-refresh-pinned-viewfiles main
+cd .worktrees/wt-107-fb-refresh-pinned-viewfiles && npm install
+```
+
+```text
+/implement .scratch/picode-1-7/issues/107-filebrowser-refresh-pinned-viewfiles.md
+
+规矩：同 T81（分支 t107-fb-refresh-pinned-viewfiles）。84 已合入 main，
+开工前基线即含拖拽重排；Sidebar.tsx 以 84 落定后的行/组结构为准。
+核心：①文件浏览器实时刷新——watch 通路（契约增量则 additive-only +
+host-contract smoke 报备，同 90/96/97/100 先例）或零契约失效重读，票内
+裁量；实测不可靠才降级加手动刷新钮（证据留 Comments）。②置顶区会话行
+hover 出 View files 入口（两视图 Pinned 分区一致），走会话→项目 cwd 映射。
+流程同 T81（merge-ticket.sh 107）。
 ```
 
 ---

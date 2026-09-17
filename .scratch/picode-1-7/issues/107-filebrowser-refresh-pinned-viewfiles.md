@@ -21,3 +21,4 @@
 ## Comments
 
 - 2026-09-17 (merge session，操作者口头需求入册)：需求转写两条 + 码库取证（FileBrowser 无刷新/无 watch、已加载目录缓存于 reducer；置顶行无 View files 入口；preview.load 通道既有可复用；CONTEXT.md 无文件浏览器独立词条——若随票立词条则实时刷新语义一并入册）。**波次归属待操作者确认**：建议排 84 之后（同 Sidebar.tsx 串行避冲突）；若需提前，①文件浏览器刷新可拆票先行（与 84 无碰撞），②置顶行入口仍候 84。合并会话仅入册，不开发。
+- 2026-09-17 (merge session，操作者裁决「按 Blocked by: 84 走，波次合并会话调整」)：107 排入 **W9**（与 105/106 同波；W8 已满员 101/103/104）。阻塞 84 为 W2，到 W9 时窗早已解除；与 105（TerminalDock）/106（registry 注入）零碰撞。T107 会话 prompt 已随 session-prompts.md 入册（分支 t107-fb-refresh-pinned-viewfiles，基线含 84 的 Sidebar 结构）。波次表头部波数同步修正 8→9。
