@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, type JSX } from 'react'
+import { useEffect, useMemo, useRef, type JSX, type RefObject } from 'react'
 import type { SessionTreePayload } from '../../../shared/sessions/types'
 import { sessionTreeDisplayRows, type TreeDisplayRow } from '../../../shared/sessions/tree-view'
+import { shouldCloseOnOutsideMousedown } from '../../../shared/composer/outside-close'
 import Tooltip from './Tooltip'
 import { GitBranchIcon } from './icons'
 
@@ -9,6 +10,13 @@ interface TreePanelProps {
   onNavigate: (entryId: string) => void
   onFork: (entryId: string) => void
   onClose: () => void
+  /** Ticket 83: ref of the owning topbar History button — REQUIRED, the
+   * owning trigger is intrinsic to this panel (ticket-70 precedent: the
+   * chip menus always pass their chip). Its mousedown is the first half of
+   * the toggle press and must NOT take the outside-close path — the
+   * button's own click toggle does that close (mousedown-close + click
+   * toggle is exactly the close-reopen race). */
+  anchorRef: RefObject<HTMLButtonElement | null>
 }
 
 const kindClass = (row: TreeDisplayRow): string =>
@@ -29,12 +37,21 @@ const kindClass = (row: TreeDisplayRow): string =>
  * TUI's keyboard features (search/label/copy/filters) are deliberately out
  * of scope (spec Q8).
  */
-export default function TreePanel({ tree, onNavigate, onFork, onClose }: TreePanelProps): JSX.Element {
+export default function TreePanel({ tree, onNavigate, onFork, onClose, anchorRef }: TreePanelProps): JSX.Element {
   const panelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     function onDocClick(event: MouseEvent): void {
-      if (panelRef.current && !panelRef.current.contains(event.target as Node)) onClose()
+      // Ticket 83 (the ticket-70 race's second sighting): the raw
+      // outside-close used to fire when the mousedown landed on the
+      // History button that OWNS this panel — the button sits outside the
+      // panel — and the button's click toggle then re-opened what it had
+      // just closed ("再点必不收"). The one shared seam decides: panel
+      // inside never closes, the owning button is exempt (its click toggle
+      // closes), anything else is a real outside click.
+      if (shouldCloseOnOutsideMousedown({ popover: panelRef.current, anchor: anchorRef.current, target: event.target })) {
+        onClose()
+      }
     }
     function onKey(event: KeyboardEvent): void {
       if (event.key === 'Escape') onClose()
@@ -45,7 +62,7 @@ export default function TreePanel({ tree, onNavigate, onFork, onClose }: TreePan
       document.removeEventListener('mousedown', onDocClick)
       document.removeEventListener('keydown', onKey)
     }
-  }, [onClose])
+  }, [onClose, anchorRef])
 
   const rows = useMemo(() => (tree ? sessionTreeDisplayRows(tree) : []), [tree])
 

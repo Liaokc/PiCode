@@ -89,6 +89,10 @@ export default function ChatView({
   onDeny
 }: ChatViewProps): JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null)
+  // Ticket 83: the History button owns the TreePanel — its ref is the
+  // outside-close anchor (the mid-press half of a button toggle must not
+  // close the panel; the click toggle does).
+  const treeBtnRef = useRef<HTMLButtonElement>(null)
   // Ticket 45 scroll-stay bookkeeping: growth detection by reference (every
   // reducer rewrite of entries/expandedTurns), the focused session's id, and
   // the two pin latches — send (one decision pass) and jump travel (until
@@ -271,11 +275,18 @@ export default function ChatView({
             <PencilIcon size={13} />
           </button>
         </Tooltip>
-        <button type="button" className={treeOpen ? 'chat-topbar-btn chat-topbar-btn-open' : 'chat-topbar-btn'} onClick={onToggleTree}>
+        <button
+          ref={treeBtnRef}
+          type="button"
+          className={treeOpen ? 'chat-topbar-btn chat-topbar-btn-open' : 'chat-topbar-btn'}
+          onClick={onToggleTree}
+        >
           History
           <ChevronDownIcon size={13} />
         </button>
-        {treeOpen && <TreePanel tree={tree} onNavigate={onNavigateTree} onFork={onFork} onClose={onCloseTree} />}
+        {treeOpen && (
+          <TreePanel tree={tree} onNavigate={onNavigateTree} onFork={onFork} onClose={onCloseTree} anchorRef={treeBtnRef} />
+        )}
       </div>
       {cwdMissing && (
         /* Ticket 54, CWD Banner: persistent warning at the top of the

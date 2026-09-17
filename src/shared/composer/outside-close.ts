@@ -1,8 +1,10 @@
 /**
- * Ticket 70 (spec R4): the ONE outside-close decision for every
- * ComposerPopover's document-level mousedown listener — pure data in, one
- * boolean out, zero DOM dependency (the Node.contains role is an injected
- * method, so the table-driven suite needs no jsdom).
+ * Tickets 70 + 83 (spec R4 + R18): the ONE outside-close decision for every
+ * popover-with-a-trigger's document-level mousedown listener — pure data in,
+ * one boolean out, zero DOM dependency (the Node.contains role is an
+ * injected method, so the table-driven suite needs no jsdom). Serves the
+ * three ComposerPopover chip menus (ticket 70) and the chat-topbar History
+ * panel (ticket 83 — TreePanel, anchored to the History button).
  *
  * The defect it decides away: clicking the chip that OWNS an open popover
  * used to race itself — the popover's outside-close fired on mousedown and
@@ -37,9 +39,10 @@ export function shouldCloseOnOutsideMousedown(input: {
   // Clicks inside the popover are its own — rows pick on click; closing on
   // their mousedown would kill the pick (and the pre-70 code agreed).
   if (popover.contains(target)) return false
-  // The owning chip is NOT an outside click: its mousedown is the first
-  // half of the press that the chip's click toggle completes. Closing here
-  // is exactly the race — hand the event over untouched.
+  // The owning trigger is NOT an outside click (ticket 70: a chip; ticket
+  // 83: the History button): its mousedown is the first half of the press
+  // that its own click toggle completes. Closing here is exactly the race
+  // — hand the event over untouched.
   if (anchor !== null && anchor.contains(target)) return false
   return true
 }

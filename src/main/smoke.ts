@@ -223,6 +223,27 @@ const composerChipPressCompletionJs = (ariaPrefix: string): string =>
 const composerChipPressJs = (ariaPrefix: string): string =>
   [composerChipDownJs(ariaPrefix), composerChipPressCompletionJs(ariaPrefix)].join(';\n')
 
+/** Ticket 83: a REAL press on the topbar History button (the TreePanel's
+ * owning trigger), split exactly like the chip press helpers above — the
+ * synthetic click() the ticket-43 stage uses never fires mousedown, which
+ * is exactly where the close-reopen toggle race hides. Mid-press splits:
+ * historyBtnDownJs fires only the mousedown; historyBtnPressCompletionJs
+ * finishes mouseup + click — a stage can probe BETWEEN the two halves. */
+const historyBtnEventJs = (type: string): string => `(() => {
+  const btn = [...document.querySelectorAll('.chat-topbar-btn')].find((el) => el.textContent?.includes('History'))
+  if (!(btn instanceof HTMLElement)) return false
+  const r = btn.getBoundingClientRect()
+  btn.dispatchEvent(new MouseEvent('${type}', {
+    bubbles: true, cancelable: true,
+    clientX: r.x + r.width / 2, clientY: r.y + r.height / 2
+  }))
+  return true
+})()`
+const historyBtnDownJs = (): string => historyBtnEventJs('mousedown')
+const historyBtnPressCompletionJs = (): string =>
+  [historyBtnEventJs('mouseup'), historyBtnEventJs('click')].join(';\n')
+const historyBtnPressJs = (): string => [historyBtnDownJs(), historyBtnPressCompletionJs()].join(';\n')
+
 /** The aria-label of the chip whose aria-label starts with the prefix ('' = absent). */
 const composerChipLabelJs = (ariaPrefix: string): string =>
   `document.querySelector('.cmp-chip[aria-label^=${JSON.stringify(ariaPrefix)}]')?.getAttribute('aria-label') ?? ''`
@@ -835,8 +856,13 @@ export function startSmokeIfEnabled(
         // back-to-back Enter reads the pre-commit closure where the menu is
         // still open and flatMenuKey turns the keystroke into a row pick
         // (row 0 = /compact → a real compaction, no pointer toast — the
-        // 2026-09-16 double failure). One commit gap between the two keys.
-        await new Promise((r) => setTimeout(r, 300))
+        // 2026-09-16 double failure, raced again 2026-09-17 under heavy
+        // machine load where the fixed 300ms gap lost). One PROBED gap
+        // instead of a fixed sleep: poll until the popover is actually
+        // gone before Enter (ticket-83 run-hardening, disclosed).
+        if (!(await waitForProbe(win, `document.querySelector('.cmp-popover') === null`, 3_000))) {
+          fail(`the / menu never closed after the Escape while gating ${typed}`)
+        }
         await win.webContents.executeJavaScript(composerKeyJs('Enter'))
         const toasted = await waitForProbe(win, toastProbe(needle), 5_000)
         if (!toasted) {
@@ -3514,6 +3540,183 @@ export function startSmokeIfEnabled(
       rmSync(treeProject, { recursive: true, force: true })
     }
     log('history_tree_done')
+
+    // ---- ticket 83: the History-button toggle race — the ticket-70 race's
+    // second sighting, on the branch-history panel. TreePanel hung a
+    // document-level mousedown outside-close that did NOT exempt the owning
+    // History button: with the panel open, the mousedown half of a press on
+    // the button closed it (the button sits outside the panel), React
+    // re-rendered with treeOpen === false, and the button's click toggle
+    // reopened it — "click again to close" bounced straight back open.
+    // After the fix (the shared shouldCloseOnOutsideMousedown seam with the
+    // button as the anchor) the decisive mid-press probe keeps the panel
+    // mounted and the completing click does the one close; real outside
+    // presses and Esc still close for good; presses inside the panel never
+    // take the outside path. ----
+    log('history_toggle_start')
+    const toggleStore = process.env['PICODE_SESSION_DIR']
+    if (!toggleStore) fail('ticket-83 stage: PICODE_SESSION_DIR is not set')
+    const toggleProject = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-tree83-'))
+    try {
+      const stamp = new Date().toISOString()
+      const toggleFile = path.join(toggleStore, 'tree83.jsonl')
+      writeFileSync(
+        toggleFile,
+        [
+          JSON.stringify({ type: 'session', version: 3, id: 'tree83-fixed-id', timestamp: stamp, cwd: toggleProject }),
+          JSON.stringify({
+            type: 'message', id: 't83-u1', parentId: null, timestamp: stamp,
+            message: { role: 'user', content: [{ type: 'text', text: 'PICODE_TREE83 toggle fixture' }] }
+          }),
+          JSON.stringify({
+            type: 'message', id: 't83-a1', parentId: 't83-u1', timestamp: stamp,
+            message: { role: 'assistant', content: [{ type: 'text', text: 'PICODE_TREE83 reply' }], stopReason: 'stop' }
+          }),
+          // Written LAST so the file-order leaf is a2 — a1 is a mid-path
+          // assistant row the row-press probe can navigate to (ticket 79:
+          // navigating to a USER entry moves the leaf to its parent, so the
+          // probe presses an assistant row — the ticket-43 proven path).
+          JSON.stringify({
+            type: 'message', id: 't83-a2', parentId: 't83-a1', timestamp: stamp,
+            message: { role: 'assistant', content: [{ type: 'text', text: 'PICODE_TREE83 leaf path end' }], stopReason: 'stop' }
+          })
+        ].join('\n') + '\n'
+      )
+
+      supervisor.handleParentCommand({ type: 'resume_session', sessionFile: toggleFile, cwd: toggleProject })
+      await waitFor((e) => e.type === 'session_created' && e.sessionFile === toggleFile, 'ticket-83 resume session_created')
+
+      await withWindow(getWindow, async (win) => {
+        const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+        if (!(await waitForProbe(win, `document.querySelector('.chat-view') !== null`, 10_000))) {
+          fail('ticket-83 stage: the resumed session never reached the chat view')
+        }
+        const panelPresentJs = `document.querySelector('.tree-panel') !== null`
+        const waitPanel = async (want: boolean): Promise<void> => {
+          if (!(await waitForProbe(win, want ? panelPresentJs : `!(${panelPresentJs})`, 5_000))) {
+            fail(`the history panel should be ${want ? 'open' : 'closed'} but never settled`)
+          }
+        }
+
+        // Open with a REAL press; rows arrive after the toggle's request_tree.
+        if (!(await js(historyBtnPressJs()).catch(() => false))) fail('the History button is missing for the toggle stage')
+        await waitPanel(true)
+        if (!(await waitForProbe(win, `document.querySelectorAll('.tree-row').length > 0`, 5_000))) {
+          fail('ticket-83 stage: the tree rows never rendered')
+        }
+
+        // The decisive mid-press probe: after the mousedown half of a press
+        // on the OWNING History button the panel must still be there
+        // (pre-83 it was already closed at this point — the click then
+        // reopened it). The completing click does the one close (toggle).
+        if (!(await js(historyBtnDownJs()).catch(() => false))) fail('the History button is missing mid-press')
+        await new Promise((r) => setTimeout(r, 250))
+        if (!(await js(panelPresentJs).catch(() => false))) {
+          fail('the history panel closed on the mousedown half of the owning History press (the pre-83 race is back)')
+        }
+        await js(historyBtnPressCompletionJs())
+        await waitPanel(false)
+        log('history_toggle_press_closes')
+
+        // A press INSIDE the panel never takes the outside path: mousedown
+        // the panel header, probe, then complete the (handlerless) click.
+        if (!(await js(historyBtnPressJs()).catch(() => false))) fail('the History button is missing for the inside-press probe')
+        await waitPanel(true)
+        const headerDown = await js(
+          `(() => {
+            const header = document.querySelector('.tree-panel-header')
+            if (!(header instanceof HTMLElement)) return false
+            const r = header.getBoundingClientRect()
+            header.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 }))
+            return true
+          })()`
+        ).catch(() => false)
+        if (!headerDown) fail('the history panel has no header to press')
+        await new Promise((r) => setTimeout(r, 250))
+        if (!(await js(panelPresentJs).catch(() => false))) fail('the history panel closed on a mousedown INSIDE it (outside-close leaked inward)')
+        await js(
+          `(() => {
+            const header = document.querySelector('.tree-panel-header')
+            if (!(header instanceof HTMLElement)) return false
+            const r = header.getBoundingClientRect()
+            for (const type of ['mouseup', 'click']) {
+              header.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 }))
+            }
+            return true
+          })()`
+        )
+        await new Promise((r) => setTimeout(r, 250))
+        if (!(await js(panelPresentJs).catch(() => false))) fail('the history panel closed on a click INSIDE it')
+        log('history_toggle_inside_ok')
+
+        // Esc still closes.
+        await js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`)
+        await waitPanel(false)
+        log('history_toggle_esc_ok')
+
+        // A real outside press closes for good: open, then a full press on
+        // document.body, re-checked after a beat so a late reopen cannot hide.
+        if (!(await js(historyBtnPressJs()).catch(() => false))) fail('the History button is missing for the outside-close probe')
+        await waitPanel(true)
+        await js(
+          `(() => {
+            const r = document.body.getBoundingClientRect()
+            for (const type of ['mousedown', 'mouseup', 'click']) {
+              document.body.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 }))
+            }
+            return true
+          })()`
+        )
+        await waitPanel(false)
+        await new Promise((r) => setTimeout(r, 400))
+        if (!(await js(`!(${panelPresentJs})`).catch(() => false))) fail('the history panel came back after a real outside press')
+        log('history_toggle_outside_ok')
+
+        // Panel actions never mis-close: a full press on a navigate row
+        // (the mid-path assistant a1 — the leaf is its child a2, so the
+        // navigate moves) moves the leaf (the current tag follows) and the
+        // panel STAYS open.
+        if (!(await js(historyBtnPressJs()).catch(() => false))) fail('the History button is missing for the row-press probe')
+        await waitPanel(true)
+        if (!(await waitForProbe(win, `document.querySelectorAll('.tree-row').length > 0`, 5_000))) {
+          fail('ticket-83 stage: the tree rows never rendered for the row press')
+        }
+        const rowDown = await js(
+          `(() => {
+            const row = [...document.querySelectorAll('.tree-row')].find((el) => el.textContent?.includes('PICODE_TREE83 reply'))
+            if (!(row instanceof HTMLElement)) return false
+            const r = row.getBoundingClientRect()
+            row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 }))
+            return true
+          })()`
+        ).catch(() => false)
+        if (!rowDown) fail('the history panel has no navigate row to press')
+        await new Promise((r) => setTimeout(r, 250))
+        if (!(await js(panelPresentJs).catch(() => false))) fail('the history panel closed on a row mousedown (outside-close leaked inward)')
+        await js(
+          `(() => {
+            const row = [...document.querySelectorAll('.tree-row')].find((el) => el.textContent?.includes('PICODE_TREE83 reply'))
+            if (!(row instanceof HTMLElement)) return false
+            const r = row.getBoundingClientRect()
+            for (const type of ['mouseup', 'click']) {
+              row.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 }))
+            }
+            return true
+          })()`
+        )
+        if (!(await waitForProbe(win, `(() => {
+          const row = [...document.querySelectorAll('.tree-row')].find((el) => el.textContent?.includes('PICODE_TREE83 reply'))
+          return row !== undefined && row.querySelector('.tree-leaf-tag') !== null
+        })()`, 5_000))) {
+          fail('ticket-83 stage: the row press never navigated (the leaf tag never moved)')
+        }
+        if (!(await js(panelPresentJs).catch(() => false))) fail('the history panel closed after a completed row navigation')
+        log('history_toggle_row_ok')
+      })
+    } finally {
+      rmSync(toggleProject, { recursive: true, force: true })
+    }
+    log('history_toggle_done')
 
     // ---- ticket 45: scroll stay + jump-to-latest ----
     // A FRESH session drives the three acceptance assertions. createSession

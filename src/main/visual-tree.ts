@@ -277,6 +277,31 @@ export function startTreeVisualIfEnabled(getWindow: () => BrowserWindow | null):
       assert(probe.forkBtns >= 5, 'fork buttons missing on rows')
       await capture(win, 'tr43-tree')
 
+      // Ticket 83: the toggle fix, captured. A REAL press on the History
+      // button (mousedown first) must keep the panel mounted at mid-press
+      // (pre-83 the outside-close fired there and the click re-opened it),
+      // and the completing click closes it. The closed frame pairs with the
+      // tr43-tree open frame: 再点必收, shown.
+      const historyPressJs = (type: string): string => `(() => {
+        const btn = [...document.querySelectorAll('.chat-topbar-btn')].find((el) => el.textContent?.includes('History'))
+        if (!(btn instanceof HTMLElement)) return false
+        const r = btn.getBoundingClientRect()
+        btn.dispatchEvent(new MouseEvent('${type}', { bubbles: true, cancelable: true, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 }))
+        return true
+      })()`
+      if (!(await win.webContents.executeJavaScript(historyPressJs('mousedown')).catch(() => false))) {
+        throw new Error('tree visual: the History button vanished at mid-press')
+      }
+      await sleep(250)
+      if (!(await waitFor(getWindow, `document.querySelector('.tree-panel') !== null`, 2_000))) {
+        throw new Error('tree visual: the panel closed on the mousedown half of the owning History press (the pre-83 race is back)')
+      }
+      await win.webContents.executeJavaScript(`${historyPressJs('mouseup')}; ${historyPressJs('click')}`)
+      if (!(await waitFor(getWindow, `document.querySelector('.tree-panel') === null`, 3_000))) {
+        throw new Error('tree visual: the second History press never closed the panel')
+      }
+      await capture(win, 'tr83-toggle-closed')
+
       console.log('tree visual: frame captured, all probes green')
       app.exit(0)
     } catch (err) {
