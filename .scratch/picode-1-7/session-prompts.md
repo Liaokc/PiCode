@@ -2,7 +2,7 @@
 
 > 每个工单一个新 pi 会话、一个 worktree、一条分支。本手册每块都可独立复制粘贴。
 > 约定详情见 `AGENTS.md › Parallel development (git worktrees)`。
-> 总 spec：`.scratch/picode-1-7/spec.md`（R1–R24 决议与验收口径；**每条 R 1:1 映射进票，81–102**——R5 拆三票、R7/R8/R10 合 81、R14/R17/R19 合 97）。
+> 总 spec：`.scratch/picode-1-7/spec.md`（R1–R25 决议与验收口径；**每条 R 1:1 映射进票，81–103**——R5 拆三票、R7/R8/R10 合 81、R14/R17/R19 合 97）。
 > 需求定稿全记录（23 痛点 × 六轮 25 问 + file:line 根因 + Pi 包取证 + ZCode bundle 键表 + 两处改判/一处加码）：`.scratch/picode-1-7/intake-grilling.md`。
 > 证据帧：`.scratch/compare/pi17-*`（操作者待复制——会话内贴图无法落盘）+ `icon-proposals/`（V2 定稿）。
 > 术语新增（子智能体目录/子代理对话/Manual 排序/图片预览/MCP 节 → 各票 rider；回合正文/常显段/过程叙述 live 语义修订 → 票 82）随票入 CONTEXT.md。
@@ -61,8 +61,9 @@ cd ~/PiCode && bash scripts/merge-ticket.sh <NN>
 | | **99** 子代理对话 tab | 侧板对话 + steer | **90** |
 | | **100** queue 修缮（**additive** queue ops） | QueuePanel + host 队列镜像 | **97**（同 host 文件） |
 | **W8** | **101** 子代理停止+徽标 | 停止钮 + 面板徽标 | **99** |
+| | **103** 转环增强 | TurnContainer 视觉 | **94** |
 
-> 群分：A（composer 群 81→91→98）/ B（转录群 82→92→94→97）/ C（侧栏群 84→95）/ D（子代理 90→99→101）/ 独立快线 83/85/86/87/88/89→96/102/93。
+> 群分：A（composer 群 81→91→98）/ B（转录群 82→92→94→97→103）/ C（侧栏群 84→95）/ D（子代理 90→99→101）/ 独立快线 83/85/86/87/88/89→96/102/93。
 > **防冲突纪律**（同 v1.1–v1.6，三件事）：
 > 1. 每票合入 main 后，其余活跃 worktree **立即** `git rebase main`；
 > 2. contract / app.css / CONTEXT.md / smoke.ts **只增不改**（追加自己的区段/词条/阶段，不动别人行）；
@@ -558,6 +559,26 @@ cd .worktrees/wt-101-subagent-stop && npm install
 核心：运行行方形停止钮 → 确认框 → RPC stop（前台 abort/dispose；状态流转
 如实上屏）；侧板开合钮运行计数徽标（零运行无徽标；点击直达目录 tab）。
 流程同 T81（merge-ticket.sh 101）。
+```
+
+---
+
+## T103 — 转环增强（W8，Blocked by 94）
+
+```bash
+cd ~/PiCode
+git worktree add .worktrees/wt-103-spinner -b t103-spinner main
+cd .worktrees/wt-103-spinner && npm install
+```
+
+```text
+/implement .scratch/picode-1-7/issues/103-working-spinner.md
+
+规矩：同 T81（分支 t103-spinner）。开工前 rebase main 拿 94 的基座。
+核心：live 展开态容器体底部新增同款转环（与顶 header 镜像）；折叠态维持
+header 单环；两处增强可见性（更大/强调色——visual 校准）；仅 live、落定无环；
+FollowView 同规。纯视觉零契约。
+流程同 T81（merge-ticket.sh 103）。
 ```
 
 ---

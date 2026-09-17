@@ -20,10 +20,11 @@ v1.6.0 验收后的真实使用判定——**七处缺陷、四处交付行为�
 - **侧栏空壳**：所有 tab 关闭后面板残留一个空壳选择页，要手动折叠。
 - **queue 面板**：排队行边框与 composer 卡边框重合（截图实证）；排队消息无 Edit，带图的改不了字只能全清重打。
 - **侧栏折叠聚合**：多个项目组时只能逐组点击折叠（票 39），无一键收起。
+- **working 状态弱**：live 时只有容器 header 左侧一个小转环，展开态底部无指示、两处都不够显眼。
 
 ## Solution
 
-二十四项需求（R1–R24），全部对齐实证参照（ZCode 实拍帧/bundle 键表 / Pi 包文档 / 会话记录形态）：
+二十五项需求（R1–R25），全部对齐实证参照（ZCode 实拍帧/bundle 键表 / Pi 包文档 / 会话记录形态）：
 
 0. **回合信息面三修**：文件条 settled-only（R1）；live 回合纯时间序单流、落定态维持「最终正文+折叠容器」的 ZCode 构图（R15）；发送消息气泡渲染图片缩略图（R17，与 R14 同增量）。
 1. **子智能体供面（R5）**：侧板「Subagents 目录 tab」（Running/Ended 两段、状态徽标、Show 20 more；父会话记录重放为主源 + async 工件 live 增补；嵌套只显顶层）→ 点击行开「子代理对话 tab」（一子代理一 tab：运行中可 steer、已结束只读）；停止钮带确认框；侧板开合钮运行计数徽标。host 经 pi-subagents 的 in-process RPC 桥接（additive 增量）。
@@ -37,6 +38,7 @@ v1.6.0 验收后的真实使用判定——**七处缺陷、四处交付行为�
 9. **零标签自动折叠（R22）**：右侧栏所有 tab 关闭后面板自动折叠；重开时零 tab 显既有 tab 选择页；深链自动展开不回归。
 10. **队列修缮（R23）**：queue 行与卡边分离（纯 CSS）；steer/follow-up 行内 **Edit 钮**（移除该条 + composer 预填原文+原图）与每行 × 删除；host 侧镜像 + clear/requeue 舞步实现（additive op）；全局 Clear 保留。
 11. **一键折叠（R24）**：Projects 分区行常驻 Collapse all / Expand all 双钮；各组形状记忆语义不破；Timeline 隐藏、置顶区不受影响。
+12. **转环增强（R25）**：live 展开态容器体底部新增同款转环（与顶 header 镜像）；折叠态维持 header 单环；两处增强可见性（更大/强调色——visual 校准）；仅 live，FollowView 同规。
 
 ## User Stories
 
@@ -218,6 +220,12 @@ v1.6.0 验收后的真实使用判定——**七处缺陷、四处交付行为�
 105. As an operator, I want group shape memory respected by the bulk actions, so that Show more positions survive the round trip.
 106. As an operator in Timeline view, I want the bulk actions hidden, so that the controls never appear where they do nothing.
 
+### R25 working 转环增强
+
+107. As an operator watching a live turn with the container expanded, I want a spinner at the bottom of the container body too, so that "still working" reads wherever I look.
+108. As an operator with the container collapsed, I want the header spinner kept in place but clearly visible, so that the working state reads at a glance.
+109. As an operator, I want both spinners more prominent (larger, accent-colored), so that the working state never blends into the transcript.
+
 ## Implementation Decisions
 
 - **R1 文件条 settled 门**：回合分组的文件条聚合仅在**落定回合**产出（live 回合不再携带），渲染门随分组模型走——live 全程无条、agent_end 落地即原位出现；Stop/中断/出错回合照出（更改是事实投影）；FollowView 同规则。零契约。
@@ -244,6 +252,7 @@ v1.6.0 验收后的真实使用判定——**七处缺陷、四处交付行为�
 - **R22 零标签自动折叠**：侧栏 openTabs 清空时面板自动折叠（开合状态在 shell 布局模型、标签在面板模型——跨模型联动的落点票内裁量）；重开 = ⌥⌘B/标题栏钮，零 tab 显既有 tab 选择页；深链 open-tab 伴随的面板自动展开不回归。
 - **R23 queue 修缮**：布局 = 行与卡边分离（水平内距 + 与 textarea/footer 间距，纯 CSS 票内裁量）；行级动作 = **Edit（移除该条 + 预填原文+原图）**与每行 × 删除（同机制不预填），全局 Clear 保留；实现 = **host 侧队列镜像**（出队时记 text+images）+ clearQueue/requeue 舞步（clearQueue → 剔除目标条 → 按序重投喂剩余条、图片从镜像取、保序——SDK 0.85.1 无单条移除 API 且 queue_update 只有文本）；**additive 契约增量：host op `edit_queue_entry` / `remove_queue_entry`**（实施时报备入账）；SDK 投递与舞步间的毫秒级竞态诚实记录、smoke 验证。
 - **R24 一键折叠**：Projects 分区行右侧常驻 Collapse all / Expand all 双钮（ZCode 同款动作对；筛选下拉不加）；折叠模型增聚合动作——collapse-all 全部置折叠（各组保留折叠前形状记忆）、expand-all 全部展开（恢复各自记忆形状）；仅 Projects 视图显示（Timeline 隐藏）；置顶区不受影响；无分组 no-op；形状记忆仍会话期内存级（票 39 口径不变）。
+- **R25 转环增强**：live 展开态容器体底部新增同款转环（左对齐体底缘、与顶 header 镜像）；折叠态维持 header 单环位置不变；两处增强可见性（更大直径 + 强调色/不透明——参数 visual harness 校准、票内裁量）；仅 live（落定无环）；FollowView 同规。纯视觉层零契约。
 - 术语随票入 CONTEXT.md：「子智能体目录（Subagent Directory）」「子代理对话（Subagent Transcript）」「Manual 排序（Manual Sort）」「图片预览（Image Preview）」「MCP 节（MCP Section）」+「回合正文/常显段/过程叙述」live 语义修订——草案见 `intake-grilling.md`。UI 文案全英文（词汇表约束不变）。
 
 ## Testing Decisions
@@ -252,7 +261,7 @@ v1.6.0 验收后的真实使用判定——**七处缺陷、四处交付行为�
 - **零新缝**，全落既有四缝：
   - **Seam-1 表驱动 vitest**（纯模型/投影族）：R1 文件条 settled 聚合门；R19 泡组合块模型（技能/文字/图片三段按存在性组合）；R21 预览分类纯函数（svg/html/image 识别、超限回退）；R22 零标签→折叠联动；R23 队列镜像模型（edit/remove 舞步保序、图片还原）；R24 折叠聚合（collapse/expand-all × 形状记忆）；R3 MCP 配置层合并与写入目标解析；R4 状态快照投影（含无会话降级）；R5 目录投影（会话记录重放 + 工件合并 + 状态映射表 + Show 20 more + 嵌套折叠）；R6 锚定位置差数学；R11 手动顺序模型（drag 进 Manual/切回/持久化形状/Timeline 排除）；R13 闩式决策表（四路发送 × 到底 × 上滑接管）；R14/R17 live 条目图片落账（echo 缺席兼容）；R15 live 时间序分组（无提升/落定同构）；R18 toggle 状态机（若收敛纯模型）。
   - **host-contract smoke**：四个 additive 增量到时报备入账并验证旧载荷兼容（既有惯例）——R4 MCP 状态事件、R5 子代理桥接事件与 steer/stop 命令、R14 user_message images 字段、R23 edit/remove_queue_entry ops；R3 OAuth 触发链（host 侧）。
-  - **electron smoke**：R1 落定出条/live 无条；R19 skill-only 泡渲染技能、技能+文字泡双段、容器内无 marker；R21 SVG 渲染态上屏 + 源码切换、HTML iframe 渲染（内联脚本探针 + 沙箱断言）、png 直显、markdown 不回归；R22 关到零自动折叠 + 重开显选择页；R23 queue 行无重合边 + Edit 预填（含图）+ 行删除；R24 collapse/expand-all 全组状态与形状记忆；R2 表格全高无内滚 + 浮层已删；R5 目录开合/对话 tab/steer 发送/确认停止/徽标；R6 锚定两态；R7 带图多行输入现场（**复现脚本 = 第一验收项**）；R9 预览四退出；R13 四路发送落底 + 上滑接管；R14 Stop→Edit 带图还原（live 场景——正是本次缺陷现场）；R15 live 流时间序 + 落定构图；R16 点击后 Enter 仍发送 + Tab 圈；R17 气泡缩略图 + 预览；R18 History 再点必收。
+  - **electron smoke**：R1 落定出条/live 无条；R19 skill-only 泡渲染技能、技能+文字泡双段、容器内无 marker；R21 SVG 渲染态上屏 + 源码切换、HTML iframe 渲染（内联脚本探针 + 沙箱断言）、png 直显、markdown 不回归；R22 关到零自动折叠 + 重开显选择页；R23 queue 行无重合边 + Edit 预填（含图）+ 行删除；R24 collapse/expand-all 全组状态与形状记忆；R25 live 展开态底环存在 + 落定无环；R2 表格全高无内滚 + 浮层已删；R5 目录开合/对话 tab/steer 发送/确认停止/徽标；R6 锚定两态；R7 带图多行输入现场（**复现脚本 = 第一验收项**）；R9 预览四退出；R13 四路发送落底 + 上滑接管；R14 Stop→Edit 带图还原（live 场景——正是本次缺陷现场）；R15 live 流时间序 + 落定构图；R16 点击后 Enter 仍发送 + Tab 圈；R17 气泡缩略图 + 预览；R18 History 再点必收。
   - **visual harness**：R2 表格帧；R5 目录/对话 tab 帧（对照 z17-subagent-dir / z17-subagent-chat）；R9 预览帧；R11 拖拽指示帧；R15 live/落定两态帧（对照 pi17-container-*）；R20 图标各尺寸帧；R21 SVG/HTML 渲染帧。
 - 性能红线：R5 目录 live 刷新零轮询（事件驱动）；R11 拖拽零全列表重挂载（局部移动）；R15 不增流式路径渲染次数；R16 blur 不破坏既有菜单键盘导航（票 68/69 基座）。
 
@@ -272,7 +281,7 @@ v1.6.0 验收后的真实使用判定——**七处缺陷、四处交付行为�
 - **R→票映射纪律**（/to-tickets 时执行）：本 spec **每条 R（R1–R18）必须映射到至少一张票**——1.3 R11 掉票教训，1.5/1.6 已在 tracker 注明并执行。
 - **缝确认**（2026-09-17，随本 spec 发布报备）：零新缝——全落既有四缝（1.5/1.6 先例：复触发视为无异议）。四个 additive 契约/投影增量（R4 MCP 状态事件、R5 子代理桥接、R14/R17 user_message images、R23 edit/remove_queue_entry ops）实施时报备入账。
 - **ADR 检查**：无新 ADR——R5/R4 桥接走 ADR-0003 host 架构内的 inline extension + ADR-0006 注册表框架（子代理宿主于会话 host 进程，不改进程拓扑）；R3 配置写入与 Packages 节同类（Pi 配置文件，非会话文件——ADR-0002 纪律不破）；R11/R13/R15/R16 均为既有显示/交互模型的可逆修订。
-- **依赖与波次提示（/to-tickets 用）**：同文件群 A（composer 群 R7→R8→R9→R10→R16）强串行；同文件群 B（转录/回合群 R15→R1→R6→R19）串行、R18 独立；同文件群 C（侧栏 R11 独占、R12 独立、R24 同区段）；R5 大项建议拆 2–3 票（桥接+目录 / 对话+steer / 停止+徽标）；R3/R4 拆两票（Q4 拍板）；R14+R17+R19 同渲染区段（用户条目/泡）可同票或紧邻；R9 为 R17 预览的前置；R21 独立（preview 群）；R20 独立（打包链）；R22 独立（layout/panel 模型）；R23 独立（composer+host 队列镜像——与 R14 同 host 文件弱邻接）。
+- **依赖与波次提示（/to-tickets 用）**：同文件群 A（composer 群 R7→R8→R9→R10→R16）强串行；同文件群 B（转录/回合群 R15→R1→R6→R19→R25）串行、R18 独立；同文件群 C（侧栏 R11 独占、R12 独立、R24 同区段）；R5 大项建议拆 2–3 票（桥接+目录 / 对话+steer / 停止+徽标）；R3/R4 拆两票（Q4 拍板）；R14+R17+R19 同渲染区段（用户条目/泡）可同票或紧邻；R9 为 R17 预览的前置；R21 独立（preview 群）；R20 独立（打包链）；R22 独立（layout/panel 模型）；R23 独立（composer+host 队列镜像——与 R14 同 host 文件弱邻接）。
 - **操作者待办**：贴图原件复制入 `.scratch/compare/`（pi17-*）；实施期 dev app / smoke 遵守 dev-app serialization（每票验收项内嵌 ps 自查——1.5 起口径）；merge-ticket.sh 已含 picode-1-7（无需再补）。
 
 ## Comments
@@ -282,4 +291,6 @@ v1.6.0 验收后的真实使用判定——**七处缺陷、四处交付行为�
 - 2026-09-17 (R19 增补，Round 5)：skill-only 空泡 + 技能行被折叠吞（第 18 条痛点）；操作者细化改判 = **重构消息泡**（泡 = 技能渲染 + 用户文本组合块，容器内 marker 退役），非原推荐「删泡」。定稿见 R19；记录见 `intake-grilling.md` Round 5。
 - 2026-09-17 (R20/R21 增补，Round 6)：Q22 图标选型 = **V2**（π + 橙终端光标；四案画廊 `.scratch/picode-1-7/icon-proposals/`）；Q23 SVG/HTML/图片双态预览全按推荐（HTML = 带脚本沙箱 iframe）。定稿见 R20/R21；记录见 `intake-grilling.md` Round 6。
 - 2026-09-17 (R22 增补，Round 7)：侧栏零标签自动折叠（免问定稿——空壳选择页现状实锤，规则唯一）。定稿见 R22；记录见 `intake-grilling.md` Round 7。
+- 2026-09-17 (R23/R24 增补，Round 8)：Q24 queue 三件套（布局修复 / 行内 Edit 带图还原 / 行删除 + additive op）；Q25 一键折叠双钮。定稿见 R23/R24；记录见 `intake-grilling.md` Round 8。**additive 增量总数更新为四项**（R23 edit/remove_queue_entry 加入）。
+- 2026-09-17 (R25 增补，Round 9)：working 转环增强（免问定稿——规格操作者直给）。定稿见 R25；记录见 `intake-grilling.md` Round 9。
 - 2026-09-17 (R23/R24 增补，Round 8)：Q24 queue 三件套（布局修复 / 行内 Edit 带图还原 / 行删除 + additive op）；Q25 一键折叠双钮。定稿见 R23/R24；记录见 `intake-grilling.md` Round 8。**additive 增量总数更新为四项**（R23 edit/remove_queue_entry 加入）。
