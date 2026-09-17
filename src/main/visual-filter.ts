@@ -315,8 +315,9 @@ export function startFilterVisualIfEnabled(getWindow: () => BrowserWindow | null
       ).catch(() => null)) as Array<{ label: string; checked: boolean }> | null
       if (!menuState) throw new Error('filter visual: dropdown items probe failed')
       assert(
-        JSON.stringify(menuState.map((i) => i.label)) === JSON.stringify(['By project', 'Timeline', 'Updated', 'Created']),
-        `dropdown must carry the four ZCode items in order (got ${JSON.stringify(menuState.map((i) => i.label))})`
+        JSON.stringify(menuState.map((i) => i.label)) ===
+          JSON.stringify(['By project', 'Timeline', 'Updated', 'Created', 'Manual']),
+        `dropdown must carry the five ZCode items in order, Manual third sort (ticket 84) (got ${JSON.stringify(menuState.map((i) => i.label))})`
       )
       assert(
         menuState.filter((i) => i.checked).map((i) => i.label).join(',') === 'By project,Updated',

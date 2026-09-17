@@ -10,8 +10,34 @@ import type { SessionSummary } from './types.ts'
 export type SessionView = 'projects' | 'timeline'
 
 /** Sidebar sort vocabulary (ticket 33, the filter dropdown): updated = file
- * mtime, created = file birthtime (degrading to the header timestamp). */
-export type SessionSort = 'updated' | 'created'
+ * mtime, created = file birthtime (degrading to the header timestamp).
+ * Ticket 84 adds `manual` — the user's drag arrangement (ManualSidebarOrder);
+ * entered by the first drag or the dropdown, inactive while Updated/Created
+ * is picked (the stored order is preserved, never applied). */
+export type SessionSort = 'updated' | 'created' | 'manual'
+
+/** The user's drag arrangement for the sidebar (ticket 84): the project-group
+ * order plus one session order per group, keyed by cwd. Persisted as a local
+ * preference — session files are never touched by reordering. Ids and cwds
+ * missing from the structures (new sessions, new projects) fall back to the
+ * Updated arrangement at the TAIL: stored positions rule what the user has
+ * arranged; the unknowns line up newest-first after them, so an EMPTY order
+ * renders exactly like the Updated sort. */
+export interface ManualSidebarOrder {
+  /** Group-internal session order: cwd → session ids, first = top. */
+  readonly sessions: Readonly<Record<string, readonly string[]>>
+  /** Project-group order (first = top). */
+  readonly groups: readonly string[]
+}
+
+export const EMPTY_MANUAL_ORDER: ManualSidebarOrder = { sessions: {}, groups: [] }
+
+/** True when nothing has ever been arranged — the Sidebar uses it to decide
+ * between snapshotting the current render (first drag) and composing onto
+ * the stored arrangement (every later drag). */
+export function isEmptyManualOrder(order: ManualSidebarOrder): boolean {
+  return order.groups.length === 0 && Object.keys(order.sessions).length === 0
+}
 
 export interface SessionProjectGroup {
   cwd: string
@@ -43,37 +69,48 @@ export function sessionCreatedMs(session: SessionSummary): number {
   return Number.isNaN(parsed) ? 0 : parsed
 }
 
-const sortKey = (session: SessionSummary, sort: SessionSort): number =>
+/** The two automatic sort keys — `manual` routes to its own render path and
+ * never reaches these comparators. */
+type AutoSort = Exclude<SessionSort, 'manual'>
+
+const sortKey = (session: SessionSummary, sort: AutoSort): number =>
   sort === 'created' ? sessionCreatedMs(session) : session.modifiedAt
 
-const tieKey = (session: SessionSummary, sort: SessionSort): number =>
+const tieKey = (session: SessionSummary, sort: AutoSort): number =>
   sort === 'created' ? session.modifiedAt : sessionCreatedMs(session)
 
 /** Newest-first comparator for the dropdown's sort key; ties fall to the
  * other clock so equal mtimes (bulk copies) still age-order. */
-function bySortOrder(sort: SessionSort): (a: SessionSummary, b: SessionSummary) => number {
+function bySortOrder(sort: AutoSort): (a: SessionSummary, b: SessionSummary) => number {
   return (a, b) => sortKey(b, sort) - sortKey(a, sort) || tieKey(b, sort) - tieKey(a, sort)
 }
 
-/** The Pinned section under one sort key — shared by both views. */
+/** The Pinned section under one sort key — shared by both views. Manual
+ * never reaches it (pins don't drag): callers pass the auto key. */
 function pinnedSorted(
   sessions: SessionSummary[],
   pinnedIds: ReadonlySet<string>,
-  sort: SessionSort
+  sort: AutoSort
 ): SessionSummary[] {
   return sessions.filter((s) => pinnedIds.has(s.id)).sort(bySortOrder(sort))
 }
 
 /** Group sessions for the sidebar: pinned section first, then project groups.
  * `sort` (ticket 33) is the dropdown's sort key — it orders the pinned
- * section, every group's rows, and the groups themselves. */
+ * section, every group's rows, and the groups themselves. Under `manual`
+ * (ticket 84) the pinned section stays Updated-sorted (pins never drag) and
+ * the stored arrangement orders groups and rows; unknowns fall back to the
+ * Updated arrangement at the tail, so an empty order renders like Updated. */
 export function groupSessions(
   sessions: SessionSummary[],
   pinnedIds: ReadonlySet<string>,
-  sort: SessionSort = 'updated'
+  sort: SessionSort = 'updated',
+  manual: ManualSidebarOrder = EMPTY_MANUAL_ORDER
 ): GroupedSessions {
-  const order = bySortOrder(sort)
-  const pinned = pinnedSorted(sessions, pinnedIds, sort)
+  const pinned =
+    sort === 'manual'
+      ? pinnedSorted(sessions, pinnedIds, 'updated')
+      : pinnedSorted(sessions, pinnedIds, sort)
 
   const byCwd = new Map<string, SessionSummary[]>()
   for (const session of sessions) {
@@ -83,6 +120,9 @@ export function groupSessions(
     else byCwd.set(session.cwd, [session])
   }
 
+  if (sort === 'manual') return { pinned, groups: manualOrderedGroups(byCwd, manual) }
+
+  const order = bySortOrder(sort)
   const groups: SessionProjectGroup[] = [...byCwd.entries()]
     .map(([cwd, list]) => ({ cwd, project: projectLabel(cwd), sessions: list.sort(order) }))
     // Newest group first, judged by its most recent session under the SAME
@@ -92,15 +132,67 @@ export function groupSessions(
   return { pinned, groups }
 }
 
+/** The manual render's group sequence: stored cwds first (skipping cwds with
+ * no live sessions), then the unknown cwds — newest group first, judged by
+ * each group's most recent session mtime, the Updated baseline. Rows inside
+ * every group follow the stored id order, unknown ids appended newest-first. */
+function manualOrderedGroups(
+  byCwd: ReadonlyMap<string, SessionSummary[]>,
+  manual: ManualSidebarOrder
+): SessionProjectGroup[] {
+  const stored: SessionProjectGroup[] = []
+  const unknown: SessionProjectGroup[] = []
+  for (const cwd of manual.groups) {
+    const list = byCwd.get(cwd)
+    if (list === undefined) continue
+    stored.push({ cwd, project: projectLabel(cwd), sessions: manualOrderedRows(list, manual.sessions[cwd]) })
+  }
+  const updatedOrder = bySortOrder('updated')
+  for (const [cwd, list] of byCwd) {
+    if (manual.groups.includes(cwd)) continue
+    unknown.push({ cwd, project: projectLabel(cwd), sessions: [...list].sort(updatedOrder) })
+  }
+  unknown.sort(
+    (a, b) =>
+      sortKey(b.sessions[0] ?? a.sessions[0], 'updated') - sortKey(a.sessions[0] ?? b.sessions[0], 'updated')
+  )
+  return [...stored, ...unknown]
+}
+
+/** One group's rows under manual order: stored ids first (only ids with live
+ * sessions), then the unknowns in the Updated arrangement (newest first) —
+ * an all-unknown group therefore renders exactly like Updated. */
+function manualOrderedRows(
+  sessions: SessionSummary[],
+  storedIds: readonly string[] | undefined
+): SessionSummary[] {
+  if (storedIds === undefined) return [...sessions].sort(bySortOrder('updated'))
+  const byId = new Map(sessions.map((s) => [s.id, s]))
+  const stored = storedIds.flatMap((id) => {
+    const session = byId.get(id)
+    byId.delete(id)
+    return session ? [session] : []
+  })
+  return [...stored, ...[...byId.values()].sort(bySortOrder('updated'))]
+}
+
 /** Timeline view (ticket 33): ALL sessions flattened into one sorted list —
  * no project headers — with the pinned section kept as its own top block.
  * Like the Groups all-tasks view it succeeds, it is fed no hidden-projects
- * filter: decluttering must never make a session unreachable. */
+ * filter: decluttering must never make a session unreachable. Under
+ * `manual` (ticket 84) the flat list is the manual-ordered groups
+ * concatenated — the timeline never drags, it only mirrors the Projects
+ * arrangement. */
 export function timelineSessions(
   sessions: SessionSummary[],
   pinnedIds: ReadonlySet<string>,
-  sort: SessionSort = 'updated'
+  sort: SessionSort = 'updated',
+  manual: ManualSidebarOrder = EMPTY_MANUAL_ORDER
 ): TimelineSessions {
+  if (sort === 'manual') {
+    const grouped = groupSessions(sessions, pinnedIds, 'manual', manual)
+    return { pinned: grouped.pinned, sessions: grouped.groups.flatMap((g) => g.sessions) }
+  }
   return {
     pinned: pinnedSorted(sessions, pinnedIds, sort),
     sessions: sessions.filter((s) => !pinnedIds.has(s.id)).sort(bySortOrder(sort))

@@ -135,10 +135,10 @@
  */
 
 import os from 'node:os'
-import { randomUUID } from 'node:crypto'
+import { randomUUID, createHash } from 'node:crypto'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { app, clipboard, type BrowserWindow } from 'electron'
 import type { HostSupervisor } from './host-supervisor'
 import { focusSessionFromNotification, type ApprovalNotice } from './notifications'
@@ -3340,6 +3340,316 @@ export function startSmokeIfEnabled(
       rmSync(foldProject, { recursive: true, force: true })
     }
     log('group_fold_done')
+
+    // ---- ticket 84: sidebar drag-reorder, end to end ----
+    // Three seeded project groups drive the whole ticket: a session-row
+    // drag within its own group (auto-enters Manual, dropdown check state),
+    // a group drag by the grip handle (between groups), a gray-row drag
+    // after the project dir dies, the sessions-dir red line (dragging only
+    // ever writes the local preference — the store stays byte-identical),
+    // the persisted arrangement read straight off the settings document,
+    // and a renderer reload (the restart proxy) restoring it. Timeline and
+    // pinned rows must never drag.
+    log('sidebar_drag_start')
+    const dragDirA = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-dragA-'))
+    const dragDirB = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-dragB-'))
+    const dragDirC = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-dragC-'))
+    const dragStore = process.env['PICODE_SESSION_DIR']
+    if (!dragStore) fail('ticket-84 stage: PICODE_SESSION_DIR is not set')
+    try {
+      // Six sessions across three cwds; distinct past mtimes fix the
+      // Updated arrangement deterministically:
+      //   groups B, A, C — within B [b1, b2], within A [a1, a2], within C [c1, c2]
+      const dragSeeds: Array<{ id: string; cwd: string; ageMin: number }> = [
+        { id: 'drag84-b1', cwd: dragDirB, ageMin: 1 },
+        { id: 'drag84-a1', cwd: dragDirA, ageMin: 2 },
+        { id: 'drag84-a2', cwd: dragDirA, ageMin: 3 },
+        { id: 'drag84-b2', cwd: dragDirB, ageMin: 4 },
+        { id: 'drag84-c1', cwd: dragDirC, ageMin: 5 },
+        { id: 'drag84-c2', cwd: dragDirC, ageMin: 6 }
+      ]
+      for (const seed of dragSeeds) {
+        const stamp = new Date().toISOString()
+        const lines = [
+          JSON.stringify({ type: 'session', version: 3, id: seed.id, timestamp: stamp, cwd: seed.cwd }),
+          JSON.stringify({
+            type: 'message',
+            id: `${seed.id}-u1`,
+            parentId: null,
+            timestamp: stamp,
+            message: { role: 'user', content: [{ type: 'text', text: `PICODE_DRAG_84 task ${seed.id}` }] }
+          })
+        ]
+        const file = path.join(dragStore, `${seed.id}.jsonl`)
+        writeFileSync(file, lines.join('\n') + '\n')
+        const mtime = new Date(Date.now() - seed.ageMin * 60_000)
+        utimesSync(file, mtime, mtime)
+      }
+
+      /** Byte fingerprint of the whole session store — the red-line probe:
+        * reordering must never touch a session file. */
+      const storeFingerprint = (): string =>
+        readdirSync(dragStore)
+          .sort()
+          .map((name) => {
+            const full = path.join(dragStore, name)
+            if (!statSync(full).isFile()) return `${name}/`
+            return `${name}:${createHash('sha256').update(readFileSync(full)).digest('hex').slice(0, 16)}`
+          })
+          .join('|')
+
+      await withWindow(getWindow, async (win) => {
+        const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+        const labelA = path.basename(dragDirA)
+        const labelB = path.basename(dragDirB)
+        const labelC = path.basename(dragDirC)
+
+        // The keymap stage may have left the sidebar closed — open with ⌘B.
+        if (!((await js(`document.querySelector('.sidebar') !== null`)) as boolean)) {
+          await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', metaKey: true, bubbles: true })); true`)
+          await waitForProbe(win, `document.querySelector('.sidebar') !== null`, 5_000)
+        }
+
+        const groupOrderExpr = `[...document.querySelectorAll('.sb-group .sb-group-header')].map((h) => h.querySelector('span')?.textContent ?? '')`
+        const groupIndexOf = (label: string): string => `${groupOrderExpr}.indexOf('${label}')`
+        const rowsInGroup = (label: string): string =>
+          `(() => { const g = [...document.querySelectorAll('.sb-group')].find((x) => x.querySelector('.sb-group-header span')?.textContent === '${label}'); return g ? [...g.querySelectorAll('.sb-task')].map((r) => (r.dataset['file'] ?? '').split('/').pop() ?? '') : [] })()`
+
+        /** One synthetic HTML5 drag: dragstart on the source, dragover +
+          * drop on the target's top/bottom half, dragend on the source.
+          * React's synthetic layer handles untrusted events fine; the
+          * constructed DataTransfer satisfies the handlers. */
+        const dragJs = (fromSel: string, toSel: string, half: 'top' | 'bottom'): string =>
+          `(() => {
+            const from = document.querySelector(${JSON.stringify(fromSel)})
+            const to = document.querySelector(${JSON.stringify(toSel)})
+            if (!(from instanceof HTMLElement) || !(to instanceof HTMLElement)) return 'missing'
+            const dt = new DataTransfer()
+            const rect = to.getBoundingClientRect()
+            const y = ${half === 'top' ? 'rect.top + 2' : 'rect.bottom - 2'}
+            const opts = { bubbles: true, cancelable: true, dataTransfer: dt, clientY: y }
+            from.dispatchEvent(new DragEvent('dragstart', opts))
+            to.dispatchEvent(new DragEvent('dragover', opts))
+            to.dispatchEvent(new DragEvent('drop', opts))
+            from.dispatchEvent(new DragEvent('dragend', opts))
+            return 'ok'
+          })()`
+
+        const openDropdownJs = `(() => { const b = document.querySelector('button[aria-label="Filter tasks"]'); if (b instanceof HTMLElement) { b.dispatchEvent(new MouseEvent('click', { bubbles: true })); return true } return false })()`
+        const menuStateJs = `(() => [...document.querySelectorAll('.sb-filter-menu .sb-filter-menu-item')].map((n) => ({ label: n.querySelector('span')?.textContent ?? '', checked: n.getAttribute('aria-checked') === 'true' })))()`
+        const clickMenuItemJs = (label: string): string =>
+          `(() => { const item = [...document.querySelectorAll('.sb-filter-menu .sb-filter-menu-item')].find((n) => n.querySelector('span')?.textContent === '${label}'); if (item instanceof HTMLElement) { item.dispatchEvent(new MouseEvent('click', { bubbles: true })); return true } return false })()`
+
+        // Index poll: the three seeded groups render in the Updated RELATIVE
+        // order (B before A before C — other stages' groups may interleave;
+        // the fold-stage group shares the 1-minute mtime tier).
+        const allGroupsUp = `(() => { const o = ${groupOrderExpr}; const b = o.indexOf('${labelB}'), a = o.indexOf('${labelA}'), c = o.indexOf('${labelC}'); return b !== -1 && a !== -1 && c !== -1 && b < a && a < c })()`
+        if (!(await waitForProbe(win, allGroupsUp, 20_000))) {
+          fail(`ticket-84 stage: the seeded groups never rendered in the Updated order (got ${String(await js(groupOrderExpr))})`)
+        }
+        const rowsA = (await js(rowsInGroup(labelA))) as string[]
+        const rowsB = (await js(rowsInGroup(labelB))) as string[]
+        if (JSON.stringify(rowsA) !== JSON.stringify(['drag84-a1.jsonl', 'drag84-a2.jsonl'])) {
+          fail(`ticket-84 stage: group A rows must start [a1, a2] (got ${JSON.stringify(rowsA)})`)
+        }
+        if (JSON.stringify(rowsB) !== JSON.stringify(['drag84-b1.jsonl', 'drag84-b2.jsonl'])) {
+          fail(`ticket-84 stage: group B rows must start [b1, b2] (got ${JSON.stringify(rowsB)})`)
+        }
+        // The Projects section label lost its grip (ticket 84: no section
+        // reorder semantics) while every group row is drag-ready.
+        const labelGrip = (await js(`document.querySelector('.sb-section-label-projects .sb-grip-handle') !== null`)) as boolean
+        if (labelGrip) fail('ticket-84 stage: the Projects section label still carries a grip handle')
+
+        const fingerprintBefore = storeFingerprint()
+
+        // 1) Row drag within group A: a2 above a1 — the FIRST drag auto-
+        //    enters Manual (persisted order + sort flip in one patch).
+        if ((await js(dragJs('[data-file$="drag84-a2.jsonl"]', '[data-file$="drag84-a1.jsonl"]', 'top'))) !== 'ok') {
+          fail('ticket-84 stage: the row drag targets went missing')
+        }
+        if (!(await waitForProbe(win, `${rowsInGroup(labelA)}.join(',') === 'drag84-a2.jsonl,drag84-a1.jsonl'`, 5_000))) {
+          fail(`ticket-84 stage: the row drag never reordered group A (got ${String(await js(rowsInGroup(labelA)))})`)
+        }
+        log('sidebar_drag_row_ok')
+
+        // 2) The dropdown: five items, Manual present and CHECKED (auto-
+        //    entry), view still By project.
+        await js(openDropdownJs)
+        if (!(await waitForProbe(win, `document.querySelector('.sb-filter-menu') !== null`, 5_000))) {
+          fail('ticket-84 stage: the filter dropdown never opened')
+        }
+        const menuState = (await js(menuStateJs)) as Array<{ label: string; checked: boolean }>
+        if (JSON.stringify(menuState.map((i) => i.label)) !== JSON.stringify(['By project', 'Timeline', 'Updated', 'Created', 'Manual'])) {
+          fail(`ticket-84 stage: the dropdown must carry the Manual item third in Sort by (got ${JSON.stringify(menuState)})`)
+        }
+        const checked = menuState.filter((i) => i.checked).map((i) => i.label).join(',')
+        if (checked !== 'By project,Manual') {
+          fail(`ticket-84 stage: after the first drag Manual must be checked alongside By project (got ${checked})`)
+        }
+        await js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`)
+        if (!(await waitForProbe(win, `document.querySelector('.sb-filter-menu') === null`, 5_000))) {
+          fail('ticket-84 stage: Escape never closed the filter dropdown')
+        }
+        log('sidebar_drag_manual_checked_ok')
+
+        // 3) Group drag by the grip handle: group A above group B.
+        if ((await js(dragJs(`[data-cwd="${dragDirA}"] .sb-grip-handle`, `[data-cwd="${dragDirB}"]`, 'top'))) !== 'ok') {
+          fail('ticket-84 stage: the group drag targets went missing')
+        }
+        if (!(await waitForProbe(win, `${groupIndexOf(labelA)} < ${groupIndexOf(labelB)}`, 5_000))) {
+          fail(`ticket-84 stage: the grip drag never moved group A above B (got ${String(await js(groupOrderExpr))})`)
+        }
+        log('sidebar_drag_group_ok')
+
+        // 4) Gray rows drag too: delete group C's project dir, wait for the
+        //    dimmed rows, then drag c2 above c1 within the dead group.
+        rmSync(dragDirC, { recursive: true, force: true })
+        if (!(await waitForProbe(win, `[...document.querySelectorAll('.sb-task-dimmed')].filter((r) => (r.dataset['file'] ?? '').endsWith('drag84-c1.jsonl')).length === 1`, 20_000))) {
+          fail('ticket-84 stage: group C never turned gray after its project dir died')
+        }
+        if ((await js(dragJs('[data-file$="drag84-c2.jsonl"]', '[data-file$="drag84-c1.jsonl"]', 'top'))) !== 'ok') {
+          fail('ticket-84 stage: the gray-row drag targets went missing')
+        }
+        if (!(await waitForProbe(win, `${rowsInGroup(labelC)}.join(',') === 'drag84-c2.jsonl,drag84-c1.jsonl'`, 5_000))) {
+          fail(`ticket-84 stage: the gray-row drag never reordered group C (got ${String(await js(rowsInGroup(labelC)))})`)
+        }
+        log('sidebar_drag_dimmed_ok')
+
+        // 5) THE RED LINE: the whole session store is byte-identical —
+        //    reordering only ever wrote the local preference.
+        if (storeFingerprint() !== fingerprintBefore) {
+          fail('ticket-84 stage: RED LINE — a drag changed the sessions directory')
+        }
+        log('sidebar_drag_sessions_untouched_ok')
+
+        // 6) Persistence: the settings document (throwaway smoke userData)
+        //    carries the arrangement — read MAIN-side, the page cannot.
+        //    Then a renderer reload (the restart proxy) must restore it.
+        const settingsFile = path.join(os.tmpdir(), `picode-smoke-userdata-${process.pid}`, 'picode-settings.json')
+        let persistedOk = false
+        let persistedDump = 'unreadable'
+        for (let i = 0; i < 50 && !persistedOk; i++) {
+          await new Promise((r) => setTimeout(r, 100))
+          try {
+            const doc = JSON.parse(readFileSync(settingsFile, 'utf8')) as {
+              preferences?: {
+                sidebarSort?: string
+                sidebarManualOrder?: { groups?: string[]; sessions?: Record<string, string[]> }
+              }
+            }
+            const prefs = doc.preferences ?? {}
+            const groups = prefs.sidebarManualOrder?.groups ?? []
+            const rowsA = prefs.sidebarManualOrder?.sessions?.[dragDirA] ?? []
+            persistedDump = `sort=${String(prefs.sidebarSort)} groups=${groups.length} rowsA=${rowsA.join(',')}`
+            persistedOk =
+              prefs.sidebarSort === 'manual' &&
+              groups.includes(dragDirA) &&
+              groups.includes(dragDirB) &&
+              groups.indexOf(dragDirA) < groups.indexOf(dragDirB) &&
+              rowsA.join(',') === 'drag84-a2,drag84-a1'
+          } catch {
+            // Document not written yet — retry.
+          }
+        }
+        if (!persistedOk) {
+          fail(`ticket-84 stage: the settings document never carried the manual arrangement (${persistedDump})`)
+        }
+        await win.webContents.reload()
+        await waitForProbe(win, `document.documentElement.dataset['chatSubscribed'] === 'true'`, 15_000)
+        await new Promise((r) => setTimeout(r, 500))
+        const orderAfterRestart = `[...document.querySelectorAll('.sb-group .sb-group-header')].map((h) => h.querySelector('span')?.textContent ?? '')`
+        const restartOk = `(() => { const o = ${orderAfterRestart}; return o.indexOf('${labelA}') !== -1 && o.indexOf('${labelA}') < o.indexOf('${labelB}') && ${rowsInGroup(labelA)}.join(',') === 'drag84-a2.jsonl,drag84-a1.jsonl' })()`
+        if (!(await waitForProbe(win, restartOk, 20_000))) {
+          fail(`ticket-84 stage: the manual arrangement did not survive the restart (order: ${String(await js(orderAfterRestart))}, rows: ${String(await js(rowsInGroup(labelA)))})`)
+        }
+        await js(openDropdownJs)
+        if (!(await waitForProbe(win, `document.querySelector('.sb-filter-menu') !== null`, 5_000))) {
+          fail('ticket-84 stage: the filter dropdown never reopened after the restart')
+        }
+        const checkedAfter = ((await js(menuStateJs)) as Array<{ label: string; checked: boolean }>)
+          .filter((i) => i.checked)
+          .map((i) => i.label)
+          .join(',')
+        if (checkedAfter !== 'By project,Manual') {
+          fail(`ticket-84 stage: Manual must still be checked after the restart (got ${checkedAfter})`)
+        }
+        await js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`)
+        log('sidebar_drag_restart_ok')
+
+        // 7) Timeline never drags: zero draggable rows, zero groups. Back
+        //    to By project afterwards.
+        await js(openDropdownJs)
+        if (!(await waitForProbe(win, `document.querySelector('.sb-filter-menu') !== null`, 5_000))) {
+          fail('ticket-84 stage: the filter dropdown never opened for the timeline switch')
+        }
+        await js(clickMenuItemJs('Timeline'))
+        if (!(await waitForProbe(win, `document.querySelectorAll('.sb-group').length === 0`, 5_000))) {
+          fail('ticket-84 stage: the timeline switch never flattened the list')
+        }
+        const timelineDraggables = (await js(`[...document.querySelectorAll('.sb-task')].filter((r) => r.getAttribute('draggable') === 'true').length`)) as number
+        if (timelineDraggables !== 0) {
+          fail(`ticket-84 stage: timeline rows must never drag (${timelineDraggables} draggable)`)
+        }
+        await js(openDropdownJs)
+        if (!(await waitForProbe(win, `document.querySelector('.sb-filter-menu') !== null`, 5_000))) {
+          fail('ticket-84 stage: the filter dropdown never opened for the projects switch back')
+        }
+        await js(clickMenuItemJs('By project'))
+        if (!(await waitForProbe(win, `document.querySelectorAll('.sb-group').length > 0`, 5_000))) {
+          fail('ticket-84 stage: the projects switch back never restored the groups')
+        }
+        log('sidebar_drag_timeline_static_ok')
+
+        // 8) Pinned rows never drag: pin b1 through its context menu, then
+        //    assert the pinned row lost the draggable attribute (and unpin
+        //    to leave later stages untouched).
+        const rowCtxMenuJs = `(() => {
+          const row = document.querySelector('[data-file$="drag84-b1.jsonl"]')
+          if (!(row instanceof HTMLElement)) return 'missing'
+          const rect = row.getBoundingClientRect()
+          row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: rect.left + 10, clientY: rect.top + 10 }))
+          return 'ok'
+        })()`
+        const clickPinJs = `(() => { const item = document.querySelector('[data-menu-action="toggle-pin"]'); if (!(item instanceof HTMLElement)) return false; item.dispatchEvent(new MouseEvent('click', { bubbles: true })); return true })()`
+        if ((await js(rowCtxMenuJs)) !== 'ok') fail('ticket-84 stage: the b1 row went missing for the pin dance')
+        if (!(await waitForProbe(win, `document.querySelector('[data-menu-action="toggle-pin"]') !== null`, 5_000))) {
+          fail('ticket-84 stage: the pin context menu never opened')
+        }
+        if (!((await js(clickPinJs)) as boolean)) fail('ticket-84 stage: the toggle-pin menu item never clicked')
+        if (!(await waitForProbe(win, `(() => { const row = document.querySelector('[data-file$="drag84-b1.jsonl"]'); return row !== null && row.querySelector('.sb-pin-btn.sb-pin-on') !== null && row.getAttribute('draggable') !== 'true' })()`, 5_000))) {
+          fail('ticket-84 stage: the pinned row must not be drag-enabled (draggable=true)')
+        }
+        if ((await js(rowCtxMenuJs)) !== 'ok') fail('ticket-84 stage: the b1 row went missing for the unpin dance')
+        if (!(await waitForProbe(win, `document.querySelector('[data-menu-action="toggle-pin"]') !== null`, 5_000))) {
+          fail('ticket-84 stage: the unpin context menu never opened')
+        }
+        if (!((await js(clickPinJs)) as boolean)) fail('ticket-84 stage: the toggle-pin menu item never clicked for the unpin')
+        if (!(await waitForProbe(win, `(() => { const row = document.querySelector('[data-file$="drag84-b1.jsonl"]'); return row !== null && row.querySelector('.sb-pin-btn.sb-pin-on') === null })()`, 5_000))) {
+          fail('ticket-84 stage: the unpin never restored the row')
+        }
+        log('sidebar_drag_pinned_static_ok')
+
+        // Stage hygiene: hand the suite back the UPDATED sort. The drag
+        // assertions are done; later stages seed NEW sessions into stored
+        // groups and expect the auto arrangement (a new row lands at the
+        // TOP of its group — under Manual it would append at the tail and
+        // paginate behind the ticket-39 Show-more cut).
+        await js(openDropdownJs)
+        if (!(await waitForProbe(win, `document.querySelector('.sb-filter-menu') !== null`, 5_000))) {
+          fail('ticket-84 stage: the filter dropdown never opened for the sort restore')
+        }
+        await js(clickMenuItemJs('Updated'))
+        if (!(await waitForProbe(win, `document.querySelector('.sb-filter-menu') === null`, 5_000))) {
+          fail('ticket-84 stage: the sort restore never closed the dropdown')
+        }
+        log('sidebar_drag_sort_restored_ok')
+      })
+    } finally {
+      rmSync(dragDirA, { recursive: true, force: true })
+      rmSync(dragDirB, { recursive: true, force: true })
+      rmSync(dragDirC, { recursive: true, force: true })
+    }
+    log('sidebar_drag_done')
 
     // ---- ticket 42 × 54: the dead-cwd lifecycle, end to end ----
     // Three seeded sessions in an isolated store drive the whole stage:
