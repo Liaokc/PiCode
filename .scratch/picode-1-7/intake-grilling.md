@@ -141,6 +141,16 @@ Status: ready-for-spec
 - **根因**：零 tab 状态可达（review 也可关，`panel-model` close-tab 无特判）；关到零时 SidePanel 显 tab 选择页空态（`SidePanel.tsx:124/245`）而面板 open 状态不变。
 - **定稿**：**openTabs 为空 → 面板自动折叠**（`sidePanelOpen` 翻 false——跨 reducer 联动的落点票内裁量：渲染层派生 effect 或 App 层联动均可）；重开路径不变（⌥⌘B / 标题栏钮 → 面板开，零 tab 时显既有 tab 选择页兜底）；深链自动展开行为不回归（open-tab 均伴随 open-side-panel，已核实）。
 
+### R23 queue 面板布局修复 + 排队消息 Edit —— 缺陷 + 新供面 · additive 增量（Q24 全按推荐）
+- **痛点**：① queue 行边框与 composer 卡边框/圆角重合（截图实证；follow-up 同布局同病）；② 排队未发送的 steer/follow-up 消息无 Edit——要改字只能 Clear 重打，带图更没辙。
+- **根因**：`.queue-panel` 无水平内距（`app.css:6847` margin 0 0 6px），`.queue-item` 边框盒直接顶到卡边与卡片圆角边框重合；QueuePanel 无行级动作。数据面：SDK 0.85.1 `queue_update` 只有 `steering: string[] / followUp: string[]`——**无 id、无图片**；无单条移除 API（仅 `clearQueue()` 全清返回文本数组）；但 steer/followUp **入队时图片是带进 agent 队列的**（host 调 `steer(text, images)`，SDK 的 UI 镜像数组只存文本——agent-session.js `_queueSteer`）。
+- **定稿**：① 布局修复——queue 行与卡片边框/圆角分离（水平内距 + 与 textarea/footer 的间距分隔），纯 CSS 票内裁量；② **行内 Edit 钮**（steer/follow-up 行都有）→ 该条从队列移除 + composer 预填原文+原图（与 Edit-resend 同型）；③ **每行 × 删除**（同机制不预填；全局 Clear 保留）；④ 实现 = **host 侧镜像**（出队时记 text+images）+ **clearQueue/requeue 舞步**（clearQueue → 剔除目标条 → 按序重投喂剩余条，图片从镜像取，保序）；**additive 契约增量：host op `edit_queue_entry` / `remove_queue_entry`**（实施时报备入账）。SDK 竞态诚实记录：消息投递与舞步之间有毫秒级窗口（SDK 队列面只有文本无单条操作），行为由 smoke 验证。
+
+### R24 一键折叠所有分组 —— 全新需求（Q25 全按推荐）
+- **痛点**：侧栏缺一键折叠所有 project 分组（现只能逐组点击，票 39）。
+- **取证**：ZCode 同款动作对在案（bundle `workspaceSidebar.collapseAllGroups`「收起全部」/ `expandAllGroups`「展开全部」）；R11 删除的分区行 grip 腾出的正是这个落点。
+- **定稿**：① Projects 分区行右侧常驻 **Collapse all / Expand all** 两个小钮（筛选下拉不加——视图动词近手）；② collapse-all = 全部组置折叠（各组保留折叠前形状记忆——票 39 语义不破）；expand-all = 全部展开（恢复各自记忆形状）；与手动单组折叠混用安全；③ 仅 Projects 视图显示（Timeline 无分组、隐藏）；置顶区不受影响；无分组时 no-op；形状记忆仍会话期内存级（重启回默认——票 39 口径不变）。
+
 ## Grilling 记录
 
 - **Round 1（Q1–Q8）**：Q1 文件条 settled 三边界按推荐 / Q2 表格按推荐 / Q3 **确认 MCP 重开** / Q4 L3+L4 按推荐（拆两票）/ Q5 **改判：OAuth 授权流要做**（原推荐不做）/ Q6 **= (b) 全进侧板**（附三张 ZCode 截图）/ Q7 数据边界按推荐 / Q8 ①steer ②已结束只读 ③**改判：停止需确认框**（原推荐直终）④定义管理范围外。
@@ -150,14 +160,15 @@ Status: ready-for-spec
 - **Round 5（Q21 + 细化）**：skill-only 空泡 + 技能行被折叠吞（本批第 18 条痛点）。原推荐 = 空泡消失、marker 独占回合头、动作行挂 marker；**操作者细化改判 = 重构消息泡**（泡 = 技能渲染 + 用户文本组合块；容器内 marker 退役）。定稿见 R19。
 - **Round 6（Q22–Q23）**：Q22 图标四案选型 = **V2**（π + 橙终端光标——原推荐即 V2）；Q23 SVG/HTML/图片双态预览全按推荐（含 HTML 带脚本沙箱策略）。定稿见 R20/R21。
 - **Round 7（免问）**：侧栏零标签自动折叠（第 21 条痛点）——空壳选择页现状实锤，规则唯一（零 tab = 折叠，重开显选择页），免问定稿。定稿见 R22。
-- 至此前沿树空：21 条痛点 → 22 个 R 簇 × 全部边界均有裁决。
+- **Round 8（Q24–Q25）**：Q24 queue 三件套全按推荐（布局修复 / 行内 Edit 带图还原 / 每行 × 删除 / additive op）；Q25 一键折叠全按推荐（分区行双钮 + 形状记忆语义不变）。定稿见 R23/R24。
+- 至此前沿树空：23 条痛点 → 24 个 R 簇 × 全部边界均有裁决。
 
 ## 归类记录
 
-- 缺陷 7：R7（图片遮盖）、R8（滚动条）、R10（动画缺失）、R13（发送不落底）、R14（票 79 live 丢图）、R16（焦点滞留）、R18（History 竞态）。
+- 缺陷 8：R7（图片遮盖）、R8（滚动条）、R10（动画缺失）、R13（发送不落底）、R14（票 79 live 丢图）、R16（焦点滞留）、R18（History 竞态）、R23 布局半边（queue 行边框重合）。
 - 交付行为修订 5：R1（票 78 live 增长）、R2（1.4 表格卡 360px）、R6（容器无锚定）、R15（票 56 提升规则）、R19（技能 marker 容器内 + 空泡）。
 - 清理 1：R12（幽灵钮删除）。
-- 全新需求 9：R3+R4（MCP 管理——1.5 Q1 裁决重开前提）、R5（子智能体）、R9（图片预览）、R11（拖拽重排）、R17（气泡缩略图）、R20（应用图标）、R21（双态预览）、R22（零标签自动折叠）。
+- 全新需求 10：R3+R4（MCP 管理——1.5 Q1 裁决重开前提）、R5（子智能体）、R9（图片预览）、R11（拖拽重排）、R17（气泡缩略图）、R20（应用图标）、R21（双态预览）、R22（零标签自动折叠）、R23 编辑半边（排队消息 Edit/移除）、R24（一键折叠）。
 - 调查存档不立票 0。
 - 范围外新增记录：agent 定义管理、子代理 resume 复活、嵌套子代理展开、跨会话 fleet、跨项目移动会话（红线）、视图导航历史（‹ › 若日后要做）、空组 drop zone、HTML 预览 devtools/编辑能力、pdf 等其他二进制格式预览。
 
