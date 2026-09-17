@@ -56,6 +56,19 @@ export function initialShellUiState(): ShellUiState {
   return { sidebarOpen: true, sidebarWidth: SIDEBAR_WIDTH_PX, sidePanelOpen: false, view: 'workspace' }
 }
 
+/** Ticket 86: closing the LAST side-panel tab must collapse the panel — an
+ * open shell showing only the "Open a Tab" picker is not a resting state.
+ * Edge-triggered on the tab count: ONLY the >0 → 0 transition while the
+ * panel is open collapses. Reopening (⌥⌘B / titlebar toggle) with zero tabs
+ * must keep the picker page up — it is the panel's empty state — and a deep
+ * link's open-tab re-expands through open-side-panel exactly as before. The
+ * App shell effect feeds this the previously committed tab count, the
+ * committed one and the shell state, and dispatches close-side-panel when
+ * it fires (table-driven tests in layout-model.test.ts). */
+export function shouldAutoCollapseSidePanel(prevOpenTabs: number, openTabs: number, sidePanelOpen: boolean): boolean {
+  return sidePanelOpen && prevOpenTabs > 0 && openTabs === 0
+}
+
 export type ShellUiAction =
   | { type: 'toggle-sidebar' }
   | { type: 'set-sidebar-width'; width: number }

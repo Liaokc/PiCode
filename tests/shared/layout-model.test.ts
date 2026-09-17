@@ -8,6 +8,7 @@ import {
   clampSidebarWidth,
   initialShellUiState,
   shellUiReducer,
+  shouldAutoCollapseSidePanel,
   type ShellUiAction,
   type ShellUiState
 } from '../../src/shared/layout-model'
@@ -164,5 +165,36 @@ describe('side panel tab slots', () => {
     // stays deep-link-only and the terminal docks at the bottom.
     expect(PANEL_EMPTY_TABS).toEqual(['review'])
     expect(PANEL_EMPTY_TABS).not.toContain('browser')
+  })
+})
+
+describe('shouldAutoCollapseSidePanel (ticket 86: zero-tabs auto-collapse)', () => {
+  /** Decision table for the App shell effect: it feeds the previously
+   * committed tab count, the committed one and the shell open state, and
+   * dispatches close-side-panel exactly when this predicate fires. Only
+   * the >0 → 0 transition while the panel is OPEN collapses — anything
+   * else must leave the shell state alone. */
+  const TABLE: Array<{ prev: number; next: number; open: boolean; collapse: boolean; why: string }> = [
+    { prev: 1, next: 0, open: true, collapse: true, why: 'the last tab closes → collapse' },
+    { prev: 3, next: 0, open: true, collapse: true, why: 'the last of several tabs closes → collapse' },
+    { prev: 2, next: 1, open: true, collapse: false, why: 'an ordinary close keeps the panel open' },
+    { prev: 1, next: 1, open: true, collapse: false, why: 'activate/retarget noise never collapses' },
+    { prev: 0, next: 0, open: true, collapse: false, why: 'reopened (⌥⌘B / titlebar) with zero tabs: the picker page must stay up' },
+    { prev: 0, next: 1, open: true, collapse: false, why: 'a tab opened from the picker never collapses' },
+    { prev: 1, next: 0, open: false, collapse: false, why: 'an already-closed panel: no redundant close' },
+    { prev: 0, next: 0, open: false, collapse: false, why: 'boot baseline (closed, no tabs) never dispatches' }
+  ]
+  for (const row of TABLE) {
+    it(`${row.why} (${row.prev}→${row.next} tabs, panel ${row.open ? 'open' : 'closed'})`, () => {
+      expect(shouldAutoCollapseSidePanel(row.prev, row.next, row.open)).toBe(row.collapse)
+    })
+  }
+
+  it('is satisfied by the close-side-panel reducer being idempotent, so a late dispatch cannot corrupt state', () => {
+    // Belt-and-braces: even if the effect raced a manual toggle, feeding the
+    // predicate's outcome through the real reducer lands on closed either way.
+    const open = shellUiReducer(initialShellUiState(), { type: 'open-side-panel' })
+    const closed = shellUiReducer(open, { type: 'close-side-panel' })
+    expect(shellUiReducer(closed, { type: 'close-side-panel' })).toEqual(closed)
   })
 })

@@ -2601,6 +2601,233 @@ export function startSmokeIfEnabled(
     }
     log('panel_tabs_done')
 
+    // ---- ticket 86: zero-tabs auto-collapse — closing the LAST panel tab
+    // collapses the panel instead of lingering as an open empty picker
+    // shell. Runs right after the ticket-31 panel stage (panel open, a
+    // file tab from that stage still up) and is written state-agnostic:
+    //   ① close every open tab; the close that empties the strip must flip
+    //     the shell to [data-closed] with NO visible picker left behind.
+    //   ② ⌥⌘B reopens onto the zero-tab picker page; the Review card opens
+    //     a real tab (seeded git workspace → review tree), a review
+    //     deep-link chip opens a second file tab, and closing the FILE tab
+    //     (not the last) must keep the panel open — ordinary closes never
+    //     collapse; only the last one does.
+    //   ③ ⌥⌘B reopens again; the closed file comes back from the ⌄ menu's
+    //     Recently Closed section (tab + open panel).
+    //   ④ from the collapsed zero-tab state a sidebar context-menu deep
+    //     link (View call trace) must auto-expand the panel — the
+    //     regression guard: a deep-linked tab BODY renders even inside the
+    //     closed (visibility-hidden) pane, so only the open shell state
+    //     proves the re-expansion really happened.
+    // One settle turn (the multi-stage precedent: the sidebar row needs the
+    // session file on disk) + a seeded workspace; the recently closed
+    // preference is cleaned up and the panel is left closed.
+    log('panel_collapse_86_start')
+    const seed86 = seedPanelWorkspace()
+    try {
+      await withWindow(getWindow, async (win) => {
+        supervisor.createSession(seed86)
+        const seeded86 = (await waitFor(
+          (e) => e.type === 'session_created' && e.cwd === seed86,
+          'panel-86 session_created'
+        )) as Extract<Scoped, { type: 'session_created' }>
+        if (!seeded86.sessionFile) fail('ticket-86 stage: the seeded session did not report its file')
+        // The sidebar row must exist for the leg-④ deep link — the multi
+        // stage's precedent: a settle turn puts the file on disk so the
+        // index lists the session.
+        supervisor.handleParentCommand({
+          type: 'session_command',
+          sessionId: seeded86.sessionId,
+          command: { type: 'prompt', text: 'Reply with exactly: PICODE_SMOKE_OK' }
+        })
+        await waitFor((e) => e.type === 'agent_end' && e.sessionId === seeded86.sessionId, 'panel-86 settle agent_end')
+        log('panel_86_session_ok', seeded86.sessionId)
+
+        const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+        // Ticket 40: the panel stays mounted while closed — [data-closed]
+        // is the closed end state, so the open/closed probe reads the
+        // attribute, not element absence.
+        const PANEL_OPEN_86 = `(() => { const p = document.querySelector('.side-panel'); return p !== null && !p.hasAttribute('data-closed') })()`
+        const PANEL_CLOSED_86 = `(() => { const p = document.querySelector('.side-panel'); return p !== null && p.hasAttribute('data-closed') })()`
+        const TAB_COUNT_86 = `document.querySelectorAll('.panel-tab-label span').length`
+        // The picker page shown by an OPEN, actually-visible shell.
+        // (getClientRects is useless here: a visibility:hidden pane keeps
+        // its layout boxes, so rects stay non-empty — the computed shell
+        // state is the truth.) This is the "empty shell residue" probe.
+        const PICKER_SHOWN_86 = `(() => {
+          const panel = document.querySelector('.side-panel')
+          const picker = document.querySelector('.panel-empty')
+          if (!panel || !picker) return false
+          if (panel.hasAttribute('data-closed')) return false
+          const cs = getComputedStyle(panel)
+          return cs.visibility === 'visible' && cs.opacity !== '0' && panel.offsetWidth > 0
+        })()`
+        const CLOSE_FIRST_TAB_86 = `(() => {
+          const closeBtn = document.querySelector('.panel-tab .panel-tab-close')
+          if (closeBtn instanceof HTMLElement) { closeBtn.click(); return true }
+          return false
+        })()`
+        /** Press-until-open with toggle-race protection: a SYNCHRONOUS
+         * dispatch+check inside one evaluate reads the PRE-dispatch DOM
+         * (React schedules the re-render as a macro task), reports false,
+         * and the next poll re-dispatches into a toggle ping-pong. So:
+         * press, give the commit ≥400ms to land, re-check, and press again
+         * only while the panel is still closed (covers the fresh-renderer
+         * case where the keymap listener is not attached yet). */
+        const pressPanelOpen86 = async (): Promise<boolean> => {
+          const deadline = Date.now() + 10_000
+          let lastPress = -Infinity
+          while (Date.now() < deadline) {
+            if (((await js(PANEL_OPEN_86)) as boolean) === true) return true
+            if (Date.now() - lastPress >= 400) {
+              await js(
+                `window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', altKey: true, metaKey: true, bubbles: true })); true`
+              )
+              lastPress = Date.now()
+            }
+            await new Promise((r) => setTimeout(r, 100))
+          }
+          return false
+        }
+
+        // ① Close whatever the earlier stages left open, one tab per
+        // click; the strip must shrink stepwise and the LAST close must
+        // auto-collapse the shell with no picker residue.
+        for (let guard = 0; guard < 8; guard++) {
+          const count = (await js(TAB_COUNT_86)) as number
+          if (count === 0) break
+          if (!(await waitForProbe(win, CLOSE_FIRST_TAB_86, 5_000))) {
+            fail('ticket-86 stage: no strip tab close button ever rendered')
+          }
+          await waitForProbe(win, `(${TAB_COUNT_86}) === ${count - 1}`, 5_000)
+        }
+        if (((await js(TAB_COUNT_86)) as number) !== 0) fail('ticket-86 stage: the strip never emptied')
+        if (!(await waitForProbe(win, PANEL_CLOSED_86, 5_000))) {
+          fail('ticket-86 stage: closing the last tab never collapsed the panel (auto-collapse broken)')
+        }
+        if (((await js(PICKER_SHOWN_86)) as boolean) === true) {
+          fail('ticket-86 stage: the collapsed panel still shows the empty picker shell')
+        }
+        log('panel_86_autocollapse_ok')
+
+        // ② Reopen onto the zero-tab picker page; the Review card must open
+        // a real tab over the seeded workspace.
+        if (!(await pressPanelOpen86())) fail('ticket-86 stage: ⌥⌘B never reopened the collapsed panel')
+        if (!(await waitForProbe(win, PICKER_SHOWN_86, 5_000))) {
+          fail('ticket-86 stage: reopening with zero tabs never showed the picker page')
+        }
+        log('panel_86_reopen_picker_ok')
+        await js(`document.querySelector('.panel-tab-card[aria-label="Open Review tab"]')?.click(); true`)
+        if (!(await waitForProbe(win, `document.querySelector('.review-tree-file') !== null`, 15_000))) {
+          fail('ticket-86 stage: the Review tab never rendered the seeded workspace tree')
+        }
+
+        // A review deep-link chip opens a second tab; closing the FILE tab
+        // (not the last) must keep the panel open.
+        const CLICK_CHIP_86 = `(() => {
+          const chip = document.querySelector('.review-tree-file .review-tree-open')
+          if (chip instanceof HTMLElement) { chip.click(); return true }
+          return false
+        })()`
+        if (!(await waitForProbe(win, CLICK_CHIP_86, 5_000))) fail('ticket-86 stage: the review deep-link chip never rendered')
+        if (!(await waitForProbe(win, `(${TAB_COUNT_86}) === 2`, 5_000))) {
+          fail('ticket-86 stage: the review deep link never opened its file tab')
+        }
+        const CLOSE_FILE_TAB_86 = `(() => {
+          for (const tabEl of document.querySelectorAll('.panel-tab')) {
+            if (tabEl.querySelector('.panel-tab-label span')?.textContent === 'Review') continue
+            const target = tabEl.querySelector('.panel-tab-close')
+            if (target instanceof HTMLElement) { target.click(); return true }
+          }
+          return false
+        })()`
+        if (!(await waitForProbe(win, CLOSE_FILE_TAB_86, 5_000))) fail('ticket-86 stage: the file tab close button never rendered')
+        await waitForProbe(win, `(${TAB_COUNT_86}) === 1`, 5_000)
+        if (((await js(PANEL_OPEN_86)) as boolean) !== true) {
+          fail('ticket-86 stage: closing a NON-last tab collapsed the panel (over-trigger)')
+        }
+        log('panel_86_partial_close_ok')
+
+        // The remaining tab is the last one: closing it collapses again.
+        if (!(await waitForProbe(win, CLOSE_FIRST_TAB_86, 5_000))) fail('ticket-86 stage: the last tab close never rendered')
+        if (!(await waitForProbe(win, PANEL_CLOSED_86, 5_000))) {
+          fail('ticket-86 stage: the second last-close never collapsed the panel')
+        }
+        log('panel_86_autocollapse_again_ok')
+
+        // ③ Reopen; the closed file must come back from the ⌄ menu's
+        // Recently Closed section (rows with a close time) as a live tab.
+        if (!(await pressPanelOpen86())) fail('ticket-86 stage: ⌥⌘B never reopened the panel for the menu leg')
+        await js(`document.querySelector('button[aria-label="Manage tabs"]')?.click(); true`)
+        if (!(await waitForProbe(win, `document.querySelector('.panel-tab-menu') !== null`, 5_000))) {
+          fail('ticket-86 stage: the tab menu never opened for the recently closed leg')
+        }
+        const CLICK_RECENT_86 = `(() => {
+          const row = Array.from(document.querySelectorAll('.panel-menu-row')).find((el) => el.querySelector('.panel-menu-row-time') !== null)
+          const main = row?.querySelector('.panel-menu-row-main')
+          if (main instanceof HTMLElement) { main.click(); return true }
+          return false
+        })()`
+        if (!(await waitForProbe(win, CLICK_RECENT_86, 5_000))) {
+          fail('ticket-86 stage: no recently closed entry ever rendered in the tab menu')
+        }
+        if (!(await waitForProbe(win, `(${TAB_COUNT_86}) === 1`, 5_000))) {
+          fail('ticket-86 stage: the recently closed tab never reopened from the menu')
+        }
+        if (((await js(PANEL_OPEN_86)) as boolean) !== true) {
+          fail('ticket-86 stage: reopening from the menu left the panel closed')
+        }
+        log('panel_86_recent_reopen_ok')
+
+        // ④ Deep link from the collapsed zero-tab state: close the tab
+        // (last → collapse), then View call trace from the seeded
+        // session's sidebar row.
+        if (!(await waitForProbe(win, CLOSE_FIRST_TAB_86, 5_000))) fail('ticket-86 stage: the pre-deeplink close never rendered')
+        if (!(await waitForProbe(win, PANEL_CLOSED_86, 5_000))) {
+          fail('ticket-86 stage: the pre-deeplink last-close never collapsed the panel')
+        }
+        const OPEN_TRACE_MENU_86 = `(() => {
+          const row = document.querySelector('[data-file="${seeded86.sessionFile}"]')
+          if (!(row instanceof Element)) return false
+          // The seeded project's group sits at the bottom of a long sidebar —
+          // a contextmenu dispatched at an off-screen rect opens nothing.
+          row.scrollIntoView({ block: 'center' })
+          const r = row.getBoundingClientRect()
+          row.dispatchEvent(new MouseEvent('contextmenu', {
+            bubbles: true, cancelable: true,
+            clientX: Math.round(r.left + 60), clientY: Math.round(r.top + r.height / 2)
+          }))
+          return true
+        })(); true`
+        if (!(await waitForProbe(win, OPEN_TRACE_MENU_86 + ` && document.querySelector('.sb-context-menu') !== null`, 15_000))) {
+          const sidebar86 = (await js(
+            `JSON.stringify({ taskRows: document.querySelectorAll('.sb-task').length, files: Array.from(document.querySelectorAll('[data-file]')).slice(0, 30).map((el) => el.getAttribute('data-file')) })`
+          )) as string
+          fail(`ticket-86 stage: the sidebar context menu never opened for View call trace; sidebar: ${sidebar86}`)
+        }
+        await js(
+          `[...document.querySelectorAll('.sb-context-item')].find((el) => el.textContent === 'View call trace')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
+        )
+        if (!(await waitForProbe(win, PANEL_OPEN_86, 10_000))) {
+          fail('ticket-86 stage: the trace deep link never auto-expanded the collapsed panel')
+        }
+        if (!(await waitForProbe(win, `document.querySelector('.side-panel .trace-view') !== null`, 10_000))) {
+          fail('ticket-86 stage: the trace tab body never rendered after the deep link')
+        }
+        log('panel_86_deeplink_expand_ok')
+
+        // Leave the shell clean for the later stages: close the trace tab
+        // (last → auto-collapses again) and drop the stage's history
+        // entries from the persisted preferences.
+        await waitForProbe(win, CLOSE_FIRST_TAB_86, 5_000)
+        await waitForProbe(win, PANEL_CLOSED_86, 5_000)
+        await js(`window.picode.settings.set({ recentlyClosedTabs: [] }); true`)
+      })
+    } finally {
+      rmSync(seed86, { recursive: true, force: true })
+    }
+    log('panel_collapse_86_done')
+
     // ---- ticket 35: session-row context menu + archive ----
     // The archive target is ms2: its host was SIGKILLed in the crash-isolation
     // stage, so the row is settled (no host, no run, no gate) and nothing is
@@ -2799,6 +3026,14 @@ export function startSmokeIfEnabled(
       })()`
       if (!(await waitForProbe(win, traceTabProbe, 10_000))) {
         fail('View call trace never opened an active Trace tab in the side panel (ticket 36)')
+      }
+      // Ticket 86 regression guard: the deep link must have AUTO-EXPANDED
+      // the panel shell. The tab body renders even inside the closed
+      // (visibility-hidden) pane, so the shell state is the only proof —
+      // the preceding ticket-86 stage leaves the panel collapsed with zero
+      // tabs, making this re-expansion non-vacuous.
+      if (((await js(`(() => { const p = document.querySelector('.side-panel'); return p !== null && !p.hasAttribute('data-closed') })()`)) as boolean) !== true) {
+        fail('ticket-36 stage: the trace deep link left the panel shell collapsed (ticket-86 re-expand regression)')
       }
       log('trace_tab_open_ok')
 

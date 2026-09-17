@@ -11,7 +11,7 @@ import { initialChatState, type ChatAction } from '../../shared/chat-reducer'
 import { groupTurns } from '../../shared/turn-collapse'
 import type { HostToParent, SessionCommand, SessionScopedEvent } from '../../shared/contract'
 import { resolvePreviewPath } from '../../shared/preview/policy'
-import { initialShellUiState, shellUiReducer, SIDEBAR_WIDTH_PX, SIDEBAR_MIN_WIDTH_PX, MAIN_ZONE_MIN_WIDTH_PX, clampSidebarWidth, type ShellUiAction } from '../../shared/layout-model'
+import { initialShellUiState, shellUiReducer, SIDEBAR_WIDTH_PX, SIDEBAR_MIN_WIDTH_PX, MAIN_ZONE_MIN_WIDTH_PX, clampSidebarWidth, shouldAutoCollapseSidePanel, type ShellUiAction } from '../../shared/layout-model'
 import { resolveKeybinding } from '../../shared/keymap'
 import { initialPanelState, normalizeRecentlyClosed, panelReducer, PANEL_DEFAULT_WIDTH_PX, PANEL_MIN_WIDTH_PX, clampPanelWidth, type PanelAction } from '../../shared/panel-model'
 import { initialDockState, dockReducer } from '../../shared/dock-model'
@@ -792,6 +792,26 @@ export default function App(): JSX.Element {
   sidebarOpenRef.current = ui.sidebarOpen
   const panelOpenRef = useRef(ui.sidePanelOpen)
   panelOpenRef.current = ui.sidePanelOpen
+
+  // Ticket 86: closing the LAST panel tab must collapse the panel — an open
+  // shell showing only the "Open a Tab" picker is not a resting state. The
+  // linkage is edge-triggered (shared predicate, table-driven Seam-1 tests):
+  // only the >0 → 0 tab-count transition while the panel is open dispatches
+  // close-side-panel, so reopening with zero tabs keeps the picker page up
+  // and a deep link's open-tab re-expands via open-side-panel as before.
+  // The ref updates INSIDE the effect so the committed-count comparison
+  // survives re-renders (a render-phase write would miss the transition).
+  // Batched dispatches collapse to one commit, so a close+open landing in
+  // the same commit compares final states — an intermediate zero that never
+  // rendered never collapses.
+  const openTabsCountRef = useRef(panel.openTabs.length)
+  useEffect(() => {
+    const prevOpenTabs = openTabsCountRef.current
+    openTabsCountRef.current = panel.openTabs.length
+    if (shouldAutoCollapseSidePanel(prevOpenTabs, panel.openTabs.length, panelOpenRef.current)) {
+      dispatch({ type: 'close-side-panel' })
+    }
+  }, [panel.openTabs.length, dispatch])
 
   const dispatchShellPersisting = useCallback(
     (action: ShellUiAction): void => {
