@@ -834,6 +834,33 @@ kbd {
   display: none;
 }
 
+/* Group-row grip handle (ticket 84): the ⋮⋮ dots are the REAL drag handle
+   for reordering project groups (Projects section rows don't reorder, so
+   the section label's grip is gone). Grab affordance + grabbing cursor
+   while the drag is live. */
+.sb-grip-handle {
+  display: inline-flex;
+  align-items: center;
+  cursor: grab;
+  color: var(--text-faint);
+}
+
+.sb-grip-handle:active {
+  cursor: grabbing;
+  color: var(--text-secondary);
+}
+
+/* Drop indicator (ticket 84): a 2px accent line inside the landing edge of
+   the row/section the drag hovers. box-shadow paints without touching
+   layout, so nothing shifts while the indicator walks the list. */
+.sb-drop-above {
+  box-shadow: inset 0 2px 0 0 var(--accent-indigo);
+}
+
+.sb-drop-below {
+  box-shadow: inset 0 -2px 0 0 var(--accent-indigo);
+}
+
 .sb-group-action {
   width: 22px;
   height: 22px;

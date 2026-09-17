@@ -11,7 +11,12 @@
 import type { AccessMode, ThinkingLevel } from './contract.ts'
 import { normalizeRecentlyClosed, type RecentlyClosedTab } from './panel-model.ts'
 import type { ReadStates } from './sessions/unread.ts'
-import type { SessionSort, SessionView } from './sessions/group.ts'
+import {
+  EMPTY_MANUAL_ORDER,
+  type ManualSidebarOrder,
+  type SessionSort,
+  type SessionView
+} from './sessions/group.ts'
 import { SIDEBAR_WIDTH_PX, clampSidebarWidth } from './layout-model.ts'
 import { PANEL_DEFAULT_WIDTH_PX, clampPanelWidth } from './panel-model.ts'
 
@@ -70,8 +75,14 @@ export interface AppPreferences {
    * survives restarts; defaults to ZCode's pre-checked By project. */
   sidebarView: SessionView
   /** Sidebar filter dropdown (ticket 33): the task-list sort key — file
-   * mtime (Updated) or birthtime (Created). Defaults to Updated. */
+   * mtime (Updated), birthtime (Created), or the user's drag arrangement
+   * (Manual, ticket 84). Defaults to Updated. */
   sidebarSort: SessionSort
+  /** The user's sidebar drag arrangement (ticket 84): project-group order
+   * plus one session order per group. Persisted so the arrangement survives
+   * restarts; only active while sidebarSort is 'manual' — switching back to
+   * Updated/Created keeps it stored (sessions files are never touched). */
+  sidebarManualOrder: ManualSidebarOrder
   /** Workspace sidebar width in px (ticket 29): clamped 240–520, default
    * 320. Both draggable panes persist through preferences so a restart
    * restores the layout exactly as left. */
@@ -93,6 +104,7 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   recentlyClosedTabs: [],
   sidebarView: 'projects',
   sidebarSort: 'updated',
+  sidebarManualOrder: EMPTY_MANUAL_ORDER,
   sidebarWidth: SIDEBAR_WIDTH_PX,
   panelWidth: PANEL_DEFAULT_WIDTH_PX
 }
@@ -237,7 +249,30 @@ function normalizedSidebarView(value: unknown): SessionView {
 }
 
 function normalizedSidebarSort(value: unknown): SessionSort {
-  return value === 'created' ? 'created' : 'updated'
+  return value === 'created' || value === 'manual' ? value : 'updated'
+}
+
+/** The sidebar drag arrangement (ticket 84): a { groups, sessions } record
+ * of string lists — blank-free, string-only, deduped in order; junk degrades
+ * to the empty order (which renders exactly like the Updated sort). */
+function normalizedManualOrder(value: unknown): ManualSidebarOrder {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return EMPTY_MANUAL_ORDER
+  const record = value as Record<string, unknown>
+  const groups = normalizedHiddenGroups(record['groups'])
+  const sessions: Record<string, string[]> = {}
+  if (typeof record['sessions'] === 'object' && record['sessions'] !== null && !Array.isArray(record['sessions'])) {
+    for (const [cwd, ids] of Object.entries(record['sessions'] as Record<string, unknown>)) {
+      const list = normalizedHiddenGroups(ids)
+      if (list.length > 0) sessions[cwd] = list
+    }
+  }
+  return { groups, sessions }
+}
+
+function normalizedManualOrderOr(prev: ManualSidebarOrder, value: unknown): ManualSidebarOrder {
+  if (value === undefined) return prev
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return prev
+  return normalizedManualOrder(value)
 }
 
 function normalizedSidebarViewOr(prev: SessionView, value: unknown): SessionView {
@@ -247,7 +282,7 @@ function normalizedSidebarViewOr(prev: SessionView, value: unknown): SessionView
 
 function normalizedSidebarSortOr(prev: SessionSort, value: unknown): SessionSort {
   if (value === undefined) return prev
-  return value === 'updated' || value === 'created' ? value : prev
+  return value === 'updated' || value === 'created' || value === 'manual' ? value : prev
 }
 
 function normalizedPaneWidthOr(prev: number, value: unknown, clamp: (width: number) => number): number {
@@ -270,6 +305,7 @@ export function normalizePreferences(raw: unknown): AppPreferences {
     recentlyClosedTabs: normalizeRecentlyClosed(record['recentlyClosedTabs']),
     sidebarView: normalizedSidebarView(record['sidebarView']),
     sidebarSort: normalizedSidebarSort(record['sidebarSort']),
+    sidebarManualOrder: normalizedManualOrder(record['sidebarManualOrder']),
     sidebarWidth: normalizedPaneWidth(record['sidebarWidth'], SIDEBAR_WIDTH_PX, clampSidebarWidth),
     panelWidth: normalizedPaneWidth(record['panelWidth'], PANEL_DEFAULT_WIDTH_PX, clampPanelWidth)
   }
@@ -291,6 +327,7 @@ export function mergePreferences(prev: AppPreferences, patch: unknown): AppPrefe
     recentlyClosedTabs: normalizedRecentlyClosedOr(prev.recentlyClosedTabs, record['recentlyClosedTabs']),
     sidebarView: normalizedSidebarViewOr(prev.sidebarView, record['sidebarView']),
     sidebarSort: normalizedSidebarSortOr(prev.sidebarSort, record['sidebarSort']),
+    sidebarManualOrder: normalizedManualOrderOr(prev.sidebarManualOrder, record['sidebarManualOrder']),
     sidebarWidth: normalizedPaneWidthOr(prev.sidebarWidth, record['sidebarWidth'], clampSidebarWidth),
     panelWidth: normalizedPaneWidthOr(prev.panelWidth, record['panelWidth'], clampPanelWidth)
   }

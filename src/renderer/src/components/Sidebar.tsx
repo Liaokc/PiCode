@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type Dispatch,
+  type DragEvent,
   type JSX,
   type PointerEvent
 } from 'react'
@@ -14,13 +15,16 @@ import { archivedList, filterArchived } from '../../../shared/sessions/archive'
 import {
   filterHiddenGroups,
   groupSessions,
+  isEmptyManualOrder,
   isSessionLive,
   projectLabel,
   relativeTime,
   timelineSessions,
+  type ManualSidebarOrder,
   type SessionSort,
   type SessionView
 } from '../../../shared/sessions/group'
+import { moveGroupBefore, moveSessionBefore, snapshotManualOrder } from '../../../shared/sessions/reorder'
 import { sessionMenuGroups, grayRowMenuGroups, type SessionMenuAction, type SessionRowAction } from '../../../shared/sessions/context-menu'
 import {
   groupFoldReducer,
@@ -60,6 +64,25 @@ import {
  * not. */
 const MENU_WIDTH_PX = 216
 const MENU_HEIGHT_PX = 320
+
+/** What one drag carries (ticket 84): a session row (within its OWN group —
+ * cross-project moves are out of scope by red line: a session's project
+ * identity is its file-header cwd) or a whole project group (grip handle). */
+type SidebarDrag = { kind: 'session'; cwd: string; sessionId: string } | { kind: 'group'; cwd: string }
+
+/** Where the current drag would land — the drop indicator + the commit
+ * anchor. Session drops anchor "right before beforeId" (null = end of the
+ * group); group drops anchor "right before beforeCwd" (null = last). */
+type SidebarDropTarget = { kind: 'session'; cwd: string; beforeId: string | null } | { kind: 'group'; beforeCwd: string | null }
+
+/** The row's HTML5 drag handlers, built per project-group row by the
+ * Sidebar (pinned/timeline rows never receive one — they cannot drag). */
+interface TaskRowDrag {
+  onDragStart: (event: DragEvent<HTMLElement>) => void
+  onDragEnd: (event: DragEvent<HTMLElement>) => void
+  onDragOver: (event: DragEvent<HTMLElement>) => void
+  onDrop: (event: DragEvent<HTMLElement>) => void
+}
 
 /** Where + on which session the context menu is open (ticket 35). */
 interface SessionMenuState {
@@ -125,12 +148,20 @@ interface SidebarProps {
    * the flat timeline. Owned by the shell's preferences; the dropdown is
    * only the picker. */
   view: SessionView
-  /** The persisted filter-dropdown sort key (ticket 33): updated | created. */
+  /** The persisted filter-dropdown sort key (ticket 33): updated | created
+   * | manual (ticket 84). */
   sort: SessionSort
   /** Persist a dropdown view choice (ticket 33). */
   onViewChange: (view: SessionView) => void
   /** Persist a dropdown sort choice (ticket 33). */
   onSortChange: (sort: SessionSort) => void
+  /** The persisted drag arrangement (ticket 84); active only while `sort`
+   * is 'manual' — switching back to Updated/Created keeps it stored. */
+  manualOrder: ManualSidebarOrder
+  /** Commit one drag (ticket 84): persist the new arrangement AND flip the
+   * sort to 'manual' in one preference patch — the first drag auto-enters
+   * Manual, later drags compose onto the stored order. */
+  onCommitManualOrder: (order: ManualSidebarOrder) => void
   /** Current sidebar width in px (ticket 29): the shell state seeds it from
    * preferences; the drag path writes the DOM directly and commits once on
    * pointerup. */
@@ -157,7 +188,9 @@ function TaskItem({
   onRenameEnd,
   onDraftChange,
   onArchive,
-  onContextMenu
+  onContextMenu,
+  drag,
+  dropMark
 }: {
   session: SessionSummary
   now: number
@@ -189,6 +222,11 @@ function TaskItem({
    * temporarily takes the dot slot. */
   onArchive: () => void
   onContextMenu: (x: number, y: number) => void
+  /** Project-group rows only (ticket 84): the row body drags within its own
+   * group. Pinned and timeline rows never receive handlers — no drag. */
+  drag?: TaskRowDrag
+  /** Drop-indicator mark while a drag hovers this row (ticket 84). */
+  dropMark?: 'above' | 'below' | null
 }): JSX.Element {
   function commit(): void {
     const name = draft.trim()
@@ -197,13 +235,18 @@ function TaskItem({
   }
 
   const cls = selected ? 'sb-task sb-task-active' : 'sb-task'
+  const dropCls = dropMark ? ` sb-drop-${dropMark}` : ''
 
   return (
     <div
-      className={dimmed ? `${cls} sb-task-dimmed` : cls}
+      className={dimmed ? `${cls} sb-task-dimmed${dropCls}` : `${cls}${dropCls}`}
       data-file={session.file}
+      // Row-body drag (ticket 84); gray (dimmed) rows drag the same path.
+      // The rename input must never fight an ancestor drag for selection.
+      draggable={drag !== undefined && !renaming}
       onClick={onOpen}
       onDoubleClick={onRenameStart}
+      {...(drag ?? {})}
       onContextMenu={(e) => {
         e.preventDefault()
         onContextMenu(e.clientX, e.clientY)
@@ -303,6 +346,8 @@ export default function Sidebar({
   sort,
   onViewChange,
   onSortChange,
+  manualOrder,
+  onCommitManualOrder,
   width,
   dispatch
 }: SidebarProps): JSX.Element | null {
@@ -330,6 +375,23 @@ export default function Sidebar({
   /** The rename input's draft, seeded by startRename — both the menu and
    * the double-click go through it, so no effect ever syncs the draft. */
   const [renameDraft, setRenameDraft] = useState('')
+
+  // Drag-reorder state (ticket 84): the drag payload rides a ref (the HTML5
+  // DataTransfer is unreadable during dragover), the drop indicator in
+  // state. setDrop skips no-op writes so dragover's firehose doesn't
+  // re-render the list per pixel.
+  const dragRef = useRef<SidebarDrag | null>(null)
+  const [dropTarget, setDropTarget] = useState<SidebarDropTarget | null>(null)
+  function sameTarget(a: SidebarDropTarget | null, b: SidebarDropTarget | null): boolean {
+    if (a === null || b === null) return a === b
+    if (a.kind !== b.kind) return false
+    return a.kind === 'session'
+      ? b.kind === 'session' && a.cwd === b.cwd && a.beforeId === b.beforeId
+      : b.kind === 'group' && a.beforeCwd === b.beforeCwd
+  }
+  function setDrop(next: SidebarDropTarget | null): void {
+    setDropTarget((prev) => (sameTarget(prev, next) ? prev : next))
+  }
 
   // Sidebar width drag (ticket 29): pointermove NEVER dispatches — the raw
   // width is rAF-coalesced and written straight to the aside's style (the
@@ -405,8 +467,14 @@ export default function Sidebar({
   // pipelines consume the listed (archive-filtered) sessions with the
   // persisted sort; the ticket-33 text filter is retired (⌘K covers search).
   const listed = useMemo(() => filterArchived(sessions, archivedIds), [sessions, archivedIds])
-  const grouped = useMemo(() => groupSessions(listed, pinnedIds, sort), [listed, pinnedIds, sort])
-  const timeline = useMemo(() => timelineSessions(listed, pinnedIds, sort), [listed, pinnedIds, sort])
+  const grouped = useMemo(
+    () => groupSessions(listed, pinnedIds, sort, manualOrder),
+    [listed, pinnedIds, sort, manualOrder]
+  )
+  const timeline = useMemo(
+    () => timelineSessions(listed, pinnedIds, sort, manualOrder),
+    [listed, pinnedIds, sort, manualOrder]
+  )
   const visibleProjectGroups = useMemo(
     () => filterHiddenGroups(grouped.groups, hiddenCwds),
     [grouped.groups, hiddenCwds]
@@ -521,6 +589,102 @@ export default function Sidebar({
    * Status-dot vocabulary untouched: dimming is row opacity + meta. */
   function dimmedFor(s: SessionSummary): boolean {
     return cwdRowState(s.cwdMissing === true, inAppIds.has(s.id)) === 'dimmed'
+  }
+
+  // ---- drag-reorder commit (ticket 84) ----
+
+  /** The arrangement the drop composes onto: the first drag EVER snapshots
+   * the current render (so Manual activates without rows jumping); every
+   * later drag composes onto the stored order — preserved across
+   * Updated/Created detours, never silently rebuilt. */
+  function manualBase(): ManualSidebarOrder {
+    return isEmptyManualOrder(manualOrder) ? snapshotManualOrder(grouped) : manualOrder
+  }
+
+  /** One drop, committed: apply the anchored move and persist — the App
+   * wrapper writes order + sort:'manual' in ONE preference patch (first
+   * drag auto-enters Manual; later drops are idempotent on the sort). */
+  function commitDrop(target: SidebarDropTarget): void {
+    const d = dragRef.current
+    dragRef.current = null
+    setDrop(null)
+    if (d === null) return
+    if (d.kind === 'session') {
+      if (target.kind !== 'session' || d.cwd !== target.cwd) return
+      const rendered = grouped.groups.find((g) => g.cwd === d.cwd)?.sessions.map((s) => s.id) ?? []
+      onCommitManualOrder(moveSessionBefore(manualBase(), d.cwd, d.sessionId, target.beforeId, rendered))
+      return
+    }
+    if (target.kind !== 'group') return
+    onCommitManualOrder(
+      moveGroupBefore(manualBase(), d.cwd, target.beforeCwd, grouped.groups.map((g) => g.cwd))
+    )
+  }
+
+  /** The session drop target from ONE event's geometry (top/bottom half of
+   * the row). Both dragover and drop derive it from the event — the drop
+   * never reads the indicator state, so a drop dispatched in the same task
+   * as its dragover (test drivers) lands exactly like a real one. */
+  function sessionDropTargetFrom(
+    event: DragEvent<HTMLElement>,
+    session: SessionSummary,
+    rows: SessionSummary[],
+    index: number,
+    endBeforeId: string | null
+  ): SidebarDropTarget {
+    const rect = event.currentTarget.getBoundingClientRect()
+    const above = event.clientY < rect.top + rect.height / 2
+    const beforeId = above ? session.id : index + 1 < rows.length ? rows[index + 1].id : endBeforeId
+    return { kind: 'session', cwd: session.cwd, beforeId }
+  }
+
+  /** The group drop target from ONE event's geometry against its section
+   * (top half = before this group, bottom half = after it). */
+  function groupDropTargetFrom(
+    event: DragEvent<HTMLElement>,
+    group: { cwd: string },
+    groupIndex: number
+  ): SidebarDropTarget {
+    const rect = event.currentTarget.getBoundingClientRect()
+    const above = event.clientY < rect.top + rect.height / 2
+    const beforeCwd = above ? group.cwd : (visibleProjectGroups[groupIndex + 1]?.cwd ?? null)
+    return { kind: 'group', beforeCwd }
+  }
+
+  /** Per-row drag handlers for one project-group row (row-body drag, same
+   * group only — cross-project moves are refused at the dragover gate, so
+   * the browser shows the not-allowed cursor and the drop never lands). */
+  function rowDrag(
+    group: { cwd: string },
+    session: SessionSummary,
+    rows: SessionSummary[],
+    index: number,
+    endBeforeId: string | null
+  ): TaskRowDrag {
+    return {
+      onDragStart: (event) => {
+        dragRef.current = { kind: 'session', cwd: group.cwd, sessionId: session.id }
+        event.dataTransfer.effectAllowed = 'move'
+        event.dataTransfer.setData('text/plain', session.id)
+      },
+      onDragEnd: () => {
+        dragRef.current = null
+        setDrop(null)
+      },
+      onDragOver: (event) => {
+        const d = dragRef.current
+        if (d === null || d.kind !== 'session' || d.cwd !== group.cwd) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'move'
+        setDrop(sessionDropTargetFrom(event, session, rows, index, endBeforeId))
+      },
+      onDrop: (event) => {
+        const d = dragRef.current
+        if (d === null || d.kind !== 'session' || d.cwd !== group.cwd) return
+        event.preventDefault()
+        commitDrop(sessionDropTargetFrom(event, session, rows, index, endBeforeId))
+      }
+    }
   }
 
   // Ticket 40: the sidebar STAYS MOUNTED while closed — the closed end
@@ -672,6 +836,24 @@ export default function Sidebar({
               <span>Created</span>
               {sort === 'created' && <CheckIcon size={14} className="sb-filter-check" />}
             </button>
+            {/* Manual (ticket 84): the drag arrangement. Picking it before
+                any drag renders exactly the Updated layout (empty order);
+                the first drag snapshots the current render, later drags
+                compose onto the stored arrangement. */}
+            <button
+              type="button"
+              role="menuitemradio"
+              aria-checked={sort === 'manual'}
+              className="sb-filter-menu-item"
+              onClick={() => {
+                onSortChange('manual')
+                setFilterMenuOpen(false)
+              }}
+            >
+              <GripDotsIcon size={14} />
+              <span>Manual</span>
+              {sort === 'manual' && <CheckIcon size={14} className="sb-filter-check" />}
+            </button>
           </div>
         )}
       </div>
@@ -712,10 +894,9 @@ export default function Sidebar({
               <FolderIcon />
               Projects
               <span className="sb-section-spacer" />
-              <GripDotsIcon />
             </div>
 
-            {visibleProjectGroups.map((group) => {
+            {visibleProjectGroups.map((group, groupIndex) => {
               // Fold + pagination come from the shape machine (ticket 39):
               // the header row's click folds/unfolds the WHOLE group, the
               // remembered step survives folds, Show more steps +5, Show
@@ -723,9 +904,44 @@ export default function Sidebar({
               const rowCount = visibleRowCount(folds, group.cwd, group.sessions.length)
               const control = showMoreControl(folds, group.cwd, group.sessions.length)
               const rows = group.sessions.slice(0, rowCount)
+              // The anchor id meaning "insert at the visible end" (ticket
+              // 84): the first HIDDEN row when pagination hides any, else
+              // null = the group's absolute end. Drops below the last
+              // rendered row and its indicator both use it, so a drop into
+              // a partly shown group lands right below what the user sees.
+              const endBeforeId = rowCount < group.sessions.length ? (group.sessions[rowCount]?.id ?? null) : null
               const menuOpen = groupMenuCwd === group.cwd
+              const groupDropCls =
+                dropTarget !== null && dropTarget.kind === 'group'
+                  ? dropTarget.beforeCwd === group.cwd
+                    ? ' sb-drop-above'
+                    : dropTarget.beforeCwd === null && groupIndex === visibleProjectGroups.length - 1
+                      ? ' sb-drop-below'
+                      : ''
+                  : ''
               return (
-                <section key={group.cwd} className="sb-group">
+                <section
+                  key={group.cwd}
+                  data-cwd={group.cwd}
+                  className={`sb-group${groupDropCls}`}
+                  onDragOver={(e) => {
+                    // Group-level drop zones (ticket 84): top half = before
+                    // this group, bottom half = after it. Fires for group
+                    // drags only; session drags are refused here (no
+                    // preventDefault → not-allowed cursor → no drop).
+                    const d = dragRef.current
+                    if (d === null || d.kind !== 'group') return
+                    e.preventDefault()
+                    e.dataTransfer.dropEffect = 'move'
+                    setDrop(groupDropTargetFrom(e, group, groupIndex))
+                  }}
+                  onDrop={(e) => {
+                    const d = dragRef.current
+                    if (d === null || d.kind !== 'group') return
+                    e.preventDefault()
+                    commitDrop(groupDropTargetFrom(e, group, groupIndex))
+                  }}
+                >
                   <div className="sb-group-header" onClick={() => dispatchFold({ type: 'toggle-fold', cwd: group.cwd })}>
                     <FolderIcon />
                     <span>{group.project}</span>
@@ -781,7 +997,35 @@ export default function Sidebar({
                         </button>
                       </Tooltip>
                     </span>
-                    <GripDotsIcon className="sb-grip" />
+                    {/* The grip is the REAL drag handle now (ticket 84):
+                        dragging it reorders the group; the section-level
+                        dragover/drop pair above carries the drop. The ghost
+                        image is the whole header row (ZCode's move form). */}
+                    <span
+                      className="sb-grip-handle"
+                      aria-label={`Drag to reorder ${group.project}`}
+                      draggable
+                      onDragStart={(e) => {
+                        dragRef.current = { kind: 'group', cwd: group.cwd }
+                        e.dataTransfer.effectAllowed = 'move'
+                        e.dataTransfer.setData('text/plain', group.cwd)
+                        const header = e.currentTarget.closest('.sb-group-header')
+                        if (header instanceof HTMLElement) {
+                          try {
+                            e.dataTransfer.setDragImage(header, 12, 12)
+                          } catch {
+                            // Synthetic (untrusted) events cannot set drag
+                            // images — the default grip ghost is fine.
+                          }
+                        }
+                      }}
+                      onDragEnd={() => {
+                        dragRef.current = null
+                        setDrop(null)
+                      }}
+                    >
+                      <GripDotsIcon className="sb-grip" />
+                    </span>
                   </div>
                   {menuOpen && (
                     <div className="sb-group-menu" role="menu" aria-label={`Group actions: ${group.project}`}>
@@ -800,7 +1044,7 @@ export default function Sidebar({
                       </button>
                     </div>
                   )}
-                  {rows.map((s) => (
+                  {rows.map((s, rowIndex) => (
                     <TaskItem
                       key={s.file}
                       session={s}
@@ -819,6 +1063,16 @@ export default function Sidebar({
                       onDraftChange={setRenameDraft}
                       onArchive={() => onSessionAction(s, 'archive')}
                       onContextMenu={(x, y) => openSessionMenu(s, x, y)}
+                      drag={rowDrag(group, s, rows, rowIndex, endBeforeId)}
+                      dropMark={
+                        dropTarget !== null && dropTarget.kind === 'session' && dropTarget.cwd === group.cwd
+                          ? dropTarget.beforeId === s.id
+                            ? 'above'
+                            : dropTarget.beforeId === endBeforeId && rowIndex === rows.length - 1
+                              ? 'below'
+                              : null
+                          : null
+                      }
                     />
                   ))}
                   {control !== null && (

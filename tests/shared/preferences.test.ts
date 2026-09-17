@@ -7,6 +7,7 @@ import {
   setSessionArchived,
   toggleHiddenGroup
 } from '../../src/shared/preferences.ts'
+import { EMPTY_MANUAL_ORDER } from '../../src/shared/sessions/group.ts'
 import { SIDEBAR_WIDTH_PX } from '../../src/shared/layout-model.ts'
 import { PANEL_DEFAULT_WIDTH_PX } from '../../src/shared/panel-model.ts'
 
@@ -36,6 +37,7 @@ describe('normalizePreferences', () => {
       recentlyClosedTabs: [],
       sidebarView: 'projects',
       sidebarSort: 'updated',
+      sidebarManualOrder: EMPTY_MANUAL_ORDER,
       sidebarWidth: SIDEBAR_WIDTH_PX,
       panelWidth: PANEL_DEFAULT_WIDTH_PX
     })
@@ -83,6 +85,7 @@ describe('mergePreferences', () => {
       recentlyClosedTabs: [],
       sidebarView: 'projects',
       sidebarSort: 'updated',
+      sidebarManualOrder: EMPTY_MANUAL_ORDER,
       sidebarWidth: SIDEBAR_WIDTH_PX,
       panelWidth: PANEL_DEFAULT_WIDTH_PX
     })
@@ -125,6 +128,32 @@ describe('mergePreferences', () => {
     expect(merged.sidebarSort).toBe('updated')
     expect(mergePreferences(merged, { sidebarView: 'matrix' })).toEqual(merged)
     expect(mergePreferences(merged, { sidebarSort: undefined })).toEqual(merged)
+  })
+
+  it('persists the sidebar manual drag order, degrading junk to empty (ticket 84)', () => {
+    // Round-trip of the whole structure: group order + per-cwd row order.
+    const order = { groups: ['/w/web', '/w/api'], sessions: { '/w/api': ['b', 'a'], '/w/web': ['c'] } }
+    expect(normalizePreferences({ sidebarManualOrder: order }).sidebarManualOrder).toEqual(order)
+    // sort gains the manual vocabulary (junk still degrades to updated).
+    expect(normalizePreferences({ sidebarSort: 'manual' }).sidebarSort).toBe('manual')
+    expect(normalizePreferences({ sidebarSort: 'random' }).sidebarSort).toBe('updated')
+    // Junk structures degrade to the empty order; blank/dup ids are dropped.
+    expect(normalizePreferences({ sidebarManualOrder: 'drag' }).sidebarManualOrder).toEqual(EMPTY_MANUAL_ORDER)
+    expect(normalizePreferences({ sidebarManualOrder: null }).sidebarManualOrder).toEqual(EMPTY_MANUAL_ORDER)
+    expect(
+      normalizePreferences({ sidebarManualOrder: { groups: ['/w', '/w', ''], sessions: { '/w': ['a', 'a', 7, 'b'] } } })
+        .sidebarManualOrder
+    ).toEqual({ groups: ['/w'], sessions: { '/w': ['a', 'b'] } })
+    // A valid patch replaces the whole structure; invalid/missing keeps prev.
+    const seeded = normalizePreferences({ sidebarManualOrder: order })
+    const next = { groups: ['/w/api'], sessions: { '/w/api': ['a'] } }
+    expect(mergePreferences(seeded, { sidebarManualOrder: next }).sidebarManualOrder).toEqual(next)
+    expect(mergePreferences(seeded, { sidebarManualOrder: 42 })).toEqual(seeded)
+    expect(mergePreferences(seeded, { sidebarManualOrder: undefined })).toEqual(seeded)
+    // The drag-drop commit flips both fields in ONE patch.
+    const dropped = mergePreferences(seeded, { sidebarManualOrder: next, sidebarSort: 'manual' })
+    expect(dropped.sidebarSort).toBe('manual')
+    expect(dropped.sidebarManualOrder).toEqual(next)
   })
 
   it('rejects invalid patch values and keeps the previous ones', () => {

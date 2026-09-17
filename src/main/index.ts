@@ -10,6 +10,7 @@ import type { AuthProbeReport } from '../shared/auth-status'
 import type { AppPreferences } from '../shared/preferences'
 import { SIDEBAR_WIDTH_PX } from '../shared/layout-model'
 import { PANEL_DEFAULT_WIDTH_PX } from '../shared/panel-model'
+import { EMPTY_MANUAL_ORDER } from '../shared/sessions/group'
 import { createWindowOptions } from './window-options'
 import { HostSupervisor, defaultHostEntryPath } from './host-supervisor'
 import { createApprovalNotifier, parseApprovalNotice } from './notifications'
@@ -31,6 +32,7 @@ import { startTerminalVisualIfEnabled } from './visual-terminal'
 import { startMultiSessionVisualIfEnabled, isolateVisualUserData } from './visual-multisession'
 import { startRowGeometryVisualIfEnabled, isolateRowGeometryUserData } from './visual-row-geometry'
 import { startFilterVisualIfEnabled, isolateFilterUserData } from './visual-filter'
+import { startDragVisualIfEnabled, isolateDragUserData } from './visual-drag'
 import { startAccessVisualIfEnabled } from './visual-access'
 import { startContextMenuVisualIfEnabled, isolateContextMenuUserData } from './visual-context-menu'
 import { startTraceVisualIfEnabled, isolateTraceUserData } from './visual-trace'
@@ -89,6 +91,10 @@ isolateContextMenuUserData()
 // Ticket-37 trace tool-surfaces harness — same throwaway-userData rule
 // (no-op unless PICODE_VISUAL_TRACE=1).
 isolateTraceUserData()
+// Ticket-84 sidebar drag-reorder harness drives the REAL preference store
+// (drag commits + sort flips) — throwaway userData for it too (no-op unless
+// PICODE_VISUAL_DRAG=1).
+isolateDragUserData()
 // Ticket-39 group-fold harness reads the default 'projects' view from a
 // throwaway userData (no-op unless PICODE_VISUAL_FOLD=1).
 isolateFoldUserData()
@@ -385,6 +391,7 @@ app.whenReady().then(() => {
   // Ticket-33 filter-dropdown harness — same seeding constraint (it also
   // pins and persists dropdown choices through the real UI).
   startFilterVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  startDragVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-35 context-menu/archive harness — same seeding constraint.
   startContextMenuVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-54 ghost-cwd harness — seeds its own dead/alive store pair.
@@ -612,6 +619,7 @@ function fakePreferences(): AppPreferences {
     recentlyClosedTabs: [],
     sidebarView: 'projects',
     sidebarSort: 'updated',
+    sidebarManualOrder: EMPTY_MANUAL_ORDER,
     sidebarWidth: SIDEBAR_WIDTH_PX,
     panelWidth: PANEL_DEFAULT_WIDTH_PX
   }

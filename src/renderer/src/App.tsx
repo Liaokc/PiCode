@@ -1515,6 +1515,8 @@ export default function App(): JSX.Element {
         sort={settings.preferences.sidebarSort}
         onViewChange={(view) => handleSetPreferences({ sidebarView: view })}
         onSortChange={(sort) => handleSetPreferences({ sidebarSort: sort })}
+        manualOrder={settings.preferences.sidebarManualOrder}
+        onCommitManualOrder={(order) => handleSetPreferences({ sidebarManualOrder: order, sidebarSort: 'manual' })}
       />
       <div className="workspace-column">
         <div className="workspace-row">

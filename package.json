@@ -30,6 +30,7 @@
     "visual:approval": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_APPROVAL=1 electron .",
     "visual:row-geometry": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_ROW_GEOMETRY=1 electron .",
     "visual:filter": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_FILTER=1 electron .",
+    "visual:drag": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_DRAG=1 electron .",
     "visual:context-menu": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_CONTEXT_MENU=1 electron .",
     "visual:trace": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_TRACE=1 electron .",
     "visual:access": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_ACCESS=1 electron .",
