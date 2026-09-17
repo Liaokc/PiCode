@@ -183,7 +183,7 @@ Status: ready-for-spec
 
 ## 依赖与波次提示（/to-tickets 用）
 
-- **additive 契约/投影增量三项**（实施时报备入 host-contract smoke）：R4 MCP 状态桥接（host 事件）；R5 子代理 RPC/事件桥接（host 事件 + 控制命令）；R14/R17 `user_message` echo 增 images。
+- **additive 契约/投影增量四项**（实施时报备入 host-contract smoke）：R4 MCP 状态桥接（host 事件）；R5 子代理 RPC/事件桥接（host 事件 + 控制命令）；R14/R17 `user_message` echo 增 images；R23 `edit_queue_entry` / `remove_queue_entry` ops（host 队列镜像 + clear/requeue 舞步）。
 - **同文件群 A（composer 群）**：R7、R8、R9、R10、R16 全落 Composer/expand/app.css——强串行或合并验证区段；R16 全局清扫跨组件但模式统一（可独立尾票）。
 - **同文件群 B（转录/回合群）**：R15、R1、R6 都动 turn-collapse/ChatView/TurnContainer——串行（建议 R15 模型先行，R1/R6 跟上）；R18（TreePanel）独立。
 - **同文件群 C（侧栏群）**：R11 独占 Sidebar/group.ts/偏好结构；R12（TitleBar）独立。
