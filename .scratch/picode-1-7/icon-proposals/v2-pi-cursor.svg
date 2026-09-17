@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- V2 "π + 终端光标" — 黑 squircle + 白 π + 品牌橙终端光标块（agent 在工作） -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#262626"/>
+      <stop offset="1" stop-color="#0f0f0f"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="228" fill="url(#bg)"/>
+  <g transform="translate(452 500) skewX(-9) translate(-512 -500)" fill="#ffffff">
+    <rect x="266" y="344" width="492" height="92"/>
+    <rect x="306" y="344" width="92" height="376"/>
+    <rect x="566" y="280" width="92" height="440"/>
+  </g>
+  <rect x="676" y="600" width="82" height="104" rx="12" fill="#ec7931"/>
+</svg>

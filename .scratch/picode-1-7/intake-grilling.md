@@ -126,6 +126,21 @@ Status: ready-for-spec
 - **根因**：空泡 = `ChatView.tsx:311` 空串照渲染（display text 剥离技能 prologue 后为空）；marker 在容器体内随折叠消失。ZCode 把技能当 work item 放容器内（bundle `chat.toolCall.skill.*` 族）——移出容器 = **操作者批准的 ZCode 偏离**（工作容器常驻同款）。
 - **定稿（Q21 原推荐被操作者细化改判）**：**重构消息泡**——泡成为组合块：**技能渲染（有技能时：魔杖 icon + Skill + 名字）+ 用户文本（有时）+ 图片缩略图（R17）**。skill-only → 泡内只渲染技能（空灰盒消失）；技能+文字 → 泡内两者都渲染；**容器体内 marker 行退役**（技能故事由泡承载——泡在容器外，live 与落定同位常驻，折叠不再吞）。①（marker 出容器）操作者同意；Copy 语义不变（拷用户原话，不拷技能渲染）；Edit 动作行随泡块（锚定不变）；与 R15 无冲突（泡是回合头静态块，不进流）；与 R17 同渲染区段（同票或紧邻）。
 
+### R20 应用图标 —— 全新需求（Q22 选型）
+- **痛点**：PiCode 全仓无任何自定义图标（无 icns/icon 资产、package.mjs 无 icon 选项）——打包产出为 Electron 默认图标。
+- **取证**：ZCode 图标形制校准（黑 squircle + 白粗斜体 Z——只读查看后弃用，资产不入库——红线）；本会话设计四案（`.scratch/picode-1-7/icon-proposals/`，自绘几何斜体 π SVG 骨架——右腿出头读 π、无字体依赖）。
+- **定稿（Q22 = V2）**：**黑 squircle（#262626→#0f0f0f 微渐变）+ 白几何斜体 π + 品牌橙 #ec7931 终端光标块**——家族形（ZCode 同构同色系）+ 品牌橙区分记号 +「agent 在工作」暗示。交付 = SVG master 正式化进仓库资产 + icns/png 全尺寸 + 接入打包链（@electron/packager icon 选项）+ dev 窗口 Dock 图标。
+
+### R21 SVG/HTML/图片双态预览 —— 全新需求（Q23 全按推荐）
+- **痛点**：侧栏文件标签打开 SVG/HTML 只有源码（无渲染态）；图片二进制直接拒显（"no text preview"）。
+- **根因**：预览分类仅三态——markdown（唯一有渲染/源码双态的先例）/ source / binary（`preview/policy.ts` kindForEntry + `PreviewTab` binary 拒显分支）；SVG/HTML 落 source、图片落 binary。
+- **定稿**：①**SVG** = 渲染态（img data-URL——SVG 在 img 中脚本不执行，静态渲染安全）+ 源码双态，默认渲染；②**HTML** = 渲染态（**sandboxed iframe：allow-scripts、无 allow-same-origin、无 Node 访问**——LLM 生成的带内联脚本报告完整渲染且帧隔离）+ 源码双态，默认渲染，相对资源以文件所在目录为 base；③切换 UI 复用 markdown 的 Rendered/Source segmented control（wrap 开关沿用 source 态才显示的规则）；④**常见图片格式（png/jpg/gif/webp）从 binary 拒显改 img 直显**（单态无源码）。超限大文件回退源码（markdown 的 size 上限语义沿用）。
+
+### R22 侧栏零标签自动折叠 —— 全新需求（Round 7 免问定稿）
+- **痛点**：右侧栏所有 tab 关闭后，面板残留一个空壳（"Choose which tab to open" 选择页），要手动折叠。
+- **根因**：零 tab 状态可达（review 也可关，`panel-model` close-tab 无特判）；关到零时 SidePanel 显 tab 选择页空态（`SidePanel.tsx:124/245`）而面板 open 状态不变。
+- **定稿**：**openTabs 为空 → 面板自动折叠**（`sidePanelOpen` 翻 false——跨 reducer 联动的落点票内裁量：渲染层派生 effect 或 App 层联动均可）；重开路径不变（⌥⌘B / 标题栏钮 → 面板开，零 tab 时显既有 tab 选择页兜底）；深链自动展开行为不回归（open-tab 均伴随 open-side-panel，已核实）。
+
 ## Grilling 记录
 
 - **Round 1（Q1–Q8）**：Q1 文件条 settled 三边界按推荐 / Q2 表格按推荐 / Q3 **确认 MCP 重开** / Q4 L3+L4 按推荐（拆两票）/ Q5 **改判：OAuth 授权流要做**（原推荐不做）/ Q6 **= (b) 全进侧板**（附三张 ZCode 截图）/ Q7 数据边界按推荐 / Q8 ①steer ②已结束只读 ③**改判：停止需确认框**（原推荐直终）④定义管理范围外。
@@ -133,16 +148,18 @@ Status: ready-for-spec
 - **Round 3（Q15–Q17 + History + 补新1/补新2）**：Q15 拖拽语义确认（组内排序 + 组间排序；跨项目移动红线不做）/ Q16 Manual 排序模式整包 / Q17 供面细节整包（组行 grip 转正、分区行 grip 删、灰行可拖、无 drop zone）；History = 票 70 同构竞态实锤免问。
 - **Round 4（Q18–Q20 + 补新3）**：Q18 live 纯时间序按推荐 / Q19 焦点纪律按推荐（Tab 圈保留）/ Q20 气泡缩略图 + 预览全做；补新3 当场核因免问。**pi16-* 帧补 track**（4b65ac0）。
 - **Round 5（Q21 + 细化）**：skill-only 空泡 + 技能行被折叠吞（本批第 18 条痛点）。原推荐 = 空泡消失、marker 独占回合头、动作行挂 marker；**操作者细化改判 = 重构消息泡**（泡 = 技能渲染 + 用户文本组合块；容器内 marker 退役）。定稿见 R19。
-- 至此前沿树空：18 条痛点 → 19 个 R 簇 × 全部边界均有裁决。
+- **Round 6（Q22–Q23）**：Q22 图标四案选型 = **V2**（π + 橙终端光标——原推荐即 V2）；Q23 SVG/HTML/图片双态预览全按推荐（含 HTML 带脚本沙箱策略）。定稿见 R20/R21。
+- **Round 7（免问）**：侧栏零标签自动折叠（第 21 条痛点）——空壳选择页现状实锤，规则唯一（零 tab = 折叠，重开显选择页），免问定稿。定稿见 R22。
+- 至此前沿树空：21 条痛点 → 22 个 R 簇 × 全部边界均有裁决。
 
 ## 归类记录
 
 - 缺陷 7：R7（图片遮盖）、R8（滚动条）、R10（动画缺失）、R13（发送不落底）、R14（票 79 live 丢图）、R16（焦点滞留）、R18（History 竞态）。
 - 交付行为修订 5：R1（票 78 live 增长）、R2（1.4 表格卡 360px）、R6（容器无锚定）、R15（票 56 提升规则）、R19（技能 marker 容器内 + 空泡）。
 - 清理 1：R12（幽灵钮删除）。
-- 全新需求 6：R3+R4（MCP 管理——1.5 Q1 裁决重开前提）、R5（子智能体）、R9（图片预览）、R11（拖拽重排）、R17（气泡缩略图）。
+- 全新需求 9：R3+R4（MCP 管理——1.5 Q1 裁决重开前提）、R5（子智能体）、R9（图片预览）、R11（拖拽重排）、R17（气泡缩略图）、R20（应用图标）、R21（双态预览）、R22（零标签自动折叠）。
 - 调查存档不立票 0。
-- 范围外新增记录：agent 定义管理、子代理 resume 复活、嵌套子代理展开、跨会话 fleet、跨项目移动会话（红线）、视图导航历史（‹ › 若日后要做）、空组 drop zone。
+- 范围外新增记录：agent 定义管理、子代理 resume 复活、嵌套子代理展开、跨会话 fleet、跨项目移动会话（红线）、视图导航历史（‹ › 若日后要做）、空组 drop zone、HTML 预览 devtools/编辑能力、pdf 等其他二进制格式预览。
 
 ## 术语（随票入 CONTEXT.md；本会话只写 .scratch/ 不碰根目录文件）
 
