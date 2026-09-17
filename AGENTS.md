@@ -50,3 +50,19 @@ npm run visual:transcript   # screenshot harnesses (see README "Visual QA")
 
 Smoke stages 2/5/6 make real model calls — serialization rule applies (one
 worktree at a time runs the app). See `README.md` for details.
+
+## Ticket completion report (all iterations)
+
+Binding rule for every session that completes a ticket (implementing and merge
+sessions alike), in every iteration of this project. The final report must end
+with, in order:
+
+1. **Task statement** — the last line answers "这个工单的任务是什么": one sentence
+   stating what this ticket's task was.
+2. **Screenshot** — if the ticket's output can be directly shown as a screenshot
+   (UI-visible change), capture one and report its **absolute path**. If the
+   output is not screenshot-able (pure logic / infra), say so explicitly.
+   Screenshot harnesses: `npm run visual:transcript` (see README "Visual QA").
+
+A completion report missing these two items counts as incomplete delivery;
+review should send the ticket back rather than pass it on.
