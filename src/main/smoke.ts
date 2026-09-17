@@ -4839,8 +4839,10 @@ export function startSmokeIfEnabled(
           open: document.querySelectorAll('.turn-container-open').length,
           answers: document.querySelectorAll('.msg-assistant .md').length,
           answerText: document.querySelector('.msg-assistant .md')?.textContent ?? '',
+          answerAll: [...document.querySelectorAll('.msg-assistant .md')].map((el) => el.textContent ?? '').join('|'),
           streamTexts: document.querySelectorAll('.turn-container .turn-stream-text .md').length,
           streamText: document.querySelector('.turn-container .turn-stream-text .md')?.textContent ?? '',
+          streamAll: [...document.querySelectorAll('.turn-container .turn-stream-text .md')].map((el) => el.textContent ?? '').join('|'),
           segPills: document.querySelectorAll('.turn-after-answer .approval-pill-pending').length,
           segApproved: document.querySelectorAll('.turn-after-answer .approval-pill-approved').length,
           foldPills: document.querySelectorAll('.turn-container .approval-pill-pending').length,
@@ -4848,10 +4850,12 @@ export function startSmokeIfEnabled(
           foldTools: document.querySelectorAll('.turn-container .tool-card').length,
           segThinking: document.querySelectorAll('.turn-after-answer .thinking-row').length,
           segThinkingOpen: document.querySelectorAll('.turn-after-answer .thinking-row-open').length,
-          foldThinking: document.querySelectorAll('.turn-container .thinking-row').length
+          foldThinking: document.querySelectorAll('.turn-container .thinking-row').length,
+          foldNarration: document.querySelectorAll('.turn-container .turn-narration-row').length,
+          turns: document.querySelectorAll('.turn-container').length
         }))()`
         const diag = async (): Promise<string> =>
-          (await win.webContents.executeJavaScript(sig).catch(() => 'unavailable')) as string
+          (await win.webContents.executeJavaScript(`JSON.stringify(${sig})`).catch(() => 'unavailable')) as string
 
         // Live turn: the answer text streams FIRST — inline inside the
         // container's chronological stream — then the gate asks.
@@ -4983,6 +4987,68 @@ export function startSmokeIfEnabled(
           )
         }
         log('turn_chronology_settled_same_position_ok')
+
+        // ⑤ Append-only, no rotation on a NEW text block (the pi17 operator
+        // complaint, scripted): a second LIVE turn streams text → tool →
+        // text. The first text keeps its inline slot, the tool keeps the
+        // slot it happened in, the new tail appends — nothing is promoted,
+        // nothing demotes, no graying carousel. (Turn 1's settled segment
+        // from ①–④ persists below its answer — segTools/segThinking === 1 —
+        // which doubles as the live-no-segment contrast.) Settling lifts the
+        // LAST text below the fold as the answer; opening the fold shows the
+        // time order preserved inside it: first text as narration, tool
+        // before it.
+        const FIRST = 'PICODE_TC_FIRST: mid-turn status update'
+        const SECOND = 'PICODE_TC_SECOND: the iteration concludes here'
+        emitContractEvent({ type: 'user_message', text: 'PICODE_TC_PROMPT_2: iterate once more' })
+        emitContractEvent({ type: 'agent_start' })
+        emitContractEvent({ type: 'message_start' })
+        emitContractEvent({ type: 'text_delta', delta: FIRST })
+        emitContractEvent({ type: 'message_end' })
+        emitContractEvent({ type: 'tool_start', toolCallId: 'tc-mid', name: 'bash', args: { command: 'verify' } })
+        emitContractEvent({ type: 'tool_end', toolCallId: 'tc-mid', output: 'ok', isError: false })
+        emitContractEvent({ type: 'message_start' })
+        emitContractEvent({ type: 'text_delta', delta: SECOND })
+        const noRotation = (await waitForProbe(
+          win,
+          `${sig}.turns === 2 && ${sig}.open === 1 && ${sig}.answers === 1 && ${sig}.streamTexts === 2 &&
+           ${sig}.streamAll.indexOf('${FIRST}') >= 0 && ${sig}.streamAll.indexOf('${SECOND}') > ${sig}.streamAll.indexOf('${FIRST}') &&
+           ${sig}.foldTools === 1 && ${sig}.segTools === 1 && ${sig}.segThinking === 1`,
+          10_000
+        )) as boolean
+        if (!noRotation) fail(`ticket-82 stage: the second text block rotated the stream; DOM: ${await diag()}`)
+        const midToolSlot = await readSlot('.turn-container .tool-card', '.turn-container-body')
+        if (midToolSlot === null || midToolSlot.index !== 1) {
+          fail(`ticket-82 stage: the tool must sit between the two inline texts (idx ${String(midToolSlot?.index ?? 'missing')})`)
+        }
+        log('turn_chronology_no_rotation_ok')
+
+        // Settle the second turn: the LAST text lifts below the fold as the
+        // answer, the first text folds back in as narration, the tool stays
+        // inside the fold — the settled shape the ticket-53 stage asserts for
+        // replays, now produced by a live settle.
+        emitContractEvent({ type: 'agent_end' })
+        const settledSplit = (await waitForProbe(
+          win,
+          `${sig}.turns === 2 && ${sig}.open === 0 && ${sig}.answers === 2 &&
+           ${sig}.answerAll.indexOf('${SECOND}') > ${sig}.answerAll.indexOf('PICODE_TC_ANSWER') &&
+           !${sig}.answerAll.includes('${FIRST}') && ${sig}.streamTexts === 0 && ${sig}.foldTools === 0`,
+          10_000
+        )) as boolean
+        if (!settledSplit) fail(`ticket-82 stage: the settled split lost the second turn's shape; DOM: ${await diag()}`)
+        // Open the second turn's fold: the first text reads as narration, the
+        // tool before it — chronological inside the fold too.
+        await win.webContents.executeJavaScript(
+          `(() => { const hs = document.querySelectorAll('.turn-container-header'); const el = hs[1]; if (el instanceof HTMLElement) el.click(); return true })()`
+        )
+        const foldOrder = (await waitForProbe(
+          win,
+          `${sig}.open === 1 && ${sig}.foldNarration === 1 && ${sig}.foldTools === 1 &&
+           document.querySelectorAll('.turn-container')[1]?.querySelector('.turn-narration-row')?.textContent.includes('${FIRST}')`,
+          10_000
+        )) as boolean
+        if (!foldOrder) fail(`ticket-82 stage: the settled fold did not preserve the stream order; DOM: ${await diag()}`)
+        log('turn_chronology_settled_fold_order_ok')
       })
     }
     log('turn_chronology_done')

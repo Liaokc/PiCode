@@ -38,6 +38,17 @@
  *   tc4-settled-same-position — after settling, the answer sits below the
  *                               collapsed container and the segment keeps
  *                               stream order — 落定态维持现状 (ZCode 构图)
+ *   tc5-no-rotation           — a second live turn streams text → tool →
+ *                               text: the first text keeps its inline slot,
+ *                               the tool keeps its slot, the new tail
+ *                               appends (the pi17 complaint scenario — no
+ *                               promotion, no demotion carousel); settling
+ *                               lifts the last text below the fold and the
+ *                               fold preserves time order inside
+ *                               (mirrors the electron-smoke ⑤ probe — this
+ *                               harness runs unattended, where the smoke's
+ *                               clipboard stages may starve on the macOS-15
+ *                               focus-steal denial)
  */
 
 import { tmpdir } from 'node:os'
@@ -302,6 +313,94 @@ export function startChronologyVisualIfEnabled(getWindow: () => BrowserWindow | 
       )
       await sleep(300)
       await capture(win, 'tc4-settled-same-position')
+
+      // ---- tc5: no rotation on a NEW text block (the pi17 operator
+      // complaint, scripted): a second live turn streams text → tool → text;
+      // everything appends in transcript order. Settling lifts the LAST text
+      // below the fold; the fold keeps the time order inside (first text as
+      // narration, tool before it). Mirrors the electron-smoke ⑤ probe.
+      const FIRST = 'Mid-turn status update — the first inline block keeps its slot.'
+      const SECOND = 'The iteration concludes here — the second block appends.'
+      const STREAM_SIG = `(() => ({
+        open: document.querySelectorAll('.turn-container-open').length,
+        answers: document.querySelectorAll('.msg-assistant .md').length,
+        answerAll: [...document.querySelectorAll('.msg-assistant .md')].map((el) => el.textContent ?? '').join('|'),
+        streamTexts: document.querySelectorAll('.turn-container .turn-stream-text .md').length,
+        streamAll: [...document.querySelectorAll('.turn-container .turn-stream-text .md')].map((el) => el.textContent ?? '').join('|'),
+        foldTools: document.querySelectorAll('.turn-container .tool-card').length,
+        segTools: document.querySelectorAll('.turn-after-answer .tool-card').length,
+        foldNarration: document.querySelectorAll('.turn-container .turn-narration-row').length,
+        turns: document.querySelectorAll('.turn-container').length
+      }))()`
+      emitContractEvent({ type: 'user_message', text: 'Iterate once more.' })
+      emitContractEvent({ type: 'agent_start' })
+      emitContractEvent({ type: 'message_start' })
+      emitContractEvent({ type: 'text_delta', delta: FIRST })
+      emitContractEvent({ type: 'message_end' })
+      emitContractEvent({ type: 'tool_start', toolCallId: 'chrono-mid', name: 'bash', args: { command: 'verify' } })
+      emitContractEvent({ type: 'tool_end', toolCallId: 'chrono-mid', output: 'ok', isError: false })
+      emitContractEvent({ type: 'message_start' })
+      emitContractEvent({ type: 'text_delta', delta: SECOND })
+      const noRotationOk = await waitFor(
+        win,
+        `${STREAM_SIG}.turns === 2 && ${STREAM_SIG}.open === 1 && ${STREAM_SIG}.answers === 1 &&
+         ${STREAM_SIG}.streamTexts === 2 &&
+         ${STREAM_SIG}.streamAll.indexOf('${FIRST}') >= 0 &&
+         ${STREAM_SIG}.streamAll.indexOf('${SECOND}') > ${STREAM_SIG}.streamAll.indexOf('${FIRST}') &&
+         ${STREAM_SIG}.foldTools === 1 && ${STREAM_SIG}.segTools === 1`,
+        10_000
+      )
+      if (!noRotationOk) {
+        const state = await readSig(win)
+        throw new Error(`chronology visual tc5: the second text block rotated the stream (state: ${JSON.stringify(state)})`)
+      }
+      const midToolSlot = await readSlot(win, '.turn-container .tool-card', '.turn-container-body')
+      if (midToolSlot === null || midToolSlot.index !== 1) {
+        throw new Error(`chronology visual tc5: the tool must sit between the two inline texts (idx ${String(midToolSlot?.index ?? 'missing')})`)
+      }
+      console.log(`VISUAL probe tc5: stream order kept — tool idx ${midToolSlot.index} between the two inline texts`)
+      await win.webContents.executeJavaScript(
+        `(() => { const t = document.querySelector('.chat-thread'); if (t instanceof HTMLElement) t.scrollTop = t.scrollHeight; return true })()`
+      )
+      await sleep(300)
+      await capture(win, 'tc5-no-rotation')
+
+      // Settle the second turn: the LAST text lifts below the fold as the
+      // answer, the first text folds in as narration, the tool stays inside.
+      emitContractEvent({ type: 'agent_end' })
+      const settledSplitOk = await waitFor(
+        win,
+        `${STREAM_SIG}.turns === 2 && ${STREAM_SIG}.open === 0 && ${STREAM_SIG}.answers === 2 &&
+         ${STREAM_SIG}.answerAll.indexOf('${SECOND}') > ${STREAM_SIG}.answerAll.indexOf('${ANSWER}') &&
+         !${STREAM_SIG}.answerAll.includes('${FIRST}') && ${STREAM_SIG}.streamTexts === 0 &&
+         ${STREAM_SIG}.foldTools === 0`,
+        10_000
+      )
+      if (!settledSplitOk) {
+        const state = await readSig(win)
+        throw new Error(`chronology visual tc5: the settled split lost the second turn's shape (state: ${JSON.stringify(state)})`)
+      }
+      // Open the second turn's fold: first text reads as narration, the tool
+      // before it — chronological inside the fold too.
+      await win.webContents.executeJavaScript(
+        `(() => { const hs = document.querySelectorAll('.turn-container-header'); const el = hs[1]; if (el instanceof HTMLElement) el.click(); return true })()`
+      )
+      const foldOrderOk = await waitFor(
+        win,
+        `${STREAM_SIG}.open === 1 && ${STREAM_SIG}.foldNarration === 1 && ${STREAM_SIG}.foldTools === 1 &&
+         document.querySelectorAll('.turn-container')[1]?.querySelector('.turn-narration-row')?.textContent.includes('${FIRST}')`,
+        10_000
+      )
+      if (!foldOrderOk) {
+        const state = await readSig(win)
+        throw new Error(`chronology visual tc5: the settled fold did not preserve the stream order (state: ${JSON.stringify(state)})`)
+      }
+      console.log('VISUAL probe tc5: settled fold order kept — narration + tool inside, answer below')
+      await win.webContents.executeJavaScript(
+        `(() => { const t = document.querySelector('.chat-thread'); if (t instanceof HTMLElement) t.scrollTop = t.scrollHeight; return true })()`
+      )
+      await sleep(300)
+      await capture(win, 'tc5-no-rotation-settled')
 
       console.log('VISUAL chronology done')
       app.exit(0)
