@@ -4396,6 +4396,15 @@ button.heat:hover {
   user-select: text;
 }
 
+/* ---------- live stream text block (ticket 82: the live turn's inline
+   assistant text — the same markdown the settled answer renders, at the
+   position where it streamed; never promoted, never demoted) ---------- */
+
+.turn-stream-text {
+  user-select: text;
+  overflow-wrap: break-word;
+}
+
 /* ---------- turn file bar (ticket 78: collapsed "N files changed +X −Y"
    at the end of the always-visible segment, expanding to per-file rows.
    Composition references: z-site-card-filebar.png (collapsed) and the
@@ -4816,7 +4825,9 @@ button.heat:hover {
 
 /* ---------- markdown (screenshot 04: rich assistant reply) ---------- */
 
-.msg-assistant .md {
+/* Ticket 82: the live chronological stream's inline text blocks share the
+   answer's typography — same pitch, same selector family. */
+:is(.msg-assistant, .turn-stream-text) .md {
   user-select: text;
 }
 
@@ -4844,10 +4855,11 @@ button.heat:hover {
 /* --- chat density tokens (ticket 15) ---
    Calibrated against the ZCode live baseline: ~25px line pitch at 14px body
    text, ~40px paragraph pitch, 24–28px single-line list pitch. Scoped to the
-   transcript (.msg-assistant) on purpose — the preview reader shares .md and
-   must NOT be re-laid-out in this ticket. */
+   transcript (.msg-assistant, plus the ticket-82 live stream text blocks)
+   on purpose — the preview reader shares .md and must NOT be re-laid-out
+   here. */
 
-.msg-assistant .md p {
+:is(.msg-assistant, .turn-stream-text) .md p {
   /* paragraph pitch ≈ 40px = 24.5px line + margin */
   margin: 0 0 16px;
 }
@@ -4883,8 +4895,8 @@ button.heat:hover {
   padding-left: 24px;
 }
 
-.msg-assistant .md ul,
-.msg-assistant .md ol {
+:is(.msg-assistant, .turn-stream-text) .md ul,
+:is(.msg-assistant, .turn-stream-text) .md ol {
   margin: 0 0 16px;
 }
 
@@ -4899,7 +4911,7 @@ button.heat:hover {
   color: var(--text-secondary);
 }
 
-.msg-assistant .md blockquote {
+:is(.msg-assistant, .turn-stream-text) .md blockquote {
   margin: 0 0 16px;
 }
 
@@ -4944,7 +4956,7 @@ button.heat:hover {
   overflow-x: auto;
 }
 
-.msg-assistant .md pre {
+:is(.msg-assistant, .turn-stream-text) .md pre {
   margin: 0 0 16px;
 }
 
@@ -4962,7 +4974,7 @@ button.heat:hover {
   font-size: 13px;
 }
 
-.msg-assistant .md table {
+:is(.msg-assistant, .turn-stream-text) .md table {
   margin: 0 0 16px;
 }
 
@@ -4975,8 +4987,8 @@ button.heat:hover {
   padding: 9px 12px;
 }
 
-.msg-assistant .md th,
-.msg-assistant .md td {
+:is(.msg-assistant, .turn-stream-text) .md th,
+:is(.msg-assistant, .turn-stream-text) .md td {
   /* own line-height so cells stay compact regardless of the .msg value */
   line-height: 1.6;
 }

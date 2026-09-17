@@ -22,12 +22,14 @@ interface AnswerBlockProps {
 /**
  * The turn's answer (ticket 53): exactly the turn's LAST text block — the
  * text that stays visible around the fold; streamed live, action row when
- * settled. The AFTER-ANSWER SEGMENT (常显段, ticket 56) renders below it:
- * every row that followed the answer — tools, thinking, approvals — always
- * visible, in transcript order, live and settled at the same position
- * (ZCode assistantFollowingRows shape; revises ticket 53's tools-only Q11a
- * cut). Earlier text is interim narration inside the fold container, never
- * here.
+ * settled. SETTLED-STATE ONLY (ticket 82): a live turn renders no answer
+ * block at all — its text blocks stream inline inside the container's
+ * chronological single stream — and the answer appears below the container
+ * in one move at settle. The AFTER-ANSWER SEGMENT (常显段, ticket 56) renders
+ * below it: every row that followed the answer — tools, thinking,
+ * approvals — always visible, in transcript order (ZCode
+ * assistantFollowingRows shape; revises ticket 53's tools-only Q11a cut).
+ * Earlier text is interim narration inside the fold container, never here.
  *
  * Shared by the live ChatView and the Live Follow view (ticket 24) so both
  * render the same answer shape — true three-surface sharing (chat / replay /

@@ -1,6 +1,6 @@
 /**
- * Turn-chronology visual-QA harness (ticket 56, spec R8): the after-answer
- * segment (常显段). Enabled with PICODE_VISUAL=1 plus
+ * Turn-chronology visual-QA harness (ticket 82, spec R15 — live 回合纯时间序,
+ * revising the ticket-56 harness). Enabled with PICODE_VISUAL=1 plus
  * PICODE_VISUAL_CHRONOLOGY=1. NOT part of `npm test` — but like the
  * worked-container harness it ASSERTS its probe results (exit 1 on any
  * violation): the two-state same-slot rule is exact geometry, not
@@ -9,26 +9,35 @@
  * A scripted LIVE turn (contract-stream injection, no model call — the
  * ticket-55 harness precedent) streams past the approval gate:
  *
- *   answer streams → gate asks → approve → tool runs → thinking → settle
+ *   text streams → gate asks → approve → tool runs → thinking → settle
  *
- * Captures (PNGs land in the visual out dir), each the FIXED form of an
- * operator evidence frame in `.scratch/compare/`:
+ * The LIVE half renders as a pure chronological single stream inside the
+ * expanded container: the text block inline where it streamed, the pending
+ * pill inline at the very slot its tool card will occupy, the thinking
+ * inline below the tool — no promoted answer below the container, no
+ * after-answer segment while live, nothing re-splits while streaming. At
+ * settle the ticket-53/56 composition appears in one move: the answer below
+ * the collapsed container, the tool + thinking in the segment below it
+ * (常显段).
  *
- *   tc1-approval-below-answer — the pending pill parks BELOW the answer, in
- *                               the after-answer segment (fixes
- *                               pi15-approval-above-answer, where the pill
- *                               hung inside the fold above the answer)
+ * Captures (PNGs land in the visual out dir; live/落定两态帧, the fixed
+ * forms of the operator evidence frames pi17-container-collapsed/-expanded):
+ *
+ *   tc1-live-stream-inline    — the streaming text is INLINE inside the open
+ *                               container with the pending pill parked in the
+ *                               stream (fixes pi17-container-collapsed: the
+ *                               in-progress body no longer hangs above the
+ *                               container)
  *   tc2-tool-same-slot        — after the approve, the tool card occupies
- *                               the pill's exact slot (two states, one slot,
- *                               zero jump — asserted on geometry ±2px)
- *   tc3-post-answer-thinking  — the thinking block that streamed after the
- *                               tool result renders below the tool, in the
- *                               segment (fixes
- *                               pi15-post-answer-thinking-misplaced, where
- *                               it crawled back into the fold above the
- *                               answer)
- *   tc4-settled-same-position — after settling, the segment neither
- *                               re-orders nor moves — live 与落定同位
+ *                               the pill's exact stream slot (two states, one
+ *                               slot, zero jump — asserted on geometry ±2px)
+ *   tc3-live-stream-thinking  — the thinking block that streamed after the
+ *                               tool result renders inline below the tool
+ *                               (pi15-post-answer-thinking-misplaced stays
+ *                               fixed, now in-stream)
+ *   tc4-settled-same-position — after settling, the answer sits below the
+ *                               collapsed container and the segment keeps
+ *                               stream order — 落定态维持现状 (ZCode 构图)
  */
 
 import { tmpdir } from 'node:os'
@@ -56,7 +65,10 @@ const ANSWER = 'The deploy plan is ready — approving runs it.'
 const PROMPT = 'Deploy the staging service.'
 
 const SIG = `(() => ({
+  open: document.querySelectorAll('.turn-container-open').length,
   answers: document.querySelectorAll('.msg-assistant .md').length,
+  streamTexts: document.querySelectorAll('.turn-container .turn-stream-text .md').length,
+  streamText: document.querySelector('.turn-container .turn-stream-text .md')?.textContent ?? '',
   segPills: document.querySelectorAll('.turn-after-answer .approval-pill-pending').length,
   segApproved: document.querySelectorAll('.turn-after-answer .approval-pill-approved').length,
   segTools: document.querySelectorAll('.turn-after-answer .tool-card').length,
@@ -68,7 +80,10 @@ const SIG = `(() => ({
 }))()`
 
 interface ChronoSig {
+  open: number
   answers: number
+  streamTexts: number
+  streamText: string
   segPills: number
   segApproved: number
   segTools: number
@@ -84,7 +99,10 @@ async function readSig(win: BrowserWindow): Promise<ChronoSig> {
   const raw = (await win.webContents.executeJavaScript(SIG).catch(() => null)) as ChronoSig | null
   return (
     raw ?? {
+      open: -1,
       answers: -1,
+      streamTexts: -1,
+      streamText: '',
       segPills: -1,
       segApproved: -1,
       segTools: -1,
@@ -106,13 +124,14 @@ async function waitFor(win: BrowserWindow, probe: string, budgetMs: number): Pro
   return false
 }
 
-/** Geometry + segment child index of one segment row (null when absent). */
-async function readSlot(win: BrowserWindow, selector: string): Promise<{ top: number; left: number; index: number } | null> {
+/** Geometry + parent child index of one row (null when absent); the parent
+ * is the container body while live and the after-answer segment when settled. */
+async function readSlot(win: BrowserWindow, selector: string, container: string): Promise<{ top: number; left: number; index: number } | null> {
   const raw = (await win.webContents.executeJavaScript(
     `(() => {
       const el = document.querySelector('${selector}')
       if (!(el instanceof Element)) return null
-      const seg = el.closest('.turn-after-answer')
+      const seg = el.closest('${container}')
       const r = el.getBoundingClientRect()
       return JSON.stringify({ top: r.top, left: r.left, index: seg ? Array.prototype.indexOf.call(seg.children, el) : -1 })
     })()`
@@ -170,7 +189,8 @@ export function startChronologyVisualIfEnabled(getWindow: () => BrowserWindow | 
         resumed: true
       })
 
-      // The live turn: answer first, then the gate asks.
+      // The live turn: the answer text streams first — inline in the
+      // container's chronological stream — then the gate asks.
       emitContractEvent({ type: 'user_message', text: PROMPT })
       emitContractEvent({ type: 'agent_start' })
       emitContractEvent({ type: 'message_start' })
@@ -178,39 +198,42 @@ export function startChronologyVisualIfEnabled(getWindow: () => BrowserWindow | 
       emitContractEvent({ type: 'message_end' })
       emitContractEvent({ type: 'approval_required', toolCallId: 'chrono-gate-1', toolName: 'bash', args: { command: 'deploy' } })
 
-      // ---- tc1: the pending pill parks BELOW the answer ----
-      const pillOk = await waitFor(
+      // ---- tc1: the text is INLINE in the open container, the pending pill
+      // parked in the stream — no promoted answer below, no segment ----
+      const streamOk = await waitFor(
         win,
-        `${SIG}.answers === 1 && ${SIG}.segPills === 1 && ${SIG}.foldPills === 0 && ${SIG}.segTools === 0`,
+        `${SIG}.open === 1 && ${SIG}.answers === 0 && ${SIG}.streamTexts === 1 &&
+         ${SIG}.streamText.includes('${ANSWER}') && ${SIG}.foldPills === 1 &&
+         ${SIG}.segPills === 0 && ${SIG}.segTools === 0 && ${SIG}.foldTools === 0`,
         10_000
       )
-      if (!pillOk) {
+      if (!streamOk) {
         const state = await readSig(win)
-        throw new Error(`chronology visual tc1: the pill never parked below the answer (state: ${JSON.stringify(state)})`)
+        throw new Error(`chronology visual tc1: the live turn is not a pure chronological single stream (state: ${JSON.stringify(state)})`)
       }
-      const pillSlot = await readSlot(win, '.turn-after-answer .approval-pill-pending')
+      const pillSlot = await readSlot(win, '.turn-container .approval-pill-pending', '.turn-container-body')
       if (pillSlot === null) throw new Error('chronology visual tc1: the pending pill vanished before its slot was read')
       console.log(`VISUAL probe tc1: pill top ${pillSlot.top} idx ${pillSlot.index}`)
       await win.webContents.executeJavaScript(
         `(() => { const t = document.querySelector('.chat-thread'); if (t instanceof HTMLElement) t.scrollTop = t.scrollHeight; return true })()`
       )
       await sleep(300)
-      await capture(win, 'tc1-approval-below-answer')
+      await capture(win, 'tc1-live-stream-inline')
 
-      // ---- tc2: approve → the tool card takes the pill's exact slot ----
+      // ---- tc2: approve → the tool card takes the pill's exact stream slot ----
       emitContractEvent({ type: 'approval_resolved', toolCallId: 'chrono-gate-1', approved: true, reason: null })
       emitContractEvent({ type: 'tool_start', toolCallId: 'chrono-gate-1', name: 'bash', args: { command: 'deploy' } })
       emitContractEvent({ type: 'tool_end', toolCallId: 'chrono-gate-1', output: 'deployed', isError: false })
       const toolOk = await waitFor(
         win,
-        `${SIG}.segTools === 1 && ${SIG}.segPills === 0 && ${SIG}.segApproved === 0 && ${SIG}.foldTools === 0`,
+        `${SIG}.foldTools === 1 && ${SIG}.foldPills === 0 && ${SIG}.segApproved === 0 && ${SIG}.segTools === 0`,
         10_000
       )
       if (!toolOk) {
         const state = await readSig(win)
-        throw new Error(`chronology visual tc2: the tool card never took the pill's slot (state: ${JSON.stringify(state)})`)
+        throw new Error(`chronology visual tc2: the tool card never took the pill's stream slot (state: ${JSON.stringify(state)})`)
       }
-      const toolSlot = await readSlot(win, '.turn-after-answer .tool-card')
+      const toolSlot = await readSlot(win, '.turn-container .tool-card', '.turn-container-body')
       if (toolSlot === null) throw new Error('chronology visual tc2: the tool card vanished before its slot was read')
       if (toolSlot.index !== pillSlot.index || Math.abs(toolSlot.top - pillSlot.top) > 2 || Math.abs(toolSlot.left - pillSlot.left) > 2) {
         throw new Error(`chronology visual tc2: two-state jump — pill top ${pillSlot.top}/idx ${pillSlot.index} vs tool top ${toolSlot.top}/idx ${toolSlot.index}`)
@@ -222,52 +245,54 @@ export function startChronologyVisualIfEnabled(getWindow: () => BrowserWindow | 
       await sleep(300)
       await capture(win, 'tc2-tool-same-slot')
 
-      // ---- tc3: post-answer thinking renders below the tool, in the segment ----
+      // ---- tc3: thinking that streams after the tool renders inline below it ----
       emitContractEvent({ type: 'message_start' })
       emitContractEvent({ type: 'thinking_delta', delta: 'The health check passed — wrap the turn up.' })
       emitContractEvent({ type: 'thinking_end', durationMs: 4800 })
       emitContractEvent({ type: 'message_end' })
       const thinkingOk = await waitFor(
         win,
-        `${SIG}.segThinking === 1 && ${SIG}.foldThinking === 0 && ${SIG}.segTools === 1`,
+        `${SIG}.foldThinking === 1 && ${SIG}.segThinking === 0 && ${SIG}.foldTools === 1`,
         10_000
       )
       if (!thinkingOk) {
         const state = await readSig(win)
-        throw new Error(`chronology visual tc3: the post-answer thinking never rendered below the tool (state: ${JSON.stringify(state)})`)
+        throw new Error(`chronology visual tc3: the post-tool thinking never rendered inline below the tool (state: ${JSON.stringify(state)})`)
       }
-      const thinkingSlot = await readSlot(win, '.turn-after-answer .thinking-row')
-      if (thinkingSlot === null || thinkingSlot.index !== 1) {
-        throw new Error(`chronology visual tc3: the thinking row must trail the tool (idx ${String(thinkingSlot?.index ?? 'missing')})`)
+      const thinkingSlot = await readSlot(win, '.turn-container .thinking-row', '.turn-container-body')
+      if (thinkingSlot === null || thinkingSlot.index !== 2) {
+        throw new Error(`chronology visual tc3: the thinking row must trail the tool in the stream (idx ${String(thinkingSlot?.index ?? 'missing')})`)
       }
       console.log(`VISUAL probe tc3: thinking top ${thinkingSlot.top} idx ${thinkingSlot.index}`)
       await win.webContents.executeJavaScript(
         `(() => { const t = document.querySelector('.chat-thread'); if (t instanceof HTMLElement) t.scrollTop = t.scrollHeight; return true })()`
       )
       await sleep(300)
-      await capture(win, 'tc3-post-answer-thinking')
+      await capture(win, 'tc3-live-stream-thinking')
 
-      // ---- tc4: settled — the segment persists, same composition, same
-      // order, nothing back in the fold (live 与落定同位). NOTE: settling
-      // adds the answer's persistent action row (ticket-44/53 settled
-      // rendering, pre-existing), so absolute Y is NOT comparable across
-      // settle — the zero-jump geometry assertion lives in tc2, where the
-      // pill→tool conversion happens without any other layout change.
+      // ---- tc4: settled — the answer lifts below the folded container, the
+      // segment keeps stream order (tool leading, thinking trailing). NOTE:
+      // settling adds the answer's persistent action row (ticket-44/53
+      // settled rendering, pre-existing), so absolute Y is NOT comparable
+      // across settle — the zero-jump geometry assertion lives in tc2, where
+      // the pill→tool conversion happens without any other layout change.
       emitContractEvent({ type: 'agent_end' })
       const settledOk = await waitFor(
         win,
-        `${SIG}.segTools === 1 && ${SIG}.segThinking === 1 && ${SIG}.segPills === 0 && ${SIG}.foldTools === 0 && ${SIG}.foldThinking === 0`,
+        `${SIG}.answers === 1 && ${SIG}.streamTexts === 0 && ${SIG}.open === 0 &&
+         ${SIG}.segTools === 1 && ${SIG}.segThinking === 1 && ${SIG}.segPills === 0 &&
+         ${SIG}.foldTools === 0 && ${SIG}.foldThinking === 0`,
         10_000
       )
       if (!settledOk) {
         const state = await readSig(win)
-        throw new Error(`chronology visual tc4: settling re-ordered the segment (state: ${JSON.stringify(state)})`)
+        throw new Error(`chronology visual tc4: settling did not produce the answer + segment composition (state: ${JSON.stringify(state)})`)
       }
-      const settledSlot = await readSlot(win, '.turn-after-answer .tool-card')
+      const settledSlot = await readSlot(win, '.turn-after-answer .tool-card', '.turn-after-answer')
       if (settledSlot === null || settledSlot.index !== 0) {
         throw new Error(`chronology visual tc4: the tool must lead the segment after settling (idx ${String(settledSlot?.index ?? 'missing')})`)
       }
-      const settledThinkingSlot = await readSlot(win, '.turn-after-answer .thinking-row')
+      const settledThinkingSlot = await readSlot(win, '.turn-after-answer .thinking-row', '.turn-after-answer')
       if (settledThinkingSlot === null || settledThinkingSlot.index !== 1) {
         throw new Error(`chronology visual tc4: the thinking must trail the tool after settling (idx ${String(settledThinkingSlot?.index ?? 'missing')})`)
       }
