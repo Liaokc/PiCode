@@ -89,4 +89,28 @@ describe('shouldCloseOnOutsideMousedown — the one popover outside-close rule (
     // reliance on the click ever arriving.
     expect(shouldCloseOnOutsideMousedown({ popover, anchor, target: 'transcript' })).toBe(true)
   })
+
+  it('the history panel race, replayed as a sequence (ticket 83)', () => {
+    // Ticket 83: the same race, second sighting — TreePanel's
+    // document-level mousedown outside-close did not exempt the topbar
+    // History button that owns it. With the panel open, a press on the
+    // button closed the panel at mousedown (the button sits outside the
+    // panel), and the button's click toggle re-opened it — "再点必不收".
+    // The wiring shape differs from the chip menus in one way: TreePanel's
+    // anchor is REQUIRED (the owning History button is intrinsic), so
+    // every decision below carries one.
+    const panel = region(['panel', 'row', 'header'])
+    const historyButton = region(['history-btn', 'history-chevron'])
+    // Mid-press: the mousedown half of the owning button's toggle does not
+    // close — the completing click does the one close (toggle).
+    expect(shouldCloseOnOutsideMousedown({ popover: panel, anchor: historyButton, target: 'history-btn' })).toBe(false)
+    expect(shouldCloseOnOutsideMousedown({ popover: panel, anchor: historyButton, target: 'history-chevron' })).toBe(false)
+    // A press inside the panel (a navigate row, the header) never takes
+    // the outside path either — panel actions must not mis-close.
+    expect(shouldCloseOnOutsideMousedown({ popover: panel, anchor: historyButton, target: 'row' })).toBe(false)
+    // A real outside mousedown (transcript, sidebar) closes on the FIRST
+    // event, and a mousedown on a DIFFERENT topbar button is outside too.
+    expect(shouldCloseOnOutsideMousedown({ popover: panel, anchor: historyButton, target: 'transcript' })).toBe(true)
+    expect(shouldCloseOnOutsideMousedown({ popover: panel, anchor: historyButton, target: 'rename-btn' })).toBe(true)
+  })
 })
