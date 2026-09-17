@@ -856,8 +856,13 @@ export function startSmokeIfEnabled(
         // back-to-back Enter reads the pre-commit closure where the menu is
         // still open and flatMenuKey turns the keystroke into a row pick
         // (row 0 = /compact → a real compaction, no pointer toast — the
-        // 2026-09-16 double failure). One commit gap between the two keys.
-        await new Promise((r) => setTimeout(r, 300))
+        // 2026-09-16 double failure, raced again 2026-09-17 under heavy
+        // machine load where the fixed 300ms gap lost). One PROBED gap
+        // instead of a fixed sleep: poll until the popover is actually
+        // gone before Enter (ticket-83 run-hardening, disclosed).
+        if (!(await waitForProbe(win, `document.querySelector('.cmp-popover') === null`, 3_000))) {
+          fail(`the / menu never closed after the Escape while gating ${typed}`)
+        }
         await win.webContents.executeJavaScript(composerKeyJs('Enter'))
         const toasted = await waitForProbe(win, toastProbe(needle), 5_000)
         if (!toasted) {
@@ -3566,6 +3571,14 @@ export function startSmokeIfEnabled(
           JSON.stringify({
             type: 'message', id: 't83-a1', parentId: 't83-u1', timestamp: stamp,
             message: { role: 'assistant', content: [{ type: 'text', text: 'PICODE_TREE83 reply' }], stopReason: 'stop' }
+          }),
+          // Written LAST so the file-order leaf is a2 — a1 is a mid-path
+          // assistant row the row-press probe can navigate to (ticket 79:
+          // navigating to a USER entry moves the leaf to its parent, so the
+          // probe presses an assistant row — the ticket-43 proven path).
+          JSON.stringify({
+            type: 'message', id: 't83-a2', parentId: 't83-a1', timestamp: stamp,
+            message: { role: 'assistant', content: [{ type: 'text', text: 'PICODE_TREE83 leaf path end' }], stopReason: 'stop' }
           })
         ].join('\n') + '\n'
       )
@@ -3660,8 +3673,9 @@ export function startSmokeIfEnabled(
         log('history_toggle_outside_ok')
 
         // Panel actions never mis-close: a full press on a navigate row
-        // (the user entry — the leaf is its reply, so the navigate moves)
-        // moves the leaf (the current tag follows) and the panel STAYS open.
+        // (the mid-path assistant a1 — the leaf is its child a2, so the
+        // navigate moves) moves the leaf (the current tag follows) and the
+        // panel STAYS open.
         if (!(await js(historyBtnPressJs()).catch(() => false))) fail('the History button is missing for the row-press probe')
         await waitPanel(true)
         if (!(await waitForProbe(win, `document.querySelectorAll('.tree-row').length > 0`, 5_000))) {
@@ -3669,7 +3683,7 @@ export function startSmokeIfEnabled(
         }
         const rowDown = await js(
           `(() => {
-            const row = [...document.querySelectorAll('.tree-row')].find((el) => el.textContent?.includes('PICODE_TREE83 toggle fixture'))
+            const row = [...document.querySelectorAll('.tree-row')].find((el) => el.textContent?.includes('PICODE_TREE83 reply'))
             if (!(row instanceof HTMLElement)) return false
             const r = row.getBoundingClientRect()
             row.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 }))
@@ -3681,7 +3695,7 @@ export function startSmokeIfEnabled(
         if (!(await js(panelPresentJs).catch(() => false))) fail('the history panel closed on a row mousedown (outside-close leaked inward)')
         await js(
           `(() => {
-            const row = [...document.querySelectorAll('.tree-row')].find((el) => el.textContent?.includes('PICODE_TREE83 toggle fixture'))
+            const row = [...document.querySelectorAll('.tree-row')].find((el) => el.textContent?.includes('PICODE_TREE83 reply'))
             if (!(row instanceof HTMLElement)) return false
             const r = row.getBoundingClientRect()
             for (const type of ['mouseup', 'click']) {
@@ -3691,7 +3705,7 @@ export function startSmokeIfEnabled(
           })()`
         )
         if (!(await waitForProbe(win, `(() => {
-          const row = [...document.querySelectorAll('.tree-row')].find((el) => el.textContent?.includes('PICODE_TREE83 toggle fixture'))
+          const row = [...document.querySelectorAll('.tree-row')].find((el) => el.textContent?.includes('PICODE_TREE83 reply'))
           return row !== undefined && row.querySelector('.tree-leaf-tag') !== null
         })()`, 5_000))) {
           fail('ticket-83 stage: the row press never navigated (the leaf tag never moved)')
