@@ -2,7 +2,7 @@
 
 > 每个工单一个新 pi 会话、一个 worktree、一条分支。本手册每块都可独立复制粘贴。
 > 约定详情见 `AGENTS.md › Parallel development (git worktrees)`。
-> 总 spec：`.scratch/picode-1-7/spec.md`（R1–R25 决议与验收口径；**每条 R 1:1 映射进票，81–103**——R5 拆三票、R7/R8/R10 合 81、R14/R17/R19 合 97）。
+> 总 spec：`.scratch/picode-1-7/spec.md`（R1–R28 决议与验收口径；**每条 R 1:1 映射进票，81–106**——R5 拆三票、R7/R8/R10 合 81、R14/R17/R19 合 97）。
 > 需求定稿全记录（23 痛点 × 六轮 25 问 + file:line 根因 + Pi 包取证 + ZCode bundle 键表 + 两处改判/一处加码）：`.scratch/picode-1-7/intake-grilling.md`。
 > 证据帧：`.scratch/compare/pi17-*`（操作者待复制——会话内贴图无法落盘）+ `icon-proposals/`（V2 定稿）。
 > 术语新增（子智能体目录/子代理对话/Manual 排序/图片预览/MCP 节 → 各票 rider；回合正文/常显段/过程叙述 live 语义修订 → 票 82）随票入 CONTEXT.md。
@@ -62,8 +62,11 @@ cd ~/PiCode && bash scripts/merge-ticket.sh <NN>
 | | **100** queue 修缮（**additive** queue ops） | QueuePanel + host 队列镜像 | **97**（同 host 文件） |
 | **W8** | **101** 子代理停止+徽标 | 停止钮 + 面板徽标 | **99** |
 | | **103** 转环增强 | TurnContainer 视觉 | **94** |
+| | **104** 运行中重命名 | host handleRename 守卫 | **100** |
+| **W9** | **105** 终端即聚焦 | TerminalDock focus | 无 |
+| | **106** 新卡片秒出 | registry 乐观注入 + 对账 | **95** |
 
-> 群分：A（composer 群 81→91→98）/ B（转录群 82→92→94→97→103）/ C（侧栏群 84→95）/ D（子代理 90→99→101）/ 独立快线 83/85/86/87/88/89→96/102/93。
+> 群分：A（composer 群 81→91→98）/ B（转录群 82→92→94→97→103）/ C（侧栏群 84→95→106）/ D（子代理 90→99→101）/ 独立快线 83/85/86/87/88/89→96/93/100→104/105。
 > **防冲突纪律**（同 v1.1–v1.6，三件事）：
 > 1. 每票合入 main 后，其余活跃 worktree **立即** `git rebase main`；
 > 2. contract / app.css / CONTEXT.md / smoke.ts **只增不改**（追加自己的区段/词条/阶段，不动别人行）；
@@ -579,6 +582,66 @@ cd .worktrees/wt-103-spinner && npm install
 header 单环；两处增强可见性（更大/强调色——visual 校准）；仅 live、落定无环；
 FollowView 同规。纯视觉零契约。
 流程同 T81（merge-ticket.sh 103）。
+```
+
+---
+
+## T104 — 运行中重命名（W8，Blocked by 100）
+
+```bash
+cd ~/PiCode
+git worktree add .worktrees/wt-104-rename-midrun -b t104-rename-midrun main
+cd .worktrees/wt-104-rename-midrun && npm install
+```
+
+```text
+/implement .scratch/picode-1-7/issues/104-rename-midrun.md
+
+规矩：同 T81（分支 t104-rename-midrun）。开工前 rebase main 拿 100 的基座
+（同 host/index.ts 文件）。
+核心：移除 handleRename 的 requireSettledSession 守卫（TUI /name 运行中可用
+的 parity）；运行中改名成功、session_renamed + 索引刷新照旧；smoke 加运行中
+改名回归。
+流程同 T81（merge-ticket.sh 104）。
+```
+
+---
+
+## T105 — 终端即聚焦（W9，无阻塞）
+
+```bash
+cd ~/PiCode
+git worktree add .worktrees/wt-105-terminal-focus -b t105-terminal-focus main
+cd .worktrees/wt-105-terminal-focus && npm install
+```
+
+```text
+/implement .scratch/picode-1-7/issues/105-terminal-focus.md
+
+规矩：同 T81（分支 t105-terminal-focus）。
+核心：⌘J/标题栏钮打开终端停靠后焦点立即进 userTerm（挂载时序票内裁量）；
+桥接同框切回终端同样聚焦；桥接面板可见时不抢焦点；终端既有交互零回归。
+流程同 T81（merge-ticket.sh 105）。
+```
+
+---
+
+## T106 — 新会话卡片秒出（W9，Blocked by 95）
+
+```bash
+cd ~/PiCode
+git worktree add .worktrees/wt-106-instant-card -b t106-instant-card main
+cd .worktrees/wt-106-instant-card && npm install
+```
+
+```text
+/implement .scratch/picode-1-7/issues/106-instant-new-task-card.md
+
+规矩：同 T81（分支 t106-instant-card）。开工前 rebase main 拿 95 的基座。
+核心：create 派发时乐观注入占位会话卡/分组（registry 合并，现有分组/排序
+语义生效）；session_created 对账替换；boot 失败移除占位 + toast 如实；
+占位卡不显未知量、不伪装已确认；索引轮询不动；与拖拽排序（84）共存。
+流程同 T81（merge-ticket.sh 106）。
 ```
 
 ---
