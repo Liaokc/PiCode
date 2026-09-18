@@ -58,6 +58,10 @@ _Avoid_: 右侧栏、抽屉
 侧边面板中按会话文件成 tab 的只读检查器：entry = 一次模型调用——输入节（自上一 assistant 消息以来的 user / 工具结果块）+ 输出节（思考 / 助手文本 / 工具调用块，带工具名 chip 与调用 id）；usage 列（IN/OUT tokens、时长、时间戳）按 ADR-0002 从每条 assistant 消息 usage 推导，缺席优雅降级为只显时间戳。默认全展开；头部 = 统计行（调用数 · 总 token · 模型）+ 搜索（计数 + ↑↓ 导航）/ 块型开关（六类）/ 全部展开↔收起 / 打开所在目录 / 刷新 / 关闭；活跟随运行中会话（文件增长即重推导推送）。数据源如实原则：显什么 = Pi 会话文件实际记录了什么（SDK 内部 system prompt 不落盘，故「系统提示词」块通常缺席）。
 _Avoid_: 调用日志（含义过宽）、执行历史（与 Branch history 混淆）、trace 面板（中英混用）
 
+**子智能体目录（Subagents Directory）**：
+侧边面板的固定 Subagents tab（票 90，ZCode subagentDirectory 同构）：当前聚焦会话的子智能体运行一览——Running（Running/Waiting/Blocked）与 Ended（Completed/Failed/Cancelled/Lost）两段各带计数；行 = 七态徽标 + 任务标题 + 相对时间 + 结果一行预览，Show 20 more 每次展开 20 条；嵌套子代理不展开（行上折叠计数「+N nested」）。数据按 ADR-0002 精神分层：父会话记录中的 subagent 工具调用重放是唯一历史源（重开会话可重建）；host 桥转发的 async 工件状态（status.json）是 live 增补——tmpdir 工件会被清理，不作历史源，无工件且无完成记录的运行如实显 Lost（绝不臆造）。live 刷新零轮询（事件驱动 + tab 打开时一次拉取）。状态词 = ZCode 七态词汇的 Pi 运行态映射（表在票内定稿留档）；detached 子代理让行保持 Running（live 工作不得谎称 Completed）。
+_Avoid_: 仪表盘（无聚合统计语义）；监控（含义过宽）；fleet（pi-subagents 的 TUI 术语，非本面板名）
+
 **最近关闭的标签页（Recently Closed Tabs）**：
 侧边面板中被关闭的文件/轨迹标签的本地历史：偏好持久化、容量 10、按关闭时间倒序；标签管理下拉以相对时间展示，点击即重开为一张标签。打开同名标签即从历史中清出；会话文件与工作区零改动。
 _Avoid_: 关闭历史（含义过宽）

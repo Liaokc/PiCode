@@ -160,10 +160,11 @@ describe('shellUiReducer', () => {
 })
 
 describe('side panel tab slots', () => {
-  it('offers only the Review card since the terminal moved to the bottom dock (ticket 18)', () => {
-    // Spec (18e): the picker shrinks to a single Review card; File Preview
-    // stays deep-link-only and the terminal docks at the bottom.
-    expect(PANEL_EMPTY_TABS).toEqual(['review'])
+  it('offers the Review + Subagents cards since the terminal moved to the bottom dock (tickets 18/90)', () => {
+    // Spec (18e): the picker offered a single Review card; ticket 90 adds
+    // the fixed Subagents directory identity beside it. File Preview stays
+    // deep-link-only and the terminal docks at the bottom.
+    expect(PANEL_EMPTY_TABS).toEqual(['review', 'subagents'])
     expect(PANEL_EMPTY_TABS).not.toContain('browser')
   })
 })

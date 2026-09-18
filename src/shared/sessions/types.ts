@@ -4,6 +4,8 @@
  * (pinning) lives in the renderer.
  */
 
+import type { SubagentCallInfo } from '../subagents/types.ts'
+
 /** File-derived summary of one Pi session jsonl (one sidebar Task row). */
 export interface SessionSummary {
   /** Absolute path of the session jsonl. */
@@ -108,6 +110,12 @@ export type TranscriptItem =
        * tool); ABSENT on every other tool and on pre-78 session payloads —
        * consumers must treat absence as "no diff text", never default it. */
       diff?: string
+      /** Ticket 90 (additive projection, reported into the host-contract
+       * smoke): the pi-subagents structured run identity — present when the
+       * recorded toolResult carries a record `details` naming a subagent
+       * run; ABSENT on every other tool and on pre-90 payloads. The
+       * subagent directory's primary source. */
+      subagent?: SubagentCallInfo
     }
 
 /** One tool call of an assistant message, projected for the history tree

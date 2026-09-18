@@ -20,6 +20,7 @@ import type {
 } from './contract'
 import { sniffSkillName } from './sessions/parse.ts'
 import type { TranscriptImagePart, TranscriptItem } from './sessions/types.ts'
+import type { SubagentCallInfo } from './subagents/types.ts'
 import type { UsageTokens } from './usage/types.ts'
 import { HEAD_TURN_ID } from './turn-collapse'
 import { UNFINISHED_TOOL_OUTPUT } from './tool-format'
@@ -92,6 +93,17 @@ export interface ToolEntry {
    * tool_end events and structured replay items; undefined on every other
    * tool and on pre-78 payloads. Raw material of the turn file bar. */
   diff?: string
+  /** Ticket 90 (additive projection, reported into the host-contract
+   * smoke): pi-subagents structured run identity for `subagent` tool calls
+   * — carried by the subagent tool_end event and structured replay items;
+   * absent on every other tool and on pre-90 payloads. Raw material of the
+   * subagent directory's primary source. */
+  subagent?: SubagentCallInfo
+  /** Wall-clock start of the tool call (ms): the live tool_start's renderer
+   * receipt (stamped at the App dispatch boundary, ticket 61 pattern) or the
+   * replayed entry's recorded timestamp. Feeds the subagent directory's
+   * relative-time column; undefined only on un-stamped harness events. */
+  startedAtMs?: number
 }
 
 export type ApprovalState = 'pending' | 'approved' | 'denied'
@@ -237,7 +249,11 @@ export function replayEntry(item: TranscriptItem): ChatEntry {
         args: item.args,
         state: item.isError ? 'error' : 'done',
         output: item.output,
-        ...(item.diff !== undefined ? { diff: item.diff } : {})
+        ...(item.diff !== undefined ? { diff: item.diff } : {}),
+        ...(item.subagent !== undefined ? { subagent: item.subagent } : {}),
+        // The replayed entry's recorded timestamp anchors the directory's
+        // relative-time column (deterministic parse — no clock read).
+        startedAtMs: Date.parse(item.timestamp) || undefined
       }
   }
 }
@@ -383,18 +399,19 @@ function updateApprovalEntry(
 }
 
 /** A tool call the gate let through converts its approval pill in place. */
-function ensureToolEntry(state: ChatState, toolCallId: string, name: string, args: Record<string, unknown>): ChatState {
+function ensureToolEntry(state: ChatState, toolCallId: string, name: string, args: Record<string, unknown>, startedAtMs?: number): ChatState {
   const index = state.entries.findIndex((entry) => entry.role === 'tool' && entry.id === toolCallId)
   if (index !== -1) return state
   const approvalIndex = state.entries.findIndex((entry) => entry.role === 'approval' && entry.id === toolCallId)
+  const started = startedAtMs !== undefined ? { startedAtMs } : {}
   if (approvalIndex === -1) {
     return {
       ...state,
-      entries: [...state.entries, { id: toolCallId, role: 'tool', name, args, state: 'running', output: '' }]
+      entries: [...state.entries, { id: toolCallId, role: 'tool', name, args, state: 'running', output: '', ...started }]
     }
   }
   const entries = [...state.entries]
-  entries[approvalIndex] = { id: toolCallId, role: 'tool', name, args, state: 'running', output: '' }
+  entries[approvalIndex] = { id: toolCallId, role: 'tool', name, args, state: 'running', output: '', ...started }
   return { ...state, entries }
 }
 
@@ -537,7 +554,10 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
 
     case 'tool_start':
       // The approval pill (if any) converts into the running tool card.
-      return ensureToolEntry(state, event.toolCallId, event.name, event.args)
+      // Ticket 90: the dispatch stamp (receivedAtMs) anchors the tool call's
+      // wall-clock start for the subagent directory; absent on unstamped
+      // harness events (the row degrades to transcript order).
+      return ensureToolEntry(state, event.toolCallId, event.name, event.args, event.receivedAtMs)
 
     case 'tool_update':
       return updateToolEntry(state, event.toolCallId, (entry) => ({
@@ -558,14 +578,16 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
           ...entry,
           state: event.isError ? 'error' : 'done',
           output: event.output,
-          ...(event.diff !== undefined ? { diff: event.diff } : {})
+          ...(event.diff !== undefined ? { diff: event.diff } : {}),
+          ...(event.subagent !== undefined ? { subagent: event.subagent } : {})
         }))
       }
       return updateToolEntry(state, event.toolCallId, (entry) => ({
         ...entry,
         state: event.isError ? 'error' : 'done',
         output: event.output,
-        ...(event.diff !== undefined ? { diff: event.diff } : {})
+        ...(event.diff !== undefined ? { diff: event.diff } : {}),
+        ...(event.subagent !== undefined ? { subagent: event.subagent } : {})
       }))
     }
 
@@ -671,6 +693,17 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case 'mcp_auth_input_required':
     case 'mcp_auth_notice':
     case 'mcp_auth_completed':
+      return state
+
+    // Subagent bridge events (ticket 90): the LIVE state is registry view
+    // state (session-registry folds subagent_status / the lifecycle
+    // deltas); the transcript is untouched. The status reply is matched by
+    // requestId nowhere — the snapshot is a full projection, last wins.
+    case 'subagent_status':
+    case 'subagent_async_started':
+    case 'subagent_async_completed':
+    case 'subagent_foreground_completed':
+    case 'subagent_child_status':
       return state
 
     case 'host_exit': {

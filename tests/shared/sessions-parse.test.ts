@@ -644,3 +644,92 @@ describe('makeSessionInfoLine', () => {
     expect((JSON.parse(line) as { name: string }).name).toBe('two lines here')
   })
 })
+
+describe('extractTranscriptItems — subagent run identity (ticket 90, additive projection)', () => {
+  function subagentRound(details: unknown, args: Record<string, unknown> = { agent: 'scout', task: 'Explore the repo' }): RawSessionEntry[] {
+    return [
+      {
+        type: 'message',
+        id: 'e1',
+        parentId: null,
+        timestamp: 't1',
+        message: { role: 'assistant', content: [{ type: 'toolCall', id: 'c1', name: 'subagent', arguments: args }] }
+      },
+      {
+        type: 'message',
+        id: 'e2',
+        parentId: 'e1',
+        timestamp: 't2',
+        message: {
+          role: 'toolResult',
+          toolCallId: 'c1',
+          toolName: 'subagent',
+          content: text('Async: scout [run-123]'),
+          isError: false,
+          ...(details !== undefined ? { details } : {})
+        }
+      }
+    ]
+  }
+
+  it('projects the pi-subagents run identity from the recorded details', () => {
+    const details = {
+      mode: 'single',
+      runId: 'run-123',
+      asyncId: 'run-123',
+      asyncDir: '/tmp/pi-subagents-shared/async-subagent-runs/run-123',
+      launchContractDigest: 'abc',
+      results: []
+    }
+    const items = extractTranscriptItems(subagentRound(details))
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({
+      role: 'tool',
+      name: 'subagent',
+      subagent: {
+        mode: 'single',
+        runId: 'run-123',
+        asyncId: 'run-123',
+        asyncDir: '/tmp/pi-subagents-shared/async-subagent-runs/run-123'
+      }
+    })
+  })
+
+  it('projects foreground children with their terminal fields', () => {
+    const details = {
+      mode: 'parallel',
+      runId: 'fg-1',
+      results: [
+        { index: 0, agent: 'scout', task: '[prompt redacted]', exitCode: 0, finalOutput: 'Found three files.' },
+        { index: 1, agent: 'worker', task: '[prompt redacted]', exitCode: 1, error: 'boom' }
+      ]
+    }
+    const items = extractTranscriptItems(subagentRound(details))
+    expect((items[0] as { subagent?: { children?: unknown[] } }).subagent?.children).toEqual([
+      { agent: 'scout', exitCode: 0, finalOutput: 'Found three files.' },
+      { agent: 'worker', exitCode: 1, error: 'boom' }
+    ])
+  })
+
+  it('clamps oversized child output (bounded payloads)', () => {
+    const details = {
+      mode: 'single',
+      runId: 'fg-1',
+      results: [{ index: 0, agent: 'scout', exitCode: 0, finalOutput: 'x'.repeat(500) }]
+    }
+    const items = extractTranscriptItems(subagentRound(details))
+    const child = (items[0] as { subagent?: { children?: Array<{ finalOutput?: string }> } }).subagent?.children?.[0]
+    expect(child?.finalOutput).toHaveLength(200)
+  })
+
+  it('keeps old payloads exactly: no details / non-run details stay field-absent', () => {
+    const withoutDetails = extractTranscriptItems(subagentRound(undefined))
+    expect((withoutDetails[0] as { subagent?: unknown }).subagent).toBeUndefined()
+    // The edit tool's details (diff) must not fabricate a subagent identity.
+    const editDetails = extractTranscriptItems(subagentRound({ diff: '+ a\n- b' }))
+    expect((editDetails[0] as { subagent?: unknown }).subagent).toBeUndefined()
+    // Unknown-mode details without a run identity also stay absent.
+    const noRun = extractTranscriptItems(subagentRound({ mode: 'management', results: [] }))
+    expect((noRun[0] as { subagent?: unknown }).subagent).toBeUndefined()
+  })
+})

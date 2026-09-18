@@ -17,7 +17,10 @@
  */
 import type { SessionDefaults } from './preferences.ts'
 import type { SessionTreePayload, TranscriptItem } from './sessions/types.ts'
+import type { SubagentCallInfo, SubagentFleetDTO, SubagentRunState } from './subagents/types.ts'
 import type { UsageTokens } from './usage/types.ts'
+
+export type { SubagentCallInfo, SubagentFleetDTO, SubagentRunState }
 
 // ---- ticket 05: composer + approval gate shared vocabulary ----
 
@@ -95,7 +98,7 @@ export interface SlashCommandItem {
  * most recently announced session). */
 export type SessionCommand = Extract<
   ParentToHost,
-  { type: 'prompt' | 'abort_turn' | 'steer_prompt' | 'follow_up_prompt' | 'clear_queue' | 'set_model' | 'set_thinking_level' | 'set_access_mode' | 'approve_tool' | 'deny_tool' | 'compact_session' | 'list_files' | 'navigate_tree' | 'fork_session' | 'set_session_label' | 'request_tree' | 'get_branch' | 'mcp_auth_start' | 'mcp_auth_input_resolve' }
+  { type: 'prompt' | 'abort_turn' | 'steer_prompt' | 'follow_up_prompt' | 'clear_queue' | 'set_model' | 'set_thinking_level' | 'set_access_mode' | 'approve_tool' | 'deny_tool' | 'compact_session' | 'list_files' | 'navigate_tree' | 'fork_session' | 'set_session_label' | 'request_tree' | 'get_branch' | 'mcp_auth_start' | 'mcp_auth_input_resolve' | 'subagent_status' }
 >
 
 /** Renderer → agent host system. */
@@ -160,6 +163,13 @@ export type ParentToHost =
   /** Renderer's manual-paste answer to `mcp_auth_input_required` (ticket 89):
    * the pasted callback URL, or null when cancelled/aborted. */
   | { type: 'mcp_auth_input_resolve'; requestId: string; value: string | null }
+  /** Ask the host for one subagent live snapshot (ticket 90, additive):
+   * the bridge answers with `subagent_status` — the live async-run states
+   * (status.json artifacts, live augmentation only) plus pi-subagents'
+   * fleet DTO when its RPC answers. Answered even when the pi-subagents
+   * bridge is unavailable (`available: false`) so the renderer's polling
+   * needs no timeout logic. */
+  | { type: 'subagent_status'; requestId: string }
 
 /** Supervisor → host process lifecycle control (never sent by the renderer). */
 export type HostControlCommand = { type: 'shutdown' }
@@ -220,8 +230,12 @@ export type SessionScopedEvent =
   /** A tool call finished; `output` is the serialized final result and replaces any partials.
    * `diff` (ticket 78, additive): the result's display diff text — present when the SDK
    * result carries a string `details.diff` (the edit tool); absent on every other tool
-   * and on pre-78 payloads. Feeds the turn file bar and its turn-diff side-panel tab. */
-  | { type: 'tool_end'; toolCallId: string; output: string; isError: boolean; diff?: string }
+   * and on pre-78 payloads. Feeds the turn file bar and its turn-diff side-panel tab.
+   * `subagent` (ticket 90, additive, reported into the host-contract smoke): the
+   * pi-subagents structured run identity — present when the SDK result carries record
+   * `details` with a run identity (the subagent tool); absent on every other tool and
+   * on pre-90 payloads. Feeds the subagent directory's primary source. */
+  | { type: 'tool_end'; toolCallId: string; output: string; isError: boolean; diff?: string; subagent?: SubagentCallInfo }
   /** The currently open assistant message finished. `entryId` (ticket 51,
    * additive): the real session entry id of the finished message, read back
    * when the host persisted it — the fork anchor depends on it; absent →
@@ -286,6 +300,32 @@ export type SessionScopedEvent =
   /** The flow terminated: `ok` = no error-level notice arrived during the
    * flow; `notices` carries the relayed tail for the status line. */
   | { type: 'mcp_auth_completed'; serverName: string; ok: boolean; notices: Array<{ level: 'info' | 'warning' | 'error'; message: string }> }
+  // ---- ticket 90: the subagent bridge (additive, reported into the
+  // host-contract smoke). The host's inline extension subscribes to
+  // pi-subagents' in-process RPC + lifecycle events and forwards them; the
+  // renderer never talks to the Pi SDK (Seam-1). ----
+  /** Answer to `subagent_status`: `available` = the pi-subagents bridge is
+   * wired in this host (its RPC answered); `runs` = the live async-run
+   * states the bridge read from the runs' status.json artifacts (LIVE
+   * augmentation only — artifacts get cleaned, the session replay stays the
+   * historical source); `fleet` = pi-subagents' bounded fleet DTO when its
+   * RPC answered, null otherwise. */
+  | { type: 'subagent_status'; requestId: string; available: boolean; runs: SubagentRunState[]; fleet: SubagentFleetDTO | null }
+  /** pi-subagents `subagent:async-started` forwarded (bounded fields): an
+   * async run detached and is running. The task/goal text is redacted by
+   * pi-subagents itself — the row's title comes from the session record. */
+  | { type: 'subagent_async_started'; runId: string; mode?: string; agent?: string; agents?: string[]; asyncDir?: string }
+  /** pi-subagents `subagent:async-complete` forwarded: a run reached a
+   * terminal state. `state` is pi-subagents' artifact state vocabulary. */
+  | { type: 'subagent_async_completed'; runId: string; state?: string; success?: boolean; summary?: string; durationMs?: number }
+  /** pi-subagents `subagent:foreground-complete` forwarded: a detached
+   * FOREGROUND child settled (no async artifact exists for these — this
+   * event is the only live terminal evidence). */
+  | { type: 'subagent_foreground_completed'; runId: string; mode?: string; agent?: string; success?: boolean; state?: string; summary?: string; taskIndex?: number }
+  /** pi-subagents `subagent:child-status` forwarded: an observer hint about
+   * one child's stop lifecycle (duplicates possible; not authoritative —
+   * status snapshots are). Feeds later surfaces; the directory ignores it. */
+  | { type: 'subagent_child_status'; runId: string; childId: string; status: 'stopping' | 'stopped'; ts: number; agent?: string; stepIndex?: number; label?: string }
   /** Supervisor-synthesized: this session's host moved on to a DIFFERENT
    * session (in-host fork re-announcement). The session no longer has a
    * backing host; its file remains and can be resumed (ticket 20). */

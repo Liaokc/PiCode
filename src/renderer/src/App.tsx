@@ -318,6 +318,22 @@ export default function App(): JSX.Element {
     return window.picode.sessions.onIndexChanged(refreshSessions)
   }, [refreshSessions])
 
+  // Ticket 90: the Subagents directory's live refresh is EVENT-DRIVEN (the
+  // umbrella spec's zero-polling red line): lifecycle events and the
+  // session announcement re-pull the bridge snapshot; opening the tab adds
+  // one user-initiated pull. No interval ever runs.
+  const subagentsTabActive = panel.activeTab?.kind === 'subagents' && panel.openTabs.some((tab) => tab.kind === 'subagents')
+  useEffect(() => {
+    const id = focusedIdRef.current
+    if (!subagentsTabActive || id === null) return
+    window.picode.chat.sendToHost({
+      type: 'session_command',
+      sessionId: id,
+      command: { type: 'subagent_status', requestId: `open-${id}` }
+    })
+    // One pull per activation — the events keep it fresh afterwards.
+  }, [subagentsTabActive])
+
   useEffect(() => {
     return window.picode.sessions.onFollowUpdate((update) => {
       if (update.file !== followedFileRef.current) return
@@ -363,6 +379,10 @@ export default function App(): JSX.Element {
           // read-only branch readout for THIS session's host.
           if (scopeId !== null) {
             window.picode.chat.sendToHost({ type: 'session_command', sessionId: scopeId, command: { type: 'get_branch' } })
+            // Ticket 90: seed the subagent bridge's live snapshot for the
+            // announced session (the host answers subagent_status even when
+            // pi-subagents is absent — availability degrades, never hangs).
+            window.picode.chat.sendToHost({ type: 'session_command', sessionId: scopeId, command: { type: 'subagent_status', requestId: `boot-${scopeId}` } })
           }
           const pending = pendingPromptRef.current
           const pendingImages = pendingImagesRef.current
@@ -421,6 +441,17 @@ export default function App(): JSX.Element {
           if (notice.type === 'host_notice') notify(notice.message, notice.level)
           break
         }
+        case 'subagent_async_started':
+        case 'subagent_async_completed':
+        case 'subagent_foreground_completed':
+          // Ticket 90: a bridge lifecycle event refreshes that session's
+          // snapshot (the registry folds the delta itself; the pull
+          // reconciles against the artifacts behind it). child_status is an
+          // observer hint the directory ignores — no pull for it.
+          if (scopeId !== null) {
+            window.picode.chat.sendToHost({ type: 'session_command', sessionId: scopeId, command: { type: 'subagent_status', requestId: `evt-${scopeId}` } })
+          }
+          break
         case 'session_command_error':
           // A failed fork will never announce — drop the pending ack so no
           // later unrelated announcement can toast a success that didn't
@@ -1611,6 +1642,11 @@ export default function App(): JSX.Element {
             workspaceCwd={chat.session?.cwd ?? null}
             onPreviewNavigate={handlePreviewNavigate}
             resolveTurnChanges={resolveTurnChanges}
+            subagentsDirectory={
+              focused !== null
+                ? { sessionId: focused.id, entries: focused.chat.entries, runs: focused.subagents.runs }
+                : null
+            }
           />
         </div>
         {/* Bottom dock: ONE frame, sibling panels — terminal (⌘J) and the

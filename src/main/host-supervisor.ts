@@ -85,6 +85,20 @@ export class HostSupervisor {
             this.emitScoped(message.sessionId, { type: 'branch_info', branch: null })
             break
           }
+          // Ticket 90: `subagent_status` is a pure display read too — the
+          // bridge snapshot degrades to available:false (empty runs, no
+          // fleet) instead of erroring a session whose host is gone; the
+          // directory replays from the session record regardless.
+          if (message.command.type === 'subagent_status') {
+            this.emitScoped(message.sessionId, {
+              type: 'subagent_status',
+              requestId: message.command.requestId,
+              available: false,
+              runs: [],
+              fleet: null
+            })
+            break
+          }
           // The session has no live host (crashed, detached, or never
           // announced). Tell ITS scope so the entry can react; the renderer's
           // click routing normally prevents reaching here.

@@ -33,6 +33,7 @@
     "visual:drag": "npm run build && PICODE_VISUAL_DRAG=1 electron .",
     "visual:context-menu": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_CONTEXT_MENU=1 electron .",
     "visual:trace": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_TRACE=1 electron .",
+    "visual:subagents": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_SUBAGENTS=1 electron .",
     "visual:access": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_ACCESS=1 electron .",
     "visual:fold": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_FOLD=1 electron .",
     "visual:codeblock": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_CODEBLOCK=1 electron .",

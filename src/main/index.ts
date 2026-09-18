@@ -40,6 +40,7 @@ import { startDragVisualIfEnabled, isolateDragUserData } from './visual-drag'
 import { startAccessVisualIfEnabled } from './visual-access'
 import { startContextMenuVisualIfEnabled, isolateContextMenuUserData } from './visual-context-menu'
 import { startTraceVisualIfEnabled, isolateTraceUserData } from './visual-trace'
+import { startSubagentsVisualIfEnabled, isolateSubagentsUserData } from './visual-subagents'
 import { startFoldVisualIfEnabled, isolateFoldUserData } from './visual-fold'
 import { startCodeblockVisualIfEnabled, isolateCodeblockUserData } from './visual-codeblock'
 import { startAnswerVisualIfEnabled, isolateAnswerUserData } from './visual-answer'
@@ -101,6 +102,9 @@ isolateTraceUserData()
 // (drag commits + sort flips) — throwaway userData for it too (no-op unless
 // PICODE_VISUAL_DRAG=1).
 isolateDragUserData()
+// Ticket-90 subagent-directory harness — same throwaway-userData rule
+// (no-op unless PICODE_VISUAL_SUBAGENTS=1).
+isolateSubagentsUserData()
 // Ticket-39 group-fold harness reads the default 'projects' view from a
 // throwaway userData (no-op unless PICODE_VISUAL_FOLD=1).
 isolateFoldUserData()
@@ -488,6 +492,9 @@ app.whenReady().then(() => {
   startCwdVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-37 trace tool-surfaces harness — same seeding constraint.
   startTraceVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  // Ticket-90 subagent-directory harness — same seeding constraint (the
+  // artifact root rides the env before any host spawns).
+  startSubagentsVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-38 access-menu harness — renderer-only injection, no store writes.
   startAccessVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-39 group-fold harness — same seeding constraint (12 fake

@@ -31,12 +31,13 @@ export function clampSidebarWidth(width: number): number {
 export const SIDE_PANEL_WIDTH_PX = 420
 
 /** Tabs offered by the side panel's empty picker. Since ticket 18 the
- * terminal lives in the bottom dock (⌘J / titlebar toggle), leaving Review
- * as the only picker card. Browser tabs are out of scope for PiCode 1.0.
- * File and call-trace tabs are NOT in the picker (tickets 07/31): they open
- * via deep-links (transcript cards, Review tree, ⌘K-adjacent surfaces) and
- * then behave like any other tab (activate/close). */
-export const PANEL_EMPTY_TABS = ['review'] as const
+ * terminal lives in the bottom dock (⌘J / titlebar toggle). Ticket 90 adds
+ * the Subagents directory card beside Review. Browser tabs are out of scope
+ * for PiCode 1.0. File and call-trace tabs are NOT in the picker (tickets
+ * 07/31): they open via deep-links (transcript cards, Review tree,
+ * ⌘K-adjacent surfaces) and then behave like any other tab
+ * (activate/close). */
+export const PANEL_EMPTY_TABS = ['review', 'subagents'] as const
 
 /** Top-level view: the workspace shell or the settings window shell. */
 export type AppView = 'workspace' | 'settings'

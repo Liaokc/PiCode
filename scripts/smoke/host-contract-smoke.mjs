@@ -52,6 +52,16 @@
  *   not-found error) → mcp_auth_completed(ok=false, notices relayed)
  *   → shutdown → exit 0. Credentials never enter the contract stream.
  *
+ *   Round H (ticket 90报备: the subagent bridge contract) — a SEEDED session
+ *   file, zero model calls:
+ *   resume → session_created(resumed) → history_loaded (the seeded subagent
+ *   tool calls carry the additive `subagent` identity projection: async
+ *   launch, foreground children; a bash tool call stays field-absent)
+ *   → subagent_status → subagent_status(reply: requestId echo, available
+ *   boolean, runs array, fleet DTO-or-null; runs carries the seeded async
+ *   run's live state read from its status.json artifact) → shutdown →
+ *   exit 0.
+ *
  * Usage: npm run build && node scripts/smoke/host-contract-smoke.mjs
  * Expects working model auth in ~/.pi/agent (same as the pi TUI). Session
  * files land in an isolated throwaway store (PICODE_SESSION_DIR, ticket 13)
@@ -75,6 +85,12 @@ const STAMP_79 = '2026-09-14T10:00:00.000Z'
 const EDIT79_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
 let edit79File = ''
 
+// Ticket 90 round H: the seeded subagent-bridge fixture + its throwaway
+// PI_SUBAGENTS_TEMP_ROOT (the artifact root the bridge reads from).
+let subagent90File = ''
+let subagent90RunDir = ''
+let subagent90TempRoot = ''
+
 // Session isolation (ticket 13): hosts must never write the real
 // ~/.pi/agent/sessions. Use the suite-wide store when run through
 // scripts/smoke/run-all.sh (which owns its cleanup), otherwise create and
@@ -85,6 +101,9 @@ if (!process.env.PICODE_SESSION_DIR) {
   console.log(`SMOKE isolated session store: ${process.env.PICODE_SESSION_DIR}`)
 }
 edit79File = path.join(process.env.PICODE_SESSION_DIR, 'edit79-seeded.jsonl')
+subagent90TempRoot = path.join(tmpdir(), 'picode-smoke-subagent90-root')
+subagent90RunDir = path.join(subagent90TempRoot, 'async-subagent-runs', 'sub90-run-1')
+subagent90File = path.join(process.env.PICODE_SESSION_DIR, 'subagent90-seeded.jsonl')
 
 const cwd = await mkdtemp(path.join(tmpdir(), 'picode-smoke-'))
 // A real file so the @-mention candidate listing has something to return.
@@ -353,6 +372,90 @@ async function onHostExit(exited, code) {
   }
   if (step === 'G shutdown') {
     if (code !== 0) fail(`round G exit should be clean 0, got ${code}`)
+    // Ticket 90报备: round H — the subagent bridge contract (additive host    // messages), against a SEEDED session file so the whole round needs
+    // zero model calls. The seed mimics exactly what pi-subagents records:
+    // an async launch receipt (details.runId/asyncId/asyncDir, results: []),
+    // a settled foreground call (details.runId + per-child results), and a
+    // plain bash call whose details must stay field-absent.
+    console.log('SMOKE round G shutdown ok — starting round H (ticket-90 subagent bridge contract)')
+    writeFileSync(
+      subagent90File,
+      [
+        JSON.stringify({ type: 'session', version: 3, id: 'sub90-fixed-id', timestamp: STAMP_79, cwd }),
+        JSON.stringify({
+          type: 'message', id: 's90-u1', parentId: null, timestamp: STAMP_79,
+          message: { role: 'user', content: [{ type: 'text', text: 'PICODE_SUB90 fan out the work' }] }
+        }),
+        // 1) async launch: tool call + the async-started receipt result.
+        JSON.stringify({
+          type: 'message', id: 's90-a1', parentId: 's90-u1', timestamp: STAMP_79,
+          message: { role: 'assistant', content: [{ type: 'toolCall', id: 's90-c-async', name: 'subagent', arguments: { agent: 'scout', task: 'PICODE_SUB90 scout the answer', async: true } }] }
+        }),
+        JSON.stringify({
+          type: 'message', id: 's90-r1', parentId: 's90-a1', timestamp: STAMP_79,
+          message: {
+            role: 'toolResult', toolCallId: 's90-c-async', toolName: 'subagent',
+            content: [{ type: 'text', text: 'Async: scout [sub90-run-1]' }],
+            isError: false,
+            details: { mode: 'single', runId: 'sub90-run-1', asyncId: 'sub90-run-1', asyncDir: subagent90RunDir, results: [] }
+          }
+        }),
+        // 2) foreground completed call with structured children.
+        JSON.stringify({
+          type: 'message', id: 's90-a2', parentId: 's90-r1', timestamp: STAMP_79,
+          message: { role: 'assistant', content: [{ type: 'toolCall', id: 's90-c-fg', name: 'subagent', arguments: { agent: 'worker', task: 'PICODE_SUB90 do the thing' } }] }
+        }),
+        JSON.stringify({
+          type: 'message', id: 's90-r2', parentId: 's90-a2', timestamp: STAMP_79,
+          message: {
+            role: 'toolResult', toolCallId: 's90-c-fg', toolName: 'subagent',
+            content: [{ type: 'text', text: 'The thing is done.' }],
+            isError: false,
+            details: {
+              mode: 'single', runId: 'sub90-fg-1',
+              results: [{ index: 0, agent: 'worker', task: '[prompt redacted]', exitCode: 0, finalOutput: 'The thing is done.' }]
+            }
+          }
+        }),
+        // 3) a plain bash call — the additive projection must stay absent.
+        JSON.stringify({
+          type: 'message', id: 's90-a3', parentId: 's90-r2', timestamp: STAMP_79,
+          message: { role: 'assistant', content: [{ type: 'toolCall', id: 's90-c-bash', name: 'bash', arguments: { command: 'echo hi' } }] }
+        }),
+        JSON.stringify({
+          type: 'message', id: 's90-r3', parentId: 's90-a3', timestamp: STAMP_79,
+          message: { role: 'toolResult', toolCallId: 's90-c-bash', toolName: 'bash', content: [{ type: 'text', text: 'hi' }], isError: false, details: { exitCode: 0 } }
+        })
+      ].join('\n') + '\n'
+    )
+    // The seeded async run's LIVE artifact: a complete status.json in a
+    // throwaway PI_SUBAGENTS_TEMP_ROOT layout (the bridge reads the
+    // artifact the session record names — live augmentation only).
+    mkdirSync(subagent90RunDir, { recursive: true })
+    writeFileSync(
+      path.join(subagent90RunDir, 'status.json'),
+      JSON.stringify({
+        lifecycleArtifactVersion: 1,
+        runId: 'sub90-run-1',
+        mode: 'single',
+        state: 'complete',
+        startedAt: 1_000,
+        endedAt: 61_000,
+        lastUpdate: 61_000,
+        sessionId: subagent90File,
+        agents: ['scout'],
+        totalTokens: { input: 100, output: 20, total: 120 }
+      })
+    )
+    step = 'H session_created'
+    bumpTimeout()
+    child = forkHost([cwd, subagent90File], onEvent)
+    return
+  }
+  if (step === 'H shutdown') {
+    if (code !== 0) fail(`round H exit should be clean 0, got ${code}`)
+    // The throwaway PI_SUBAGENTS_TEMP_ROOT root is smoke-local — discard it.
+    rmSync(subagent90TempRoot, { recursive: true, force: true })
     await finishClean(code)
     return
   }
@@ -1089,6 +1192,68 @@ function onEvent(event) {
       if (!gNotices.some((n) => n.level === 'error')) fail('the error notice must ALSO ride mcp_auth_notice live (the settings window listens live)')
       console.log('SMOKE ticket-89 MCP OAuth bridge contract ok — start → live notices → completed(ok=false), no credentials touched')
       step = 'G shutdown'
+      child.send({ type: 'shutdown' })
+      return
+    }
+
+    // ---------- Round H: ticket 90报备 — the subagent bridge contract ----------
+    case 'H session_created': {
+      if (event.type !== 'session_created') return
+      if (!event.resumed) fail('round H must open the seeded file as a resume')
+      if (event.sessionFile !== subagent90File) fail(`round H resumed the wrong file: ${event.sessionFile}`)
+      console.log('SMOKE round H session ok (seeded ticket-90 subagent fixture)')
+      step = 'H history'
+      return
+    }
+    case 'H history': {
+      if (event.type !== 'history_loaded') return
+      const items = event.items
+      if (!Array.isArray(items)) fail('round H replay must be an array')
+      const toolItems = items.filter((i) => i.role === 'tool')
+      if (toolItems.length !== 3) fail(`round H replay must hold 3 tool items, got ${toolItems.length}`)
+      // The async launch: the additive identity names the run + artifact dir.
+      const asyncItem = toolItems[0]
+      if (asyncItem.name !== 'subagent') fail(`first tool item should be subagent, got ${asyncItem.name}`)
+      if (asyncItem.subagent?.asyncId !== 'sub90-run-1' || asyncItem.subagent?.runId !== 'sub90-run-1') {
+        fail(`the async launch must carry its run identity, got ${JSON.stringify(asyncItem.subagent)}`)
+      }
+      if (asyncItem.subagent?.asyncDir !== subagent90RunDir) {
+        fail(`the async launch must carry its artifact dir, got ${asyncItem.subagent?.asyncDir}`)
+      }
+      // The foreground call: structured children project.
+      const fgItem = toolItems[1]
+      if (fgItem.subagent?.runId !== 'sub90-fg-1') fail(`the foreground call must carry its run id, got ${JSON.stringify(fgItem.subagent)}`)
+      const fgChild = fgItem.subagent?.children?.[0]
+      if (fgChild?.agent !== 'worker' || fgChild?.exitCode !== 0 || fgChild?.finalOutput !== 'The thing is done.') {
+        fail(`the foreground child must project, got ${JSON.stringify(fgChild)}`)
+      }
+      // The bash call: the projection stays ABSENT (additive discipline).
+      const bashItem = toolItems[2]
+      if (bashItem.name !== 'bash') fail(`third tool item should be bash, got ${bashItem.name}`)
+      if ('subagent' in bashItem) fail('a non-subagent tool item must keep the old payload shape (no subagent field)')
+      console.log('SMOKE ticket-90 replay projection ok (async identity + foreground children; bash stays field-absent)')
+      step = 'H status'
+      child.send({ type: 'subagent_status', requestId: 'sub90-status-1' })
+      return
+    }
+    case 'H status': {
+      if (event.type !== 'subagent_status') return
+      if (event.requestId !== 'sub90-status-1') fail(`subagent_status for the wrong request: ${event.requestId}`)
+      if (typeof event.available !== 'boolean') fail('subagent_status must carry an available boolean')
+      if (!Array.isArray(event.runs)) fail('subagent_status must carry a runs array')
+      if (event.fleet !== null && typeof event.fleet !== 'object') fail('subagent_status fleet must be an object or null')
+      // The seeded run's LIVE artifact drives the runs array: the bridge
+      // read <asyncDir>/status.json and reported its state.
+      const seeded = event.runs.find((r) => r.runId === 'sub90-run-1')
+      if (seeded === undefined) fail(`the seeded run's artifact must surface in runs, got ${JSON.stringify(event.runs)}`)
+      if (seeded.state !== 'complete' || seeded.endedAt !== 61_000) {
+        fail(`the seeded run's live state must come from the artifact, got ${JSON.stringify(seeded)}`)
+      }
+      if (event.available === true && event.fleet === null) {
+        fail('an available bridge must carry the fleet DTO (even empty)')
+      }
+      console.log(`SMOKE ticket-90 subagent_status ok (available=${event.available}, runs=${event.runs.length}, artifact-driven state=${seeded.state})`)
+      step = 'H shutdown'
       child.send({ type: 'shutdown' })
       return
     }

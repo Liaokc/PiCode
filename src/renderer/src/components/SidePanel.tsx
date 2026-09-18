@@ -1,5 +1,6 @@
 import { useRef, useState, type Dispatch, type JSX, type PointerEvent } from 'react'
 import { PANEL_EMPTY_TABS } from '../../../shared/layout-model'
+import type { ChatEntry } from '../../../shared/chat-reducer'
 import type { TurnFileChange } from '../../../shared/turn-files'
 import {
   clampPanelWidth,
@@ -14,6 +15,7 @@ import ReviewTab from './ReviewTab'
 import PreviewTab from './PreviewTab'
 import TraceTab from './TraceTab'
 import TurnDiffTab from './TurnDiffTab'
+import SubagentsTab from './SubagentsTab'
 import PanelTabMenu, { panelTabGlyph } from './PanelTabMenu'
 import Tooltip from './Tooltip'
 import { ChevronDownIcon, CloseIcon, FileTextIcon, PlusIcon } from './icons'
@@ -33,6 +35,10 @@ interface SidePanelProps {
    * changes for one turn, or null when the turn is not in view. The panel
    * re-resolves on every render so a live turn's tab grows with it. */
   resolveTurnChanges?: (turnId: string) => TurnFileChange[] | null
+  /** Ticket 90: the FOCUSED session's subagent directory data — transcript
+   * entries + the bridge's live run states. null while no session view is
+   * focused (the tab renders its empty state). */
+  subagentsDirectory?: { sessionId: string; entries: readonly ChatEntry[]; runs: Readonly<Record<string, import('../../../shared/subagents/types').SubagentRunState>> } | null
 }
 
 /**
@@ -64,7 +70,8 @@ export default function SidePanel({
   dispatch,
   workspaceCwd,
   onPreviewNavigate,
-  resolveTurnChanges
+  resolveTurnChanges,
+  subagentsDirectory
 }: SidePanelProps): JSX.Element {
   const drag = useRef<{ startX: number; startWidth: number; width: number; raf: number } | null>(null)
   const frameRef = useRef<HTMLElement | null>(null)
@@ -152,6 +159,22 @@ export default function SidePanel({
         // changes, rendered in the Review tab's diff language. Identity =
         // turn id; the body resolves against the active session's view.
         return <TurnDiffTab turnId={tab.turnId} changes={resolveTurnChanges?.(tab.turnId) ?? null} />
+      case 'subagents':
+        // The subagent directory (ticket 90): the FOCUSED session's runs in
+        // the ZCode subagentDirectory composition. Fixed identity — the
+        // body re-projects when the focus changes (keyed remount).
+        return subagentsDirectory != null ? (
+          <SubagentsTab
+            key={subagentsDirectory.sessionId}
+            sessionId={subagentsDirectory.sessionId}
+            entries={subagentsDirectory.entries}
+            runs={subagentsDirectory.runs}
+          />
+        ) : (
+          <div className="subagents-view subagents-view-idle">
+            <p className="subagents-empty">No running subagents</p>
+          </div>
+        )
     }
   }
 
@@ -251,11 +274,13 @@ export default function SidePanel({
                   key={tab}
                   type="button"
                   className="panel-tab-card"
-                  aria-label={`Open Review tab`}
-                  onClick={() => dispatch({ type: 'open-tab', tab: { kind: 'review' } })}
+                  aria-label={`Open ${tab === 'review' ? 'Review' : 'Subagents'} tab`}
+                  onClick={() =>
+                    dispatch({ type: 'open-tab', tab: tab === 'review' ? { kind: 'review' } : { kind: 'subagents' } })
+                  }
                 >
                   <FileTextIcon />
-                  <span>Review</span>
+                  <span>{tab === 'review' ? 'Review' : 'Subagents'}</span>
                 </button>
               ))}
             </div>

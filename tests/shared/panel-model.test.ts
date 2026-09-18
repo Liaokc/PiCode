@@ -20,6 +20,7 @@ const review = (): PanelTabId => ({ kind: 'review' })
 const file = (path: string, cwd = '/work/api'): PanelTabId => ({ kind: 'file', cwd, path })
 const trace = (sessionFile: string): PanelTabId => ({ kind: 'trace', sessionFile })
 const turnDiff = (turnId: string): PanelTabId => ({ kind: 'turn-diff', turnId })
+const subagents = (): PanelTabId => ({ kind: 'subagents' })
 
 describe('tab identity (ticket 31)', () => {
   it('treats tabs with the same kind and coordinates as the same tab', () => {
@@ -51,6 +52,22 @@ describe('tab identity (ticket 31)', () => {
     expect(panelTabKey(turnDiff('m3'))).toBe(panelTabKey(turnDiff('m3')))
     expect(panelTabKey(turnDiff('m3'))).not.toBe(panelTabKey(turnDiff('m5')))
     expect(panelTabLabel(turnDiff('m3'))).toBe('Turn diff')
+  })
+
+  it('the subagents tab (ticket 90) is a fixed identity like review, labeled Subagents', () => {
+    expect(samePanelTab(subagents(), subagents())).toBe(true)
+    expect(samePanelTab(subagents(), review())).toBe(false)
+    expect(panelTabKey(subagents())).toBe('subagents')
+    expect(panelTabLabel(subagents())).toBe('Subagents')
+  })
+
+  it('closing the subagents tab is not tracked in the recently closed history (ticket 90)', () => {
+    let state = initialPanelState()
+    state = panelReducer(state, { type: 'open-tab', tab: subagents() })
+    state = panelReducer(state, { type: 'close-tab', tab: subagents(), at: 1000 })
+    expect(state.recentlyClosed).toEqual([])
+    // A forged persisted entry is dropped defensively too.
+    expect(normalizeRecentlyClosed([{ tab: { kind: 'subagents' }, closedAt: 1 }])).toEqual([])
   })
 })
 
