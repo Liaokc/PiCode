@@ -134,7 +134,7 @@
  * `SMOKE <step>` lines on stdout. Not part of `npm test`.
  */
 
-import os from 'node:os'
+import os, { homedir } from 'node:os'
 import { randomUUID, createHash } from 'node:crypto'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -151,6 +151,9 @@ import { CWD_MISSING_ROW_TOAST } from '../shared/sessions/cwd-liveness'
 import { EDIT_RESEND_TOAST } from '../shared/edit-resend'
 import type { SessionContextActionService } from './sessions/context-actions'
 import { emitContractEvent } from './visual'
+import { chmodSync } from 'node:fs'
+import http from 'node:http'
+import type { AddressInfo } from 'node:net'
 
 const STEP_TIMEOUT_MS = 90_000
 const ABORT_AFTER_DELTAS = 3
@@ -7695,6 +7698,583 @@ export function startSmokeIfEnabled(
       log('packages_stage_done')
     }
 
+    // ---- ticket 89: the MCP section — dual cards + source badges + the
+    // disabled-flag write + add/edit/delete in the correct layer + the
+    // per-layer open-config entries + the FULL OAuth flow through the
+    // session host bridge (mock OAuth server + a recording `open` shim +
+    // the manual paste fallback) + the zero-write red lines ----
+    log('settings_mcp_start')
+    {
+      const sandboxAgent = process.env['PICODE_PI_AGENT_DIR']
+      if (sandboxAgent === undefined || sandboxAgent.trim() === '') {
+        fail('ticket-89 stage: PICODE_PI_AGENT_DIR is not set — the MCP stage refuses to touch the real agent dir')
+      }
+      const agentDir = sandboxAgent!
+      // The ADAPTER seeding: the OAuth flow runs the pi-mcp-adapter's own
+      // /mcp-auth command INSIDE the session host, so the sandbox agent dir
+      // must carry the real installed package (symlinked from the real
+      // agent's npm root — deps resolve through the real paths) and a
+      // packages entry. PI_OFFLINE guarantees no install/network attempt:
+      // the symlinked directory satisfies the version check offline.
+      const realAdapter = path.join(homedir(), '.pi', 'agent', 'npm', 'node_modules', 'pi-mcp-adapter')
+      if (!existsSync(path.join(realAdapter, 'package.json'))) {
+        fail(`ticket-89 stage: the pi-mcp-adapter package is not installed at ${realAdapter} — install it (pi install npm:pi-mcp-adapter) and rerun`)
+      }
+      const sandboxNpmRoot = path.join(agentDir, 'npm', 'node_modules')
+      mkdirSync(sandboxNpmRoot, { recursive: true })
+      const sandboxAdapter = path.join(sandboxNpmRoot, 'pi-mcp-adapter')
+      if (!existsSync(sandboxAdapter)) symlinkSync(realAdapter, sandboxAdapter)
+      const sandboxSettings = path.join(agentDir, 'settings.json')
+      try {
+        const current = JSON.parse(readFileSync(sandboxSettings, 'utf-8')) as { packages?: string[] }
+        const packages = new Set<string>(['npm:pi-mcp-adapter', ...(Array.isArray(current.packages) ? current.packages : [])])
+        writeFileSync(sandboxSettings, JSON.stringify({ ...current, packages: [...packages] }, null, 2))
+      } catch {
+        writeFileSync(sandboxSettings, JSON.stringify({ packages: ['npm:pi-mcp-adapter'] }, null, 2))
+      }
+      const previousOffline = process.env['PI_OFFLINE']
+      process.env['PI_OFFLINE'] = '1'
+
+      // The home sandbox: the global shared layers (~/.config/mcp/mcp.json,
+      // ~/.agents/*) and the EXTERNAL host-tool configs resolve through
+      // PICODE_MCP_HOME — the operator's real home is never read-written.
+      const mcpBase = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-mcpbase-'))
+      const mcpHome = path.join(mcpBase, 'mcp-home')
+      const previousMcpHome = process.env['PICODE_MCP_HOME']
+      mkdirSync(mcpHome, { recursive: true })
+      process.env['PICODE_MCP_HOME'] = mcpHome
+
+      // ---- Seed: the global shared config (one shared server), the Pi
+      // global override (one Pi-owned server, disabled in the project), the
+      // project .mcp.json (one OAuth-capable server for the auth flow) —
+      // plus the EXTERNAL host-tool configs that must stay byte-identical.
+      const globalSharedDir = path.join(mcpHome, '.config', 'mcp')
+      mkdirSync(globalSharedDir, { recursive: true })
+      const globalShared = path.join(globalSharedDir, 'mcp.json')
+      writeFileSync(globalShared, JSON.stringify({ mcpServers: { 'shared-search': { command: 'shared-search-bin', env: { KEY: 'global' } } } }))
+      const agentsFile = path.join(mcpHome, '.agents', 'mcp.json')
+      mkdirSync(path.dirname(agentsFile), { recursive: true })
+      writeFileSync(agentsFile, JSON.stringify({ mcpServers: { 'agents-server': { command: 'agents-bin' } } }))
+      const piGlobal = path.join(agentDir, 'mcp.json')
+      writeFileSync(piGlobal, JSON.stringify({ mcpServers: { 'pi-only': { command: 'pi-only-bin' } } }))
+
+      const mcpProject = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-mcpproject-'))
+      const projectShared = path.join(mcpProject, '.mcp.json')
+      const projectPi = path.join(mcpProject, '.pi', 'mcp.json')
+      mkdirSync(path.dirname(projectPi), { recursive: true })
+      writeFileSync(projectShared, JSON.stringify({ mcpServers: { 'shared-search': { args: ['--fast'] }, 'repo-tools': { command: 'node', args: ['tools/repo-mcp.js'] } } }))
+      writeFileSync(projectPi, JSON.stringify({ mcpServers: { 'pi-only': { disabled: true } } }))
+
+      // The EXTERNAL host-tool configs (the red line): byte-identical at
+      // the end of the stage, no matter what the operator does in the UI.
+      const externalFiles: Record<string, string> = {
+        cursor: path.join(mcpHome, '.cursor', 'mcp.json'),
+        claude: path.join(mcpHome, '.claude', 'mcp.json')
+      }
+      for (const file of Object.values(externalFiles)) {
+        mkdirSync(path.dirname(file), { recursive: true })
+        writeFileSync(file, JSON.stringify({ mcpServers: { external: { command: 'ext-bin' } } }))
+      }
+      const externalBefore = Object.fromEntries(Object.entries(externalFiles).map(([k, f]) => [k, readFileSync(f, 'utf-8')]))
+
+      // ---- The OAuth mock server: protected-resource + authorization-
+      // server metadata, dynamic client registration, authorize → 302
+      // callback, token exchange, and a minimal streamable-HTTP MCP
+      // endpoint (the adapter RECONNECTS after a successful auth).
+      const mockPort = await listenMockOAuth()
+      const mockUrl = `http://127.0.0.1:${mockPort}`
+      writeFileSync(projectShared, JSON.stringify({
+        mcpServers: {
+          'shared-search': { args: ['--fast'] },
+          'repo-tools': { command: 'node', args: ['tools/repo-mcp.js'] },
+          'mock-oauth': { url: `${mockUrl}/mcp`, auth: 'oauth' }
+        }
+      }))
+
+      // ---- The `open` shim: PATH-prepended, records every URL and (while
+      // the autocomplete.on flag file exists) COMPLETES the flow by hitting
+      // the authorize endpoint like a browser would. The adapter's `open`
+      // package spawns `open` through PATH on macOS/Linux; the flag is a
+      // FILE because the already-running host inherits its env at fork
+      // time — mid-stage env changes never reach it.
+      const openBin = path.join(mcpHome, 'open-bin')
+      mkdirSync(openBin, { recursive: true })
+      const openLog = path.join(openBin, 'open.log')
+      const openShim = path.join(openBin, 'open')
+      // The auto-complete switch is a FILE FLAG (not an env var): the host
+      // process inherits its env at fork time, and the OAuth legs toggle
+      // the flag mid-run — env changes in the smoke would never reach the
+      // already-running host's `open` children.
+      const autocompleteFlag = path.join(openBin, 'autocomplete.on')
+      writeFileSync(autocompleteFlag, '')
+      writeFileSync(openShim, [
+        '#!/bin/sh',
+        `echo "$*" >> ${JSON.stringify(openLog)}`,
+        `if [ -f ${JSON.stringify(autocompleteFlag)} ]; then`,
+        '  for arg in "$@"; do',
+        '    case "$arg" in',
+        '      http://*|https://*) curl -s -o /dev/null -L "$arg" ;;',
+        '    esac',
+        '  done',
+        'fi',
+        'exit 0'
+      ].join('\n'))
+      chmodSync(openShim, 0o755)
+      const realPath = process.env['PATH'] ?? ''
+      process.env['PATH'] = `${openBin}:${realPath}`
+      // The adapter's OAuth storage: the DEFAULT OS keychain store — the
+      // ticket's own red-line shape (credentials live in the adapter/the
+      // system keychain, never in PiCode). The smoke asserts the entry's
+      // PRESENCE as the proof and deletes it again in the cleanup (it is
+      // a token for an already-dead mock server — the smoke's own
+      // artifact). MCP_OAUTH_DIR still redirects the LEGACY plaintext
+      // layout away from the real agent dir; a free port serves the
+      // callback server.
+      const oauthDir = path.join(mcpBase, 'mcp-oauth')
+      process.env['MCP_OAUTH_DIR'] = oauthDir
+      process.env['MCP_OAUTH_CALLBACK_PORT'] = String(await freePort())
+      // The manual-paste leg re-authenticates the same server; the
+      // adapter's in-memory auth-entry cache would short-circuit it with
+      // leg-1's tokens (no flow, no dialog) — the stage runs with the
+      // adapter's own cache disable env.
+      process.env['PI_MCP_ADAPTER_DISABLE_AUTH_CACHE'] = '1'
+      const keychainHasEntry = (): boolean => {
+        try {
+          execFileSync('security', ['find-generic-password', '-s', 'pi-mcp-adapter.oauth'], { stdio: 'pipe' })
+          return true
+        } catch {
+          return false
+        }
+      }
+      const keychainBefore = keychainHasEntry()
+      // A stale encrypted-file store from an earlier run of this stage
+      // (written under a per-run key it can no longer decrypt) would fail
+      // the flow's read — remove the mock-oauth account if this stage
+      // created it. The account name is sha256(serverName).
+      const mockAccount = 'sha256-' + createHash('sha256').update('mock-oauth', 'utf8').digest('hex')
+      const staleEncrypted = path.join(homedir(), '.pi', 'agent', 'mcp-oauth-encrypted', mockAccount)
+      if (existsSync(staleEncrypted)) rmSync(staleEncrypted, { recursive: true, force: true })
+
+      try {
+        await withWindow(getWindow, async (win) => {
+          const js = (script: string) => win.webContents.executeJavaScript(script)
+
+          // ① A session scoped to the MCP project focuses it — the settings
+          // window's MCP request then carries the project cwd.
+          supervisor.createSession(mcpProject)
+          await waitFor((e) => e.type === 'session_created' && e.cwd === mcpProject, 'mcp session_created')
+
+          // ② Open settings, navigate to MCP.
+          await js(`(() => {
+            window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Comma', key: ',', metaKey: true, cancelable: true }))
+            return true
+          })()`)
+          if (!(await waitForProbe(win, `document.querySelector('.settings-shell') !== null`, 5_000))) {
+            fail('ticket-89 stage: ⌘, never opened the settings window')
+          }
+          if (!(await js(`(() => {
+            const item = [...document.querySelectorAll('.settings-item')].find((el) => el.textContent?.trim() === 'MCP')
+            if (!(item instanceof HTMLElement)) return false
+            item.click()
+            return true
+          })()`).catch(() => false))) fail('ticket-89 stage: the MCP nav item is missing')
+          if (!(await waitForProbe(win, `document.querySelector('[data-mcp-section]') !== null`, 5_000))) {
+            fail('ticket-89 stage: the MCP section never rendered')
+          }
+          log('mcp_section_open_ok')
+
+          // ③ Dual cards render with the merged effective rows and their
+          // source badges: shared-search wins in the PROJECT shared layer
+          // (2 layers), pi-only in the Pi global layer but DISABLED via the
+          // project flag, repo-tools only in the project, agents-server in
+          // the cross-tool .agents file (read-only badge).
+          if (!(await waitForProbe(
+            win,
+            `document.querySelector('[data-mcp-server="shared-search"]') !== null && document.querySelector('[data-mcp-server="pi-only"]') !== null && document.querySelector('[data-mcp-server="repo-tools"]') !== null && document.querySelector('[data-mcp-server="agents-server"]') !== null`,
+            10_000
+          ))) {
+            const diag = (await js(`[...document.querySelectorAll('.skill-row')].map((r) => r.dataset['mcpServer'])`).catch(() => null)) as string[] | null
+            fail(`ticket-89 stage: the merged rows never appeared (diag=${JSON.stringify(diag)})`)
+          }
+          const rowSigs = (await js(`(() => {
+            const sig = (name) => {
+              const row = document.querySelector('[data-mcp-server="' + name + '"]')
+              if (!(row instanceof HTMLElement)) return null
+              const card = row.closest('.settings-card')
+              return {
+                card: card?.querySelector('.settings-card-head-title')?.textContent ?? null,
+                badges: [...row.querySelectorAll('.skill-badge')].map((b) => b.textContent ?? ''),
+                summary: row.querySelector('.settings-mcp-summary')?.textContent ?? null,
+                enabled: row.querySelector('.skill-switch')?.getAttribute('aria-checked') ?? null
+              }
+            }
+            return {
+              sharedSearch: sig('shared-search'),
+              piOnly: sig('pi-only'),
+              repoTools: sig('repo-tools'),
+              agentsServer: sig('agents-server')
+            }
+          })()`)) as {
+            sharedSearch: { card: string | null; badges: string[]; summary: string | null; enabled: string | null } | null
+            piOnly: { card: string | null; badges: string[]; summary: string | null; enabled: string | null } | null
+            repoTools: { card: string | null; badges: string[]; summary: string | null; enabled: string | null } | null
+            agentsServer: { card: string | null; badges: string[]; summary: string | null; enabled: string | null } | null
+          }
+          if (rowSigs.sharedSearch === null || rowSigs.piOnly === null || rowSigs.repoTools === null || rowSigs.agentsServer === null) {
+            fail('ticket-89 stage: the merged row signatures are missing')
+          }
+          // The dual-card split follows the winning layer's scope.
+          if (rowSigs.sharedSearch.card !== 'Project servers') fail(`ticket-89 stage: shared-search belongs in the project card (got ${String(rowSigs.sharedSearch.card)})`)
+          // pi-only is defined in pi-global AND pi-project (the disabled
+          // flag): the LAST defining layer wins → the PROJECT card, its
+          // effective entry carrying the flag (the model's honest winner
+          // semantics; the global-only row in this stage is agents-server).
+          if (rowSigs.piOnly.card !== 'Project servers') fail(`ticket-89 stage: pi-only belongs in the project card (winner = pi-project; got ${String(rowSigs.piOnly.card)})`)
+          if (rowSigs.piOnly.enabled !== 'false') fail(`ticket-89 stage: pi-only is not shown disabled`)
+          if (rowSigs.repoTools.card !== 'Project servers') fail(`ticket-89 stage: repo-tools belongs in the project card (got ${String(rowSigs.repoTools.card)})`)
+          // Source badges: the winner + the multi-layer story.
+          if (!rowSigs.sharedSearch.badges.some((b) => b === 'Project shared')) fail(`ticket-89 stage: shared-search lacks the winner badge (badges=${JSON.stringify(rowSigs.sharedSearch.badges)})`)
+          if (!rowSigs.sharedSearch.badges.some((b) => b === '2 layers')) fail(`ticket-89 stage: shared-search lacks the layered badge (badges=${JSON.stringify(rowSigs.sharedSearch.badges)})`)
+          if (!rowSigs.agentsServer.badges.some((b) => b.includes('read-only'))) fail(`ticket-89 stage: the .agents winner is not marked read-only (badges=${JSON.stringify(rowSigs.agentsServer.badges)})`)
+          if (rowSigs.agentsServer.card !== 'Global servers') fail(`ticket-89 stage: agents-server belongs in the global card (got ${String(rowSigs.agentsServer.card)})`)
+          // The merged effective view: shared-search = command from global +
+          // args from project.
+          if (rowSigs.sharedSearch.summary !== 'shared-search-bin --fast') fail(`ticket-89 stage: the merged summary is wrong (got ${JSON.stringify(rowSigs.sharedSearch.summary)})`)
+          log('mcp_cards_badges_ok')
+
+          // ④ The enable/disable switch writes ONLY the disabled flag into
+          // the project Pi override (enable: the flag drops, because the
+          // lower layer is not disabled).
+          if (!(await js(`(() => {
+            const row = document.querySelector('[data-mcp-server="pi-only"]')
+            if (!(row instanceof HTMLElement)) return false
+            const sw = row.querySelector('.skill-switch')
+            if (!(sw instanceof HTMLElement)) return false
+            sw.click()
+            return true
+          })()`).catch(() => false))) fail('ticket-89 stage: the pi-only switch is missing')
+          let flagOk = false
+          for (let waited = 0; waited < 5_000 && !flagOk; waited += 100) {
+            flagOk = existsSync(projectPi) && !JSON.stringify(JSON.parse(readFileSync(projectPi, 'utf-8'))).includes('disabled')
+            if (!flagOk) await new Promise((r) => setTimeout(r, 100))
+          }
+          if (!flagOk) fail(`ticket-89 stage: the enable never removed the flag from ${projectPi}`)
+          log('mcp_enable_flag_ok', projectPi)
+
+          // Disable again → the flag returns.
+          await js(`(() => {
+            const row = document.querySelector('[data-mcp-server="pi-only"]')
+            if (!(row instanceof HTMLElement)) return false
+            row.querySelector('.skill-switch')?.click()
+            return true
+          })()`)
+          flagOk = false
+          for (let waited = 0; waited < 5_000 && !flagOk; waited += 100) {
+            flagOk = existsSync(projectPi) && (JSON.parse(readFileSync(projectPi, 'utf-8')) as { mcpServers?: Record<string, { disabled?: unknown }> }).mcpServers?.['pi-only']?.disabled === true
+            if (!flagOk) await new Promise((r) => setTimeout(r, 100))
+          }
+          if (!flagOk) fail(`ticket-89 stage: the disable never wrote the flag to ${projectPi}`)
+          log('mcp_disable_flag_ok', projectPi)
+
+          // ⑤ Add a server through the form → lands in the GLOBAL shared
+          // config (the /mcp setup target).
+          await js(`(() => {
+            const cards = [...document.querySelectorAll('.settings-card')]
+            const card = cards.find((c) => c.querySelector('.settings-card-head-title')?.textContent === 'Global servers')
+            const btn = card?.querySelector('.settings-skills-toolbar .settings-skills-refresh')
+            if (!(btn instanceof HTMLElement)) return false
+            btn.click()
+            return true
+          })()`)
+          if (!(await waitForProbe(win, `document.querySelector('[data-mcp-form="add"]') !== null`, 5_000))) {
+            fail('ticket-89 stage: the add form never opened')
+          }
+          await js(`(() => {
+            const form = document.querySelector('[data-mcp-form="add"]')
+            if (!(form instanceof HTMLElement)) return false
+            const input = form.querySelector('input[aria-label="Server name"]')
+            if (!(input instanceof HTMLInputElement)) return false
+            const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+            setter.call(input, 'added-server')
+            input.dispatchEvent(new Event('input', { bubbles: true }))
+            return true
+          })()`)
+          await js(`(() => {
+            const form = document.querySelector('[data-mcp-form="add"]')
+            if (!(form instanceof HTMLElement)) return false
+            const input = form.querySelector('input[aria-label="Command"]')
+            if (!(input instanceof HTMLInputElement)) return false
+            const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+            setter.call(input, 'added-bin')
+            input.dispatchEvent(new Event('input', { bubbles: true }))
+            return true
+          })()`)
+          await js(`(() => {
+            const form = document.querySelector('[data-mcp-form="add"]')
+            if (!(form instanceof HTMLElement)) return false
+            const btn = [...form.querySelectorAll('button')].find((b) => b.textContent === 'Add server')
+            if (!(btn instanceof HTMLElement)) return false
+            btn.click()
+            return true
+          })()`)
+          let addOk = false
+          for (let waited = 0; waited < 5_000 && !addOk; waited += 100) {
+            addOk = existsSync(globalShared) && JSON.stringify(JSON.parse(readFileSync(globalShared, 'utf-8'))).includes('added-server')
+            if (!addOk) await new Promise((r) => setTimeout(r, 100))
+          }
+          if (!addOk) fail(`ticket-89 stage: the add never wrote ${globalShared}`)
+          const addedDoc = JSON.parse(readFileSync(globalShared, 'utf-8')) as { mcpServers?: Record<string, { command?: string }> }
+          if (addedDoc.mcpServers?.['added-server']?.command !== 'added-bin') fail(`ticket-89 stage: the added entry is malformed: ${readFileSync(globalShared, 'utf-8')}`)
+          log('mcp_add_global_ok', globalShared)
+
+          // ⑥ Edit the added server in place (the winning layer file).
+          await js(`(() => {
+            const row = document.querySelector('[data-mcp-server="added-server"]')
+            if (!(row instanceof HTMLElement)) return false
+            row.querySelector('button[aria-label="Edit added-server"]')?.click()
+            return true
+          })()`)
+          if (!(await waitForProbe(win, `document.querySelector('[data-mcp-form="edit"]') !== null`, 5_000))) {
+            fail('ticket-89 stage: the edit form never opened')
+          }
+          await js(`(() => {
+            const form = document.querySelector('[data-mcp-form="edit"]')
+            if (!(form instanceof HTMLElement)) return false
+            const input = form.querySelector('input[aria-label="Command"]')
+            if (!(input instanceof HTMLInputElement)) return false
+            const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+            setter.call(input, 'edited-bin')
+            input.dispatchEvent(new Event('input', { bubbles: true }))
+            return true
+          })()`)
+          await js(`(() => {
+            const form = document.querySelector('[data-mcp-form="edit"]')
+            if (!(form instanceof HTMLElement)) return false
+            const btn = [...form.querySelectorAll('button')].find((b) => b.textContent === 'Save changes')
+            if (!(btn instanceof HTMLElement)) return false
+            btn.click()
+            return true
+          })()`)
+          let editOk = false
+          for (let waited = 0; waited < 5_000 && !editOk; waited += 100) {
+            editOk = existsSync(globalShared) && JSON.stringify(JSON.parse(readFileSync(globalShared, 'utf-8'))).includes('edited-bin')
+            if (!editOk) await new Promise((r) => setTimeout(r, 100))
+          }
+          if (!editOk) fail(`ticket-89 stage: the edit never rewrote ${globalShared}`)
+          log('mcp_edit_global_ok')
+
+          // ⑦ Delete the added server (the confirmation names the file).
+          await js(`(() => {
+            const row = document.querySelector('[data-mcp-server="added-server"]')
+            if (!(row instanceof HTMLElement)) return false
+            row.querySelector('button[aria-label="Delete added-server"]')?.click()
+            return true
+          })()`)
+          if (!(await waitForProbe(win, `document.querySelector('.skill-confirm') !== null`, 5_000))) {
+            fail('ticket-89 stage: the delete confirmation never opened')
+          }
+          await js(`(() => {
+            const confirm = document.querySelector('.skill-confirm')
+            if (!(confirm instanceof HTMLElement)) return false
+            const btn = [...confirm.querySelectorAll('button')].find((b) => b.textContent === 'Remove server')
+            if (!(btn instanceof HTMLElement)) return false
+            btn.click()
+            return true
+          })()`)
+          let removeOk = false
+          for (let waited = 0; waited < 5_000 && !removeOk; waited += 100) {
+            removeOk = existsSync(globalShared) && !JSON.stringify(JSON.parse(readFileSync(globalShared, 'utf-8'))).includes('added-server')
+            if (!removeOk) await new Promise((r) => setTimeout(r, 100))
+          }
+          if (!removeOk) fail(`ticket-89 stage: the remove never cleaned ${globalShared}`)
+          log('mcp_remove_ok')
+
+          // ⑧ The per-layer open-config entries resolve to the layer files
+          // (the reveal IPC answers with the resolved target).
+          const layerReveal = (await js(`(() => {
+            const card = [...document.querySelectorAll('.settings-card')].find((c) => c.querySelector('.settings-card-head-title')?.textContent === 'Global servers')
+            if (!(card instanceof HTMLElement)) return null
+            const layer = [...card.querySelectorAll('.settings-mcp-layers .settings-mcp-layer')].find((b) => b.textContent?.includes('Global shared'))
+            if (!(layer instanceof HTMLElement)) return null
+            return layer.title
+          })()`)) as string | null
+          if (layerReveal === null || !layerReveal.includes(path.join(mcpHome, '.config', 'mcp', 'mcp.json'))) {
+            fail(`ticket-89 stage: the global shared layer entry points at ${String(layerReveal)}`)
+          }
+          log('mcp_layer_entries_ok')
+
+          // ⑨ THE OAUTH FLOW — auto-completion path. The shim `open`s the
+          // authorize URL, the curl inside it completes the browser leg
+          // (the paste dialog stays open — the callback wins the race, the
+          // TUI behavior), the adapter's callback server takes over, the
+          // token exchange runs against the mock (encrypted-file store in
+          // the sandbox — the real keychain is never touched), and the
+          // reconnect hits the mock MCP endpoint. PiCode surfaces notices.
+          writeFileSync(autocompleteFlag, '')
+          rmSync(oauthDir, { recursive: true, force: true })
+          rmSync(openLog, { force: true })
+          await js(`(() => {
+            const row = document.querySelector('[data-mcp-server="mock-oauth"]')
+            if (!(row instanceof HTMLElement)) return false
+            const btn = row.querySelector('button[aria-label="Authenticate mock-oauth"]')
+            if (!(btn instanceof HTMLElement)) return false
+            btn.click()
+            return true
+          })()`)
+          let authOk = false
+          for (let waited = 0; waited < 45_000 && !authOk; waited += 250) {
+            const status = (await js(`document.querySelector('[data-mcp-auth-status]')?.textContent ?? null`).catch(() => null)) as string | null
+            authOk = status !== null && status.includes('OAuth authentication successful')
+            if (!authOk) await new Promise((r) => setTimeout(r, 250))
+          }
+          if (!authOk) {
+            const diag = (await js(`document.querySelector('[data-mcp-auth-status]')?.textContent ?? '(no status)'`).catch(() => '(none)')) as string
+            fail(`ticket-89 stage: the OAuth auto-completion flow never succeeded (diag=${diag}; open log=${existsSync(openLog) ? readFileSync(openLog, 'utf-8') : '(empty)'})`)
+          }
+          // The browser-open assertion: the shim recorded the authorize URL.
+          const openLines = existsSync(openLog) ? readFileSync(openLog, 'utf-8').trim().split('\n') : []
+          if (!openLines.some((line) => line.includes(mockUrl))) {
+            fail(`ticket-89 stage: the authorize URL was never opened externally (log=${JSON.stringify(openLines)})`)
+          }
+          log('mcp_oauth_autocomplete_ok', mockUrl)
+
+          // ⑩ The manual paste fallback: a fresh flow where the shim only
+          // RECORDS (flag off — no browser leg) — the paste dialog appears,
+          // the smoke completes the authorize handshake itself, pastes the
+          // callback URL, and the flow finishes. The AUTO leg's credentials
+          // live in the keychain now — the adapter would short-circuit a
+          // re-authentication (tokens already valid, no flow, no dialog),
+          // so the smoke clears its own entry first (same cleanup the
+          // finally block performs).
+          rmSync(autocompleteFlag, { force: true })
+          rmSync(oauthDir, { recursive: true, force: true })
+          rmSync(openLog, { force: true })
+          try {
+            execFileSync('security', ['delete-generic-password', '-s', 'pi-mcp-adapter.oauth'], { stdio: 'pipe' })
+          } catch {
+            // nothing to clear
+          }
+          await js(`(() => {
+            const row = document.querySelector('[data-mcp-server="mock-oauth"]')
+            if (!(row instanceof HTMLElement)) return false
+            row.querySelector('button[aria-label="Authenticate mock-oauth"]')?.click()
+            return true
+          })()`)
+          if (!(await waitForProbe(win, `document.querySelector('[data-mcp-paste]') !== null`, 30_000))) {
+            const diag = (await js(`document.querySelector('[data-mcp-auth-status]')?.textContent ?? '(no status)'`).catch(() => '(none)')) as string
+            fail(`ticket-89 stage: the manual paste dialog never appeared (diag=${diag})`)
+          }
+          log('mcp_paste_dialog_ok')
+          // Complete the authorize handshake like a browser would (redirect
+          // to the localhost callback with a fresh code), paste the URL.
+          // The adapter's title carries the URL inside an OSC-8 terminal
+          // hyperlink (ESC]8;;URL ESC\ label ESC]8;; ESC\) — strip the
+          // escapes first, then take the http(s) lines.
+          const pasteUrl = (await js(`document.querySelector('[data-mcp-paste] .settings-mcp-paste-title')?.textContent ?? null`)) as string | null
+          if (pasteUrl === null) fail('ticket-89 stage: the paste dialog lost the authorization title')
+          const cleanTitle = pasteUrl!.replace(/\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)/g, '')
+          const urlCandidates = cleanTitle.split('\n').map((line) => line.trim()).filter((line) => line.startsWith('http://') || line.startsWith('https://'))
+          if (urlCandidates.length === 0) fail(`ticket-89 stage: no authorization URL in the paste dialog title (title=${JSON.stringify(pasteUrl)})`)
+          const callbackUrl = await completeAuthorize(urlCandidates[urlCandidates.length - 1]!, mockUrl)
+          await js(`(() => {
+            const paste = document.querySelector('[data-mcp-paste]')
+            if (!(paste instanceof HTMLElement)) return false
+            const input = paste.querySelector('input[aria-label="Paste the OAuth callback URL"]')
+            if (!(input instanceof HTMLInputElement)) return false
+            const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+            setter.call(input, ${JSON.stringify(callbackUrl)})
+            input.dispatchEvent(new Event('input', { bubbles: true }))
+            return true
+          })()`)
+          await js(`(() => {
+            const paste = document.querySelector('[data-mcp-paste]')
+            if (!(paste instanceof HTMLElement)) return false
+            const btn = [...paste.querySelectorAll('button')].find((b) => b.textContent === 'Complete')
+            if (!(btn instanceof HTMLElement)) return false
+            btn.click()
+            return true
+          })()`)
+          let manualOk = false
+          for (let waited = 0; waited < 45_000 && !manualOk; waited += 250) {
+            const status = (await js(`document.querySelector('[data-mcp-auth-status]')?.textContent ?? null`).catch(() => null)) as string | null
+            manualOk = status !== null && status.includes('OAuth authentication successful')
+            if (!manualOk) await new Promise((r) => setTimeout(r, 250))
+          }
+          if (!manualOk) {
+            const diag = (await js(`document.querySelector('[data-mcp-auth-status]')?.textContent ?? '(no status)'`).catch(() => '(none)')) as string
+            fail(`ticket-89 stage: the manual paste flow never succeeded (diag=${diag})`)
+          }
+          log('mcp_oauth_manual_paste_ok')
+
+          // ⑪ RED LINES: the external host-tool configs are byte-identical;
+          // the OAuth tokens live ONLY in the adapter's own storage (under
+          // MCP_OAUTH_DIR) — zero token material in ANY PiCode-owned file.
+          for (const [key, file] of Object.entries(externalFiles)) {
+            if (readFileSync(file, 'utf-8') !== externalBefore[key]!) {
+              fail(`ticket-89 stage: the external host config ${file} was written — the red line is broken`)
+            }
+          }
+          log('mcp_external_zero_write_ok')
+          const picodeSettingsFile = path.join(app.getPath('userData'), 'picode-settings.json')
+          const picodeOwned = [
+            existsSync(picodeSettingsFile) ? readFileSync(picodeSettingsFile, 'utf-8') : '',
+            existsSync(piGlobal) ? readFileSync(piGlobal, 'utf-8') : '',
+            existsSync(projectShared) ? readFileSync(projectShared, 'utf-8') : '',
+            existsSync(projectPi) ? readFileSync(projectPi, 'utf-8') : ''
+          ]
+          if (picodeOwned.some((content) => content.includes('"access_token"') || content.includes('"refresh_token"'))) {
+            fail('ticket-89 stage: OAuth token material leaked into a PiCode-owned file')
+          }
+          // The credentials' home is the ADAPTER's own store — the OS
+          // keychain (service pi-mcp-adapter.oauth). PiCode-owned files
+          // must carry zero token material (checked above), and the entry
+          // the flow created is the stage's own artifact — removed in
+          // cleanup (the mock server is already dead).
+          if (!keychainHasEntry()) fail('ticket-89 stage: the OAuth credentials never reached the adapter/keychain store (the flow was not real)')
+          log('mcp_credentials_zero_leak_ok')
+
+          // Leave the app on the workspace: Escape closes the settings
+          // window (the skills/packages stages' convention) — the later
+          // stages probe the sidebar, which the settings view replaces.
+          await js(`(() => {
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+            return true
+          })()`)
+          if (!(await waitForProbe(win, `document.querySelector('.settings-shell') === null`, 5_000))) {
+            fail('ticket-89 stage: Escape never closed the settings window')
+          }
+        })
+      } finally {
+        // PATH + env hygiene for the later stages.
+        process.env['PATH'] = realPath
+        delete process.env['MCP_OAUTH_DIR']
+        delete process.env['MCP_OAUTH_CALLBACK_PORT']
+        delete process.env['PI_MCP_ADAPTER_DISABLE_AUTH_CACHE']
+        if (previousOffline === undefined) delete process.env['PI_OFFLINE']
+        else process.env['PI_OFFLINE'] = previousOffline
+        process.env['PICODE_MCP_HOME'] = previousMcpHome
+        // The mock tokens the adapter wrote into the keychain are the
+        // stage's own artifact — remove them (only when the stage CREATED
+        // the entry; a pre-existing operator entry is never touched).
+        if (!keychainBefore && keychainHasEntry()) {
+          try {
+            execFileSync('security', ['delete-generic-password', '-s', 'pi-mcp-adapter.oauth'], { stdio: 'pipe' })
+          } catch {
+            // best-effort cleanup
+          }
+        }
+        // Same for an encrypted-store account dir the stage may have
+        // created in the real agent dir (per-run keys make it unreadable).
+        const staleEncryptedAccount = path.join(homedir(), '.pi', 'agent', 'mcp-oauth-encrypted', mockAccount)
+        if (existsSync(staleEncryptedAccount)) rmSync(staleEncryptedAccount, { recursive: true, force: true })
+        stopMockOAuth()
+        rmSync(mcpProject, { recursive: true, force: true })
+        rmSync(oauthDir, { recursive: true, force: true })
+        rmSync(mcpBase, { recursive: true, force: true })
+      }
+      log('settings_mcp_done')
+    }
+
     // ---- ticket 73: the New Task dead-end fix — from the new-task empty
     // state, ANY openable session-row click must land the main zone on the
     // target session. The already-focused and in-app branches used to leave
@@ -9479,4 +10059,189 @@ function readSettingsTolerant(file: string): { skills?: string[] } {
   } catch {
     return {}
   }
+}
+
+// ---- ticket 89: the mock OAuth authorization server ----------------------
+// A real OAuth2 authorization-code flow against a throwaway HTTP server:
+// protected-resource + authorization-server metadata, dynamic client
+// registration, authorize → 302 to the adapter's localhost callback, token
+// exchange (code + refresh grants), and a minimal streamable-HTTP MCP
+// endpoint for the adapter's post-auth reconnect. PKCE params are accepted
+// but not verified — the flow shape is what the smoke proves.
+
+let mockOAuthServer: http.Server | null = null
+let mockOAuthBase = ''
+const issuedCodes = new Map<string, string>()
+const issuedTokens = new Set<string>()
+
+function mockHandle(req: http.IncomingMessage, res: http.ServerResponse): void {
+  const url = new URL(req.url ?? '/', mockOAuthBase)
+  console.log(`SMOKE mock-oauth ${req.method} ${url.pathname}`)
+  const cors = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': '*'
+  }
+  const json = (code: number, body: unknown): void => {
+    res.writeHead(code, { 'Content-Type': 'application/json', ...cors })
+    res.end(JSON.stringify(body))
+  }
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, cors)
+    res.end()
+    return
+  }
+  if (url.pathname === '/.well-known/oauth-protected-resource') {
+    json(200, { resource: mockUrl(), authorization_servers: [mockUrl()] })
+    return
+  }
+  if (url.pathname === '/.well-known/oauth-authorization-server') {
+    json(200, {
+      issuer: mockUrl(),
+      authorization_endpoint: `${mockUrl()}/authorize`,
+      token_endpoint: `${mockUrl()}/token`,
+      registration_endpoint: `${mockUrl()}/register`,
+      response_types_supported: ['code'],
+      grant_types_supported: ['authorization_code', 'refresh_token'],
+      token_endpoint_auth_methods_supported: ['none'],
+      code_challenge_methods_supported: ['S256']
+    })
+    return
+  }
+  if (url.pathname === '/register' && req.method === 'POST') {
+    json(201, { client_id: `mock-client-${Date.now()}`, client_id_issued_at: Math.floor(Date.now() / 1000), token_endpoint_auth_method: 'none', redirect_uris: [], grant_types: ['authorization_code', 'refresh_token'], response_types: ['code'] })
+    return
+  }
+  if (url.pathname === '/authorize') {
+    const redirectUri = url.searchParams.get('redirect_uri') ?? ''
+    const state = url.searchParams.get('state') ?? ''
+    const code = `code-${randomUUID()}`
+    issuedCodes.set(code, url.searchParams.get('client_id') ?? '')
+    const redirect = `${redirectUri}${redirectUri.includes('?') ? '&' : '?'}code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`
+    res.writeHead(302, { Location: redirect, ...cors })
+    res.end()
+    return
+  }
+  if (url.pathname === '/token' && req.method === 'POST') {
+    void readBody(req).then((body) => {
+      const params = new URLSearchParams(body)
+      if (params.get('grant_type') === 'authorization_code') {
+        const code = params.get('code') ?? ''
+        if (!issuedCodes.has(code)) {
+          json(400, { error: 'invalid_grant' })
+          return
+        }
+        issuedCodes.delete(code)
+        const access = `access-${randomUUID()}`
+        const refresh = `refresh-${randomUUID()}`
+        issuedTokens.add(access)
+        json(200, { access_token: access, token_type: 'Bearer', expires_in: 3600, refresh_token: refresh, scope: params.get('scope') ?? '' })
+        return
+      }
+      if (params.get('grant_type') === 'refresh_token') {
+        const access = `access-${randomUUID()}`
+        issuedTokens.add(access)
+        json(200, { access_token: access, token_type: 'Bearer', expires_in: 3600 })
+        return
+      }
+      json(400, { error: 'unsupported_grant_type' })
+    })
+    return
+  }
+  if (url.pathname === '/mcp') {
+    void readBody(req)
+      .then((body) => {
+        let message: { id?: unknown; method?: string } = {}
+        try {
+          message = JSON.parse(body) as { id?: unknown; method?: string }
+        } catch {
+          json(400, { error: 'parse error' })
+          return
+        }
+        if (message.method === 'initialize') {
+          json(200, {
+            jsonrpc: '2.0',
+            id: message.id ?? null,
+            result: {
+              protocolVersion: '2025-06-18',
+              capabilities: { tools: {} },
+              serverInfo: { name: 'picode-mock-mcp', version: '1.0.0' }
+            }
+          })
+          return
+        }
+        if (message.method === 'tools/list') {
+          json(200, { jsonrpc: '2.0', id: message.id ?? null, result: { tools: [] } })
+          return
+        }
+        if (message.method?.startsWith('notifications/')) {
+          res.writeHead(202, cors)
+          res.end()
+          return
+        }
+        json(400, { jsonrpc: '2.0', id: message.id ?? null, error: { code: -32601, message: 'Method not found' } })
+      })
+    return
+  }
+  res.writeHead(404, cors)
+  res.end()
+}
+
+function mockUrl(): string {
+  return mockOAuthBase
+}
+
+function readBody(req: http.IncomingMessage): Promise<string> {
+  return new Promise((resolve) => {
+    let data = ''
+    req.on('data', (chunk) => {
+      data += String(chunk)
+    })
+    req.on('end', () => resolve(data))
+  })
+}
+
+/** Boot the mock OAuth server; resolves its base URL. */
+function listenMockOAuth(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = http.createServer(mockHandle)
+    server.on('error', (err) => reject(err))
+    server.listen(0, '127.0.0.1', () => {
+      mockOAuthServer = server
+      const address = server.address() as AddressInfo
+      mockOAuthBase = `http://127.0.0.1:${address.port}`
+      resolve(address.port)
+    })
+  })
+}
+
+function stopMockOAuth(): void {
+  mockOAuthServer?.close()
+  mockOAuthServer = null
+  mockOAuthBase = ''
+  issuedCodes.clear()
+  issuedTokens.clear()
+}
+
+/** Complete the authorize leg like a browser would: GET the authorization
+ * URL and capture the localhost-callback redirect (the paste string). */
+async function completeAuthorize(authorizationUrl: string, base: string): Promise<string> {
+  const response = await fetch(authorizationUrl, { redirect: 'manual' })
+  const location = response.headers.get('location')
+  if (response.status !== 302 || location === null) {
+    throw new Error(`the mock authorize endpoint did not redirect (status ${response.status})`)
+  }
+  return new URL(location, base).toString()
+}
+
+/** A free localhost port for the adapter's callback server. */
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = http.createServer()
+    server.on('error', reject)
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address() as AddressInfo
+      server.close(() => resolve(address.port))
+    })
+  })
 }

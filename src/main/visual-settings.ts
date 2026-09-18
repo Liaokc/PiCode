@@ -226,6 +226,14 @@ export function startSettingsVisualIfEnabled(getWindow: () => BrowserWindow | nu
       await sleep(400)
       await capture(win, 's6-settings-packages')
 
+      // 7. MCP section (ticket 89): the fake-settings fixture serves the
+      // deterministic layer report — global/project dual cards, winner
+      // badges, an OAuth server, a disabled row, a layered override, the
+      // read-only .agents row and the per-layer open-config chips.
+      if (!(await clickNavItem(wc, 'MCP'))) throw new Error('settings visual: MCP nav item missing')
+      await sleep(400)
+      await capture(win, 's7-settings-mcp')
+
       console.log('VISUAL settings done')
       app.exit(0)
     } catch (err) {

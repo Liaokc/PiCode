@@ -14,9 +14,10 @@ import UsagePage from '../usage/UsagePage'
 import GeneralSection from './settings/GeneralSection'
 import AppearanceSection from './settings/AppearanceSection'
 import ModelsSection from './settings/ModelsSection'
-import { BarChartIcon, BoxesIcon, ChevronLeftIcon, CubeIcon, PaletteIcon, SlidersIcon, SparklesIcon } from './icons'
+import { BarChartIcon, BoxesIcon, ChevronLeftIcon, CubeIcon, PaletteIcon, PlugIcon, SlidersIcon, SparklesIcon } from './icons'
 import SkillsSection from './settings/SkillsSection'
 import PackagesSection from './settings/PackagesSection'
+import McpSection from './settings/McpSection'
 
 interface SettingsWindowProps {
   /** Shell-level actions (back to workspace). */
@@ -32,6 +33,8 @@ interface SettingsWindowProps {
   /** Ticket 63: the cwd scoping the Skills enumeration — the focused
    * session's workspace; null = the home directory's global face. */
   skillsCwd: string | null
+  /** The focused session's id (ticket 89: the MCP OAuth flow targets its host). */
+  focusedSessionId: string | null
   /** Toast surface (ticket 64: Packages op failure toasts). */
   onNotify: (message: string, level: 'info' | 'error') => void
 }
@@ -48,6 +51,8 @@ function SectionIcon({ section }: { section: SettingsSection }): JSX.Element {
       return <SparklesIcon />
     case 'packages':
       return <BoxesIcon />
+    case 'mcp':
+      return <PlugIcon />
     case 'usage':
       return <BarChartIcon />
   }
@@ -69,6 +74,7 @@ export default function SettingsWindow({
   onSetPreferences,
   onRefreshAuth,
   skillsCwd,
+  focusedSessionId,
   onNotify
 }: SettingsWindowProps): JSX.Element {
   const [ui, dispatch] = useReducer(settingsUiReducer, undefined, initialSettingsUiState)
@@ -120,6 +126,13 @@ export default function SettingsWindow({
         )}
         {ui.section === 'skills' && <SkillsSection cwd={skillsCwd} />}
         {ui.section === 'packages' && <PackagesSection cwd={skillsCwd} onNotify={onNotify} />}
+        {ui.section === 'mcp' && (
+          <McpSection
+            cwd={skillsCwd}
+            focusedSessionId={focusedSessionId}
+            onNotify={onNotify}
+          />
+        )}
         {ui.section === 'usage' && (
           <UsagePage
             snapshot={snapshot}

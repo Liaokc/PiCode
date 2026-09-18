@@ -170,6 +170,10 @@ _Avoid_: 设置页面（设置窗是完整窗口态，非主窗内嵌页）；�
 设置窗的包管理面（票 64）：全局层（~/.pi/agent/settings.json 的 packages 数组）与项目级层（聚焦 Task cwd 的 .pi/settings.json）同套管理——列表（npm:/git:/本地路径来源徽标 + 组件计数 extensions/skills/prompts/themes）、安装（来源输入 + 拉取进行态 + 失败 toast）、移除（确认框）、包级启停（写 pi config 同格式：关 = 包条目四过滤数组全 `[]`——SDK 明文「load none of that type」；开 = 摘空数组并回退字符串形式）。安装/移除走 Pi 本体包管理器（op host 内 DefaultPackageManager，与 `pi install/remove` 同代码路径，本地源相对化落盘同一落点）；**项目信任只读展示**：读 trust.json 保存决策 + 无决策时按 defaultProjectTrust 派生（ask/never → untrusted），untrusted 横幅明示「项目资源未被 Pi 加载」且项目动作锁定；信任决策本身留在 Pi 的 /trust，PiCode 零 trust.json 写入。安全文案沿用 Pi 官方口吻（packages run with full system access）。空态如实（操作者 packages 为空亦是首用户形态）。
 _Avoid_: 插件（ZCode 的 plugin 语义绑死其市场体系，不借用）；市场（PiCode 不做发现/市场面）；信任管理（PiCode 只读展示，不代写决策）。
 
+**MCP 节（MCP Section）**：
+设置窗的 MCP 服务器管理面（票 89，与 Skills/Packages 同级）：pi-mcp-adapter 的多层配置面——**全局服务器 / 项目服务器双卡**（Skills 双卡同型），每行 = 有效配置合并视图（adapter 优先级序逐字段合并 + 胜出来源徽标 + 遮蔽层数徽标 + OAuth/Disabled 徽标）；启停写项目 Pi 覆盖层 `.pi/mcp.json` 的 disabled 旗标（adapter `/mcp enable|disable` 同语义——只写旗标、定义零复制）；增改删写 `/mcp setup` 的两个正规目标（项目 `.mcp.json` / 用户全局共享 `~/.config/mcp/mcp.json`），edit/delete 落胜出层自有文件；OAuth 授权流（server 行 Authenticate → 会话 host 桥触发 adapter 自己的 /mcp-auth → 系统浏览器 → localhost 回调自动完成；**手动粘贴 callback URL 兑底**；凭据全程只在 adapter/系统钥匙串——PiCode 零凭据读写）；每层打开配置文件入口；外部 host 工具配置（Cursor/Claude 等）= 只读兼容发现、绝不写，`~/.agents` 跨工具共享文件胜出 = 只读拒写。状态投影（connected/needs-auth 等）另立票 96。
+_Avoid_: 插件（ZCode 市场语义）；服务器管理（含义过宽）；状态徽标（实时状态属票 96，本节徽标仅配置派生）。
+
 **图卡（Diagram Card）**：
 mermaid 围栏闭合且解析成功后渲染的图形卡（票 59，ZCode streamdown 管线同型）：小写 mono mermaid 标签头 + 右上操作钮组（download SVG/PNG/MMD 下拉、copy 源码、fullscreen）+ 渲染体 panZoom（滚轮缩放、拖拽平移、角部缩放控件）；fullscreen 为根层浮层、Esc 退；渲染主题用 mermaid 库默认浅色（深色全应用范围外）。**操作者批准的 ZCode 偏离**：ZCode 取证为 sticky 钮组，但卡片被转录滚动卷走时 sticky 头行悬停叠在自家图内容上——操作者拍板头行随卡滚走、不钉住。流式未闭合（mermaid 需全文）与解析失败均回退为代码卡——lang 标签照常、不弹错误 toast；mermaid 依赖按图型懒加载分片（动态 import），主包零增量。
 _Avoid_: 代码卡（回退态才是代码卡）；预览（是正式渲染非浮层预览）。

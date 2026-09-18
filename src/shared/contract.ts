@@ -95,7 +95,7 @@ export interface SlashCommandItem {
  * most recently announced session). */
 export type SessionCommand = Extract<
   ParentToHost,
-  { type: 'prompt' | 'abort_turn' | 'steer_prompt' | 'follow_up_prompt' | 'clear_queue' | 'set_model' | 'set_thinking_level' | 'set_access_mode' | 'approve_tool' | 'deny_tool' | 'compact_session' | 'list_files' | 'navigate_tree' | 'fork_session' | 'set_session_label' | 'request_tree' | 'get_branch' }
+  { type: 'prompt' | 'abort_turn' | 'steer_prompt' | 'follow_up_prompt' | 'clear_queue' | 'set_model' | 'set_thinking_level' | 'set_access_mode' | 'approve_tool' | 'deny_tool' | 'compact_session' | 'list_files' | 'navigate_tree' | 'fork_session' | 'set_session_label' | 'request_tree' | 'get_branch' | 'mcp_auth_start' | 'mcp_auth_input_resolve' }
 >
 
 /** Renderer → agent host system. */
@@ -149,6 +149,17 @@ export type ParentToHost =
   /** Ask for the git branch of the session workspace (ticket 21, READ-ONLY:
    * no checkout, no ref writes — display only). Answered with `branch_info`. */
   | { type: 'get_branch' }
+  /** Trigger the MCP OAuth authorization flow for one server in THIS
+   * session's host (ticket 89, additive): the host runs the adapter's own
+   * `/mcp-auth <server>` command — the browser opens and the localhost
+   * callback completes inside the adapter; PiCode never touches
+   * credentials. The manual-paste fallback rides `mcp_auth_input_required`
+   * / `mcp_auth_input_resolve`; the flow terminates with
+   * `mcp_auth_completed`. */
+  | { type: 'mcp_auth_start'; serverName: string }
+  /** Renderer's manual-paste answer to `mcp_auth_input_required` (ticket 89):
+   * the pasted callback URL, or null when cancelled/aborted. */
+  | { type: 'mcp_auth_input_resolve'; requestId: string; value: string | null }
 
 /** Supervisor → host process lifecycle control (never sent by the renderer). */
 export type HostControlCommand = { type: 'shutdown' }
@@ -262,6 +273,19 @@ export type SessionScopedEvent =
   | { type: 'queue_update'; steering: string[]; followUp: string[] }
   /** Non-transcript notice (compaction progress etc.) for the toast area. */
   | { type: 'host_notice'; level: 'info' | 'error'; message: string }
+  // ---- ticket 89: MCP OAuth bridge (additive; the flow rides the adapter's
+  // own `/mcp-auth` command — credentials never enter PiCode) ----
+  /** The adapter's flow needs the manual callback-URL paste (gateway
+   * scenario, or the operator chooses the fallback): the settings window
+   * shows the dialog with `title` verbatim (it carries the authorization
+   * URL) and answers via `mcp_auth_input_resolve`. */
+  | { type: 'mcp_auth_input_required'; requestId: string; serverName: string; title: string }
+  /** A progress/error notice emitted by the adapter DURING an in-flight
+   * OAuth flow (notices outside a flow are never relayed). */
+  | { type: 'mcp_auth_notice'; serverName: string; level: 'info' | 'warning' | 'error'; message: string }
+  /** The flow terminated: `ok` = no error-level notice arrived during the
+   * flow; `notices` carries the relayed tail for the status line. */
+  | { type: 'mcp_auth_completed'; serverName: string; ok: boolean; notices: Array<{ level: 'info' | 'warning' | 'error'; message: string }> }
   /** Supervisor-synthesized: this session's host moved on to a DIFFERENT
    * session (in-host fork re-announcement). The session no longer has a
    * backing host; its file remains and can be resumed (ticket 20). */

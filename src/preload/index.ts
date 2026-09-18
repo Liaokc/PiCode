@@ -10,6 +10,7 @@ import type { AuthProbeReport } from '../shared/auth-status'
 import type { AppPreferences } from '../shared/preferences'
 import type { NewTaskCommandCatalog } from '../shared/new-task-commands'
 import type { SkillsReport } from '../shared/skills-management'
+import type { McpLayerReport } from '../shared/mcp-management'
 import type { KnownProject } from '../shared/sessions/group'
 import type {
   PackagesOpOutcome,
@@ -183,7 +184,34 @@ contextBridge.exposeInMainWorld('picode', {
       return () => {
         ipcRenderer.removeListener('settings:packages-progress', wrapped)
       }
-    }
+    },
+    /** MCP-section layer report for one directory (ticket 89; null = the
+     * global face — no project layers). The service reads every layer file
+     * fresh; no caching. */
+    listMcpConfig: (cwd: string | null): Promise<McpLayerReport> =>
+      ipcRenderer.invoke('settings:mcp', cwd),
+    /** Enable/disable one server — writes ONLY the disabled flag into the
+     * project Pi override (adapter /mcp enable|disable semantics). */
+    toggleMcpServer: (serverName: string, disabled: boolean, cwd: string | null): Promise<{ ok: boolean; path?: string; error?: string }> =>
+      ipcRenderer.invoke('settings:mcp-toggle', serverName, disabled, cwd),
+    /** Add/edit one server through the form model. `mode: 'add'` writes
+     * the chosen /mcp setup target (project/global shared); 'edit' rewrites
+     * the winning layer's own file. */
+    writeMcpServer: (
+      mode: 'add' | 'edit',
+      form: unknown,
+      target: 'project' | 'global',
+      cwd: string | null,
+      preserve?: unknown
+    ): Promise<{ ok: boolean; path?: string; error?: string }> =>
+      ipcRenderer.invoke('settings:mcp-write', mode, form, target, cwd, preserve ?? {}),
+    /** Delete one server from the layer that owns its winning definition. */
+    removeMcpServer: (serverName: string, cwd: string | null): Promise<{ ok: boolean; path?: string; error?: string }> =>
+      ipcRenderer.invoke('settings:mcp-remove', serverName, cwd),
+    /** Read-only Finder reveal of one layer's config file (or its nearest
+     * existing ancestor). Resolves the revealed path for testability. */
+    revealMcpLayer: (layerPath: string, cwd: string | null): Promise<{ ok: boolean; target: string | null }> =>
+      ipcRenderer.invoke('settings:mcp-reveal', layerPath, cwd)
   },
   review: {
     /** Collect a workspace-vs-HEAD diff snapshot for the given directory. */
