@@ -5,7 +5,7 @@ import rehypeHighlight from 'rehype-highlight'
 import Tooltip from './Tooltip'
 import DiagramCard from './DiagramCard'
 import { downloadBlob } from './download'
-import { CheckIcon, CloseIcon, CodeIcon, CopyIcon, DownloadIcon, ExpandArrowsIcon, EyeIcon, WrapTextIcon } from './icons'
+import { CheckIcon, CodeIcon, CopyIcon, DownloadIcon, WrapTextIcon } from './icons'
 import {
   blockKey,
   codeBody,
@@ -32,13 +32,16 @@ import {
  *
  * Block chrome (ticket 16): fenced code blocks render as cards (language
  * label — always present, untagged fences show 'text' per ticket 50 — plus
- * wrap toggle + copy) and tables as containers with copy / preview /
- * expand controls above them, matching the ZCode baseline. Ticket 60
- * completes the ZCode-evidenced family: code cards gain always-on line
- * numbers (`noLineNumbers` meta off-switch, `startLine=N` count shift) and
- * a download button; tables gain copy-as-CSV/TSV. The overrides are
+ * wrap toggle + copy) and tables as containers with a copy family above
+ * them, matching the ZCode baseline. Ticket 60 completes the
+ * ZCode-evidenced family: code cards gain always-on line numbers
+ * (`noLineNumbers` meta off-switch, `startLine=N` count shift) and a
+ * download button; tables gain copy-as-CSV/TSV. Ticket 87 then shrinks the
+ * table tools to that three-button copy family — tables render at natural
+ * height inside the transcript's own scroll (the preview overlay and the
+ * expand toggle became dead UI and are gone). The overrides are
  * module-scope so streaming deltas never change component identity, and all
- * per-block button state (copied ✓, wrapped, expanded) is lifted into a
+ * per-block button state (copied ✓, wrapped) is lifted into a
  * context keyed by the block's start position — a re-parse that remounts a
  * card cannot flicker the buttons (see `blockKey`). Every consumer shares the
  * chrome (ticket 32: the preview reader adopted it too — one grammar of
@@ -52,15 +55,13 @@ const COPIED_FEEDBACK_MS = 1500
 export interface BlockUiState {
   copied: ReadonlySet<string>
   wrapped: ReadonlySet<string>
-  expanded: ReadonlySet<string>
   markCopied: (key: string) => void
   toggleWrapped: (key: string) => void
-  toggleExpanded: (key: string) => void
 }
 
 const BlockUiContext: Context<BlockUiState | null> = createContext<BlockUiState | null>(null)
 
-/** Flip one key in a state set (wrap / expand toggles share the shape). */
+/** Flip one key in a state set (the wrap toggle). */
 function toggleInSet(set: Dispatch<SetStateAction<ReadonlySet<string>>>, key: string): void {
   set((prev) => {
     const next = new Set(prev)
@@ -94,7 +95,6 @@ async function copyWithFeedback(ui: BlockUiState, stateKey: string | null, text:
 function useBlockUiStore(): BlockUiState {
   const [copied, setCopied] = useState<ReadonlySet<string>>(new Set())
   const [wrapped, setWrapped] = useState<ReadonlySet<string>>(new Set())
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
   const copiedTimers: RefObject<Map<string, ReturnType<typeof setTimeout>>> = useRef(new Map())
 
   const markCopied = useCallback((key: string): void => {
@@ -119,11 +119,7 @@ function useBlockUiStore(): BlockUiState {
     toggleInSet(setWrapped, key)
   }, [])
 
-  const toggleExpanded = useCallback((key: string): void => {
-    toggleInSet(setExpanded, key)
-  }, [])
-
-  return { copied, wrapped, expanded, markCopied, toggleWrapped, toggleExpanded }
+  return { copied, wrapped, markCopied, toggleWrapped }
 }
 
 interface PreProps extends ExtraProps {
@@ -312,29 +308,20 @@ interface TableProps extends ExtraProps {
 }
 
 /**
- * Table container: always-visible copy family / preview / expand controls
- * above the card. Ticket 60 completes the ZCode copyTable family — copy
- * (markdown), copy as CSV, copy as TSV — with preview and expand untouched
- * (zero regression); each copy button reports its own ✓.
+ * Table container: the always-visible three-button copy family above the
+ * card — copy (markdown), copy as CSV, copy as TSV; each button reports its
+ * own ✓. Ticket 87 (ZCode z-table-hover evidence): the table body renders at
+ * its natural height inside the transcript's own scroll flow — the 360px
+ * cap, the expand toggle that lifted it, and the preview overlay are gone
+ * (full display made both dead UI); wide tables keep the container's
+ * horizontal scroll.
  */
 function TableCard({ node, children }: TableProps): JSX.Element {
   const ui = useBlockUi()
   const key = blockKey(node)
-  const [previewing, setPreviewing] = useState(false)
   const copied = key !== null && ui.copied.has(key)
   const copiedCsv = key !== null && ui.copied.has(`${key}:csv`)
   const copiedTsv = key !== null && ui.copied.has(`${key}:tsv`)
-  const expanded = key !== null && ui.expanded.has(key)
-
-  // Escape closes the preview from anywhere (the backdrop never holds focus).
-  useEffect(() => {
-    if (!previewing) return
-    function onKey(event: KeyboardEvent): void {
-      if (event.key === 'Escape') setPreviewing(false)
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [previewing])
 
   async function copy(): Promise<void> {
     await copyWithFeedback(ui, key, tableToMarkdown(node))
@@ -375,73 +362,13 @@ function TableCard({ node, children }: TableProps): JSX.Element {
             {copiedTsv ? <CheckIcon size={13} className="md-copy-copied" /> : 'TSV'}
           </button>
         </Tooltip>
-        <Tooltip label={previewing ? 'Close table preview' : 'Preview table'}>
-          <button
-            type="button"
-            className="md-block-btn"
-            aria-label={previewing ? 'Close table preview' : 'Preview table'}
-            aria-expanded={previewing}
-            onClick={() => setPreviewing((prev) => !prev)}
-          >
-            <EyeIcon size={13} />
-          </button>
-        </Tooltip>
-        <Tooltip label={expanded ? 'Collapse table' : 'Expand table'}>
-          <button
-            type="button"
-            className={expanded ? 'md-block-btn md-block-btn-on' : 'md-block-btn'}
-            aria-label={expanded ? 'Collapse table' : 'Expand table'}
-            aria-pressed={expanded}
-            disabled={key === null}
-            onClick={() => {
-              if (key !== null) ui.toggleExpanded(key)
-            }}
-          >
-            <ExpandArrowsIcon size={13} />
-          </button>
-        </Tooltip>
       </div>
-      <div className={expanded ? 'md-table-scroll md-table-scroll-expanded' : 'md-table-scroll'}>
+      <div className="md-table-scroll">
         {/* react-markdown replaces the table element itself — its children are
           bare thead/tbody, so the container must re-wrap them in a real
           <table> (anonymous-table fixup would otherwise fake the layout). */}
         <table>{children}</table>
       </div>
-      {previewing && (
-        <div className="md-table-preview-backdrop" role="presentation" onClick={() => setPreviewing(false)}>
-          <div
-            className="md-table-preview"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Table preview"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {/* ZCode preview shape (operator screenshot 2026-08-31): title +
-              muted subtitle, then the SAME rounded scroll container the
-              transcript uses — no divider bar between head and body. */}
-            <div className="md-table-preview-head">
-              <div className="md-table-preview-heading">
-                <span className="md-table-preview-title">Table preview</span>
-                <span className="md-table-preview-subtitle">View the table in a larger, scrollable view.</span>
-              </div>
-              <button
-                type="button"
-                className="md-block-btn"
-                aria-label="Close table preview"
-                autoFocus
-                onClick={() => setPreviewing(false)}
-              >
-                <CloseIcon size={14} />
-              </button>
-            </div>
-            <div className="md-table-preview-body">
-              <div className="md-table-scroll md-table-scroll-expanded">
-                <table>{children}</table>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

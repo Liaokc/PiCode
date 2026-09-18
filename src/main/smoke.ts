@@ -6549,12 +6549,14 @@ export function startSmokeIfEnabled(
     // injection, no model call) seeded with three code fences — a plain
     // typescript fence (the default-on gutter), a `js startLine=41` slice
     // (the shifted count) and a `text noLineNumbers` block (the gutter off
-    // switch) — plus a GFM table for the completed copyTable family.
-    // Assertions: the per-card gutter projection (values included), the
-    // download button on every code card + a REAL download through
-    // will-download carrying the language-derived filename, the copy family
-    // payloads through the real pasteboard (markdown zero-regression + CSV
-    // + TSV), and preview/expand still working. ----
+    // switch) — plus a GFM table for the completed copyTable family and a
+    // wide token table for the ticket-87 full display. Assertions: the
+    // per-card gutter projection (values included), the download button on
+    // every code card + a REAL download through will-download carrying the
+    // language-derived filename, the copy family payloads through the real
+    // pasteboard (markdown zero-regression + CSV + TSV), and the ticket-87
+    // full display (natural height, no internal vertical scroll; wide
+    // tables keep their horizontal scroll). ----
     log('codecard_table_start')
     {
       const TS_CODE = [
@@ -6566,11 +6568,20 @@ export function startSmokeIfEnabled(
       const JS_CODE = ['const gate = (n) => n > 3', 'const done = gate(4)', 'console.log(done)'].join('\n')
       const PLAIN_CODE = ['2026-09-10 09:00 boot', '2026-09-10 09:01 ready'].join('\n')
       const TABLE_MD = ['| Name | Note |', '| --- | --- |', '| pi, code | say "hi" |', '| plain | two words |'].join('\n')
+      // Ticket 87: unbreakable tokens force the wide table's min-content
+      // width (~1750px) past any pane width the window can give — the
+      // horizontal-scroll preservation must be provable, not lucky.
+      const WIDE_TABLE_MD = [
+        '| Metric | column_a_' + 'a'.repeat(80) + ' | column_b_' + 'b'.repeat(80) + ' |',
+        '| --- | --- | --- |',
+        '| rows | ' + 'x'.repeat(80) + ' | ' + 'y'.repeat(80) + ' |'
+      ].join('\n')
       const ANSWER_TEXT = [
         'The registrar:\n\n```typescript\n' + TS_CODE + '\n```\n\n',
         'A file slice keeps its true numbering:\n\n```js startLine=41\n' + JS_CODE + '\n```\n\n',
         'A model-intended minimal block:\n\n```text noLineNumbers\n' + PLAIN_CODE + '\n```\n\n',
-        'And the table:\n\n' + TABLE_MD + '\n'
+        'And the table:\n\n' + TABLE_MD + '\n\n',
+        'A wide table keeps its horizontal scroll:\n\n' + WIDE_TABLE_MD + '\n'
       ].join('')
       // The exact copy-family payloads (rawCellText flattening + RFC 4180
       // quoting; a quote-bearing field quotes in TSV too).
@@ -6630,9 +6641,8 @@ export function startSmokeIfEnabled(
         }
         log('codecard_linenos_ok')
 
-        // ② The table tools row: the completed copyTable family — the
-        // markdown copy / preview / expand trio zero-regressed, CSV + TSV
-        // added.
+        // ② The table tools row: ticket 87 pruned it to the copy family —
+        // markdown / CSV / TSV (preview + expand died with the 360px cap).
         const toolsSig = `(() => ({
           count: document.querySelectorAll('.msg-assistant .md-table-tools button').length,
           labels: [...document.querySelectorAll('.msg-assistant .md-table-tools button')].map((b) => b.getAttribute('aria-label'))
@@ -6640,8 +6650,8 @@ export function startSmokeIfEnabled(
         sig = (await waitForProbe(
           win,
           `(() => { const s = ${toolsSig};
-             return s.count === 5 &&
-               JSON.stringify(s.labels) === JSON.stringify(['Copy table', 'Copy table as CSV', 'Copy table as TSV', 'Preview table', 'Expand table']) })()`,
+             return s.count === 6 &&
+               JSON.stringify(s.labels) === JSON.stringify(['Copy table', 'Copy table as CSV', 'Copy table as TSV', 'Copy table', 'Copy table as CSV', 'Copy table as TSV']) })()`,
           10_000
         )) as boolean
         if (!sig) {
@@ -6704,59 +6714,24 @@ export function startSmokeIfEnabled(
           await clipboard.writeText(previous) // leave the operator's pasteboard as found
         }
 
-        // ④ Preview + expand zero-regression: the preview dialog opens over
-        // the backdrop and closes, the expand toggle flips aria-pressed and
-        // widens the scroll container.
-        await js(
-          `(() => {
-             const btn = document.querySelector('.msg-assistant .md-table-tools button[aria-label="Preview table"]')
-             if (!(btn instanceof HTMLElement)) return false
-             btn.click()
-             return true
-           })()`
-        )
+        // ④ Ticket 87 full display: every table scroll container renders at
+        // natural height — computed max-height none, no internal vertical
+        // scroll — and the wide table overflows into a horizontal scroll
+        // instead of squeezing its columns into the pane.
         sig = (await waitForProbe(
           win,
           `(() => {
-             const dialog = document.querySelector('.md-table-preview[role="dialog"]')
-             const tables = dialog ? dialog.querySelectorAll('table').length : 0
-             return dialog !== null && tables === 1
+             const scrolls = [...document.querySelectorAll('.msg-assistant .md-table-scroll')]
+             const wide = scrolls[scrolls.length - 1]
+             return scrolls.length === 2 &&
+               scrolls.every((el) => getComputedStyle(el).maxHeight === 'none') &&
+               scrolls.every((el) => el.scrollHeight <= el.clientHeight + 1) &&
+               wide !== undefined && wide.scrollWidth > wide.clientWidth
            })()`,
           3_000
         )) as boolean
-        if (!sig) fail('ticket-60 stage: the table preview never opened')
-        await js(
-          `(() => {
-             const btn = document.querySelector('.md-table-preview button[aria-label="Close table preview"]')
-             if (!(btn instanceof HTMLElement)) return false
-             btn.click()
-             return true
-           })()`
-        )
-        sig = (await waitForProbe(win, `document.querySelector('.md-table-preview') === null`, 3_000)) as boolean
-        if (!sig) fail('ticket-60 stage: the table preview never closed')
-        log('table_preview_ok')
-        await js(
-          `(() => {
-             const btn = document.querySelector('.msg-assistant .md-table-tools button[aria-label="Expand table"]')
-             if (!(btn instanceof HTMLElement)) return false
-             btn.click()
-             return true
-           })()`
-        )
-        sig = (await waitForProbe(
-          win,
-          `(() => {
-             // After the click the button's aria-label reads Collapse table
-             // (the pressed state) — query the pressed label, not the old one.
-             const btn = document.querySelector('.msg-assistant .md-table-tools button[aria-label="Collapse table"]')
-             return btn !== null && btn.getAttribute('aria-pressed') === 'true' &&
-               document.querySelector('.msg-assistant .md-table-scroll-expanded') !== null
-           })()`,
-          3_000
-        )) as boolean
-        if (!sig) fail('ticket-60 stage: the table expand toggle never flipped')
-        log('table_expand_ok')
+        if (!sig) fail('ticket-87 stage: the table full display is wrong (cap back, internal vertical scroll, or wide-table horizontal scroll lost)')
+        log('table_full_display_ok')
 
         // ⑤ Download: a REAL download — will-download fires in the main
         // process with the language-derived filename (cancelled immediately,
