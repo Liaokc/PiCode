@@ -10,9 +10,10 @@
  *     → build/icon.icns               macOS bundle icon (every iconset slot)
  *     → build/icon.iconset/           Apple-named ladder (derived, gitignored)
  *
- * Pipeline (all macOS built-ins — the same platform the packager targets):
- *   rasterizer  renders the SVG master once at 1024px (alpha preserved;
- *               qlmanage by default, rsvg-convert / magick if installed)
+ * Pipeline (macOS built-ins only — same platform the packager targets):
+ *   qlmanage    renders the SVG master once at 1024px (QuickLook, alpha
+ *               preserved) — pinned single renderer so regenerated artifacts
+ *               stay comparable regardless of what else is installed
  *   sips        resamples the master down to each size
  *   iconutil    packs build/icon.iconset → build/icon.icns
  *
@@ -35,9 +36,9 @@ const iconsetDir = path.join(buildDir, 'icon.iconset')
 const icns = path.join(buildDir, 'icon.icns')
 
 const RASTER_SIZE = 1024
-const SIZES = [16, 32, 64, 128, 256, 512, 1024]
 // Apple iconset contract: every slot, mapped to its ladder size. Duplicate
 // sizes are intentional — e.g. icon_16x16@2x and icon_32x32 are both 32px.
+// The plain png ladder is derived from these slots (single source of sizes).
 const ICONSET_SLOTS = [
   [16, 'icon_16x16.png'],
   [32, 'icon_16x16@2x.png'],
@@ -50,41 +51,22 @@ const ICONSET_SLOTS = [
   [512, 'icon_512x512.png'],
   [1024, 'icon_512x512@2x.png']
 ]
+const SIZES = [...new Set(ICONSET_SLOTS.map(([size]) => size))]
 
 function sh(command, args, opts = {}) {
   return execFileSync(command, args, { stdio: 'pipe', encoding: 'utf8', ...opts })
 }
 
-/** True when the named binary exists on PATH. */
-function have(bin) {
-  try {
-    sh('which', [bin], { stdio: 'ignore' })
-    return true
-  } catch {
-    return false
-  }
-}
-
 /** Render `svg` at exactly size×size px into `out` (PNG, alpha preserved). */
 function rasterize(svg, size, out, workDir) {
-  if (have('rsvg-convert')) {
-    sh('rsvg-convert', ['-w', String(size), '-h', String(size), '-o', out, svg])
-    return 'rsvg-convert'
-  }
-  if (have('magick')) {
-    sh('magick', ['-background', 'none', '-density', '300', svg, '-resize', `${size}x${size}`, out])
-    return 'magick'
-  }
-  // macOS built-in: QuickLook renders the SVG thumbnail (square source →
-  // exactly size×size, RGBA preserved).
-  if (have('qlmanage')) {
-    sh('qlmanage', ['-t', '-s', String(size), '-o', workDir, svg])
-    const produced = path.join(workDir, path.basename(svg) + '.png')
-    if (!existsSync(produced)) throw new Error(`qlmanage produced no thumbnail at ${produced}`)
-    copyFileSync(produced, out)
-    return 'qlmanage'
-  }
-  throw new Error('no SVG rasterizer found (need one of: rsvg-convert, magick, qlmanage)')
+  // macOS built-in QuickLook renders the SVG thumbnail (square source →
+  // exactly size×size, RGBA preserved). Deliberately the only renderer:
+  // regenerating through a different rasterizer would silently change every
+  // committed artifact's bytes.
+  sh('qlmanage', ['-t', '-s', String(size), '-o', workDir, svg])
+  const produced = path.join(workDir, path.basename(svg) + '.png')
+  if (!existsSync(produced)) throw new Error(`qlmanage produced no thumbnail at ${produced}`)
+  copyFileSync(produced, out)
 }
 
 /** Downsample `src` to exactly size×size px into `out` via sips. */
@@ -115,7 +97,7 @@ function main() {
     mkdirSync(iconsetDir)
 
     console.log(`→ rasterizing master ${path.relative(root, masterSvg)} at ${RASTER_SIZE}px`)
-    const rasterizer = rasterize(masterSvg, RASTER_SIZE, workDir + '/master.png', workDir)
+    rasterize(masterSvg, RASTER_SIZE, workDir + '/master.png', workDir)
     copyFileSync(workDir + '/master.png', masterPng)
 
     console.log('→ png ladder (build/icons)')
@@ -142,7 +124,7 @@ function main() {
       throw new Error(`${masterPng}: lost alpha (IHDR color type != 6) — corners must stay transparent`)
     }
 
-    console.log(`done. rasterizer=${rasterizer}, artifacts: build/icon.png + ${SIZES.length} pngs + build/icon.icns`)
+    console.log(`done. artifacts: build/icon.png + ${SIZES.length} pngs + build/icon.icns`)
   } finally {
     rmSync(workDir, { recursive: true, force: true })
   }

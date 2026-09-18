@@ -8,11 +8,11 @@ import { applyDevDockIcon, devDockIconPath } from '../../src/main/app-icon'
 
 const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 
-function fakeOutMain(buildDir: string | null): { root: string; mainDir: string } {
+function fakeOutMain(hasBuild: boolean): { root: string; mainDir: string } {
   const root = mkdtempSync(path.join(os.tmpdir(), 'picode-app-icon-'))
   const mainDir = path.join(root, 'out', 'main')
   mkdirSync(mainDir, { recursive: true })
-  if (buildDir) {
+  if (hasBuild) {
     mkdirSync(path.join(root, 'build'), { recursive: true })
     writeFileSync(path.join(root, 'build', 'icon.png'), 'png-bytes')
   }
@@ -21,7 +21,7 @@ function fakeOutMain(buildDir: string | null): { root: string; mainDir: string }
 
 describe('devDockIconPath', () => {
   it('resolves the 1024px master raster from out/main two levels up', () => {
-    const { root, mainDir } = fakeOutMain('present')
+    const { root, mainDir } = fakeOutMain(true)
     try {
       expect(devDockIconPath(mainDir)).toBe(path.join(root, 'build', 'icon.png'))
     } finally {
@@ -30,7 +30,7 @@ describe('devDockIconPath', () => {
   })
 
   it('returns null when the asset is absent (partial checkout / packaged layout)', () => {
-    const { root, mainDir } = fakeOutMain(null)
+    const { root, mainDir } = fakeOutMain(false)
     try {
       expect(devDockIconPath(mainDir)).toBeNull()
     } finally {
@@ -41,7 +41,7 @@ describe('devDockIconPath', () => {
 
 describe('applyDevDockIcon', () => {
   it('sets the dock icon in dev and reports applied', () => {
-    const { root, mainDir } = fakeOutMain('present')
+    const { root, mainDir } = fakeOutMain(true)
     try {
       const calls: string[] = []
       const applied = applyDevDockIcon({ setIcon: (image) => calls.push(image) }, { isPackaged: false, mainDir })
@@ -53,7 +53,7 @@ describe('applyDevDockIcon', () => {
   })
 
   it('never overrides the baked bundle icns of a packaged app', () => {
-    const { mainDir } = fakeOutMain('present')
+    const { mainDir } = fakeOutMain(true)
     try {
       const setIcon = () => {
         throw new Error('setIcon must not be called for a packaged app')
@@ -65,13 +65,13 @@ describe('applyDevDockIcon', () => {
   })
 
   it('no-ops without a Dock (Linux/Windows) or without the asset', () => {
-    const { mainDir } = fakeOutMain('present')
+    const { mainDir } = fakeOutMain(true)
     try {
       expect(applyDevDockIcon(undefined, { isPackaged: false, mainDir })).toBe(false)
     } finally {
       rmSync(path.dirname(path.dirname(mainDir)), { recursive: true, force: true })
     }
-    const { mainDir: bare } = fakeOutMain(null)
+    const { mainDir: bare } = fakeOutMain(false)
     try {
       expect(applyDevDockIcon({ setIcon: () => undefined }, { isPackaged: false, mainDir: bare })).toBe(false)
     } finally {
