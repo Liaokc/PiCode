@@ -4916,16 +4916,18 @@ export function startSmokeIfEnabled(
       }
       log('scroll93_queue_yank_ok')
 
-      // ② The queued injection: the host run ends, the follow-up delivers
-      // as a new turn — the view must be at the bottom with the new live
-      // Working container as the bottom-most element, and stay pinned
-      // through the injected turn's streaming.
-      await waitFor((e) => e.type === 'agent_end' && e.sessionId === scroll93Id, 'scroll93 host run agent_end')
+      // ② The queued injection: the delivered turn opens live ('Working')
+      // and streams — the view must be pinned at the bottom with the new
+      // live Working container as the bottom-most element, and stay pinned
+      // through the injected turn's streaming. The probe anchors on the
+      // delivery appearing in the DOM — NOT on agent_end, which the SDK
+      // emits only AFTER the injected turn completes (by then the container
+      // has settled to 'Worked', too late for the live-geometry probe).
       if (
         !(await waitForProbe(
           win,
           `(document.querySelector('.chat-thread')?.textContent ?? '').includes('PICODE_93_Q') && (${AT_BOTTOM}) && (${WORKING_BOTTOMMOST})`,
-          15_000
+          150_000
         ))
       ) {
         const diag = (await js(SCROLL_DIAG).catch(() => 'unavailable')) as string
@@ -4941,16 +4943,10 @@ export function startSmokeIfEnabled(
       }
       log('scroll93_queue_inject_ok')
 
-      // Settle the injected run for the idle-send phases.
-      supervisor.handleParentCommand({
-        type: 'session_command',
-        sessionId: scroll93Id,
-        command: { type: 'abort_turn' }
-      })
-      if (!(await waitForProbe(win, IDLE_COMPOSER, 15_000))) {
-        fail('ticket-93 stage: the composer never left the busy state after the injection abort')
-      }
-      await new Promise((r) => setTimeout(r, 500)) // the settle/fold rewrites settle
+      // The injected turn completes on its own; wait out the settle for the
+      // idle-send phases.
+      await waitFor((e) => e.type === 'agent_end' && e.sessionId === scroll93Id, 'scroll93 injected turn agent_end')
+      await new Promise((r) => setTimeout(r, 500))
 
       // ③ THE 93 WINDOW: idle send + upward wheel in the same JS task —
       // the wheel lands before the echo's IPC round-trip, so the echo pass
