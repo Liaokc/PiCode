@@ -13,7 +13,9 @@
  *                 outside the fold
  *   2b/2c      — ticket 16 block chrome, replayed over the FOLDED transcript:
  *                 the container is opened first (ticket 23 choreography), then
- *                 wrap toggle, table expand, and the table preview overlay
+ *                 the wrap toggle and the ticket-87 full-height tables
+ *                 (natural height + wide-table horizontal scroll; the
+ *                 preview overlay and expand toggle are gone)
  *   2e/3       — jump-to-latest + the density audit, shot on the settled
  *                 transcript BEFORE the fork section (ticket 66: the fork's
  *                 success announcement switches focus — registry
@@ -40,9 +42,10 @@
  *                slash menu walks a full 12-row catalog; 4c catches the walk
  *                crossing the fold and 4d the clamped bottom row — both with
  *                the selected row fully inside the visible list. 4e pins the
- *                model cascade auto-locating the current provider (11 of 14)
- *                already in view on OPEN, 4f the provider walk clamped on the
- *                last row.
+ *                model cascade auto-locating the current provider (deep in
+ *                the column — last of 14 under the ticket-76 configured-first
+ *                sort) already in view on OPEN, 4f the provider walk clamped
+ *                on the last row.
  *   8. tooltip  — unified tooltip bubble on the sidebar filter button (ticket 22)
  *
  * PNGs land in $PICODE_VISUAL_OUT (default: <cwd>/.scratch/visual/). Not part
@@ -440,7 +443,12 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
         throw new Error(`visual streaming: code card signature ${JSON.stringify(streamCodeSig)}`)
       }
       // Table streams in after the code block — same remount tolerance there.
-      await streamText(['| Field | Rule |\n', '| --- | --- |\n| email | lowercased, ≤ 254 chars |\n', '| password | ≥ 12 chars, breach-listed |\n\n'], 120)
+      // Ticket 87: the fixture is LONG (12 body rows ≈ 520px of table) so the
+      // full-height story is provable — the retired 360px cap would have
+      // clipped it into an internal scroll.
+      const longTableRows: string[] = []
+      for (let i = 1; i <= 12; i++) longTableRows.push(`| field_${i} | validation rule ${i} applied at ingest |\n`)
+      await streamText(['| Field | Rule |\n', '| --- | --- |\n', ...longTableRows, '\n'], 120)
       const streamTableSig = (await win.webContents.executeJavaScript(
         `(() => {
           const wraps = document.querySelectorAll('.md-table-wrap')
@@ -448,9 +456,33 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
           return { wraps: wraps.length, buttons: document.querySelectorAll('.md-table-tools .md-block-btn').length }
         })()`
       )) as { wraps: number; buttons: number }
-      // Ticket 60 added the CSV/TSV copy chips — five block buttons per table.
-      if (streamTableSig.wraps !== 1 || streamTableSig.buttons !== 5) {
+      // Ticket 87: three block buttons per table (copy/CSV/TSV — preview
+      // and expand are gone with the 360px cap).
+      if (streamTableSig.wraps !== 1 || streamTableSig.buttons !== 3) {
         throw new Error(`visual streaming: table container signature ${JSON.stringify(streamTableSig)}`)
+      }
+      // A wide table streams in too — unbreakable tokens force its
+      // min-content width (~1750px) past the pane, so the horizontal-scroll
+      // preservation is provable in every frame below.
+      const WIDE_TOKEN_A = 'column_a_' + 'a'.repeat(80)
+      const WIDE_TOKEN_B = 'column_b_' + 'b'.repeat(80)
+      await streamText(
+        [
+          'A wide table keeps its horizontal scroll:\n\n',
+          `| Metric | ${WIDE_TOKEN_A} | ${WIDE_TOKEN_B} |\n`,
+          '| --- | --- | --- |\n',
+          `| rows | ${'x'.repeat(80)} | ${'y'.repeat(80)} |\n\n`
+        ],
+        60
+      )
+      const wideTableSig = (await win.webContents.executeJavaScript(
+        `(() => ({
+          wraps: document.querySelectorAll('.md-table-wrap').length,
+          buttons: document.querySelectorAll('.md-table-tools .md-block-btn').length
+        }))()`
+      )) as { wraps: number; buttons: number }
+      if (wideTableSig.wraps !== 2 || wideTableSig.buttons !== 6) {
+        throw new Error(`visual streaming: wide table signature ${JSON.stringify(wideTableSig)}`)
       }
       await streamText(['All ', 'three ', 'register ', 'tests ', 'pass ', '— ', 'ready ', 'for ', 'review.'])
       const remountSig = (await win.webContents.executeJavaScript(
@@ -511,8 +543,8 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       await sleep(300)
 
       // ---- ticket 16: settled block chrome interactions ----
-      // Wrap toggle flips the code area to pre-wrap; expand lifts the table
-      // scroll cap; preview opens the overlay; fork fires the toast.
+      // Wrap toggle flips the code area to pre-wrap; the tables render at
+      // natural height (ticket 87); fork fires the toast.
       const chromeSig = (await win.webContents.executeJavaScript(
         `(() => ({
           codeCards: document.querySelectorAll('.md-code-card').length,
@@ -521,8 +553,9 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
           innerTables: document.querySelectorAll('.md-table-scroll table').length
         }))()`
       )) as { codeCards: number; tableWraps: number; tools: number; innerTables: number }
-      // Ticket 60: the table tool trio grew to five (CSV/TSV copy chips).
-      if (chromeSig.codeCards < 1 || chromeSig.tableWraps < 1 || chromeSig.tools !== 5 || chromeSig.innerTables < 1) {
+      // Ticket 87: the tools row is the three-button copy family per table
+      // (copy/CSV/TSV) — two tables in the answer → six buttons.
+      if (chromeSig.codeCards < 1 || chromeSig.tableWraps !== 2 || chromeSig.tools !== 6 || chromeSig.innerTables !== 2) {
         throw new Error(`visual 2b: block chrome signature ${JSON.stringify(chromeSig)}`)
       }
       await win.webContents.executeJavaScript(
@@ -540,37 +573,49 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       if (wrapSig < 1) throw new Error('visual 2b: wrap toggle did not wrap the code area')
       await capture(win, '2b-code-wrapped')
 
-      await win.webContents.executeJavaScript(
+      // ---- ticket 87: full-height tables — the retired 360px cap would
+      // have clipped the long fixture into an internal scroll; the wide
+      // fixture must still overflow horizontally instead of squeezing its
+      // columns into the pane. Frames pin both stories.
+      const tableSig = (await win.webContents.executeJavaScript(
         `(() => {
-          document.querySelector('.md-table-wrap')?.scrollIntoView({ block: 'center' })
-          const btn = document.querySelector('.md-table-tools button[aria-label="Expand table"]')
-          if (btn instanceof HTMLElement) btn.click()
-          return btn !== null
+          const scrolls = [...document.querySelectorAll('.msg-assistant .md-table-scroll')]
+          const wide = scrolls[scrolls.length - 1]
+          return {
+            count: scrolls.length,
+            maxHeights: scrolls.map((el) => getComputedStyle(el).maxHeight),
+            vOverflow: scrolls.some((el) => el.scrollHeight > el.clientHeight + 1),
+            longTallerThanCap: scrolls.length > 0 ? scrolls[0].clientHeight > 360 : false,
+            wideHScroll: wide !== undefined ? wide.scrollWidth > wide.clientWidth : false
+          }
         })()`
+      )) as {
+        count: number
+        maxHeights: string[]
+        vOverflow: boolean
+        longTallerThanCap: boolean
+        wideHScroll: boolean
+      }
+      if (
+        tableSig.count !== 2 ||
+        !tableSig.maxHeights.every((h) => h === 'none') ||
+        tableSig.vOverflow ||
+        !tableSig.longTallerThanCap ||
+        !tableSig.wideHScroll
+      ) {
+        throw new Error(`visual 2c: table full display ${JSON.stringify(tableSig)}`)
+      }
+      console.log(`VISUAL probe 2c-table-full: ${JSON.stringify(tableSig)}`)
+      await win.webContents.executeJavaScript(
+        `(() => { document.querySelectorAll('.md-table-wrap')[0]?.scrollIntoView({ block: 'center' }); return true })()`
       )
       await sleep(300)
-      const expandSig = (await win.webContents.executeJavaScript(
-        `document.querySelectorAll('.md-table-scroll-expanded').length`
-      )) as number
-      if (expandSig < 1) throw new Error('visual 2b: expand toggle did not lift the scroll cap')
-
+      await capture(win, '2c-table-full')
       await win.webContents.executeJavaScript(
-        `(() => {
-          const btn = document.querySelector('.md-table-tools button[aria-label="Preview table"]')
-          if (btn instanceof HTMLElement) btn.click()
-          return btn !== null
-        })()`
+        `(() => { document.querySelectorAll('.md-table-wrap')[1]?.scrollIntoView({ block: 'center' }); return true })()`
       )
-      await sleep(400)
-      await captureMenu(win, '2c-table-preview', { dialog: '.md-table-preview' })
-      await win.webContents.executeJavaScript(
-        `(() => {
-          const close = document.querySelector('button[aria-label="Close table preview"]')
-          if (close instanceof HTMLElement) close.click()
-          return close !== null
-        })()`
-      )
-      await sleep(200)
+      await sleep(300)
+      await capture(win, '2c-table-wide-hscroll')
 
       // ---- ticket 45: Jump to Latest — scrolled away past the stick
       // threshold, the circular ↓ button fades in centered above the
@@ -1053,13 +1098,28 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       // ② The model cascade with a long provider column: on OPEN the
       // current provider (deep in the list) must already be scrolled into
       // view, and ←→ must walk clamped to the last provider with the
-      // selected row following the scroll.
+      // selected row following the scroll. Ticket 76 note: the App sorts
+      // the column configured-first before rendering, so the current
+      // provider must be an UNCONFIGURED one to sit deep in the sorted
+      // column — the stale pre-76 expectation (bella emitted at index 11)
+      // always resolved to row 0 and failed the stage (pi16 fix-in-pass,
+      // ticket 87). The composer_state pin is what makes current = prov-13
+      // stick: the chat reducer keeps an existing composer model over the
+      // models_available current (`state.model ?? event.current`), and the
+      // ticket-05 section already pinned bella on this focused session.
       const longProviders = Array.from({ length: 14 }, (_, i) => ({
         providerId: `prov-${i}`, name: `Provider ${String(i).padStart(2, '0')}`,
         models: [{ providerId: `prov-${i}`, modelId: `m-${i}`, name: `Model ${i}` }]
       }))
       longProviders[11] = { providerId: 'bella', name: 'Bella', models: [{ providerId: 'bella', modelId: 'GLM-5.3', name: 'GLM-5.3' }] }
-      emit({ type: 'models_available', providers: longProviders, current: { providerId: 'bella', modelId: 'GLM-5.3', name: 'GLM-5.3' } })
+      emit({
+        type: 'composer_state',
+        model: { providerId: 'prov-13', modelId: 'm-13', name: 'Model 13' },
+        thinkingLevel: 'max',
+        availableLevels: ['off', 'low', 'medium', 'high', 'max'],
+        accessMode: 'standard'
+      })
+      emit({ type: 'models_available', providers: longProviders, current: { providerId: 'prov-13', modelId: 'm-13', name: 'Model 13' } })
       await sleep(300)
       await win.webContents.executeJavaScript(
         `(() => {
@@ -1071,7 +1131,7 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       )
       await sleep(400)
       const cascadeProbe = (await win.webContents.executeJavaScript(menuScrollProbeJs('.cmp-popover .cmp-cascade-col'))) as typeof slashProbe
-      if (cascadeProbe.selected !== 11) throw new Error(`visual 4e: the current provider (11 of 14) is not highlighted on open: ${JSON.stringify(cascadeProbe)}`)
+      if (cascadeProbe.selected !== 13) throw new Error(`visual 4e: the current provider (sorted row 13 of 14) is not highlighted on open: ${JSON.stringify(cascadeProbe)}`)
       if (!cascadeProbe.ok) throw new Error('visual 4e: the auto-located provider row is outside the visible column (scroll follow broken on open)')
       await captureMenu(win, '4e-model-menu-locate', { providers: '.cmp-cascade-col .cmp-menu-row' })
       for (let step = 0; step < 13; step++) {
@@ -1228,18 +1288,18 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
         wrapped: number
         tips: number
       }
-      // Ticket 60: three buttons per code card (wrap/download/copy), five
-      // per table (copy + CSV/TSV chips + preview/expand) — eleven tooltip
+      // Ticket 60: three buttons per code card (wrap/download/copy).
+      // Ticket 87: three per table too (copy/CSV/TSV) — nine tooltip
       // triggers across the fixture (2 cards + 1 table).
       if (
         previewSig.md !== 1 ||
         previewSig.codeCards !== 2 ||
         previewSig.codeBtns !== 6 ||
         previewSig.tableWraps !== 1 ||
-        previewSig.tableBtns !== 5 ||
+        previewSig.tableBtns !== 3 ||
         previewSig.innerTables !== 1 ||
         previewSig.wrapped !== 0 ||
-        previewSig.tips !== 11
+        previewSig.tips !== 9
       ) {
         throw new Error(`visual 4b: preview chrome signature ${JSON.stringify(previewSig)}`)
       }
@@ -1287,41 +1347,6 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
         throw new Error(`visual 4b: preview copy feedback ${JSON.stringify(previewCopySig)}`)
       }
       await capture(win, '4b-preview-chrome')
-      // Table preview overlay opens from inside the preview tab too.
-      await win.webContents.executeJavaScript(
-        `(() => {
-          const btn = document.querySelector('.panel-tab-body:not(.panel-tab-body-hidden) .preview-md .md-table-tools button[aria-label="Preview table"]')
-          if (btn instanceof HTMLElement) btn.click()
-          return btn !== null
-        })()`
-      )
-      await sleep(400)
-      await captureMenu(win, '4c-preview-table-preview', {
-        dialog: '.panel-tab-body:not(.panel-tab-body-hidden) .preview-md .md-table-preview'
-      })
-      await win.webContents.executeJavaScript(
-        `(() => {
-          const close = document.querySelector('.panel-tab-body:not(.panel-tab-body-hidden) .preview-md .md-table-preview button[aria-label="Close table preview"]')
-          if (close instanceof HTMLElement) close.click()
-          return close !== null
-        })()`
-      )
-      await sleep(200)
-      // Expand lifts the scroll cap — the same container the transcript uses.
-      await win.webContents.executeJavaScript(
-        `(() => {
-          const btn = document.querySelector('.panel-tab-body:not(.panel-tab-body-hidden) .preview-md .md-table-tools button[aria-label="Expand table"]')
-          if (btn instanceof HTMLElement) btn.click()
-          return btn !== null
-        })()`
-      )
-      await sleep(200)
-      const previewExpandSig = (await win.webContents.executeJavaScript(
-        `document.querySelectorAll('.panel-tab-body:not(.panel-tab-body-hidden) .preview-md .md-table-scroll-expanded').length`
-      )) as number
-      if (previewExpandSig !== 1) {
-        throw new Error(`visual 4b: preview expand toggle ${previewExpandSig}`)
-      }
       // Source state unchanged (ticket 16's surviving half): windowed
       // CodeView, no chrome. Flip the fixture tab's segmented control.
       await win.webContents.executeJavaScript(
