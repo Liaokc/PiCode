@@ -160,6 +160,11 @@ Status: ready-for-spec
 - **根因/口径**：票 14 规则「回放回合无时长」的前提是「会话文件不记录回合时长」——实查条目时间戳必有（ADR-0002），**首条目 ts → 末条目 ts 可派生时长**，前提不成立；且 R29 的重挂载归零使本视图流式过的回合切回后也丢时长（seconds 归零 → timed 假）。
 - **定稿**：①时长数据 = 回合首条目 ts → 末条目 ts 派生（含重放回合——票 14 口径修订，数据源如实）；②显示落点 = 落定回合统一在 **chevron 右侧**（操作者指定）；live 的 "Working · Ns" 内联位置不变；③并入票 108（同组件同派生核，票未开工——票题升级「计时与时长显示」）。
 
+### R31 双端包安装互通 —— 打通验证（Round 13 免问定稿）
+- **痛点**：要求测试并打通 PiCode 使用 Pi Agent 的插件（pi-subagents / pi-mcp-adapter），且后续经 TUI（`pi install`）或 PiCode（Packages 节）任一侧安装 pi packages，两侧都能直接使用。
+- **盘点**：安装路径机制面已互通——Packages 节安装走 `DefaultPackageManager.installAndPersist`（与 `pi install` 同代码路径，落盘同一 `~/.pi/agent/settings.json` packages 数组，TUI 下次启动即加载）。**缺口实锤**：Packages 节列表有 per-dir 缓存（`packages-service.ts` cache，无 TTL），`force` 刷新仅在 PiCode 自家 op 后触发——**TUI 侧安装后 PiCode 列表不自动反映**（缓存盲区）。会话生效语义 = 新会话加载（运行中会话 TUI 也需 /reload，两侧同语义）。
+- **定稿**：①**缓存盲区补齐**——Packages 节挂载/设置窗打开时 force 刷新（用户动作驱动的即时真值； PiCode 内 op 后仍走既有 force）；②**双端互通验证矩阵**（electron smoke + 实测留档）：PiCode 装 → TUI 可用（settings.json 断言 + TUI 加载）、TUI 装 → PiCode 列表反映 + 新会话可用；真实包 pi-mcp-adapter/pi-subagents 为现成测试对象；③**生效语义如实提示**——安装成功文案注明「新会话生效」（运行中会话不热加载，两侧同语义）。
+
 ### R26 运行中重命名 —— 缺陷（Round 10 免问定稿）
 - **痛点**：agent 运行时重命名会话报错 toast（右下角）；TUI 的 `/name` 运行中可用。
 - **根因**：`host/index.ts` handleRename 开头 `requireSettledSession()` 守卫——运行中被拒发 session_command_error。SDK setSessionName 运行中可写（TUI 实证）。
@@ -194,12 +199,15 @@ Status: ready-for-spec
 - **Round 10（免问）**：三条痛点规格直给/机制唯一，免问定稿——R26 运行中重命名（守卫移除，TUI parity）/ R27 终端开启即聚焦 / R28 新会话乐观卡片（秒出）。定稿见 R26–R28。
 - **Round 11（免问）**：Working 计时跨切换清零（第 28 条痛点）——根因实锤（tick 计数器无锚点、重挂载归零），修法 = 票 61 的锚点派生口径迁移，免问定稿。定稿见 R29。
 - **Round 12（免问）**：Worked 时长显示（第 29 条痛点）——票 14 口径修订（条目时间戳可派生时长），落点 chevron 右侧，并入票 108。定稿见 R30。
+- **Round 13（免问）**：双端包安装互通（第 30 条痛点）——安装路径机制面已互通（installAndPersist 同 `pi install` 代码路径），缺口 = Packages 列表缓存对 TUI 侧安装不自动反映；定稿 = 节挂载 force 刷新 + 双端验证矩阵 + 新会话生效语义提示。定稿见 R31。
+- 至此前沿树空：31 条痛点 → 31 个 R 簇 × 全部边界均有裁决。
 - 至此前沿树空：30 条痛点 → 30 个 R 簇 × 全部边界均有裁决。
 - 至此前沿树空：28 条痛点 → 29 个 R 簇 × 全部边界均有裁决。
 
 ## 归类记录
 
 - 缺陷 12：R7（图片遮盖）、R8（滚动条）、R10（动画缺失）、R13（发送不落底）、R14（票 79 live 丢图）、R16（焦点滞留）、R18（History 竞态）、R23 布局半边（queue 行边框重合）、R26（运行中重命名被拒）、R27（终端不聚焦）、R28（新卡片慢）、R29（Working 计时切换清零）。
+- 打通验证 1：R31（双端包安装互通——缓存盲区补齐 + 验证矩阵）。
 - 交付行为修订 6：R1（票 78 live 增长）、R2（1.4 表格卡 360px）、R6（容器无锚定）、R15（票 56 提升规则）、R19（技能 marker 容器内 + 空泡）、R30（票 14 无时长规则——条目时间戳可派生）。
 - 交付行为修订 5：R1（票 78 live 增长）、R2（1.4 表格卡 360px）、R6（容器无锚定）、R15（票 56 提升规则）、R19（技能 marker 容器内 + 空泡）。
 - 清理 1：R12（幽灵钮删除）。
