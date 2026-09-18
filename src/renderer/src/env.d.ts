@@ -9,6 +9,7 @@ import type { AuthProbeReport } from '../shared/auth-status'
 import type { AppPreferences } from '../shared/preferences'
 import type { NewTaskCommandCatalog } from '../shared/new-task-commands'
 import type { SkillsReport } from '../shared/skills-management'
+import type { McpLayerReport } from '../shared/mcp-management'
 import type { KnownProject } from '../shared/sessions/group'
 import type {
   PackagesOpOutcome,
@@ -119,6 +120,30 @@ interface PicodeSettingsBridge {
   deleteSkillEntry(entryPath: string): Promise<{ ok: boolean; error?: string }>
   /** Read-only Finder reveal of the row's skill file. */
   revealSkill(target: string): Promise<boolean>
+  /** MCP-section layer report for one directory (ticket 89; null = the
+   * global face — no project layers). Read fresh on every call. */
+  listMcpConfig(cwd: string | null): Promise<McpLayerReport>
+  /** Enable/disable one server — writes ONLY the disabled flag into the
+   * project Pi override (adapter /mcp enable|disable semantics). */
+  toggleMcpServer(
+    serverName: string,
+    disabled: boolean,
+    cwd: string | null
+  ): Promise<{ ok: boolean; path?: string; error?: string }>
+  /** Add/edit one server through the form model. mode 'add' writes the
+   * chosen /mcp setup target; 'edit' rewrites the winning layer's file. */
+  writeMcpServer(
+    mode: 'add' | 'edit',
+    form: unknown,
+    target: 'project' | 'global',
+    cwd: string | null,
+    preserve?: unknown
+  ): Promise<{ ok: boolean; path?: string; error?: string }>
+  /** Delete one server from the layer owning its winning definition. */
+  removeMcpServer(serverName: string, cwd: string | null): Promise<{ ok: boolean; path?: string; error?: string }>
+  /** Read-only Finder reveal of one layer's config file (or its nearest
+   * existing ancestor); resolves the revealed path. */
+  revealMcpLayer(layerPath: string, cwd: string | null): Promise<{ ok: boolean; target: string | null }>
   /** Packages-section report for one directory (ticket 64; null = the
    * global face — no project layer). `force` re-probes. */
   listPackages(cwd: string | null, force: boolean): Promise<PackagesReport>

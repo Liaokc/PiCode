@@ -54,6 +54,7 @@ import { listMentionCandidates } from './files'
 import { readGitBranch } from './git-branch'
 import { createApprovalGateExtension, toImageContents } from './gate-extension'
 import { HeldMessageEnd, monitorSessionManager } from './live-entry-ids'
+import { McpAuthBridge } from './mcp-auth-bridge'
 import { parseSessionArgs } from './session-args'
 
 /** Working directory / resume target / PiCode preference defaults (ticket 11),
@@ -92,6 +93,11 @@ let pendingTurnError: string | null = null
 /** The approval gate (one per host process = per Session) + its extension. */
 const gate = new ApprovalGate()
 const approvalExtension = createApprovalGateExtension(gate, send)
+
+/** Ticket 89: the MCP OAuth bridge — the session's extensions get a UI
+ * context (notify/input relay during an in-flight flow only) and the
+ * `mcp_auth_start` command runs the adapter's own /mcp-auth flow. */
+const mcpAuthBridge = new McpAuthBridge(send)
 
 /** User messages this process already echoed via the `prompt` command; the
  * appendMessage monitor consumes them at the persistence moment, where the
@@ -422,6 +428,12 @@ async function createSession(): Promise<void> {
       sessionStartEvent: opts.sessionStartEvent,
       ...seed
     })
+    // Ticket 89: bind the extensions' UI context exactly like the SDK's own
+    // modes do — the one-time session_start emission this triggers is the
+    // TUI-parity path (without it the adapter never initializes and refuses
+    // OAuth with "requires an interactive session"). The bridge context's
+    // notify/input relays are inert outside an in-flight MCP OAuth flow.
+    await result.session.bindExtensions({ uiContext: mcpAuthBridge.uiContext(), mode: 'rpc' })
     return { ...result, services, diagnostics: services.diagnostics }
   }
   runtime = await sdk.createAgentSessionRuntime(factory, {
@@ -648,6 +660,23 @@ async function handleFork(entryId: string): Promise<void> {
   }
 }
 
+/** Ticket 89: run the adapter's /mcp-auth command for one server (the OAuth
+ * flow runs entirely inside the adapter; the bridge relays notices and the
+ * manual-paste dialog). Session-scoped like every other command. */
+async function handleMcpAuthStart(serverName: string): Promise<void> {
+  const agentSession = runtime?.session
+  if (!agentSession) {
+    send({ type: 'mcp_auth_completed', serverName, ok: false, notices: [{ level: 'error', message: 'No session is open.' }] })
+    return
+  }
+  await mcpAuthBridge.start(
+    serverName,
+    (text) => agentSession.prompt(text),
+    (name) => agentSession.extensionRunner.getRegisteredCommands().some((command) => command.invocationName === name),
+    agentSession.agent.signal
+  )
+}
+
 function handleRename(name: string): void {
   if (!requireSettledSession()) return
   try {
@@ -721,6 +750,16 @@ process.on('message', (message: unknown) => {
       break
     case 'get_branch':
       void handleGetBranch()
+      break
+    case 'mcp_auth_start':
+      if (typeof message.serverName === 'string') {
+        void handleMcpAuthStart(message.serverName)
+      }
+      break
+    case 'mcp_auth_input_resolve':
+      if (typeof message.requestId === 'string') {
+        mcpAuthBridge.resolveInput(message.requestId, typeof message.value === 'string' ? message.value : null)
+      }
       break
     case 'abort_turn':
       void handleAbort()

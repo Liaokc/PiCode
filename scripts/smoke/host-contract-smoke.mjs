@@ -47,6 +47,11 @@
  *   → navigate_tree(u1, root) → history_loaded([]) + leafId null (resetLeaf)
  *   → shutdown → exit 0 (file lossless, no branch_summary)
  *
+ *   Round G (ticket 89报备: the MCP OAuth bridge contract) — no model calls:
+ *   mcp_auth_start(ghost server) → mcp_auth_notice(the adapter's own
+ *   not-found error) → mcp_auth_completed(ok=false, notices relayed)
+ *   → shutdown → exit 0. Credentials never enter the contract stream.
+ *
  * Usage: npm run build && node scripts/smoke/host-contract-smoke.mjs
  * Expects working model auth in ~/.pi/agent (same as the pi TUI). Session
  * files land in an isolated throwaway store (PICODE_SESSION_DIR, ticket 13)
@@ -149,6 +154,7 @@ let sessionFile = null
 let firstEntryId = null
 let navTargetId = null
 let providersCache = []
+const gNotices = []
 let currentModel = null
 let thinkingLevelsCache = []
 let currentThinkingLevel = null
@@ -332,6 +338,21 @@ async function onHostExit(exited, code) {
       if (!after.some((l) => l.includes(`"${id}"`))) fail(`edit-resend lost entry ${id} — the move must be lossless`)
     }
     console.log('SMOKE round F shutdown ok — messages lossless, no appended branch entries, no branch_summary (天然 No summary)')
+    // Ticket 89报备: round G — the MCP OAuth bridge contract (additive
+    // host messages): `mcp_auth_start` must terminate in exactly one
+    // `mcp_auth_completed` whose `ok` mirrors the adapter's error notices,
+    // relaying through the session host's new extension-UI bridge. The
+    // ghost server name never exists in the adapter's config, so the
+    // adapter's own "not found" error notice rides `mcp_auth_notice`
+    // first — the honest-failure path of the real command chain.
+    console.log('SMOKE round F shutdown ok — starting round G (ticket-89 MCP OAuth bridge contract)')
+    step = 'G session_created'
+    bumpTimeout()
+    child = forkHost([cwd], onEvent)
+    return
+  }
+  if (step === 'G shutdown') {
+    if (code !== 0) fail(`round G exit should be clean 0, got ${code}`)
     await finishClean(code)
     return
   }
@@ -1039,6 +1060,35 @@ function onEvent(event) {
       if (event.tree.leafId !== null) fail(`the leaf must be null after the root edit navigate, got ${event.tree.leafId}`)
       console.log('SMOKE ticket-79 tree leaf ok (null after resetLeaf)')
       step = 'F shutdown'
+      child.send({ type: 'shutdown' })
+      return
+    }
+
+    // ---------- Round G: ticket 89报备 — the MCP OAuth bridge contract ----------
+    case 'G session_created': {
+      if (event.type !== 'session_created') return
+      if (!event.sessionId) fail('round G session_created missing id')
+      console.log('SMOKE round G session ok (MCP OAuth bridge round)')
+      step = 'G flow'
+      child.send({ type: 'mcp_auth_start', serverName: 'picode-ghost-server' })
+      return
+    }
+    case 'G flow': {
+      if (event.type === 'mcp_auth_notice') {
+        gNotices.push({ level: event.level, message: event.message })
+        return
+      }
+      if (event.type !== 'mcp_auth_completed') return
+      if (event.serverName !== 'picode-ghost-server') fail(`mcp_auth_completed for the wrong server: ${event.serverName}`)
+      if (event.ok !== false) fail('the ghost-server flow must complete ok:false (the adapter cannot find it)')
+      if (!Array.isArray(event.notices)) fail('mcp_auth_completed must carry the notices array')
+      const notices = event.notices.map((n) => n.message).join(' | ')
+      if (!notices.includes('picode-ghost-server') || !notices.toLowerCase().includes('not found')) {
+        fail(`mcp_auth_completed must relay the adapter's own not-found error notice, got ${JSON.stringify(event.notices)}`)
+      }
+      if (!gNotices.some((n) => n.level === 'error')) fail('the error notice must ALSO ride mcp_auth_notice live (the settings window listens live)')
+      console.log('SMOKE ticket-89 MCP OAuth bridge contract ok — start → live notices → completed(ok=false), no credentials touched')
+      step = 'G shutdown'
       child.send({ type: 'shutdown' })
       return
     }

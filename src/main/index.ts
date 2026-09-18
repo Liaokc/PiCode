@@ -25,6 +25,8 @@ import { runAuthProbeHost } from './settings/probe-runner'
 import { CommandCatalogService } from './settings/command-catalog'
 import { SkillsService, type SkillActionOutcome } from './settings/skills-service'
 import { PackagesService, forkPackagesOpRunner, type PackageActionOutcome } from './settings/packages-service'
+import { McpService, type McpActionOutcome } from './settings/mcp-service'
+import type { McpLayerReport, McpServerForm } from '../shared/mcp-management'
 import { startSmokeIfEnabled, smokeEnabled, type SmokeHooks } from './smoke'
 import { startVisualIfEnabled } from './visual'
 import { startDensityVisualIfEnabled } from './visual-density'
@@ -358,6 +360,70 @@ app.whenReady().then(() => {
       return packages.performOp(op, source, local, dir, (event) => broadcastChannel('settings:packages-progress', event))
     }
   )
+
+  // MCP management (ticket 89): the settings window's MCP section — the
+  // read side parses every adapter config layer fresh (small JSON files,
+  // no SDK in main per ADR-0003) and the pure shared model merges them;
+  // writes derive through the model and the service guards the canonical
+  // write surface (external host-tool configs are NEVER written). The
+  // OAuth flow itself rides the session host bridge (mcp_auth_* contract
+  // events), never this service — credentials stay in the adapter/keychain.
+  const mcp = new McpService({})
+  ipcMain.handle('settings:mcp', (_event, cwd: unknown): McpLayerReport => {
+    if (fakeSettings) return fakeMcpReport(cwd)
+    const dir = typeof cwd === 'string' && cwd.trim() !== '' ? cwd : null
+    return mcp.listConfig(dir)
+  })
+  ipcMain.handle(
+    'settings:mcp-toggle',
+    (_event, serverName: unknown, disabled: unknown, cwd: unknown): Promise<McpActionOutcome> => {
+      if (fakeSettings) return Promise.resolve({ ok: true, path: '' })
+      if (typeof serverName !== 'string' || typeof disabled !== 'boolean') {
+        return Promise.resolve({ ok: false, error: 'Malformed MCP toggle request.' })
+      }
+      const dir = typeof cwd === 'string' && cwd.trim() !== '' ? cwd : null
+      return mcp.toggleServer(serverName, disabled, dir)
+    }
+  )
+  ipcMain.handle(
+    'settings:mcp-write',
+    (_event, mode: unknown, form: unknown, target: unknown, cwd: unknown, preserve: unknown): Promise<McpActionOutcome> => {
+      if (fakeSettings) return Promise.resolve({ ok: true, path: '' })
+      if (
+        (mode !== 'add' && mode !== 'edit') ||
+        (target !== 'project' && target !== 'global') ||
+        typeof form !== 'object' ||
+        form === null ||
+        typeof preserve !== 'object' ||
+        preserve === null
+      ) {
+        return Promise.resolve({ ok: false, error: 'Malformed MCP write request.' })
+      }
+      const dir = typeof cwd === 'string' && cwd.trim() !== '' ? cwd : null
+      return mcp.writeServerEntry(mode, form as McpServerForm, target, dir, preserve as Record<string, unknown>)
+    }
+  )
+  ipcMain.handle('settings:mcp-remove', (_event, serverName: unknown, cwd: unknown): Promise<McpActionOutcome> => {
+    if (fakeSettings) return Promise.resolve({ ok: true, path: '' })
+    if (typeof serverName !== 'string' || serverName.trim() === '') {
+      return Promise.resolve({ ok: false, error: 'Malformed MCP remove request.' })
+    }
+    const dir = typeof cwd === 'string' && cwd.trim() !== '' ? cwd : null
+    return mcp.removeServer(serverName, dir)
+  })
+  ipcMain.handle('settings:mcp-reveal', (_event, layerPath: unknown, cwd: unknown): { ok: boolean; target: string | null } => {
+    if (typeof layerPath !== 'string' || layerPath.trim() === '') return { ok: false, target: null }
+    const dir = typeof cwd === 'string' && cwd.trim() !== '' ? cwd : null
+    const outcome = fakeSettings ? { ok: true, target: layerPath } : mcp.revealLayer(layerPath, dir)
+    if (outcome.ok && outcome.target !== null) {
+      try {
+        shell.showItemInFolder(outcome.target)
+      } catch {
+        return { ok: false, target: null }
+      }
+    }
+    return outcome
+  })
 
   let smokeHooks: SmokeHooks | null = null
   let mainWindow: BrowserWindow | null = null
@@ -762,6 +828,94 @@ function fakeSkillsReport(cwd: string | null): SkillsReport {
     }
   ]
   return { cwd: null, scannedAt: Date.now(), rows, error: null }
+}
+
+/** Deterministic MCP-section fixture (PICODE_FAKE_SETTINGS=1, ticket 89):
+ * every layer with its badge + an OAuth server + a disabled row + a
+ * layered override, so the visual frames show the whole state vocabulary.
+ * Never touches the real machine. */
+function fakeMcpReport(cwd: unknown): McpLayerReport {
+  const dir = typeof cwd === 'string' && cwd.trim() !== '' ? cwd : '/Users/demo/Projects/picode'
+  return {
+    cwd: dir,
+    agentDir: '/Users/demo/.pi/agent',
+    home: '/Users/demo',
+    scannedAt: Date.now(),
+    error: null,
+    globalLayers: [
+      {
+        id: 'shared-global',
+        label: 'Global shared',
+        scope: 'global',
+        kind: 'shared',
+        path: '/Users/demo/.config/mcp/mcp.json',
+        exists: true,
+        error: null,
+        servers: {
+          deepwiki: { url: 'https://mcp.deepwiki.com/mcp', protocolVersion: 'auto' },
+          notion: { url: 'https://mcp.notion.com/mcp', auth: 'oauth' }
+        }
+      },
+      {
+        id: 'agents-global',
+        label: 'Global .agents',
+        scope: 'global',
+        kind: 'shared',
+        path: '/Users/demo/.agents/mcp.json',
+        exists: false,
+        error: null,
+        servers: {}
+      },
+      {
+        id: 'agents-nested-global',
+        label: 'Global .agents/mcp',
+        scope: 'global',
+        kind: 'shared',
+        path: '/Users/demo/.agents/mcp/mcp.json',
+        exists: false,
+        error: null,
+        servers: {}
+      },
+      {
+        id: 'pi-global',
+        label: 'Pi global',
+        scope: 'global',
+        kind: 'pi',
+        path: '/Users/demo/.pi/agent/mcp.json',
+        exists: true,
+        error: null,
+        servers: {
+          'web-archive': { command: 'npx', args: ['-y', 'web-archive-mcp'], disabled: true }
+        }
+      }
+    ],
+    projectLayers: [
+      {
+        id: 'shared-project',
+        label: 'Project shared',
+        scope: 'project',
+        kind: 'shared',
+        path: `${dir}/.mcp.json`,
+        exists: true,
+        error: null,
+        servers: {
+          'repo-tools': { command: 'node', args: ['tools/repo-mcp.js'] }
+        }
+      },
+      {
+        id: 'pi-project',
+        label: 'Pi project',
+        scope: 'project',
+        kind: 'pi',
+        path: `${dir}/.pi/mcp.json`,
+        exists: true,
+        error: null,
+        servers: {
+          deepwiki: { protocolVersion: '2025-06-18' }
+        }
+      }
+    ]
+  }
 }
 
 /** Deterministic known-projects fixture (PICODE_FAKE_SETTINGS=1, ticket

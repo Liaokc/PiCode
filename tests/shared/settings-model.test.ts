@@ -10,8 +10,8 @@ describe('settings nav (cropped from ZCode)', () => {
     expect(SETTINGS_NAV).toEqual([
       { label: 'General', sections: ['general', 'appearance', 'models'] },
       // Ticket 63: the Agent Resources group — Skills delivered here,
-      // Packages reserved as a nav slot for ticket 64.
-      { label: 'Agent Resources', sections: ['skills', 'packages'] },
+      // Packages reserved as a nav slot for ticket 64. Ticket 89 adds MCP.
+      { label: 'Agent Resources', sections: ['skills', 'packages', 'mcp'] },
       { label: 'Data & Statistics', sections: ['usage'] }
     ])
   })

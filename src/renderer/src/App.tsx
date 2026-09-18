@@ -8,6 +8,7 @@ import {
   runningSessionIds
 } from '../../shared/session-registry'
 import { initialChatState, type ChatAction } from '../../shared/chat-reducer'
+import { mcpAuthStore } from './components/settings/mcp-auth-store'
 import { groupTurns } from '../../shared/turn-collapse'
 import type { HostToParent, SessionCommand, SessionScopedEvent } from '../../shared/contract'
 import { resolvePreviewPath } from '../../shared/preview/policy'
@@ -326,6 +327,18 @@ export default function App(): JSX.Element {
 
   useEffect(() => {
     const unsubscribe = window.picode.chat.onHostEvent((event) => {
+      // Ticket 89: MCP OAuth bridge events feed the settings window's MCP
+      // section through its own tiny store (the chat reducer no-ops them).
+      if (event.type === 'session_event') {
+        const scoped = event.event
+        if (
+          scoped.type === 'mcp_auth_input_required' ||
+          scoped.type === 'mcp_auth_notice' ||
+          scoped.type === 'mcp_auth_completed'
+        ) {
+          mcpAuthStore.dispatch(scoped, event.sessionId)
+        }
+      }
       // Ticket 74: an announcement switches the view (create/resume/fork/
       // takeover all re-announce and auto-focus) — park the mounted
       // composer's draft FIRST, so the switch cannot lose it.
@@ -1435,6 +1448,7 @@ export default function App(): JSX.Element {
           onSetPreferences={handleSetPreferences}
           onRefreshAuth={handleRefreshAuth}
           skillsCwd={chat.session?.cwd ?? null}
+          focusedSessionId={chat.session?.sessionId ?? null}
           onNotify={notify}
         />
         <TooltipHost />

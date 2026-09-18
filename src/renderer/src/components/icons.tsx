@@ -363,6 +363,17 @@ export function BoxesIcon({ size, className }: IconProps): JSX.Element {
   )
 }
 
+/** Ticket 89: the MCP nav icon — a plug (server connection). */
+export function PlugIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M9 7V3M15 7V3" />
+      <path d="M7 7h10v4a5 5 0 0 1-5 5 5 5 0 0 1-5-5Z" />
+      <path d="M12 16v5" />
+    </svg>
+  )
+}
+
 export function BarChartIcon({ size, className }: IconProps): JSX.Element {
   return (
     <svg {...svgProps(size, className)}>

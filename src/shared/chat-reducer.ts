@@ -666,6 +666,13 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case 'branch_info':
       return state
 
+    // MCP OAuth bridge events (ticket 89) belong to the settings window's
+    // MCP section, not the transcript — defensively no-op here.
+    case 'mcp_auth_input_required':
+    case 'mcp_auth_notice':
+    case 'mcp_auth_completed':
+      return state
+
     case 'host_exit': {
       const cwd = state.session?.cwd ?? null
       // A dead host settles like any run end: the turn folds away and the

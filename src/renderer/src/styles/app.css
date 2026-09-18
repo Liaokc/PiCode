@@ -7801,3 +7801,246 @@ button.preview-crumb:hover {
   border-color: var(--accent-blue);
   background: color-mix(in srgb, var(--accent-blue) 7%, var(--bg-card));
 }
+
+/* ---- MCP section (ticket 89) ---- */
+
+.settings-page-note {
+  margin: 6px 0 0;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.settings-mcp-layers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-mcp-layer {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.settings-mcp-layer:hover {
+  border-color: var(--border-strong, var(--border));
+  color: var(--text-primary);
+}
+
+.settings-mcp-row-paths {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 3px;
+}
+
+.settings-mcp-row-paths .settings-mcp-layer {
+  height: 19px;
+  padding: 0 8px;
+  font-size: 10px;
+}
+
+.skill-badge-pi,
+.skill-badge-shared {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.skill-badge-layers {
+  background: var(--bg-inset);
+}
+
+.skill-badge-oauth {
+  background: color-mix(in srgb, var(--accent-blue) 16%, transparent);
+  color: var(--accent-blue);
+}
+
+.settings-mcp-summary {
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.settings-mcp-summary:hover {
+  color: var(--text-primary);
+}
+
+.settings-mcp-json {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px;
+  color: var(--text-secondary);
+  overflow: auto;
+  max-height: 180px;
+}
+
+.settings-mcp-auth {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.settings-mcp-auth p {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.settings-mcp-auth-error {
+  border-color: var(--accent-orange);
+}
+
+.settings-mcp-paste {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.settings-mcp-paste-title {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  display: block !important;
+}
+
+.settings-mcp-paste-row {
+  display: flex;
+  gap: 7px;
+}
+
+.settings-mcp-paste-row input {
+  flex: 1;
+  height: 28px;
+  padding: 0 9px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--bg-inset);
+  font-size: 11.5px;
+  color: var(--text-primary);
+}
+
+.settings-mcp-form-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.42);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 90;
+}
+
+.settings-mcp-form {
+  width: 420px;
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 64px);
+  overflow: auto;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+
+.settings-mcp-form-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.settings-mcp-form-note {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+.settings-mcp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+.settings-mcp-field input[type='text'],
+.settings-mcp-field textarea {
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--bg-inset);
+  padding: 6px 9px;
+  font-size: 12px;
+  color: var(--text-primary);
+  font-family: inherit;
+}
+
+.settings-mcp-field textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  resize: vertical;
+}
+
+.settings-mcp-field-row {
+  display: flex;
+  gap: 7px;
+}
+
+.settings-mcp-transport {
+  flex: 1;
+  height: 28px;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: transparent;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.settings-mcp-transport-active {
+  border-color: var(--accent-orange);
+  color: var(--text-primary);
+}
+
+.settings-mcp-checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 7px;
+}
+
+.settings-mcp-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 2px;
+}
