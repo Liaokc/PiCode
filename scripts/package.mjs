@@ -42,11 +42,18 @@ const paths = await packager({
   name: 'PiCode',
   appBundleId: 'app.picode.desktop',
   appCategoryType: 'public.app-category.developer-tools',
+  // Ticket 102: the V2 icon — baked into Contents/Resources + CFBundleIconFile
+  // so Finder/Dock show PiCode instead of Electron's atom.
+  icon: path.join(root, 'build', 'icon.icns'),
   overwrite: true,
   asar: false,
   prune: true,
   ignore: [
     /^\/release($|\/)/,
+    // Ticket 102: icon sources/artifacts live in the repo only — the bundle
+    // gets its copy via the icon option above (runtime reads the bundle icns,
+    // never this dir).
+    /^\/build($|\/)/,
     /^\/(\.worktrees|\.scratch|\.git|\.github|src|tests|scripts|docs|coverage)($|\/)/,
     /^\/(electron\.vite\.config\.ts|eslint\.config\.mjs|tsconfig.*\.json|vitest\.config\.ts|AGENTS\.md|CONTEXT\.md|README\.md)$/
   ]

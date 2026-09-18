@@ -12,6 +12,7 @@ import { SIDEBAR_WIDTH_PX } from '../shared/layout-model'
 import { PANEL_DEFAULT_WIDTH_PX } from '../shared/panel-model'
 import { EMPTY_MANUAL_ORDER } from '../shared/sessions/group'
 import { createWindowOptions } from './window-options'
+import { applyDevDockIcon } from './app-icon'
 import { HostSupervisor, defaultHostEntryPath } from './host-supervisor'
 import { createApprovalNotifier, parseApprovalNotice } from './notifications'
 import { collectReview } from './review/collect'
@@ -199,6 +200,11 @@ function broadcastChannel(channel: string, payload: unknown): void {
 }
 
 app.whenReady().then(() => {
+  // Ticket 102: while unpackaged, paint the V2 PiCode icon onto the macOS
+  // Dock — the dev binary is stock Electron otherwise. Packaged apps inherit
+  // the baked bundle icns instead (no override).
+  applyDevDockIcon(app.dock, { isPackaged: app.isPackaged, mainDir: __dirname })
+
   // Ticket 88: the preview-file protocol serves previewed files' relative
   // resources to the sandboxed HTML preview frame (see preview/serve.ts for
   // the security contract).
