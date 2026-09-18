@@ -6565,6 +6565,105 @@ button.preview-crumb:hover {
   justify-content: center;
 }
 
+/* Ticket 91: the thumbnail itself becomes the open-the-preview affordance
+   — a bare, full-figure button under the img (the remove ❌ stays its own
+   absolute sibling; buttons can never nest). zoom-in cursor says what a
+   click does; focus ring follows the app's :focus-visible discipline. */
+.composer-attachment-thumb {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
+
+.composer-attachment-thumb:focus-visible {
+  outline: 2px solid var(--accent-orange);
+  outline-offset: 1px;
+}
+
+/* ---------- image preview overlay (ticket 91) ----------
+   The mask mode the deleted md-table-preview (ticket 87) established,
+   inherited: fixed backdrop over the whole window (z-index 90, the
+   settings-form layer — the topmost overlay tier), centered content,
+   top-right ❌, Esc exits. The mask is much darker than the table card's
+   0.35 tint because the content IS the artwork — the surroundings dim to
+   near-black so the image reads at full contrast. */
+.image-preview-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(18, 18, 16, 0.82);
+}
+
+/* The dialog wraps just the image (shrink-wrap): mask blank = any point
+   that is not the image or the two chrome pieces below. */
+.image-preview-stage {
+  display: flex;
+  max-width: 90vw;
+}
+
+/* Full-resolution payload, contain-fit — never upscaled beyond its box,
+   never fed a downscaled copy (过采样缩放不糊). */
+.image-preview-img {
+  max-width: 90vw;
+  max-height: 84vh;
+  object-fit: contain;
+  border-radius: 10px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.4);
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* The ❌ parks on the WINDOW's top-right corner — reachable whatever the
+   image's aspect does to the centered stage. */
+.image-preview-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: rgba(20, 20, 18, 0.66);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.image-preview-close:hover {
+  background: rgba(20, 20, 18, 0.9);
+}
+
+.image-preview-close:focus-visible {
+  outline: 2px solid var(--accent-orange);
+  outline-offset: 1px;
+}
+
+/* The position chip (multi-image strips only): an indicator, not a
+   control — pointer-events none lets a click on it fall through to the
+   backdrop it visually sits on (it IS mask blank). */
+.image-preview-count {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 11px;
+  border-radius: 999px;
+  background: rgba(20, 20, 18, 0.66);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+}
+
 .cmp-popover {
   position: absolute;
   bottom: calc(100% + 8px);
