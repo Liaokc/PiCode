@@ -6,12 +6,29 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** ready-for-human (implement session 2026-09-17，验收项全绿，见 Comments)
 
 ## Acceptance
 
-- [ ] Seam-1 表驱动：分类纯函数扩展（svg/html/image 按扩展名 + 既有文本嗅探；超限回退源码）
-- [ ] electron smoke：SVG 打开默认渲染 + 切源码；HTML 打开 iframe 渲染（内联脚本执行探针 + **沙箱断言：帧内无 Node/app 访问**）；png 打开直显；markdown 双态不回归
-- [ ] HTML 相对资源（同目录 css/img）以文件目录为 base 正常加载
-- [ ] 安全核查留档：iframe sandbox 属性清单 + 不触碰凭据/不写外部文件声明
-- [ ] vitest / typecheck 全绿；跑 dev app / smoke 前 `ps` 自查（dev-app serialization）；visual 渲染帧
+- [x] Seam-1 表驱动：分类纯函数扩展（svg/html/image 按扩展名 + 既有文本嗅探；超限回退源码）
+- [x] electron smoke：SVG 打开默认渲染 + 切源码；HTML 打开 iframe 渲染（内联脚本执行探针 + **沙箱断言：帧内无 Node/app 访问**）；png 打开直显；markdown 双态不回归（`npm run smoke:electron` 全套 exit 0，`preview_dual_88` 八个断言步全绿，见 Comments）
+- [x] HTML 相对资源（同目录 css/img）以文件目录为 base 正常加载
+- [x] 安全核查留档：iframe sandbox 属性清单 + 不触碰凭据/不写外部文件声明（见 Comments 安全核查条）
+- [x] vitest / typecheck 全绿（1547/1547 + 双 tsconfig 清）；跑 dev app / smoke 前 `ps` 自查（dev-app serialization，曾两次让行 wt-87 的 smoke:electron）；visual 渲染帧四张全绿
+
+## Comments
+
+- 2026-09-17 (implement session)：端到端落地，分类→IPC→渲染→协议全链。
+  - **Seam-1**（`src/shared/preview/policy.ts`，表驱动）：`isSvgName`（.svg）/`isHtmlName`（.html/.htm）/`isImageName`（png/jpg/jpeg/gif/webp）按扩展名大小写不敏感；`kindForEntry` 重排——**声明图片扩展名胜过嗅探**（纯文本 .png 永不落成 source；NUL 嗅探仍守卫 svg/html 文本格式→binary），text=null 非图片→binary 不变；`hasRenderedView`（markdown/svg/html）界定双态控件范围；`displayModeFor` 扩展为 `'markdown'|'svg'|'html'|'image'|'source'`——**超限回退沿用 markdown 的 PREVIEW_MARKDOWN_MAX_BYTES（256KB）语义**，image 单态不受 256KB 约束（其上限只有 reader 的 2MB 硬帽）。另：`svgDataUrl`（UTF-8→base64 data URL，img 上下文脚本永不执行）、`previewFileUrl`/`PREVIEW_SERVE_SCHEME`、`mimeForName`（serve + data URL 共用 MIME 表）。
+  - **Reader**（`src/main/preview/read.ts`）：图片分支读 bytes→`dataUrl`（新可选字段，additive-only 契约增量；text=null、totalLines=0）；svg/html 走既有文本管道，损坏（NUL）自动落 binary。
+  - **Renderer**（`PreviewTab.tsx`）：segmented control 条件从 `kind==='markdown'` 扩为 `hasRenderedView(kind)`（markdown 先例原样沿用：超限时控件仍在，Rendered 惰性 + 「Large SVG/HTML file — shown as source」notice）；SVG 渲染态 = `.preview-media img` + svgDataUrl；HTML 渲染态 = `iframe.sandbox="allow-scripts"`（仅此一项）+ `src=previewFileUrl(absolutePath)`；png/jpg/gif/webp = img 直显（无控件无 wrap）。wrap 开关条件收紧为「真的在 CodeView 上」（image/binary 不再误显 wrap 钮——「source 态才显示」规则的严谨化，markdown 渲染态行为不变）。view-model：`load-success` 渲染态判定改为 `displayModeFor !== 'source'`（svg/html/image 默认渲染态；超限/二进制默认源码态）。
+  - **preview-file:// 协议**（新 `src/main/preview/serve.ts` + index.ts 装配）：`protocol.registerSchemesAsPrivileged`（app ready 前）注册 `standard+secure` 特权（层级 URL→相对资源以文件目录解析；dev http 页下也算安全上下文；**不授 supportFetchAPI**——帧内脚本对本地文件无 fetch() 能力）；`protocol.handle` 处理器只服务「已注册根目录内、词法归一化后、常规文件、≤2MB」的路径（注册时机 = preview:load 命中 html 时注册其所在目录，内存态不持久化）；text/html 响应额外携带 `Content-Security-Policy: sandbox allow-scripts` 头（纵深防御）；renderer CSP meta 增加 `frame-src 'self' preview-file:`；window options 显式 `nodeIntegrationInSubFrames: false`（契约白纸黑字）。serve.ts 纯谓词+处理器可脱离 Electron 做 vitest（10 例：包含判定、遍历拒绝、403/404/413、MIME、CSP 头、特权形状）。
+  - **验证**：vitest 1547/1547 全绿（新增 policy 表驱动 31 例、view-model 渲染态例、read svg/html/image/损坏例、serve 10 例）；typecheck 双 tsconfig 清。visual harness `npm run visual:preview`（新 `src/main/visual-preview.ts`，PICODE_VISUAL_PREVIEW=1，隔离 store+fixture 目录，sidebar「View files」→文件行深链预览）全绿退出 0，四帧：`.scratch/visual/c88-html-rendered.png`（桃色底=相对 css 生效、`PICODE88_SCRIPT_RAN` 标题=内联脚本执行、蓝点=相对 img 解码）、`c88-html-source.png`（高亮源码 + wrap 钮回归）、`c88-svg-rendered.png`（SVG 静态直显 + Rendered 激活）、`c88-png-rendered.png`（png 直显、零控件）。同时把 preview harness 加入 base visual.ts 的互斥让位链（PICODE_VISUAL_PREVIEW=1 时 base harness 停手，帧不再被并发采样污染）。smoke stage `preview_dual_88` 已入 `smoke.ts`（同构断言集 + 结束清场，无模型调用）。
+  - **沙箱探针实录**（visual harness 实测输出）：帧内 `require/process/window.picode` 均 `'undefined'`，`contentDocument === null`（父页侧 opaque origin 不可读），`sandbox` 属性逐字 `allow-scripts`，`src` 以 `preview-file://local/` 开头，相对 css 计算色 `rgb(255, 240, 224)`、相对图 `naturalWidth > 0`。
+- 2026-09-17 (dev-app serialization 记录)：visual harness 首跑前 `ps` 自查无 PiCode Electron 进程（遗留的 wt-27 node-pty spawn-helper 为陈旧孤儿，非运行中的 app）；`npm run build` 前后 wt-87-table-full 两次启动 `npm run smoke:electron`——按规矩让行等待其退出（等待循环实测 ~2.5min），再跑本票 visual。smoke:electron 实跑同理需等 wt-87 完全让位。
+- 2026-09-18 (smoke 实跑记录 → 终态)：首跑（操作者空闲窗口）一路通过全部前置 stage 含 ticket-44 焦点段，抵达本票 stage——现场抓出并修复 stage 自身三个 bug：①初版走 sidebar「View files」→ FileBrowser 路线，实跑诊断（fail 时转储 sessions.list + DOM）证明新会话的 sidebar group 渲染依赖 session index 时效、不可靠 → 改走 ticket-31 先例的 Review 树 deep link（git 种子 seed88、fixtures 保持 untracked = whole-file adds）；②初版 `git add .` 误把 fixtures 一并提交致 Review "No changes"（诊断转储 `0 files`）→ 改为只 add seed.txt；③iframe 沙箱断言首版为单次快照（tab 打开与帧挂载/导航间存在竞态）→ 改为与兄弟断言一致的 waitForProbe 轮询。**终态：`npm run smoke:electron` 全套 exit 0**——`preview_dual_88` 八步全绿（review_tree / html[探针实录：帧内 require/process/picode 均 undefined + 相对 css/img 加载] / html_source / svg / png / markdown / binary / done），全部前置与后续 stage 同跑无回归。此前多次重跑曾被 ticket-44 真实剪贴板段的 macOS 焦点拒绝阻断（操作者前台活跃期间焦点类 stage 必挂，T81/T79/T83 同款已记录限制）及一次 ticket-86 菜单时序 flake，均在后续重跑中自然通过，非本票代码问题。
+- 2026-09-18 (code-review 两轴，均 OK-with-notes)：Standards 轴（reviewer 子代理）：零硬违规、零 P0/P1；采纳修复 ①policy 测试去重（新块不再重复 ticket-07 的 markdown 回退用例）②PreviewTab 就绪文件合取收敛为单一 `readyFile` ③smoke 清场注释改为与行为一致。Spec 轴（reviewer 子代理）：四项 spec 端到端确认落地；采纳加固 ④serve 处理器只认 `local` host（外来 host 403，先于路径工作拒绝）⑤`addServeRoot` 拒绝文件系统根 `/`（根级预览不得使全盘可服务）——两者均补测试。保留并记录：`.jpeg` 为 png/jpg 的同格式常见变体（spec ④的良性超集）；smoke/visual 双 harness 的 fixture 复用为 T81 先例（漂移风险已知晓）；serve 词法判定的符号链接边界已在安全核查条补记（帧无网络外传通道，风险有界）；CONTEXT.md 术语表未加双态预览条目（domain.md 惰性原则，留给 /domain-modeling，非违规）。修复后复验：vitest 1547/1547 + typecheck 双 tsconfig 清 + visual:preview exit 0（四帧重拍）+ smoke:electron 全套 exit 0。
+- 2026-09-17 (安全核查留档，验收项 ④)：
+  - **iframe sandbox 属性清单**：`sandbox="allow-scripts"`（唯一 token，白名单仅内联脚本）。未授 `allow-same-origin`（帧 = opaque origin，`frame.contentDocument === null` 由两路 harness 实测断言）；未授 `allow-forms`/`allow-popups`/`allow-top-navigation`/`allow-modals`/`allow-downloads`。纵深防御：serve 端 text/html 响应附 `Content-Security-Policy: sandbox allow-scripts` 头——即使 iframe 属性在某处被丢，帧仍被 CSP 压制在同一隔离档位。
+  - **零凭据声明**：preview-file 协议无 cookie jar、无 HTTP 凭据、无会话态；帧为 opaque origin，localStorage/indexedDB/cookies 全不可用；加载器对 renderer 主文档零接触（`contentDocument` 跨源不可读）。app 侧唯一注册动作是「操作者真实预览过的 html 文件所在目录」→ serve 根，仅内存，不落盘不持久化。
+  - **不写外部文件声明**：serve 处理器 read-only（stat + readFile，无任何写路径、无执行、无子进程）；reader/IPC 同为只读。帧内脚本能触达的本地能力被三层限制：①无 allow-same-origin→无法读写父文档/存储；②`nodeIntegrationInSubFrames: false`（显式）+ `sandbox: true` + contextIsolation→无 preload bridge（探针实测 `typeof window.picode === 'undefined'`）、无 Node（`typeof require/process === 'undefined'`）；③preview-file 协议不授 supportFetchAPI + 处理器根目录白名单 + 2MB 硬帽→本地文件读取被限定在已预览目录内的常规文件（词法判定，不解析符号链接——已预览目录内的符号链接若指向外部，其内容同样只进沙箱帧，帧无网络外传通道且无 fetch API，风险边界见 serve.ts 头注）。LLM 生成的报告脚本可渲染、可改自己帧内 DOM，无法触达 app、凭据、或白名单目录之外的常规文件。
