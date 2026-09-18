@@ -6,7 +6,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** wontfix
 
 ## Acceptance
 
@@ -21,3 +21,8 @@
 ## Comments
 
 - 2026-09-17 (intake 立项，合并会话取证 + 抽查复核)：根因链 = t69 验证（09-15 晚）早于 76 合入（09-16 14:31）、rebase 跨语义变更未重跑 transcript；**bisect T69→T83 不可行——69 合并起每个 checkout 同型失败**。交叉引用票 85 Comments「预先存在缺陷记录」。编号说明：合并会话移交时指定 108，但 108 已被 R29 计时票占用（全局连续纪律），本票顺延 **109**。
+- 2026-09-18 (merge session，per 操作者裁决「翻转 109 Status 并注记」)：**撤票——内容已由票 87 顺带交付**（merge `b252842`，feat `9a3df7d`）。对账：
+  - 修复形态差异：87 实现会话选 **prov-13（末行）+ composer_state 钉住 current**（chat reducer `state.model ?? event.current` 不被 models_available 覆盖），而非本票草案的 prov-11——同族排序免疫，且保留「深行定位」stage 意图（排序后 row 13）与 4f 末行 clamp；附基线复现（stash 改动后同型失败）。87 票内「顺手修 + 报备」Comments 在案。
+  - 交付证据：`visual:transcript` **全量绿至 VISUAL done**（含修复后 4e/4f）；9 帧及 0→9 全系列重捕获（随 merge `b252842` 入库）；两张死证据帧 git rm。
+  - 验收项覆盖：fixture 排序免疫 ✓（prov-13 双世界成立）、全量 transcript 绿 ✓、帧重捕获 ✓（标题栏无箭头残留随 85/87 新基线）、零产品代码改动 ✓（改动即 visual.ts fixture 区 + 帧）、流程教训 ✓（**跨语义 rebase 需重跑受影响 harness**——已留档于 87 Comments 与本票背景，教训存续）。
+  - Status: ready-for-agent → **wontfix**（交付已发生、无剩余工作；非「不修」——缺陷已修，交付载体为 87）。

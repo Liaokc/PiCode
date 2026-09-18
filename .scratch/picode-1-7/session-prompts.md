@@ -43,7 +43,7 @@ cd ~/PiCode && bash scripts/merge-ticket.sh <NN>
 | | **82** live 纯时间序（B 群头 · **词条修订 rider**） | turn-collapse 分组 + ChatView | 无 |
 | | **83** History toggle 修复 | TreePanel | 无 |
 | **W2** | **84** 侧栏拖拽重排（C 群头） | Sidebar + group.ts + 偏好结构 | 无 |
-| | **109** visual 4e/4f fixture 排序免疫 | visual.ts fixture 区 + .scratch/visual 帧 | 无 |
+| | **109** visual 4e/4f fixture 排序免疫（**已撤销**——87 顺带交付，票内注记） | visual.ts fixture 区 + .scratch/visual 帧 | 无 |
 | | **85** 删幽灵箭头 | TitleBar | 无 |
 | | **86** 零标签自动折叠 | layout/panel 模型联动 | 无 |
 | **W3** | **87** 表格完整展示 | Markdown 表格 | 无 |
@@ -69,7 +69,7 @@ cd ~/PiCode && bash scripts/merge-ticket.sh <NN>
 | | **106** 新卡片秒出 | registry 乐观注入 + 对账 | **95** |
 | | **107** 文件浏览器实时刷新 + 置顶行 View files | Sidebar 置顶行 + FileBrowser（watch 通路则契约增量） | **84** |
 
-> 群分：A（composer 群 81→91→98）/ B（转录群 82→92→94→97→103→108）/ C（侧栏群 84→95→106；107 文件浏览器 W9）/ D（子代理 90→99→101）/ 独立快线 83/85/86/87/88/89→96/93/100→104/105/109（109 = visual fixture 修缮，与在飞票零碰撞面）。
+> 群分：A（composer 群 81→91→98）/ B（转录群 82→92→94→97→103→108）/ C（侧栏群 84→95→106；107 文件浏览器 W9）/ D（子代理 90→99→101）/ 独立快线 83/85/86/87/88/89→96/93/100→104/105（109 visual fixture 修缮已撤销——87 顺带交付，票内注记）。
 > **防冲突纪律**（同 v1.1–v1.6，三件事）：
 > 1. 每票合入 main 后，其余活跃 worktree **立即** `git rebase main`；
 > 2. contract / app.css / CONTEXT.md / smoke.ts **只增不改**（追加自己的区段/词条/阶段，不动别人行）；
@@ -692,6 +692,8 @@ cd .worktrees/wt-108-timer-continuity && npm install
 ---
 
 ## T109 — visual 4e/4f fixture 排序免疫 + 全量重捕获（W2 追加，无阻塞）
+
+> ⚠️ **已撤销（2026-09-18，操作者裁决）**：内容已由票 87 顺带交付（merge `b252842`——prov-13 排序免疫 + 全量 transcript 绿 + 帧重捕获），Status 已翻 wontfix。**勿开工**，票内注记在案。
 
 ```bash
 cd ~/PiCode
