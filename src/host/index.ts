@@ -56,6 +56,8 @@ import { createApprovalGateExtension, toImageContents } from './gate-extension'
 import { HeldMessageEnd, monitorSessionManager } from './live-entry-ids'
 import { McpAuthBridge } from './mcp-auth-bridge'
 import { parseSessionArgs } from './session-args'
+import { collectSessionAsyncDirs, SubagentBridge } from './subagent-bridge'
+import { subagentInfoOfDetails } from '../shared/sessions/parse'
 
 /** Working directory / resume target / PiCode preference defaults (ticket 11),
  * parsed once at boot from argv (see session-args). */
@@ -98,6 +100,11 @@ const approvalExtension = createApprovalGateExtension(gate, send)
  * context (notify/input relay during an in-flight flow only) and the
  * `mcp_auth_start` command runs the adapter's own /mcp-auth flow. */
 const mcpAuthBridge = new McpAuthBridge(send)
+
+/** Ticket 90: the subagent bridge — subscribes to pi-subagents' in-process
+ * RPC + lifecycle events and forwards bounded contract events; serves the
+ * `subagent_status` command (artifact reads + fleet DTO). */
+const subagentBridge = new SubagentBridge(send)
 
 /** User messages this process already echoed via the `prompt` command; the
  * appendMessage monitor consumes them at the persistence moment, where the
@@ -209,18 +216,22 @@ function wireSessionEvents(agentSession: AgentSession): void {
       case 'tool_execution_end': {
         // Ticket 78 (additive projection): when the SDK result carries a
         // string `details.diff` (the edit tool's display diff), it rides the
-        // tool_end event as `diff` — the turn file bar's raw material. Every
-        // other tool (and every older result shape) leaves the field absent,
-        // so pre-78 renderer payloads keep validating unchanged.
+        // tool_end event as `diff` — the turn file bar's raw material.
+        // Ticket 90 (additive): when the details name a subagent run, the
+        // structured identity rides as `subagent` — the directory's primary
+        // source on the live path. Every other tool leaves both fields
+        // absent, so pre-78/90 renderer payloads keep validating unchanged.
         const result = event.result as { details?: unknown } | undefined
         const details = isRecord(result?.details) ? result?.details : undefined
         const diff = typeof details?.['diff'] === 'string' ? details['diff'] : undefined
+        const subagent = subagentInfoOfDetails(details ?? null)
         send({
           type: 'tool_end',
           toolCallId: event.toolCallId,
           output: toolResultText(event.result),
           isError: event.isError === true,
-          ...(diff !== undefined ? { diff } : {})
+          ...(diff !== undefined ? { diff } : {}),
+          ...(subagent !== undefined ? { subagent } : {})
         })
         break
       }
@@ -405,7 +416,7 @@ async function createSession(): Promise<void> {
   const factory = async (opts: { cwd: string; sessionManager: SessionManager; sessionStartEvent?: SessionStartEvent }) => {
     const services = await sdk.createAgentSessionServices({
       cwd: opts.cwd,
-      resourceLoaderOptions: { extensionFactories: [approvalExtension] }
+      resourceLoaderOptions: { extensionFactories: [approvalExtension, subagentBridge.extension] }
     })
     // Ticket 51: wrap the manager BEFORE the AgentSession consumes it, so
     // every message persistence reports its real entry id (live fork anchor
@@ -677,6 +688,14 @@ async function handleMcpAuthStart(serverName: string): Promise<void> {
   )
 }
 
+/** Ticket 90: serve one `subagent_status` request — the async run dirs the
+ * session record itself names (the primary source's asyncDirs) plus the
+ * pi-subagents fleet DTO via the in-process RPC. */
+async function handleSubagentStatus(requestId: string): Promise<void> {
+  const entries = runtime !== null ? (runtime.session.sessionManager.getEntries() as unknown as Record<string, unknown>[]) : []
+  await subagentBridge.handleStatusRequest(requestId, () => collectSessionAsyncDirs(entries))
+}
+
 function handleRename(name: string): void {
   if (!requireSettledSession()) return
   try {
@@ -759,6 +778,11 @@ process.on('message', (message: unknown) => {
     case 'mcp_auth_input_resolve':
       if (typeof message.requestId === 'string') {
         mcpAuthBridge.resolveInput(message.requestId, typeof message.value === 'string' ? message.value : null)
+      }
+      break
+    case 'subagent_status':
+      if (typeof message.requestId === 'string') {
+        void handleSubagentStatus(message.requestId)
       }
       break
     case 'abort_turn':

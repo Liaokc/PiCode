@@ -241,6 +241,8 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
   if (process.env['PICODE_VISUAL_RAIL_STACK'] === '1') return
   // And for the context-ring harness (ticket 77).
   if (process.env['PICODE_VISUAL_CONTEXT_RING'] === '1') return
+  // And for the subagent-directory harness (ticket 90).
+  if (process.env['PICODE_VISUAL_SUBAGENTS'] === '1') return
 
   // Ticket 66: the 2d fork section clicks fork on the SYNTHETIC
   // 'visual-session', which has no live host — left alone the supervisor

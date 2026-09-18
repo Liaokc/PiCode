@@ -10,7 +10,58 @@
  * the current leaf (the last entry in file order — Pi's own restore rule).
  */
 import type { SessionSummary, SessionTreeNodeDTO, TranscriptAssistantPart, TranscriptImagePart, TranscriptItem } from './types.ts'
+import type { SubagentCallChild, SubagentCallInfo } from '../subagents/types.ts'
 import { toolResultText, UNFINISHED_TOOL_OUTPUT } from '../tool-format.ts'
+
+/** Per-child clamp for the recorded final output (preview raw material). */
+const SUBAGENT_CHILD_OUTPUT_CHARS = 200
+
+/**
+ * The subagent call info projected from a toolResult's recorded `details`
+ * (ticket 90, additive — the replay's primary source). pi-subagents records
+ * `{ mode, runId, asyncId?, asyncDir?, results: [...] }`; only a record that
+ * actually names a run projects — every other tool's details (and legacy
+ * shapes) keep the field absent. Unknown fields are ignored (forward
+ * compatibility per pi-subagents' own contract).
+ */
+export function subagentInfoOfDetails(details: Record<string, unknown> | null): SubagentCallInfo | undefined {
+  if (details === null) return undefined
+  const mode = details['mode']
+  const runId = details['runId']
+  const asyncId = details['asyncId']
+  const asyncDir = details['asyncDir']
+  if (typeof runId !== 'string' && typeof asyncId !== 'string') return undefined
+  const rawResults = details['results']
+  const children = Array.isArray(rawResults)
+    ? rawResults.flatMap((raw): SubagentCallChild[] => {
+        if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return []
+        const child = raw as Record<string, unknown>
+        const projected: SubagentCallChild = {}
+        if (typeof child['agent'] === 'string') projected.agent = child['agent']
+        if (typeof child['status'] === 'string') projected.status = child['status']
+        if (typeof child['finalOutput'] === 'string') {
+          projected.finalOutput = child['finalOutput'].slice(0, SUBAGENT_CHILD_OUTPUT_CHARS)
+        } else if (typeof child['summary'] === 'string') {
+          // The async result shape carries `summary` instead of finalOutput.
+          projected.finalOutput = child['summary'].slice(0, SUBAGENT_CHILD_OUTPUT_CHARS)
+        }
+        if (typeof child['error'] === 'string') projected.error = child['error']
+        if (typeof child['exitCode'] === 'number') projected.exitCode = child['exitCode']
+        if (child['detached'] === true) projected.detached = true
+        if (child['interrupted'] === true) projected.interrupted = true
+        if (child['stopped'] === true) projected.stopped = true
+        if (child['timedOut'] === true) projected.timedOut = true
+        return Object.keys(projected).length > 0 ? [projected] : []
+      })
+    : undefined
+  return {
+    ...(typeof mode === 'string' ? { mode } : {}),
+    ...(typeof runId === 'string' ? { runId } : {}),
+    ...(typeof asyncId === 'string' ? { asyncId } : {}),
+    ...(typeof asyncDir === 'string' ? { asyncDir } : {}),
+    ...(children !== undefined && children.length > 0 ? { children } : {})
+  }
+}
 
 export interface RawSessionEntry {
   type: string
@@ -282,7 +333,7 @@ function resultDetails(message: NonNullable<RawSessionEntry['message']>): Record
 export function extractTranscriptItems(entries: RawSessionEntry[]): TranscriptItem[] {
   // Pass 1: final result per tool call id (a retried call would append a
   // second result — the last one wins).
-  const results = new Map<string, { output: string; isError: boolean; diff?: string }>()
+  const results = new Map<string, { output: string; isError: boolean; diff?: string; subagent?: SubagentCallInfo }>()
   for (const entry of entries) {
     if (entry.type !== 'message') continue
     const message = entry.message
@@ -291,10 +342,16 @@ export function extractTranscriptItems(entries: RawSessionEntry[]): TranscriptIt
     if (toolCallId === '') continue
     const details = resultDetails(message)
     const diff = typeof details?.['diff'] === 'string' ? details['diff'] : undefined
+    // Ticket 90 (additive projection): pi-subagents records its structured
+    // run identity in the toolResult's `details` — the replay's primary
+    // source. Only record-shaped details with a run identity project; every
+    // other result keeps the old payload shape (field absent).
+    const subagent = subagentInfoOfDetails(details)
     results.set(toolCallId, {
       output: toolResultText(message.content),
       isError: message.isError === true,
-      ...(diff !== undefined ? { diff } : {})
+      ...(diff !== undefined ? { diff } : {}),
+      ...(subagent !== undefined ? { subagent } : {})
     })
   }
 
@@ -337,7 +394,8 @@ export function extractTranscriptItems(entries: RawSessionEntry[]): TranscriptIt
           args: call.args,
           output: result !== undefined ? result.output : UNFINISHED_TOOL_OUTPUT,
           isError: result !== undefined ? result.isError : true,
-          ...(result?.diff !== undefined ? { diff: result.diff } : {})
+          ...(result?.diff !== undefined ? { diff: result.diff } : {}),
+          ...(result?.subagent !== undefined ? { subagent: result.subagent } : {})
         })
       }
     }

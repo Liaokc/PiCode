@@ -22,15 +22,16 @@ export const PANEL_DEFAULT_WIDTH_PX = SIDE_PANEL_WIDTH_PX
 /**
  * Side panel tab identity (ticket 31): the fixed Review tab, one tab per
  * deep-linked file (cwd anchors relative navigation), one per session call
- * trace, and — ticket 78 — one per reviewed turn (the turn-diff tab that
- * renders a turn's file-change diffs; the turn id scopes it). Equality is
- * structural — same kind and coordinates = same tab.
+ * trace, one per reviewed turn (ticket 78), and — ticket 90 — the fixed
+ * Subagents directory tab (the focused session's subagent runs). Equality
+ * is structural — same kind and coordinates = same tab.
  */
 export type PanelTabId =
   | { kind: 'review' }
   | { kind: 'file'; cwd: string; path: string }
   | { kind: 'trace'; sessionFile: string }
   | { kind: 'turn-diff'; turnId: string }
+  | { kind: 'subagents' }
 
 /** One entry of the recently closed history: what was closed, and when. */
 export interface RecentlyClosedTab {
@@ -90,12 +91,15 @@ export function panelTabKey(tab: PanelTabId): string {
       return JSON.stringify(['trace', tab.sessionFile])
     case 'turn-diff':
       return JSON.stringify(['turn-diff', tab.turnId])
+    case 'subagents':
+      return 'subagents'
   }
 }
 
 /** Display name: the path leaf for file/trace tabs, the fixed Review label,
  * the generic turn-diff label (one per reviewed turn — the strip keeps them
- * apart by position, the identity by turn id). */
+ * apart by position, the identity by turn id), and the fixed Subagents
+ * label (ticket 90 — the directory always shows the FOCUSED session). */
 export function panelTabLabel(tab: PanelTabId): string {
   switch (tab.kind) {
     case 'review':
@@ -106,6 +110,8 @@ export function panelTabLabel(tab: PanelTabId): string {
       return leafOf(tab.sessionFile)
     case 'turn-diff':
       return 'Turn diff'
+    case 'subagents':
+      return 'Subagents'
   }
 }
 
@@ -117,9 +123,11 @@ function leafOf(path: string): string {
 /** True for the identities the recently closed history remembers (ticket 31:
  * the Review tab is not tracked — the picker card reopens it). Ticket 78:
  * turn-diff tabs are ephemeral like Review — the turn they render lives in
- * the active view's state, so a closed-history entry could not restore it. */
+ * the active view's state, so a closed-history entry could not restore it.
+ * Ticket 90: the Subagents tab is a fixed identity like Review (the picker
+ * card reopens it; it always shows the focused session). */
 function isTrackable(tab: PanelTabId): boolean {
-  return tab.kind !== 'review' && tab.kind !== 'turn-diff'
+  return tab.kind !== 'review' && tab.kind !== 'turn-diff' && tab.kind !== 'subagents'
 }
 
 /**
@@ -156,6 +164,7 @@ function normalizeEntry(raw: unknown): RecentlyClosedTab | null {
   if (typeof closedAt !== 'number' || !Number.isFinite(closedAt)) return null
   if (typeof tab !== 'object' || tab === null) return null
   if (tab.kind === 'review') return null
+  if (tab.kind === 'subagents') return null
   if (tab.kind === 'file') {
     if (typeof tab.cwd !== 'string' || typeof tab.path !== 'string') return null
     return { tab: { kind: 'file', cwd: tab.cwd, path: tab.path }, closedAt }

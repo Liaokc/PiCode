@@ -517,3 +517,175 @@ describe('registryReducer — composer draft slots (ticket 74, per-session 槽)'
     expect(a?.draft).toEqual(DRAFT_A)
   })
 })
+
+describe('registryReducer — the subagent bridge live state (ticket 90)', () => {
+  it('folds a subagent_status snapshot as the runs record + fleet DTO', () => {
+    const state = run(
+      initialRegistryState(),
+      CREATED_A,
+      scoped('s-a', {
+        type: 'subagent_status',
+        requestId: 'req-1',
+        available: true,
+        runs: [{ runId: 'run-1', state: 'running', startedAt: 5 }],
+        fleet: { entries: [], totalActive: 0, omitted: 0 }
+      })
+    )
+    const a = state.sessions.find((s) => s.id === 's-a')
+    expect(a?.subagents.runs['run-1']).toMatchObject({ runId: 'run-1', state: 'running' })
+    expect(a?.subagents.fleet).toEqual({ entries: [], totalActive: 0, omitted: 0 })
+  })
+
+  it('a later AVAILABLE snapshot replaces the whole record (last writer wins)', () => {
+    const state = run(
+      initialRegistryState(),
+      CREATED_A,
+      scoped('s-a', {
+        type: 'subagent_status',
+        requestId: 'req-1',
+        available: true,
+        runs: [{ runId: 'run-1', state: 'running' }],
+        fleet: null
+      }),
+      scoped('s-a', {
+        type: 'subagent_status',
+        requestId: 'req-2',
+        available: true,
+        runs: [{ runId: 'run-2', state: 'complete', endedAt: 9 }],
+        fleet: null
+      })
+    )
+    const a = state.sessions.find((s) => s.id === 's-a')
+    expect(Object.keys(a?.subagents.runs ?? {})).toEqual(['run-2'])
+    expect(a?.subagents.runs['run-2']?.state).toBe('complete')
+  })
+
+  it('a completion-event delta survives later snapshots that no longer see the run (artifact cleaned)', () => {
+    // The P1 ordering: the async-complete event folds the terminal state
+    // (no artifact left behind); the next AVAILABLE snapshot — built from
+    // the artifacts, which no longer hold the run — must NOT erase it.
+    const state = run(
+      initialRegistryState(),
+      CREATED_A,
+      scoped('s-a', { type: 'subagent_async_completed', runId: 'run-9', state: 'complete', success: true, summary: 'Done in 3 steps.' }),
+      scoped('s-a', {
+        type: 'subagent_status',
+        requestId: 'req-later',
+        available: true,
+        runs: [{ runId: 'run-other', state: 'running' }],
+        fleet: null
+      })
+    )
+    const a = state.sessions.find((s) => s.id === 's-a')
+    expect(a?.subagents.runs['run-9']).toMatchObject({ runId: 'run-9', state: 'complete', summary: 'Done in 3 steps.' })
+    expect(a?.subagents.runs['run-other']?.state).toBe('running')
+  })
+
+  it('a foreground completion (no artifact at all) survives every later snapshot', () => {
+    // Detached foreground children have NO async artifacts — the forwarded
+    // foreground-complete event is their only terminal evidence, and
+    // snapshots (artifact-derived) never contain them.
+    const state = run(
+      initialRegistryState(),
+      CREATED_A,
+      scoped('s-a', { type: 'subagent_foreground_completed', runId: 'fg-7', success: true, state: 'complete', summary: 'ok' }),
+      scoped('s-a', { type: 'subagent_status', requestId: 'req-1', available: true, runs: [], fleet: null }),
+      scoped('s-a', { type: 'subagent_status', requestId: 'req-2', available: true, runs: [], fleet: null })
+    )
+    const a = state.sessions.find((s) => s.id === 's-a')
+    expect(a?.subagents.runs['fg-7']).toMatchObject({ runId: 'fg-7', state: 'complete' })
+  })
+
+  it('a LIVE run missing from an available snapshot is dropped (no stale claim)', () => {
+    // A running state whose artifact vanished (cleaned/repaired away) must
+    // NOT stay running forever — the row falls back to the replay
+    // projection's honest Lost.
+    const state = run(
+      initialRegistryState(),
+      CREATED_A,
+      scoped('s-a', { type: 'subagent_async_started', runId: 'run-live' }),
+      scoped('s-a', { type: 'subagent_status', requestId: 'req-1', available: true, runs: [], fleet: null })
+    )
+    const a = state.sessions.find((s) => s.id === 's-a')
+    expect(a?.subagents.runs['run-live']).toBeUndefined()
+  })
+
+  it('an UNAVAILABLE snapshot means no information — the known live state stays', () => {
+    const state = run(
+      initialRegistryState(),
+      CREATED_A,
+      scoped('s-a', {
+        type: 'subagent_status',
+        requestId: 'req-1',
+        available: true,
+        runs: [{ runId: 'run-1', state: 'running' }],
+        fleet: { entries: [], totalActive: 1, omitted: 0 }
+      }),
+      // The poll hitting a host-less session (supervisor degradation) must
+      // not erase the last known live states.
+      scoped('s-a', { type: 'subagent_status', requestId: 'req-2', available: false, runs: [], fleet: null }),
+      scoped('s-a', { type: 'subagent_status', requestId: 'req-3', available: false, runs: [], fleet: null })
+    )
+    const a = state.sessions.find((s) => s.id === 's-a')
+    expect(a?.subagents.runs['run-1']?.state).toBe('running')
+    expect(a?.subagents.fleet).toEqual({ entries: [], totalActive: 1, omitted: 0 })
+  })
+
+  it('lifecycle events fold as deltas: async_started seeds Running, async_completed settles', () => {
+    const state = run(
+      initialRegistryState(),
+      CREATED_A,
+      scoped('s-a', { type: 'subagent_async_started', runId: 'run-7', mode: 'single', agent: 'scout' }),
+      scoped('s-a', { type: 'subagent_async_completed', runId: 'run-7', state: 'complete', success: true, summary: 'Done.' })
+    )
+    const a = state.sessions.find((s) => s.id === 's-a')
+    expect(a?.subagents.runs['run-7']).toMatchObject({ runId: 'run-7', state: 'complete', summary: 'Done.' })
+  })
+
+  it('a foreground completion settles a foreground run id (no asyncDir needed)', () => {
+    const state = run(
+      initialRegistryState(),
+      CREATED_A,
+      scoped('s-a', { type: 'subagent_foreground_completed', runId: 'fg-1', success: true, state: 'complete', summary: 'ok' })
+    )
+    const a = state.sessions.find((s) => s.id === 's-a')
+    expect(a?.subagents.runs['fg-1']).toMatchObject({ runId: 'fg-1', state: 'complete' })
+  })
+
+  it('child-status hints fold nowhere and unknown-scoped events do not crash', () => {
+    const state = run(
+      initialRegistryState(),
+      CREATED_A,
+      scoped('s-a', { type: 'subagent_child_status', runId: 'r', childId: 'c', status: 'stopping', ts: 1 })
+    )
+    expect(state.sessions.find((s) => s.id === 's-a')?.subagents.runs).toEqual({})
+  })
+
+  it('per-session isolation: the snapshot of session B never touches session A', () => {
+    const state = run(
+      initialRegistryState(),
+      CREATED_A,
+      CREATED_B,
+      scoped('s-b', {
+        type: 'subagent_status',
+        requestId: 'req-b',
+        available: true,
+        runs: [{ runId: 'run-b', state: 'running' }],
+        fleet: null
+      })
+    )
+    expect(state.sessions.find((s) => s.id === 's-a')?.subagents.runs).toEqual({})
+    expect(state.sessions.find((s) => s.id === 's-b')?.subagents.runs['run-b']).toBeDefined()
+  })
+
+  it('session_created resets the live state (fresh session view, fresh snapshot)', () => {
+    const state = run(
+      initialRegistryState(),
+      CREATED_A,
+      scoped('s-a', { type: 'subagent_async_started', runId: 'run-1' }),
+      scoped('s-a', { type: 'session_created', sessionId: 's-a', cwd: '/tmp/a2', model: 'm3', resumed: true })
+    )
+    const a = state.sessions.find((s) => s.id === 's-a')
+    expect(a?.subagents).toEqual({ runs: {}, fleet: null })
+  })
+})

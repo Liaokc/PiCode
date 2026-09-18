@@ -18,6 +18,7 @@ import type { HostToParent } from './contract'
 import type { ComposerDraft } from './composer/drafts'
 import { parkedDraft } from './composer/drafts'
 import type { SessionTreePayload } from './sessions/types'
+import type { SubagentFleetDTO, SubagentRunState } from './subagents/types'
 
 /** View state of ONE session inside this app run. */
 export interface RegistrySession {
@@ -44,6 +45,21 @@ export interface RegistrySession {
    * applies — an emptied draft clears the slot); a detach drops it with the
    * entry; memory-level — a restart loses it. null = no draft parked. */
   draft: ComposerDraft | null
+  /** Ticket 90: the subagent bridge's live state, per session — the runs
+   * the bridge last reported (artifact reads + lifecycle deltas, keyed by
+   * run id) and the fleet DTO from pi-subagents' RPC. Purely live
+   * augmentation: the directory's historical source is the transcript. */
+  subagents: SubagentLiveState
+}
+
+/** Live subagent state of ONE session (ticket 90). */
+export interface SubagentLiveState {
+  /** Live async-run states by run id (status.json artifact reads, refined
+   * by the forwarded lifecycle events). */
+  runs: Record<string, SubagentRunState>
+  /** pi-subagents' bounded fleet DTO from the last status reply; null while
+   * never answered or the package is unavailable. */
+  fleet: SubagentFleetDTO | null
 }
 
 export interface SessionRegistryState {
@@ -51,6 +67,10 @@ export interface SessionRegistryState {
   sessions: RegistrySession[]
   /** The session whose view the main zone renders; null = empty state. */
   focusedId: string | null
+}
+
+export function initialSubagentLiveState(): SubagentLiveState {
+  return { runs: {}, fleet: null }
 }
 
 export function initialRegistryState(): SessionRegistryState {
@@ -158,7 +178,7 @@ function withEntryFor(state: SessionRegistryState, id: string): SessionRegistryS
     ...state,
     sessions: [
       ...state.sessions,
-      { id, cwd: null, sessionFile: null, name: null, chat: initialChatState(), tree: null, branch: null, dismissedError: null, draft: null }
+      { id, cwd: null, sessionFile: null, name: null, chat: initialChatState(), tree: null, branch: null, dismissedError: null, draft: null, subagents: initialSubagentLiveState() }
     ]
   }
 }
@@ -172,21 +192,100 @@ function foldInto(state: SessionRegistryState, id: string, action: ChatAction): 
 
 /** session_created carries the announcement: metadata lands, the tree and
  * dismissal reset, and the view auto-switches to the session (create/resume/
- * fork all announce, and all mean "now looking at it"). The transcript state
- * itself resets through the chat reducer's own session_created rule — this
- * module never re-implements chat folding. */
+ * fork all announce, and all mean "now looking at it"). */
 function applyAnnouncement(state: SessionRegistryState, id: string, event: Extract<HostToParent, { type: 'session_created' }>): SessionRegistryState {
   const withEntry = withEntryFor(state, id)
   const withMeta: SessionRegistryState = {
     ...withEntry,
     sessions: withEntry.sessions.map((s) =>
       s.id === id
-        ? { ...s, cwd: event.cwd, sessionFile: event.sessionFile ?? null, name: event.name ?? null, tree: null, branch: null, dismissedError: null }
+        ? { ...s, cwd: event.cwd, sessionFile: event.sessionFile ?? null, name: event.name ?? null, tree: null, branch: null, dismissedError: null, subagents: initialSubagentLiveState() }
         : s
     ),
     focusedId: id
   }
   return foldInto(withMeta, id, event)
+}
+
+// ---- ticket 90: the subagent bridge's live-state folding ----------------
+
+/** The artifact states a preserved run may carry: only terminal evidence
+ * survives a snapshot that no longer sees the run. Live states (running/
+ * queued/paused) vanish with their artifact — the honest fallback is the
+ * replay projection (Lost for async launches), never a stale claim. */
+const PRESERVED_SNAPSHOT_STATES: ReadonlySet<SubagentRunState['state']> = new Set([
+  'complete',
+  'failed',
+  'partial',
+  'stopped',
+  'rejected'
+])
+
+/** An AVAILABLE snapshot replaces the runs it sees (fresh artifact evidence
+ * wins) and the fleet DTO with it. Runs it does NOT see keep their last
+ * known TERMINAL state — the artifacts behind a settled run get cleaned up
+ * (the epistemology: no artifact + a recorded completion is still
+ * Completed), so a cleaned artifact must not erase the completion a
+ * forwarded event delivered. Live states absent from the snapshot are
+ * dropped (no artifact, no recorded completion → the replay projection's
+ * Lost, never a stale claim). available:false means no information —
+ * nothing changes at all. */
+function foldSubagentStatus(live: SubagentLiveState, runs: SubagentRunState[], fleet: SubagentFleetDTO | null, available: boolean): SubagentLiveState {
+  if (!available) return live
+  const seen = new Set<string>()
+  const next: Record<string, SubagentRunState> = {}
+  for (const run of runs) {
+    seen.add(run.runId)
+    next[run.runId] = run
+  }
+  for (const [runId, previous] of Object.entries(live.runs)) {
+    if (seen.has(runId)) continue
+    if (PRESERVED_SNAPSHOT_STATES.has(previous.state)) next[runId] = previous
+  }
+  return { runs: next, fleet }
+}
+
+/** Lifecycle events fold as deltas onto the last snapshot — a started run
+ * appears immediately, a completed run's terminal state lands without
+ * waiting for the next poll. */
+function foldSubagentLifecycle(
+  live: SubagentLiveState,
+  event: Extract<HostToParent, { type: 'subagent_async_started' | 'subagent_async_completed' | 'subagent_foreground_completed' }>
+): SubagentLiveState {
+  const previous = live.runs[event.runId]
+  if (event.type === 'subagent_async_started') {
+    // Fresh run: seed Running, keeping whatever fields a prior snapshot
+    // already carried for this id (none, normally).
+    return {
+      ...live,
+      runs: {
+        ...live.runs,
+        [event.runId]: { ...previous, runId: event.runId, state: 'running' }
+      }
+    }
+  }
+  // Completion events: the terminal state plus the summary. A state pi
+  // reports that the projection doesn't know still lands verbatim — the
+  // directory's mapping table degrades unknown states honestly.
+  const reported = event.state
+  const known =
+    reported === 'queued' ||
+    reported === 'running' ||
+    reported === 'complete' ||
+    reported === 'failed' ||
+    reported === 'partial' ||
+    reported === 'paused' ||
+    reported === 'stopped' ||
+    reported === 'rejected'
+      ? reported
+      : undefined
+  const derived: SubagentRunState = {
+    ...(previous !== undefined ? previous : { runId: event.runId, state: 'running' as const }),
+    runId: event.runId,
+    state: known ?? (previous !== undefined ? previous.state : 'failed'),
+    ...(event.summary !== undefined ? { summary: event.summary } : previous?.summary !== undefined ? { summary: previous.summary } : {})
+  }
+  return { ...live, runs: { ...live.runs, [event.runId]: derived } }
 }
 
 function detach(state: SessionRegistryState, id: string): SessionRegistryState {
@@ -228,6 +327,34 @@ function foldEvent(state: SessionRegistryState, event: HostToParent): SessionReg
         sessions: withEntry.sessions.map((s) => (s.id === sessionId ? { ...s, branch: scoped.branch } : s))
       }
     }
+    // Ticket 90: the subagent bridge's live state — a status snapshot
+    // replaces the runs record; lifecycle events fold as deltas. Per-session
+    // view state, like the tree and the branch readout.
+    if (scoped.type === 'subagent_status') {
+      return {
+        ...withEntry,
+        sessions: withEntry.sessions.map((s) =>
+          s.id === sessionId
+            ? { ...s, subagents: foldSubagentStatus(s.subagents, scoped.runs, scoped.fleet, scoped.available) }
+            : s
+        )
+      }
+    }
+    if (
+      scoped.type === 'subagent_async_started' ||
+      scoped.type === 'subagent_async_completed' ||
+      scoped.type === 'subagent_foreground_completed'
+    ) {
+      return {
+        ...withEntry,
+        sessions: withEntry.sessions.map((s) =>
+          s.id === sessionId ? { ...s, subagents: foldSubagentLifecycle(s.subagents, scoped) } : s
+        )
+      }
+    }
+    // subagent_child_status: an observer hint only — the directory ignores
+    // it (later surfaces consume it); nothing to fold today.
+    if (scoped.type === 'subagent_child_status') return withEntry
     return foldInto(withEntry, sessionId, scoped)
   }
   // Legacy unwrapped event (single-session shape): the visual-QA harnesses

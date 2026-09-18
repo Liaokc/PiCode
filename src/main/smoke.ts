@@ -8619,6 +8619,282 @@ export function startSmokeIfEnabled(
       log('settings_mcp_done')
     }
 
+    // ---- ticket 90: the subagent directory — the seeded session's runs
+    // render in the ZCode subagentDirectory composition (Running/Ended
+    // sections + the seven-state badges + Show 20 more); the runs' LIVE
+    // states come from the runs' status.json artifacts (PI_SUBAGENTS_TEMP_ROOT
+    // sandbox), driven by the subagent_status bridge roundtrip; the
+    // pi-subagents package is symlinked into the sandbox agent dir so the
+    // bridge's RPC (fleet DTO, availability) is live; and a reopen rebuilds
+    // the whole directory from the replay. The transcript tool cards are
+    // untouched (zero regression). ----
+    log('subagent_dir_start')
+    {
+      const sandboxAgent90 = process.env['PICODE_PI_AGENT_DIR']
+      if (sandboxAgent90 === undefined || sandboxAgent90.trim() === '') {
+        fail('ticket-90 stage: PICODE_PI_AGENT_DIR is not set — the stage refuses to touch the real agent dir')
+      }
+      const agentDir90 = sandboxAgent90!
+      const realSubagents = path.join(homedir(), '.pi', 'agent', 'npm', 'node_modules', 'pi-subagents')
+      const piSubagentsInstalled = existsSync(path.join(realSubagents, 'package.json'))
+      // The bridge DEGRADES without pi-subagents (available:false, artifact
+      // reads still work); with it installed the RPC fleet path runs live.
+      // Symlink the real package into the sandbox (the ticket-89 adapter
+      // precedent — deps resolve through the real paths).
+      if (piSubagentsInstalled) {
+        const sandboxNpmRoot90 = path.join(agentDir90, 'npm', 'node_modules')
+        mkdirSync(sandboxNpmRoot90, { recursive: true })
+        const sandboxSubagents = path.join(sandboxNpmRoot90, 'pi-subagents')
+        if (!existsSync(sandboxSubagents)) symlinkSync(realSubagents, sandboxSubagents)
+        try {
+          const current = JSON.parse(readFileSync(path.join(agentDir90, 'settings.json'), 'utf-8')) as { packages?: string[] }
+          const packages = new Set<string>(['npm:pi-subagents', ...(Array.isArray(current.packages) ? current.packages : [])])
+          writeFileSync(path.join(agentDir90, 'settings.json'), JSON.stringify({ ...current, packages: [...packages] }, null, 2))
+        } catch {
+          writeFileSync(path.join(agentDir90, 'settings.json'), JSON.stringify({ packages: ['npm:pi-subagents'] }, null, 2))
+        }
+      } else {
+        log('subagent_dir_pkg_absent', 'artifact reads still drive the stage')
+      }
+      // The artifact sandbox: the hosts spawned AFTER this line inherit the
+      // root (the supervisor forks with this process's env), so the seeded
+      // status.json lands where pi-subagents (and the bridge) read it.
+      const subRoot90 = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-subagent90-'))
+      const runsRoot90 = path.join(subRoot90, 'async-subagent-runs')
+      const liveRunDir90 = path.join(runsRoot90, 'sub90-live-1')
+      const previousTempRoot90 = process.env['PI_SUBAGENTS_TEMP_ROOT']
+      process.env['PI_SUBAGENTS_TEMP_ROOT'] = subRoot90
+
+      const store90 = process.env['PICODE_SESSION_DIR']
+      if (!store90) fail('ticket-90 stage: PICODE_SESSION_DIR is not set')
+      const seedDir90 = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-seed90-'))
+      const seedFile90 = path.join(store90, 'subagent90-seeded.jsonl')
+      const stamp90 = new Date().toISOString()
+      const ENDED_90 = 24
+      /** Write the live run's status.json artifact in one state or another
+       * (the artifact IS the live source — the bridge reads it on demand). */
+      const writeArtifact90 = (state: 'running' | 'complete'): void => {
+        writeFileSync(
+          path.join(liveRunDir90, 'status.json'),
+          JSON.stringify({
+            lifecycleArtifactVersion: 1,
+            runId: 'sub90-live-1',
+            mode: 'single',
+            state,
+            startedAt: Date.now() - 60_000,
+            ...(state === 'complete' ? { endedAt: Date.now() - 5_000 } : {}),
+            lastUpdate: Date.now(),
+            ...(state === 'running' ? { pid: process.pid, activityState: 'active', currentTool: 'read' } : { agents: ['scout'] }),
+            sessionId: seedFile90,
+            agents: ['scout']
+          })
+        )
+      }
+      /** Poll an object-valued probe until the predicate accepts (the
+       * waitForProbe boolean variant generalized for multi-field counts). */
+      const waitForProbeObject90 = async <T>(probe: string, accept: (v: T) => boolean, budgetMs: number): Promise<T> => {
+        const deadline = Date.now() + budgetMs
+        let last: unknown = null
+        while (Date.now() < deadline) {
+          last = await win.webContents.executeJavaScript(probe).catch(() => null)
+          if (last !== null && last !== undefined && accept(last as T)) return last as T
+          await new Promise((r) => setTimeout(r, 100))
+        }
+        fail(`ticket-90 stage: probe never matched, last=${JSON.stringify(last)}`)
+        throw new Error('unreachable')
+      }
+      const lines90: string[] = [
+        JSON.stringify({ type: 'session', version: 3, id: 'sub90-seeded-id', timestamp: stamp90, cwd: seedDir90 }),
+        JSON.stringify({
+          type: 'message', id: 's90-u1', parentId: null, timestamp: stamp90,
+          message: { role: 'user', content: [{ type: 'text', text: 'PICODE_SUB90 fan out the work' }] }
+        })
+      ]
+      // The chain: one assistant toolCall + one toolResult per run. 24
+      // settled foreground calls (Show 20 more must page 20→24) + 1 async
+      // launch whose live artifact arrives only later (Lost → Running →
+      // Completed).
+      for (let i = 0; i < ENDED_90; i++) {
+        lines90.push(
+          JSON.stringify({
+            type: 'message', id: `s90-a-${i}`, parentId: i === 0 ? 's90-u1' : `s90-r-${i - 1}`, timestamp: stamp90,
+            message: { role: 'assistant', content: [{ type: 'toolCall', id: `s90-call-${i}`, name: 'subagent', arguments: { agent: 'worker', task: `PICODE_SUB90 task ${i} report the result` } }] }
+          }),
+          JSON.stringify({
+            type: 'message', id: `s90-r-${i}`, parentId: `s90-a-${i}`, timestamp: stamp90,
+            message: {
+              role: 'toolResult', toolCallId: `s90-call-${i}`, toolName: 'subagent',
+              content: [{ type: 'text', text: `PICODE_SUB90 result ${i}` }],
+              isError: false,
+              details: { mode: 'single', runId: `sub90-fg-${i}`, results: [{ index: 0, agent: 'worker', exitCode: 0, finalOutput: `PICODE_SUB90 result ${i}` }] }
+            }
+          })
+        )
+      }
+      lines90.push(
+        JSON.stringify({
+          type: 'message', id: 's90-a-live', parentId: `s90-r-${ENDED_90 - 1}`, timestamp: stamp90,
+          message: { role: 'assistant', content: [{ type: 'toolCall', id: 's90-call-live', name: 'subagent', arguments: { agent: 'scout', task: 'PICODE_SUB90 live scout task', async: true } }] }
+        }),
+        JSON.stringify({
+          type: 'message', id: 's90-r-live', parentId: 's90-a-live', timestamp: stamp90,
+          message: {
+            role: 'toolResult', toolCallId: 's90-call-live', toolName: 'subagent',
+            content: [{ type: 'text', text: 'Async: scout [sub90-live-1]' }],
+            isError: false,
+            details: { mode: 'single', runId: 'sub90-live-1', asyncId: 'sub90-live-1', asyncDir: liveRunDir90, results: [] }
+          }
+        })
+      )
+      writeFileSync(seedFile90, lines90.join('\n') + '\n')
+
+      try {
+        await withWindow(getWindow, async (win) => {
+          const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+          // Resume the seeded file (a real Handoff — fresh host, fresh
+          // replay). The Subagents tab opened on ANY earlier state reuses
+          // this projection; open it only after the announcement.
+          const resumed90 = waitFor((e) => e.type === 'session_created' && e.sessionFile === seedFile90, 'subagent90 resume session_created')
+          supervisor.createSession(seedDir90, seedFile90)
+          const created90 = (await resumed90) as Extract<Scoped, { type: 'session_created' }>
+          await waitFor((e) => e.type === 'history_loaded' && e.sessionId === created90.sessionId, 'subagent90 history_loaded')
+          log('subagent90_resumed_ok', created90.sessionId)
+
+          // Open the Subagents tab via the empty picker card (⌥⌘B may be
+          // closed or showing other tabs — normalize to the picker first).
+          await js(`(() => {
+            const panel = document.querySelector('.side-panel')
+            if (panel && !panel.hasAttribute('data-closed')) {
+              for (const btn of document.querySelectorAll('.panel-tab .panel-tab-close')) {
+                if (btn instanceof HTMLElement) btn.click()
+              }
+            }
+            return true
+          })()`)
+          await new Promise((r) => setTimeout(r, 300))
+          await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', altKey: true, metaKey: true, bubbles: true })); true`)
+          if (!(await waitForProbe(win, `document.querySelector('.panel-tab-card[aria-label="Open Subagents tab"]') !== null`, 10_000))) {
+            fail('ticket-90 stage: the picker never offered the Subagents card')
+          }
+          await js(`document.querySelector('.panel-tab-card[aria-label="Open Subagents tab"]')?.click(); true`)
+          if (!(await waitForProbe(win, `document.querySelector('[data-testid="subagents-tab"]') !== null`, 10_000))) {
+            fail('ticket-90 stage: the Subagents tab never rendered')
+          }
+
+          // ① The seeded directory: Ended totals 25 rows (24 foreground +
+          // the async launch, which projects Lost with no artifact) but
+          // shows the first 20 (newest first — all rows share one replay
+          // timestamp, so transcript order rules) with the Show 20 more
+          // control up; nothing is Running yet.
+          const counts90 = `(() => ({
+            running: document.querySelectorAll('.subagents-section[aria-label="Running"] .subagents-row').length,
+            ended: document.querySelectorAll('.subagents-section[aria-label="Ended"] .subagents-row').length,
+            endedHead: document.querySelector('.subagents-section[aria-label="Ended"] .subagents-section-count')?.textContent ?? '',
+            lost: document.querySelectorAll('.subagents-badge-lost').length,
+            showMore: document.querySelector('.subagents-show-more') !== null
+          }))()`
+          const pre90 = (await waitForProbeObject90<{ running: number; ended: number; endedHead: string; lost: number; showMore: boolean }>(
+            counts90,
+            (v) => v.ended === 20 && v.showMore && v.endedHead === '· 25' && v.running === 0,
+            15_000
+          ))
+          if (pre90.running !== 0) fail(`ticket-90 stage: nothing should run before the artifact exists (saw ${pre90.running})`)
+          if (pre90.endedHead !== '· 25') fail(`ticket-90 stage: the Ended head must count ALL rows (· 25), got ${JSON.stringify(pre90.endedHead)}`)
+          log('subagent90_seeded_ok', `shown=${pre90.ended} total=25`)
+
+          // ② Show 20 more reveals the rest (the async Lost row included —
+          // it sits deepest in transcript order) and the control
+          // disappears once everything is visible.
+          await js(`document.querySelector('.subagents-show-more')?.click(); true`)
+          if (!(await waitForProbe(win, `document.querySelectorAll('.subagents-section[aria-label="Ended"] .subagents-row').length === ${ENDED_90 + 1}`, 10_000))) {
+            fail('ticket-90 stage: Show 20 more never revealed the remaining ended rows')
+          }
+          if (!(await waitForProbe(win, `document.querySelector('.subagents-show-more') === null`, 10_000))) {
+            fail('ticket-90 stage: the Show 20 more control lingered after full expansion')
+          }
+          if (!(await waitForProbe(win, `document.querySelectorAll('.subagents-badge-lost').length === 1`, 10_000))) {
+            fail('ticket-90 stage: the async launch with no artifact never projected Lost')
+          }
+          log('subagent90_paging_ok')
+
+          // ③ LIVE augmentation, artifact-driven: write status.json (state
+          // running) and drive one bridge roundtrip — the row jumps from
+          // Ended (Lost) to the Running section.
+          mkdirSync(liveRunDir90, { recursive: true })
+          writeArtifact90('running')
+          const statusRt1 = waitFor((e) => e.type === 'subagent_status' && e.sessionId === created90.sessionId && e.runs.some((r) => r.runId === 'sub90-live-1' && r.state === 'running'), 'subagent90 status roundtrip 1')
+          supervisor.handleParentCommand({ type: 'session_command', sessionId: created90.sessionId, command: { type: 'subagent_status', requestId: 'stage-90-1' } })
+          await statusRt1
+          if (!(await waitForProbe(win, `document.querySelector('[data-subagent-row="s90-call-live"] .subagents-badge-running') !== null`, 10_000))) {
+            fail('ticket-90 stage: the live run never flipped to a Running badge from the artifact')
+          }
+          if (!(await waitForProbe(win, `document.querySelectorAll('.subagents-section[aria-label="Ended"] .subagents-row').length === ${ENDED_90}`, 10_000))) {
+            fail('ticket-90 stage: the live run never left the Ended section while Running')
+          }
+          log('subagent90_live_running_ok')
+
+          // ④ The artifact settles (complete + endedAt): the badge becomes
+          // Completed and the row returns to Ended with the endedAt
+          // relative time.
+          writeArtifact90('complete')
+          const statusRt2 = waitFor((e) => e.type === 'subagent_status' && e.sessionId === created90.sessionId && e.runs.some((r) => r.runId === 'sub90-live-1' && r.state === 'complete'), 'subagent90 status roundtrip 2')
+          supervisor.handleParentCommand({ type: 'session_command', sessionId: created90.sessionId, command: { type: 'subagent_status', requestId: 'stage-90-2' } })
+          await statusRt2
+          if (!(await waitForProbe(win, `document.querySelector('[data-subagent-row="s90-call-live"] .subagents-badge-completed') !== null`, 10_000))) {
+            fail('ticket-90 stage: the settled run never flipped to Completed from the artifact')
+          }
+          log('subagent90_live_completed_ok')
+
+          // ⑤ REOPEN REBUILD: a full resume of the same file (fresh host,
+          // fresh replay) rebuilds the directory identically — the ended
+          // count persists, the live run reads its artifact again
+          // (Completed — no Lost regression), the paging resets to 20.
+          // Pi Handoff semantics: reopening the same FILE keeps the session
+          // id (the header id is the identity) — the reopen TAKEOVER
+          // re-announces the SAME id through a fresh host. The waits below
+          // register AFTER the first resume, so the next matching events
+          // ARE the reopen's.
+          const reopened90 = waitFor((e) => e.type === 'session_created' && e.sessionFile === seedFile90, 'subagent90 reopen session_created')
+          supervisor.createSession(seedDir90, seedFile90)
+          await reopened90
+          await waitFor((e) => e.type === 'history_loaded', 'subagent90 reopen history_loaded')
+          log('subagent90_reopened_ok')
+          const reopenedCounts = `(() => ({
+            ended: document.querySelectorAll('.subagents-section[aria-label="Ended"] .subagents-row').length,
+            endedHead: document.querySelector('.subagents-section[aria-label="Ended"] .subagents-section-count')?.textContent ?? '',
+            completed: document.querySelectorAll('.subagents-badge-completed').length,
+            lost: document.querySelectorAll('.subagents-badge-lost').length,
+            showMore: document.querySelector('.subagents-show-more') !== null
+          }))()`
+          // The rebuild is REPLAY-ONLY: the reopen re-derives every row from
+          // the session record and re-reads the artifact — 25 settled rows
+          // (24 foreground completed + the async run re-read Completed), zero
+          // Lost. Paging keeps its in-session step (the takeover reuses the
+          // same session id — the tab did not remount), so all 25 show.
+          const post90 = (await waitForProbeObject90<{ ended: number; endedHead: string; completed: number; lost: number; showMore: boolean }>(
+            reopenedCounts,
+            (v) => v.ended === ENDED_90 + 1 && v.completed === ENDED_90 + 1 && v.lost === 0,
+            15_000
+          ))
+          if (post90.endedHead !== '· 25') fail(`ticket-90 stage: the reopened Ended head must count all 25, got ${JSON.stringify(post90.endedHead)}`)
+          log('subagent90_rebuild_ok', `ended=${post90.ended} completed=${post90.completed} lost=${post90.lost}`)
+
+          // ⑥ Zero regression: the transcript still renders the seeded
+          // subagent tool cards in the MAIN chat (the directory never
+          // touches the transcript). The live turn's cards are settled tool
+          // cards in the replayed view.
+          const toolCards = (await js(`document.querySelectorAll('.chat-entry-tool, [class*="tool"]').length`)) as number
+          if (toolCards === 0) fail('ticket-90 stage: the transcript tool cards vanished')
+        })
+      } finally {
+        if (previousTempRoot90 === undefined) delete process.env['PI_SUBAGENTS_TEMP_ROOT']
+        else process.env['PI_SUBAGENTS_TEMP_ROOT'] = previousTempRoot90
+        rmSync(subRoot90, { recursive: true, force: true })
+        rmSync(seedDir90, { recursive: true, force: true })
+      }
+      log('subagent_dir_done')
+    }
+
     // ---- ticket 73: the New Task dead-end fix — from the new-task empty
     // state, ANY openable session-row click must land the main zone on the
     // target session. The already-focused and in-app branches used to leave
