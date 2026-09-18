@@ -6437,6 +6437,35 @@ button.preview-crumb:hover {
   color: var(--text-primary);
 }
 
+/* ---------- ticket 88: rendered image/svg + sandboxed html iframe ----------
+   Rendered images and SVG (img data-URL) sit centered in the body; the HTML
+   frame fills it and scrolls its own document. */
+.preview-media {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+
+.preview-media-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.preview-html-frame {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  border: 0;
+  background: #fff;
+}
+
 /* ---------- preview wrap/truncate toggle + wrap layout (ticket 07 feedback) ---------- */
 
 .preview-wrap-toggle {

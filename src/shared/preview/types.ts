@@ -14,6 +14,14 @@ export type PreviewFileKind =
   | 'source'
   /** Binary content — shown as a notice, never as text. */
   | 'binary'
+  /** Ticket 88: static rendered image (img data-URL — scripts never run in
+   * an img context) plus a source view. */
+  | 'svg'
+  /** Ticket 88: sandboxed-iframe rendered document plus a source view. */
+  | 'html'
+  /** Ticket 88: common web image (png/jpg/gif/webp), direct display,
+   * single state (no source view). */
+  | 'image'
 
 /** One file's content as delivered to the renderer. */
 export interface PreviewFileEntry {
@@ -29,6 +37,8 @@ export interface PreviewFileEntry {
   totalLines: number
   /** Decoded text; null for binary files. */
   text: string | null
+  /** Base64 data URL for image-kind files (ticket 88); absent otherwise. */
+  dataUrl?: string
 }
 
 /** One row of a directory listing (breadcrumb fallback navigation). */

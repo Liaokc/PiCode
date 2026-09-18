@@ -1,5 +1,12 @@
 import { useEffect, useReducer, useMemo, useRef, type JSX } from 'react'
-import { PREVIEW_SOURCE_WINDOW_LINES, displayModeFor, previewCrumbs } from '../../../shared/preview/policy'
+import {
+  PREVIEW_SOURCE_WINDOW_LINES,
+  displayModeFor,
+  hasRenderedView,
+  previewCrumbs,
+  previewFileUrl,
+  svgDataUrl
+} from '../../../shared/preview/policy'
 import type { PreviewDirectoryListing, PreviewResult } from '../../../shared/preview/types'
 import type { PreviewSelection } from '../../../shared/preview/view-model'
 import { initialPreviewTabState, previewTabReducer } from '../../../shared/preview/view-model'
@@ -63,10 +70,13 @@ export default function PreviewTab({ cwd, path, onNavigate }: PreviewTabProps): 
   const location = currentLocation(state.result, state.sel, target.path)
   const isFile = state.status === 'ready' && state.result !== null && state.result.ok && state.result.kind === 'file'
   const crumbs = location.cwd === '' ? [] : previewCrumbs(location.cwd, location.path, isFile)
-  // The wrap/truncate switch only means something when source is on screen.
+  // The wrap/truncate switch only means something when source is on screen:
+  // source-kind files always, rendered-capable kinds only in the source
+  // state; image/binary never show source (ticket 88).
   const sourceShowing =
     isFile && state.result !== null && state.result.ok && state.result.kind === 'file'
-      ? state.result.file.kind !== 'markdown' || state.view === 'source'
+      ? state.result.file.kind === 'source' ||
+        (hasRenderedView(state.result.file.kind) && state.view === 'source')
       : false
 
   return (
@@ -112,7 +122,7 @@ export default function PreviewTab({ cwd, path, onNavigate }: PreviewTabProps): 
           state.result !== null &&
           state.result.ok &&
           state.result.kind === 'file'
-          && state.result.file.kind === 'markdown' && (
+          && hasRenderedView(state.result.file.kind) && (
           <div className="review-segmented" role="tablist" aria-label="Preview mode">
             <button
               type="button"
@@ -210,6 +220,18 @@ function PreviewFile({
   visibleLines: number
   onShowMore: () => void
 }): JSX.Element {
+  // Ticket 88: common web images display directly — a single state with no
+  // source view and no segmented control.
+  if (file.kind === 'image') {
+    return (
+      <div className="preview-body">
+        <div className="preview-media">
+          <img className="preview-media-img" src={file.dataUrl ?? ''} alt={file.name} />
+        </div>
+      </div>
+    )
+  }
+
   if (file.kind === 'binary' || file.text === null) {
     return (
       <div className="review-empty">
@@ -220,18 +242,19 @@ function PreviewFile({
     )
   }
 
-  const rendered = file.kind === 'markdown' && view === 'rendered' && displayModeFor(file) === 'markdown'
-  const markdownFallback = file.kind === 'markdown' && displayModeFor(file) === 'source'
+  const mode = displayModeFor(file)
+  const rendered = mode !== 'source' && view === 'rendered'
   const remainingLines = Math.min(PREVIEW_SOURCE_WINDOW_LINES, file.totalLines - visibleLines)
+  const fallbackLabel = file.kind === 'svg' ? 'SVG' : file.kind === 'html' ? 'HTML' : 'markdown'
 
   return (
     <div className="preview-body">
-      {markdownFallback && (
+      {mode === 'source' && hasRenderedView(file.kind) && (
         <div className="preview-notice">
-          Large markdown file — shown as source ({Math.round(file.sizeBytes / 1024)} KB).
+          Large {fallbackLabel} file — shown as source ({Math.round(file.sizeBytes / 1024)} KB).
         </div>
       )}
-      {rendered ? (
+      {rendered && file.kind === 'markdown' && (
         <div className="preview-md">
           {/* Ticket 32: the rendered preview consumes the transcript's block
             chrome (code cards + table containers) — one grammar of blocks;
@@ -239,7 +262,31 @@ function PreviewFile({
             state stays windowed bare text. */}
           <Markdown text={file.text} />
         </div>
-      ) : (
+      )}
+      {rendered && file.kind === 'svg' && (
+        <div className="preview-media">
+          {/* Ticket 88: the img data-URL renders the SVG statically — script
+            execution never happens in an img context, so even an SVG with
+            inline handlers is safe. */}
+          <img className="preview-media-img" src={svgDataUrl(file.text)} alt={file.name} />
+        </div>
+      )}
+      {rendered && file.kind === 'html' && (
+        <iframe
+          className="preview-html-frame"
+          title={`${file.name} rendered preview`}
+          src={previewFileUrl(file.absolutePath)}
+          /* Ticket 88 sandbox contract — allow-scripts ONLY: inline scripts
+            run (LLM-authored reports render fully) but the frame gets an
+            opaque origin. No allow-same-origin → it cannot touch this app
+            document, cookies, or storage; no preload bridge in sub-frames
+            and nodeIntegration off → no Node access. Relative resources
+            resolve against the file's directory via the preview-file
+            protocol (serve.ts documents the full security contract). */
+          sandbox="allow-scripts"
+        />
+      )}
+      {!rendered && (
         <CodeView text={file.text} name={file.name} visibleLines={visibleLines} totalLines={file.totalLines} wrap={wrap} />
       )}
       {!rendered && file.totalLines > visibleLines && (

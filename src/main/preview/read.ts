@@ -6,12 +6,14 @@
  * filesystem logic lives in the renderer.
  */
 
-import { open, readdir, stat } from 'node:fs/promises'
+import { open, readFile, readdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import {
   PREVIEW_LISTING_MAX_ENTRIES,
   PREVIEW_MAX_BYTES,
+  isImageName,
   kindForEntry,
+  mimeForName,
   previewRelativePath,
   resolvePreviewPath
 } from '../../shared/preview/policy'
@@ -106,6 +108,33 @@ export async function readPreview(cwd: string, rawPath: string): Promise<Preview
     )
   }
 
+  const name = path.posix.basename(resolved)
+
+  // Ticket 88: declared web images render directly from a base64 data URL —
+  // no text crosses IPC for them, and the binary notice never shows.
+  if (isImageName(name)) {
+    try {
+      const buffer = await readFile(resolved)
+      return {
+        ok: true,
+        kind: 'file',
+        file: {
+          absolutePath: resolved,
+          cwd,
+          relativePath: previewRelativePath(cwd, resolved),
+          name,
+          kind: 'image',
+          sizeBytes: info.size,
+          totalLines: 0,
+          text: null,
+          dataUrl: `data:${mimeForName(name)};base64,${buffer.toString('base64')}`
+        }
+      }
+    } catch {
+      return failure('not-readable', 'The file could not be read.')
+    }
+  }
+
   let text: string | null
   try {
     text = await readTextFile(resolved, info.size)
@@ -113,7 +142,6 @@ export async function readPreview(cwd: string, rawPath: string): Promise<Preview
     return failure('not-readable', 'The file could not be read.')
   }
 
-  const name = path.posix.basename(resolved)
   // A trailing newline yields a final empty segment; it is not a content line.
   const lineCount = text === null ? 0 : (text.endsWith('\n') ? text.slice(0, -1) : text).split('\n').length
   return {
