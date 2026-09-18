@@ -154,46 +154,45 @@ describe('hasRenderedView — which kinds carry the Rendered/Source control', ()
 describe('displayModeFor — ticket 88 extends the markdown size-cap semantics', () => {
   function file(overrides: Partial<PreviewFileEntry>): PreviewFileEntry {
     return {
-      absolutePath: '/proj/README.md',
+      absolutePath: '/proj/d.svg',
       cwd: '/proj',
-      relativePath: 'README.md',
-      name: 'README.md',
-      kind: 'markdown',
+      relativePath: 'd.svg',
+      name: 'd.svg',
+      kind: 'svg',
       sizeBytes: 10,
       totalLines: 1,
-      text: '# hi',
+      text: '<svg/>',
       ...overrides
     }
   }
 
-  it('renders markdown files as markdown below the parse cap', () => {
-    expect(displayModeFor(file({}))).toBe('markdown')
-    expect(displayModeFor(file({ sizeBytes: PREVIEW_MARKDOWN_MAX_BYTES }))).toBe('markdown')
-  })
-
-  it('renders markdown files above the parse cap as plain source', () => {
-    expect(displayModeFor(file({ sizeBytes: PREVIEW_MARKDOWN_MAX_BYTES + 1 }))).toBe('source')
-  })
-
-  it('never renders source-kind files as markdown', () => {
-    expect(displayModeFor(file({ kind: 'source', name: 'a.ts' }))).toBe('source')
-  })
-
+  // The markdown fallback cases live in the block above (ticket 07) — only
+  // the ticket-88 kinds are re-tested here.
   it('renders svg/html below the cap in their own rendered mode', () => {
-    expect(displayModeFor(file({ kind: 'svg', name: 'd.svg' }))).toBe('svg')
-    expect(displayModeFor(file({ kind: 'svg', name: 'd.svg', sizeBytes: PREVIEW_MARKDOWN_MAX_BYTES }))).toBe('svg')
-    expect(displayModeFor(file({ kind: 'html', name: 'r.html' }))).toBe('html')
-    expect(displayModeFor(file({ kind: 'html', name: 'r.html', sizeBytes: PREVIEW_MARKDOWN_MAX_BYTES }))).toBe('html')
+    expect(displayModeFor(file({}))).toBe('svg')
+    expect(displayModeFor(file({ sizeBytes: PREVIEW_MARKDOWN_MAX_BYTES }))).toBe('svg')
+    expect(displayModeFor(file({ kind: 'html', name: 'r.html', relativePath: 'r.html', text: '<p>x</p>' }))).toBe('html')
+    expect(
+      displayModeFor(file({ kind: 'html', name: 'r.html', relativePath: 'r.html', text: '<p>x</p>', sizeBytes: PREVIEW_MARKDOWN_MAX_BYTES }))
+    ).toBe('html')
   })
 
   it('falls back to source for oversized svg/html (markdown cap semantics reused)', () => {
-    expect(displayModeFor(file({ kind: 'svg', name: 'd.svg', sizeBytes: PREVIEW_MARKDOWN_MAX_BYTES + 1 }))).toBe('source')
-    expect(displayModeFor(file({ kind: 'html', name: 'r.html', sizeBytes: PREVIEW_MARKDOWN_MAX_BYTES + 1 }))).toBe('source')
+    expect(displayModeFor(file({ sizeBytes: PREVIEW_MARKDOWN_MAX_BYTES + 1 }))).toBe('source')
+    expect(displayModeFor(file({ kind: 'html', name: 'r.html', relativePath: 'r.html', text: '<p>x</p>', sizeBytes: PREVIEW_MARKDOWN_MAX_BYTES + 1 }))).toBe(
+      'source'
+    )
   })
 
   it('images always present in their single rendered mode, whatever the size', () => {
-    expect(displayModeFor(file({ kind: 'image', name: 'p.png', text: null, dataUrl: 'data:image/png;base64,x' }))).toBe('image')
-    expect(displayModeFor(file({ kind: 'image', name: 'p.png', text: null, sizeBytes: PREVIEW_MAX_BYTES }))).toBe('image')
+    expect(displayModeFor(file({ kind: 'image', name: 'p.png', relativePath: 'p.png', text: null, dataUrl: 'data:image/png;base64,x' }))).toBe(
+      'image'
+    )
+    expect(displayModeFor(file({ kind: 'image', name: 'p.png', relativePath: 'p.png', text: null, sizeBytes: PREVIEW_MAX_BYTES }))).toBe('image')
+  })
+
+  it('never renders source-kind files in a rendered mode', () => {
+    expect(displayModeFor(file({ kind: 'source', name: 'a.ts', relativePath: 'a.ts', text: 'const a = 1' }))).toBe('source')
   })
 })
 

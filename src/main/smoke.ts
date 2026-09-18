@@ -2921,9 +2921,11 @@ export function startSmokeIfEnabled(
 
           // ① HTML: default RENDERED inside the sandboxed iframe.
           await openFixture('report.html')
-          const frameOk = (await js(
-            `(() => {\n              const frame = document.querySelector('${ACTIVE} .preview-html-frame')\n              return frame !== null\n                && frame.getAttribute('sandbox') === 'allow-scripts'\n                && (frame.getAttribute('src') ?? '').startsWith('preview-file://local/')\n                && frame.contentDocument === null\n            })()`
-          )) as boolean
+          const frameOk = await waitForProbe(
+            win,
+            `(() => {\n              const frame = document.querySelector('${ACTIVE} .preview-html-frame')\n              return frame !== null\n                && frame.getAttribute('sandbox') === 'allow-scripts'\n                && (frame.getAttribute('src') ?? '').startsWith('preview-file://local/')\n                && frame.contentDocument === null\n            })()`,
+            10_000
+          )
           if (!frameOk) {
             fail('ticket-88 stage: the html iframe is missing or violates the sandbox contract (sandbox/src/contentDocument)')
           }
@@ -3034,7 +3036,9 @@ export function startSmokeIfEnabled(
           }
           log('preview_88_binary_ok')
 
-          // Leave the shell clean: close every file tab the stage opened.
+          // Leave the shell clean for the later stages: close every panel
+          // tab (the stage's five file tabs and the Review tab alike — the
+          // 86 stage re-opens the panel from zero itself).
           for (;;) {
             const count = (await js(`document.querySelectorAll('.panel-tab-label span').length`)) as number
             if (count === 0) break

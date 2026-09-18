@@ -36,9 +36,10 @@ import { PREVIEW_MAX_BYTES, PREVIEW_SERVE_SCHEME, mimeForName } from '../../shar
 const serveRoots = new Set<string>()
 
 /** Register a directory (and its subtree) as servable. Absolute, normalized
- * POSIX paths only — anything else is ignored. */
+ * POSIX paths only; the filesystem root is refused — a previewed file at
+ * `/x.html` must not turn EVERY regular file servable. */
 export function addServeRoot(dir: string): void {
-  if (!dir.startsWith('/')) return
+  if (!dir.startsWith('/') || dir === '/') return
   serveRoots.add(path.posix.normalize(dir))
 }
 
@@ -82,11 +83,15 @@ export const previewServeSchemePrivileges = [
   }
 ]
 
-/** Handle one preview-file:// request: resolve, check, stream the file. */
+/** Handle one preview-file:// request: resolve, check, stream the file.
+ * Only the app's own `local` host is accepted — a frame (or anything else)
+ * crafting `preview-file://<other-host>/…` is refused before path work. */
 export async function servePreviewRequest(url: string): Promise<Response> {
   let pathname: string
   try {
-    pathname = decodeURIComponent(new URL(url).pathname)
+    const parsed = new URL(url)
+    if (parsed.host !== 'local') return new Response('forbidden', { status: 403 })
+    pathname = decodeURIComponent(parsed.pathname)
   } catch {
     return new Response('bad request', { status: 400 })
   }

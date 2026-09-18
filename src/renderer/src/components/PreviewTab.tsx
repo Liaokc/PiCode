@@ -68,15 +68,18 @@ export default function PreviewTab({ cwd, path, onNavigate }: PreviewTabProps): 
   }, [state.result, state.status])
 
   const location = currentLocation(state.result, state.sel, target.path)
-  const isFile = state.status === 'ready' && state.result !== null && state.result.ok && state.result.kind === 'file'
+  const readyFile =
+    state.status === 'ready' && state.result !== null && state.result.ok && state.result.kind === 'file'
+      ? state.result.file
+      : null
+  const isFile = readyFile !== null
   const crumbs = location.cwd === '' ? [] : previewCrumbs(location.cwd, location.path, isFile)
   // The wrap/truncate switch only means something when source is on screen:
   // source-kind files always, rendered-capable kinds only in the source
   // state; image/binary never show source (ticket 88).
   const sourceShowing =
-    isFile && state.result !== null && state.result.ok && state.result.kind === 'file'
-      ? state.result.file.kind === 'source' ||
-        (hasRenderedView(state.result.file.kind) && state.view === 'source')
+    readyFile !== null
+      ? readyFile.kind === 'source' || (hasRenderedView(readyFile.kind) && state.view === 'source')
       : false
 
   return (
@@ -118,11 +121,7 @@ export default function PreviewTab({ cwd, path, onNavigate }: PreviewTabProps): 
             </button>
           </Tooltip>
         )}
-        {state.status === 'ready' &&
-          state.result !== null &&
-          state.result.ok &&
-          state.result.kind === 'file'
-          && hasRenderedView(state.result.file.kind) && (
+        {readyFile !== null && hasRenderedView(readyFile.kind) && (
           <div className="review-segmented" role="tablist" aria-label="Preview mode">
             <button
               type="button"
@@ -156,9 +155,9 @@ export default function PreviewTab({ cwd, path, onNavigate }: PreviewTabProps): 
 
       {state.status === 'error' && <PreviewFailure result={state.result} />}
 
-      {state.status === 'ready' && state.result !== null && state.result.ok && state.result.kind === 'file' && (
+      {readyFile !== null && (
         <PreviewFile
-          file={state.result.file}
+          file={readyFile}
           view={state.view}
           wrap={state.wrapLines}
           visibleLines={state.visibleLines}

@@ -42,6 +42,12 @@ describe('serve-root registration', () => {
     addServeRoot('relative/path')
     expect(isServeRoot('relative/path')).toBe(false)
   })
+
+  it('refuses the filesystem root — a root-level preview must not serve everything', () => {
+    addServeRoot('/')
+    expect(isServeRoot('/')).toBe(false)
+    expect(isServablePath('/etc/passwd')).toBe(false)
+  })
 })
 
 describe('isServablePath — the containment predicate', () => {
@@ -87,6 +93,11 @@ describe('servePreviewRequest — the handler', () => {
     expect((await servePreviewRequest(previewFileUrl('/etc/passwd'))).status).toBe(403)
     expect((await servePreviewRequest('preview-file://local/not-a-path')).status).toBe(403)
     expect((await servePreviewRequest('::::')).status).toBe(400)
+  })
+
+  it('refuses crafted foreign hosts with 403 before any path work', async () => {
+    const evil = previewFileUrl(path.join(root, 'site/report.html')).replace('//local/', '//evil/')
+    expect((await servePreviewRequest(evil)).status).toBe(403)
   })
 
   it('reports 404 for missing paths inside a root and for directories', async () => {
