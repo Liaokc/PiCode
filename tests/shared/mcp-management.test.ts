@@ -477,3 +477,19 @@ describe('path helpers', () => {
     expect(dirnamePath('/a')).toBe('/')
   })
 })
+
+describe('review fix: auth:false round-trip', () => {
+  it('keeps an explicit auth:false when the OAuth box is unchecked', () => {
+    const form = entryToForm({ url: 'https://x/mcp', auth: false }, 'x')
+    expect(form.oauth).toBe(false)
+    const built = formToServerEntry(form, { auth: false })
+    expect('entry' in built && built.entry).toEqual({ url: 'https://x/mcp', auth: false })
+  })
+
+  it('drops a stale auth:oauth when the box is unchecked (auto-detect default)', () => {
+    const form = entryToForm({ url: 'https://x/mcp', auth: 'oauth' }, 'x')
+    expect(form.oauth).toBe(true)
+    const built = formToServerEntry({ ...form, oauth: false })
+    expect('entry' in built && built.entry).toEqual({ url: 'https://x/mcp' })
+  })
+})

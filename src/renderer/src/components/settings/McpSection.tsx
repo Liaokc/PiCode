@@ -12,8 +12,7 @@ import {
   type McpEffectiveServer,
   type McpLayerReport,
   type McpServerEntry,
-  type McpServerForm,
-  type McpSourceId
+  type McpServerForm
 } from '../../../../shared/mcp-management'
 import { mcpAuthStore, type McpAuthState } from './mcp-auth-store'
 import { FolderIcon, LoaderIcon, PlusIcon, RefreshIcon, TrashIcon } from '../icons'
@@ -49,15 +48,6 @@ type FormState = {
   editing: McpEffectiveServer | null
   form: McpServerForm
 } | null
-
-const LAYER_LABELS: Record<McpSourceId, string> = {
-  'shared-global': 'Global shared',
-  'agents-global': 'Global .agents',
-  'agents-nested-global': 'Global .agents/mcp',
-  'pi-global': 'Pi global',
-  'shared-project': 'Project shared',
-  'pi-project': 'Pi project'
-}
 
 function emptyForm(): McpServerForm {
   return { name: '', transport: 'stdio', command: '', args: '', env: '', url: '', oauth: false }
@@ -351,7 +341,7 @@ function McpCard(props: McpCardProps): JSX.Element {
               onClick={() => props.onReveal(layer.path)}
             >
               <FolderIcon size={12} />
-              {LAYER_LABELS[layer.id]}
+              {layer.label}
             </button>
           ))}
         </div>

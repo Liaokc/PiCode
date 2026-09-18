@@ -109,13 +109,6 @@ export interface McpEffectiveServer {
 }
 
 /** One row of the section list (effective row + rendered dimensions). */
-export interface McpServerRowView extends McpEffectiveServer {
-  /** The write file an edit/delete of this server targets (null = the
-   * winner is a cross-tool `~/.agents` file — never written). */
-  editTargetPath: string | null
-  badgeLabel: string
-}
-
 // ---- layer path resolution (pure; home/agentDir/cwd injected) ----
 
 /** The layer descriptors for one query, in adapter precedence order
@@ -550,7 +543,9 @@ export function formToServerEntry(
     delete entry['cwd']
     entry['url'] = url
     if (form.oauth) entry['auth'] = 'oauth'
-    else delete entry['auth']
+    // Unchecked: keep an explicit `auth: false` opt-out round-trip; drop a
+    // stale `auth: "oauth"` (auto-detect is the default for a plain url).
+    else if (entry['auth'] === 'oauth') delete entry['auth']
   } else {
     const command = form.command.trim()
     if (command === '') return { error: 'A command is required for local servers.' }

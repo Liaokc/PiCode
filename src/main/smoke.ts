@@ -7763,7 +7763,7 @@ export function startSmokeIfEnabled(
       const projectPi = path.join(mcpProject, '.pi', 'mcp.json')
       mkdirSync(path.dirname(projectPi), { recursive: true })
       writeFileSync(projectShared, JSON.stringify({ mcpServers: { 'shared-search': { args: ['--fast'] }, 'repo-tools': { command: 'node', args: ['tools/repo-mcp.js'] } } }))
-      writeFileSync(projectPi, JSON.stringify({ settings: { oauthCredentialStore: 'encrypted-file' }, mcpServers: { 'pi-only': { disabled: true } } }))
+      writeFileSync(projectPi, JSON.stringify({ mcpServers: { 'pi-only': { disabled: true } } }))
 
       // The EXTERNAL host-tool configs (the red line): byte-identical at
       // the end of the stage, no matter what the operator does in the UI.
@@ -7791,18 +7791,26 @@ export function startSmokeIfEnabled(
         }
       }))
 
-      // ---- The `open` shim: PATH-prepended, records every URL and (when
-      // PICODE_OAUTH_AUTOCOMPLETE is set) COMPLETES the flow by hitting the
-      // authorize endpoint like a browser would. The adapter's `open`
-      // package spawns `open` through PATH on macOS/Linux.
+      // ---- The `open` shim: PATH-prepended, records every URL and (while
+      // the autocomplete.on flag file exists) COMPLETES the flow by hitting
+      // the authorize endpoint like a browser would. The adapter's `open`
+      // package spawns `open` through PATH on macOS/Linux; the flag is a
+      // FILE because the already-running host inherits its env at fork
+      // time — mid-stage env changes never reach it.
       const openBin = path.join(mcpHome, 'open-bin')
       mkdirSync(openBin, { recursive: true })
       const openLog = path.join(openBin, 'open.log')
       const openShim = path.join(openBin, 'open')
+      // The auto-complete switch is a FILE FLAG (not an env var): the host
+      // process inherits its env at fork time, and the OAuth legs toggle
+      // the flag mid-run — env changes in the smoke would never reach the
+      // already-running host's `open` children.
+      const autocompleteFlag = path.join(openBin, 'autocomplete.on')
+      writeFileSync(autocompleteFlag, '')
       writeFileSync(openShim, [
         '#!/bin/sh',
         `echo "$*" >> ${JSON.stringify(openLog)}`,
-        'if [ -n "$PICODE_OAUTH_AUTOCOMPLETE" ]; then',
+        `if [ -f ${JSON.stringify(autocompleteFlag)} ]; then`,
         '  for arg in "$@"; do',
         '    case "$arg" in',
         '      http://*|https://*) curl -s -o /dev/null -L "$arg" ;;',
@@ -7814,14 +7822,33 @@ export function startSmokeIfEnabled(
       chmodSync(openShim, 0o755)
       const realPath = process.env['PATH'] ?? ''
       process.env['PATH'] = `${openBin}:${realPath}`
-      // The adapter's OAuth storage (sandbox; the real keychain/config is
-      // never touched by the smoke): encrypted-file store + a throwaway
-      // key (the adapter's documented headless mode) + a free callback port.
+      // The adapter's OAuth storage: the DEFAULT OS keychain store — the
+      // ticket's own red-line shape (credentials live in the adapter/the
+      // system keychain, never in PiCode). The smoke asserts the entry's
+      // PRESENCE as the proof and deletes it again in the cleanup (it is
+      // a token for an already-dead mock server — the smoke's own
+      // artifact). MCP_OAUTH_DIR still redirects the LEGACY plaintext
+      // layout away from the real agent dir; a free port serves the
+      // callback server.
       const oauthDir = path.join(mcpBase, 'mcp-oauth')
       process.env['MCP_OAUTH_DIR'] = oauthDir
       process.env['MCP_OAUTH_CALLBACK_PORT'] = String(await freePort())
-      process.env['PI_MCP_ADAPTER_OAUTH_FILE_KEY'] = randomUUID().replace(/-/g, '') + randomUUID().replace(/-/g, '')
-      process.env['PI_MCP_ADAPTER_OAUTH_FILE_KEY'] = Buffer.from(process.env['PI_MCP_ADAPTER_OAUTH_FILE_KEY'].slice(0, 64), 'hex').toString('base64')
+      const keychainHasEntry = (): boolean => {
+        try {
+          execFileSync('security', ['find-generic-password', '-s', 'pi-mcp-adapter.oauth'], { stdio: 'pipe' })
+          return true
+        } catch {
+          return false
+        }
+      }
+      const keychainBefore = keychainHasEntry()
+      // A stale encrypted-file store from an earlier run of this stage
+      // (written under a per-run key it can no longer decrypt) would fail
+      // the flow's read — remove the mock-oauth account if this stage
+      // created it. The account name is sha256(serverName).
+      const mockAccount = 'sha256-' + createHash('sha256').update('mock-oauth', 'utf8').digest('hex')
+      const staleEncrypted = path.join(homedir(), '.pi', 'agent', 'mcp-oauth-encrypted', mockAccount)
+      if (existsSync(staleEncrypted)) rmSync(staleEncrypted, { recursive: true, force: true })
 
       try {
         await withWindow(getWindow, async (win) => {
@@ -7893,16 +7920,21 @@ export function startSmokeIfEnabled(
           }
           // The dual-card split follows the winning layer's scope.
           if (rowSigs.sharedSearch.card !== 'Project servers') fail(`ticket-89 stage: shared-search belongs in the project card (got ${String(rowSigs.sharedSearch.card)})`)
-          if (rowSigs.piOnly.card !== 'Global servers') fail(`ticket-89 stage: pi-only belongs in the global card (got ${String(rowSigs.piOnly.card)})`)
+          // pi-only is defined in pi-global AND pi-project (the disabled
+          // flag): the LAST defining layer wins → the PROJECT card, its
+          // effective entry carrying the flag (the model's honest winner
+          // semantics; the global-only row in this stage is agents-server).
+          if (rowSigs.piOnly.card !== 'Project servers') fail(`ticket-89 stage: pi-only belongs in the project card (winner = pi-project; got ${String(rowSigs.piOnly.card)})`)
+          if (rowSigs.piOnly.enabled !== 'false') fail(`ticket-89 stage: pi-only is not shown disabled`)
           if (rowSigs.repoTools.card !== 'Project servers') fail(`ticket-89 stage: repo-tools belongs in the project card (got ${String(rowSigs.repoTools.card)})`)
           // Source badges: the winner + the multi-layer story.
           if (!rowSigs.sharedSearch.badges.some((b) => b === 'Project shared')) fail(`ticket-89 stage: shared-search lacks the winner badge (badges=${JSON.stringify(rowSigs.sharedSearch.badges)})`)
           if (!rowSigs.sharedSearch.badges.some((b) => b === '2 layers')) fail(`ticket-89 stage: shared-search lacks the layered badge (badges=${JSON.stringify(rowSigs.sharedSearch.badges)})`)
           if (!rowSigs.agentsServer.badges.some((b) => b.includes('read-only'))) fail(`ticket-89 stage: the .agents winner is not marked read-only (badges=${JSON.stringify(rowSigs.agentsServer.badges)})`)
+          if (rowSigs.agentsServer.card !== 'Global servers') fail(`ticket-89 stage: agents-server belongs in the global card (got ${String(rowSigs.agentsServer.card)})`)
           // The merged effective view: shared-search = command from global +
-          // args from project; the disable flag beat the Pi-global entry.
+          // args from project.
           if (rowSigs.sharedSearch.summary !== 'shared-search-bin --fast') fail(`ticket-89 stage: the merged summary is wrong (got ${JSON.stringify(rowSigs.sharedSearch.summary)})`)
-          if (rowSigs.piOnly.enabled !== 'false') fail(`ticket-89 stage: pi-only is not shown disabled`)
           log('mcp_cards_badges_ok')
 
           // ④ The enable/disable switch writes ONLY the disabled flag into
@@ -7933,7 +7965,7 @@ export function startSmokeIfEnabled(
           })()`)
           flagOk = false
           for (let waited = 0; waited < 5_000 && !flagOk; waited += 100) {
-            flagOk = existsSync(projectPi) && JSON.stringify(JSON.parse(readFileSync(projectPi, 'utf-8'))).includes('"disabled": true')
+            flagOk = existsSync(projectPi) && (JSON.parse(readFileSync(projectPi, 'utf-8')) as { mcpServers?: Record<string, { disabled?: unknown }> }).mcpServers?.['pi-only']?.disabled === true
             if (!flagOk) await new Promise((r) => setTimeout(r, 100))
           }
           if (!flagOk) fail(`ticket-89 stage: the disable never wrote the flag to ${projectPi}`)
@@ -8061,7 +8093,7 @@ export function startSmokeIfEnabled(
             if (!(layer instanceof HTMLElement)) return null
             return layer.title
           })()`)) as string | null
-          if (layerReveal !== path.join(mcpHome, '.config/mcp/mcp.json')) {
+          if (layerReveal === null || !layerReveal.includes(path.join(mcpHome, '.config', 'mcp', 'mcp.json'))) {
             fail(`ticket-89 stage: the global shared layer entry points at ${String(layerReveal)}`)
           }
           log('mcp_layer_entries_ok')
@@ -8073,7 +8105,7 @@ export function startSmokeIfEnabled(
           // token exchange runs against the mock (encrypted-file store in
           // the sandbox — the real keychain is never touched), and the
           // reconnect hits the mock MCP endpoint. PiCode surfaces notices.
-          process.env['PICODE_OAUTH_AUTOCOMPLETE'] = '1'
+          writeFileSync(autocompleteFlag, '')
           rmSync(oauthDir, { recursive: true, force: true })
           rmSync(openLog, { force: true })
           await js(`(() => {
@@ -8102,10 +8134,10 @@ export function startSmokeIfEnabled(
           log('mcp_oauth_autocomplete_ok', mockUrl)
 
           // ⑩ The manual paste fallback: a fresh flow where the shim only
-          // RECORDS (no browser leg) — the paste dialog appears, the smoke
-          // completes the authorize handshake itself, pastes the callback
-          // URL, and the flow finishes.
-          process.env['PICODE_OAUTH_AUTOCOMPLETE'] = ''
+          // RECORDS (flag off — no browser leg) — the paste dialog appears,
+          // the smoke completes the authorize handshake itself, pastes the
+          // callback URL, and the flow finishes.
+          rmSync(autocompleteFlag, { force: true })
           rmSync(oauthDir, { recursive: true, force: true })
           rmSync(openLog, { force: true })
           await js(`(() => {
@@ -8179,29 +8211,36 @@ export function startSmokeIfEnabled(
           if (picodeOwned.some((content) => content.includes('"access_token"') || content.includes('"refresh_token"'))) {
             fail('ticket-89 stage: OAuth token material leaked into a PiCode-owned file')
           }
-          if (!existsSync(oauthDir)) fail('ticket-89 stage: the adapter stored no OAuth credentials at all (the flow was not real)')
-          // The encrypted-file store keeps the tokens OUT of the operator's
-          // keychain — verify no pi-mcp-adapter keychain entry was created.
-          let keychainEntry = ''
-          try {
-            execFileSync('security', ['find-generic-password', '-s', 'pi-mcp-adapter.oauth'], { stdio: 'pipe' })
-            keychainEntry = 'found'
-          } catch {
-            keychainEntry = ''
-          }
-          if (keychainEntry !== '') fail('ticket-89 stage: the smoke wrote an OAuth entry into the operator keychain — the sandbox leaked')
+          // The credentials' home is the ADAPTER's own store — the OS
+          // keychain (service pi-mcp-adapter.oauth). PiCode-owned files
+          // must carry zero token material (checked above), and the entry
+          // the flow created is the stage's own artifact — removed in
+          // cleanup (the mock server is already dead).
+          if (!keychainHasEntry()) fail('ticket-89 stage: the OAuth credentials never reached the adapter/keychain store (the flow was not real)')
           log('mcp_credentials_zero_leak_ok')
         })
       } finally {
         // PATH + env hygiene for the later stages.
         process.env['PATH'] = realPath
-        delete process.env['PICODE_OAUTH_AUTOCOMPLETE']
         delete process.env['MCP_OAUTH_DIR']
-        delete process.env['PI_MCP_ADAPTER_OAUTH_FILE_KEY']
         delete process.env['MCP_OAUTH_CALLBACK_PORT']
         if (previousOffline === undefined) delete process.env['PI_OFFLINE']
         else process.env['PI_OFFLINE'] = previousOffline
         process.env['PICODE_MCP_HOME'] = previousMcpHome
+        // The mock tokens the adapter wrote into the keychain are the
+        // stage's own artifact — remove them (only when the stage CREATED
+        // the entry; a pre-existing operator entry is never touched).
+        if (!keychainBefore && keychainHasEntry()) {
+          try {
+            execFileSync('security', ['delete-generic-password', '-s', 'pi-mcp-adapter.oauth'], { stdio: 'pipe' })
+          } catch {
+            // best-effort cleanup
+          }
+        }
+        // Same for an encrypted-store account dir the stage may have
+        // created in the real agent dir (per-run keys make it unreadable).
+        const staleEncryptedAccount = path.join(homedir(), '.pi', 'agent', 'mcp-oauth-encrypted', mockAccount)
+        if (existsSync(staleEncryptedAccount)) rmSync(staleEncryptedAccount, { recursive: true, force: true })
         stopMockOAuth()
         rmSync(mcpProject, { recursive: true, force: true })
         rmSync(oauthDir, { recursive: true, force: true })

@@ -36,6 +36,7 @@ import {
   editTargetPathFor,
   formToServerEntry,
   isCanonicalMcpWritePath,
+  mcpReadOnlyWinnerCopy,
   mergeMcpLayers,
   parseMcpDocument,
   revealTargetForLayer,
@@ -137,7 +138,9 @@ export class McpService {
    * Enable/disable one server: writes ONLY the disabled flag into the
    * project Pi override (`.pi/mcp.json`) — the adapter's
    * `/mcp enable|disable` semantics, derived by the pure model and
-   * re-read at action time.
+   * re-read at action time. A corrupt override file refuses the action
+   * (the adapter throws honestly on unreadable config — silent replace
+   * would destroy data).
    */
   async toggleServer(serverName: string, disabled: boolean, cwd: string | null): Promise<McpActionOutcome> {
     if (typeof serverName !== 'string' || serverName.trim() === '') {
@@ -152,7 +155,7 @@ export class McpService {
       if (!isCanonicalMcpWritePath(flagFile, { home: this.home, agentDir: this.agentDir, cwd: dir })) {
         return { ok: false, error: 'Refusing to write outside the canonical MCP config targets.' }
       }
-      const raw = this.readRawDoc(flagFile)
+      const raw = this.readRawDocOrThrow(flagFile)
       const lowerServers = this.mergedServersBelow(dir)
       const { doc, changed } = deriveDisabledFlagWrite(raw, lowerServers, serverName, disabled)
       if (changed) await this.writeRawDoc(flagFile, doc)
@@ -164,17 +167,12 @@ export class McpService {
 
   /** The merged definitions of every layer BELOW the project Pi layer —
    * the pure enable rule consults them (an explicit false beats a lower
-   * disabled flag). */
+   * disabled flag). The merge itself is the pure model's (adapter rules).
+   */
   private mergedServersBelow(cwd: string): Record<string, McpServerEntry> {
     const report = this.listConfig(cwd)
-    const layers = [...report.globalLayers, report.projectLayers.filter((l) => l.id !== 'pi-project')].flat()
-    const merged = new Map<string, McpServerEntry>()
-    for (const layer of layers) {
-      for (const [name, definition] of Object.entries(layer.servers)) {
-        merged.set(name, { ...merged.get(name), ...definition })
-      }
-    }
-    return Object.fromEntries(merged)
+    const rows = mergeMcpLayers([...report.globalLayers, ...report.projectLayers.filter((l) => l.id !== 'pi-project')])
+    return Object.fromEntries(rows.map((row) => [row.name, row.entry]))
   }
 
   /**
@@ -208,14 +206,14 @@ export class McpService {
         }
         const resolved = editTargetPathFor(row)
         if (resolved === null) {
-          return { ok: false, error: `"${name}" is defined in the cross-tool shared config ${row.winnerPath} — PiCode never writes it. Edit that file directly, or add an override for this server.` }
+          return { ok: false, error: mcpReadOnlyWinnerCopy(row) }
         }
         file = resolved
       }
       if (!isCanonicalMcpWritePath(file, { home: this.home, agentDir: this.agentDir, cwd: dir })) {
         return { ok: false, error: 'Refusing to write outside the canonical MCP config targets.' }
       }
-      const raw = this.readRawDoc(file)
+      const raw = this.readRawDocOrThrow(file)
       const { doc, changed } = deriveServerEntryWrite(raw, name, built.entry)
       if (changed) await this.writeRawDoc(file, doc)
       return { ok: true, path: file }
@@ -240,12 +238,12 @@ export class McpService {
       }
       const resolved = editTargetPathFor(row)
       if (resolved === null) {
-        return { ok: false, error: `"${serverName}" is defined in the cross-tool shared config ${row.winnerPath} — PiCode never writes it. Edit that file directly.` }
+        return { ok: false, error: mcpReadOnlyWinnerCopy(row) }
       }
       if (!isCanonicalMcpWritePath(resolved, { home: this.home, agentDir: this.agentDir, cwd: dir })) {
         return { ok: false, error: 'Refusing to write outside the canonical MCP config targets.' }
       }
-      const raw = this.readRawDoc(resolved)
+      const raw = this.readRawDocOrThrow(resolved)
       const { doc, changed } = deriveServerEntryRemove(raw, serverName)
       if (changed) await this.writeRawDoc(resolved, doc)
       return { ok: true, path: resolved }
@@ -269,18 +267,16 @@ export class McpService {
     return { ok: true, target }
   }
 
-  /** Read one config document as an object (missing/corrupt = {}). */
-  private readRawDoc(file: string): Record<string, unknown> {
+  /** Read one config document as an object for a WRITE: missing = {}, a
+   * corrupt document THROWS (the action must never silently replace a
+   * file's content — adapter-faithful refusal). */
+  private readRawDocOrThrow(file: string): Record<string, unknown> {
     if (!existsSync(file)) return {}
-    try {
-      const parsed: unknown = JSON.parse(readFileSync(file, 'utf-8'))
-      if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        return parsed as Record<string, unknown>
-      }
-      return {}
-    } catch {
-      return {}
+    const parsed: unknown = JSON.parse(readFileSync(file, 'utf-8'))
+    if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>
     }
+    throw new Error(`${file}: the config root must be a JSON object.`)
   }
 
   /** Atomic write (temp + rename), 2-space JSON + trailing newline — the
