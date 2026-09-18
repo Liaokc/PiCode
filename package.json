@@ -43,6 +43,7 @@
     "visual:worked": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_WORKED=1 electron .",
     "visual:filebar": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_FILEBAR=1 electron .",
     "visual:chronology": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_CHRONOLOGY=1 electron .",
+    "visual:send-pin": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_SEND_PIN=1 electron .",
     "visual:thinking": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_THINKING=1 electron .",
     "visual:cwd": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_CWD=1 electron .",
     "visual:rail-stack": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_RAIL_STACK=1 electron .",
