@@ -14,7 +14,7 @@ import { imagePreviewKeyAction, imagePreviewStep, imageDataUrl } from '../../src
  * key is nobody's business (null — the overlay never acts on it).
  *
  * imageDataUrl is the shared seam for the full-resolution data: URL the
- * lightbox renders (过采样缩放不糊 — the overlay must always see the raw
+ * overlay renders (过采样缩放不糊 — the overlay must always see the raw
  * base64 payload, never a downscaled thumbnail): the composer's local
  * cards build it today, ticket 97's bubble thumbnails rebuild it from the
  * transcript's {mimeType, data} parts tomorrow.

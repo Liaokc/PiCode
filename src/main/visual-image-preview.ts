@@ -212,7 +212,7 @@ export function startImagePreviewVisualIfEnabled(getWindow: () => BrowserWindow 
         closeRight: number | null
       } | null
       if (overlay === null) throw new Error('image-preview visual: the overlay probe never returned')
-      check(overlay.naturalW === FIXTURE_W && overlay.naturalH === FIXTURE_H, `the lightbox renders the FULL-resolution payload (natural ${overlay.naturalW}×${overlay.naturalH})`)
+      check(overlay.naturalW === FIXTURE_W && overlay.naturalH === FIXTURE_H, `the overlay renders the FULL-resolution payload (natural ${overlay.naturalW}×${overlay.naturalH})`)
       check(overlay.boxW <= overlay.maxW + 1 && overlay.boxH <= overlay.maxH + 1, `the displayed box fits its contain-fit caps (box ${overlay.boxW}×${overlay.boxH} within ${overlay.maxW}×${overlay.maxH})`)
       check(overlay.dialog, 'the overlay carries dialog semantics (role=dialog + aria-modal)')
       check(overlay.hasClose && overlay.closeTop !== null && overlay.closeTop <= 30 && overlay.closeRight !== null && overlay.closeRight <= 30, `the ❌ sits at the window's top-right corner (top ${String(overlay.closeTop)}, right ${String(overlay.closeRight)})`)

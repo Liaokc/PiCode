@@ -5557,8 +5557,17 @@ export function startSmokeIfEnabled(
         return true
       })()`)) as boolean
       if (!pasted91) fail('ticket-91 stage: the composer textarea is missing for the image paste')
-      if (!(await waitForProbe(win, `document.querySelectorAll('.chat-dock .composer-attachment').length === 3`, 10_000))) {
-        fail('ticket-91 stage: the 3 pasted images never rendered attachment cards')
+      if (
+        !(await waitForProbe(
+          win,
+          `(() => {
+            const ta = document.querySelector('.chat-dock textarea.composer-input')
+            return ta instanceof HTMLTextAreaElement && ta.value === ${JSON.stringify(DRAFT_91)} && document.querySelectorAll('.chat-dock .composer-attachment').length === 3
+          })()`,
+          10_000
+        ))
+      ) {
+        fail('ticket-91 stage: the draft or the 3 pasted attachments never staged (probe includes the draft byte-check)')
       }
 
       /** The overlay sample: geometry + semantics + position chip + the
@@ -5600,20 +5609,28 @@ export function startSmokeIfEnabled(
       }
       const sample91 = async (): Promise<OverlaySample91> => JSON.parse(String(await js(SAMPLE_91)))
 
-      /** The closed-and-undisturbed assertion: mask down, draft byte-equal,
-       * 3 attachments, and the caret back on the input (ticket-98). */
+      /** Closed-and-undisturbed: mask down, draft byte-equal, 3
+       * attachments, caret back on the input. The failure dump carries the
+       * value's length + char codes — one stray keystroke (the smoke window
+       * holds REAL focus while it runs; an operator's typing can land in
+       * the focused input, ticket-79/70/83 same-class environmental
+       * flakes) must name itself instead of looking like a product bug. */
       const closedIntact91 = async (leg: string): Promise<void> => {
         const s = await sample91()
         const intact = JSON.parse(String(await js(`(() => {
           const ta = document.querySelector('.chat-dock textarea.composer-input')
           return JSON.stringify({
             value: ta instanceof HTMLTextAreaElement ? ta.value : null,
+            codes: ta instanceof HTMLTextAreaElement ? [...ta.value].map((ch) => ch.codePointAt(0)).join(',') : null,
+            active: document.activeElement === ta ? 'textarea' : (document.activeElement?.tagName ?? 'none'),
             attachments: document.querySelectorAll('.chat-dock .composer-attachment').length
           })
-        })()`))) as { value: string | null; attachments: number }
+        })()`))) as { value: string | null; codes: string | null; active: string; attachments: number }
         if (s.open) fail(`ticket-91 stage: the overlay never closed via the ${leg} exit`)
         if (intact.value !== DRAFT_91 || intact.attachments !== 3) {
-          fail(`ticket-91 stage: the ${leg} exit disturbed the composer (value ${JSON.stringify(intact.value)}, attachments ${intact.attachments})`)
+          fail(
+            `ticket-91 stage: the ${leg} exit disturbed the composer (value ${JSON.stringify(intact.value)}, codes ${intact.codes ?? '-'}, active ${intact.active}, attachments ${intact.attachments}; a real keystroke in the focused input = environmental, see comment)`
+          )
         }
         if (!(await waitForProbe(win, `document.activeElement === ${ta91}`, 5_000))) {
           fail(`ticket-91 stage: after the ${leg} exit the caret never returned to the composer input`)
@@ -5655,21 +5672,38 @@ export function startSmokeIfEnabled(
       }
       log('image_preview_91_open_ok')
 
+      /** The exit-key shape of a REAL user: the overlay's autoFocus holds
+       * focus on its own ❌ while open — the key lands on the ❌ (inside
+       * the mask), never on the composer input. Focusing the ❌ before
+       * dispatch is both faithful and defensive: the smoke window holds
+       * REAL OS focus, and a stray REAL keystroke can only reach the
+       * focused element — never the input this stage byte-checks. */
+      const press91 = async (key: string): Promise<void> => {
+        const pressed = (await js(`(() => {
+          const btn = document.querySelector('.image-preview-close')
+          if (!(btn instanceof HTMLElement)) return false
+          btn.focus()
+          btn.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, bubbles: true, cancelable: true }))
+          return true
+        })()`)) as boolean
+        if (!pressed) fail(`ticket-91 stage: the ❌ button vanished before the ${key} dispatch`)
+      }
+
       // ② Walking: ArrowRight → 3/3 (payload swap), ArrowRight → 1/3 (wrap),
       // ArrowLeft → back to 3/3 (the same payload as the first 3/3).
       const srcAt2of391 = open91.src
-      await js(`document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }))`)
+      await press91('ArrowRight')
       if (!(await waitForProbe(win, `document.querySelector('.image-preview-count')?.textContent === '3/3'`, 5_000))) {
         fail('ticket-91 stage: ArrowRight never walked to 3/3')
       }
       const at3of391 = await sample91()
       if (at3of391.src === srcAt2of391) fail('ticket-91 stage: stepping to 3/3 never swapped the payload')
       const srcAt3of391 = at3of391.src
-      await js(`document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }))`)
+      await press91('ArrowRight')
       if (!(await waitForProbe(win, `document.querySelector('.image-preview-count')?.textContent === '1/3'`, 5_000))) {
         fail('ticket-91 stage: ArrowRight never wrapped 3/3 → 1/3')
       }
-      await js(`document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true }))`)
+      await press91('ArrowLeft')
       if (!(await waitForProbe(win, `document.querySelector('.image-preview-count')?.textContent === '3/3'`, 5_000))) {
         fail('ticket-91 stage: ArrowLeft never walked back to 3/3')
       }
@@ -5678,7 +5712,7 @@ export function startSmokeIfEnabled(
       log('image_preview_91_walk_ok')
 
       // ③ Exit A — Space (the operator-specified key exit).
-      await js(`document.body.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }))`)
+      await press91(' ')
       await closedIntact91('Space')
       log('image_preview_91_space_ok')
 
@@ -5691,7 +5725,7 @@ export function startSmokeIfEnabled(
       // Exit C — Escape (preventDefault upstream keeps the app-level
       // Escape handler out: no draft park, no view change).
       await reopen91()
-      await js(`document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))`)
+      await press91('Escape')
       await closedIntact91('Escape')
       log('image_preview_91_escape_ok')
 

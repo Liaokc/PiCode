@@ -1,7 +1,7 @@
 /**
  * Deterministic PNG fixtures for the harnesses (ticket 91). The smoke and
  * the visual harness both need REAL decodable images with known pixel
- * dimensions: the lightbox's full-resolution rendering (过采样缩放不糊) is
+ * dimensions: the overlay's full-resolution rendering (过采样缩放不糊) is
  * only provable against a payload whose naturalWidth the harness controls —
  * a pasted File must decode to exactly the width the assertion expects.
  *

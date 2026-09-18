@@ -19,7 +19,7 @@ import { CloseIcon } from './icons'
  *                            — clicks on the image, the ❌ or the counter
  *                            chip are NOT blank and never close).
  *
- * 过采样缩放不糊: the lightbox renders whatever src it is handed at up to
+ * 过采样缩放不糊: the overlay renders whatever src it is handed at up to
  * 90vw/84vh — the composer hands the FULL-resolution data: URL (the 52px
  * thumbnail crops that same payload via CSS), so enlargement samples the
  * real pixels and nothing is upscaled from a small copy.

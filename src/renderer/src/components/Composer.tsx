@@ -7,6 +7,7 @@ import type { EditResendPrefill } from '../../../shared/edit-resend'
 import { applyMention, filterFiles, splitTruncatedFiles } from '../../../shared/composer/mention'
 import { accessModeLabel } from '../../../shared/composer/access'
 import { gateSlashCommand } from '../../../shared/composer/slash-gate'
+import { imageDataUrl } from '../../../shared/composer/image-preview'
 import { textMenuSurface } from '../../../shared/composer/menu-surface'
 import { filterCommands, pickCommand, composeCommandText, type ComposerCommandCard } from '../../../shared/composer/commands'
 import { clampIndex, flatMenuKey } from '../../../shared/composer/menu-keys'
@@ -625,7 +626,7 @@ export default function Composer({
         id: imageSeq++,
         mimeType: img.mimeType,
         data: img.data,
-        preview: `data:${img.mimeType};base64,${img.data}`,
+        preview: imageDataUrl(img.mimeType, img.data),
         label: 'Image'
       }))
     ])
@@ -930,15 +931,16 @@ function modelShortId(model: ModelRef): string {
 }
 
 /** Build the local attachment cards from {mimeType, data} parts — fresh
- * local ids, data-URL previews rebuilt from the raw base64 payload (previews
- * never leave this file). ONE builder for both restore paths: the ticket-74
- * parked-draft mount and the ticket-79 edit-resend prefill. */
+ * local ids, data-URL previews rebuilt from the raw base64 payload through
+ * the ONE builder (imageDataUrl — the seam ticket 97 rebuilds from too;
+ * previews never leave this file). ONE builder for both restore paths: the
+ * ticket-74 parked-draft mount and the ticket-79 edit-resend prefill. */
 function localImagesFrom(parts: ReadonlyArray<{ mimeType: string; data: string }>): LocalImage[] {
   return parts.map((img) => ({
     id: imageSeq++,
     mimeType: img.mimeType,
     data: img.data,
-    preview: `data:${img.mimeType};base64,${img.data}`,
+    preview: imageDataUrl(img.mimeType, img.data),
     label: 'Image'
   }))
 }

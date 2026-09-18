@@ -42,7 +42,7 @@ export function imagePreviewStep(index: number, imageCount: number, action: 'pre
 
 /**
  * The full-resolution data: URL for one {mimeType, data} part — the ONLY
- * source the lightbox is allowed to render (过采样缩放不糊: the thumbnail's
+ * source the overlay is allowed to render (过采样缩放不糊: the thumbnail's
  * 52px box crops the SAME full-size payload via CSS, so zooming costs
  * nothing; a downscaled preview copy would blur exactly what this ticket
  * exists to show).
