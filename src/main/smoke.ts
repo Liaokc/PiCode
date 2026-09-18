@@ -2858,6 +2858,17 @@ export function startSmokeIfEnabled(
       )
       writeFileSync(path.join(seed88, 'notes.md'), '# PICODE88 notes\n\nSome **bold** and `code`.\n')
       writeFileSync(path.join(seed88, 'logo.bin'), Buffer.from([0x00, 0x89, 0x50, 0x4e, 0x47, 0x00, 0x0d, 0x0a]))
+      // Git-seed like the panel stage: one committed seed file, the fixtures
+      // UNTRACKED — the Review tab lists them (untracked = whole-file adds)
+      // and the preview chips deep-link the preview tabs without any
+      // session-index/sidebar dependency.
+      const git88 = (args: string[]): string => execFileSync('git', args, { cwd: seed88, stdio: 'pipe' }).toString()
+      git88(['-c', 'user.email=smoke@picode.local', '-c', 'user.name=PiCode Smoke', '-c', 'commit.gpgsign=false', 'init', '-q'])
+      writeFileSync(path.join(seed88, 'seed.txt'), 'seed\n')
+      // Add ONLY the seed file — the fixtures must stay untracked so the
+      // Review tree lists them (whole-file adds).
+      git88(['-c', 'user.email=smoke@picode.local', '-c', 'user.name=PiCode Smoke', '-c', 'commit.gpgsign=false', 'add', 'seed.txt'])
+      git88(['-c', 'user.email=smoke@picode.local', '-c', 'user.name=PiCode Smoke', '-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'seed'])
       try {
         supervisor.createSession(seed88)
         await waitFor((e) => e.type === 'session_created' && e.cwd === seed88, 'preview-88 session_created')
@@ -2866,34 +2877,50 @@ export function startSmokeIfEnabled(
         await withWindow(getWindow, async (win) => {
           const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
           const ACTIVE = `.panel-tab-body:not(.panel-tab-body-hidden)`
-          const clickRow = (name: string): string =>
-            `(() => {\n              for (const row of document.querySelectorAll('.fb-row')) {\n                if (row.querySelector('.fb-row-name')?.textContent !== '${name}') continue\n                row.click(); return true\n              }\n              return false\n            })()`
           const tabOpen = (name: string): string =>
             `[...document.querySelectorAll('.panel-tab-label span')].some((el) => el.textContent === '${name}')`
           const clickSegment = (want: 'Rendered' | 'Source'): string =>
             `(() => {\n              const body = document.querySelector('${ACTIVE}')\n              for (const button of body?.querySelectorAll('.review-segmented button') ?? []) {\n                if (!(button.textContent ?? '').includes('${want}')) continue\n                if (button.getAttribute('aria-selected') !== 'true') button.click()\n                return true\n              }\n              return false\n            })()`
+          /** The Review tab's preview chip for the fixture row with this
+           * name (ticket-31 deep link precedent). */
+          const clickReviewChip = (name: string): string =>
+            `(() => {\n              for (const row of document.querySelectorAll('.review-tree-file')) {\n                if (row.querySelector('.review-tree-name')?.textContent !== '${name}') continue\n                const chip = row.querySelector('.review-tree-open')\n                if (chip instanceof HTMLElement) { chip.click(); return true }\n                return false\n              }\n              return false\n            })()`
 
-          // Open the file browser over the fixtures (the seeded session's
-          // project group offers "View files" — the ticket-26 hover action).
-          const project88 = path.basename(seed88)
-          const openBrowser = `(() => { const btn = document.querySelector('[aria-label="View files in ${project88}"]'); if (btn instanceof HTMLElement) { btn.click(); return true } return false })()`
-          if (!(await waitForProbe(win, openBrowser, 10_000))) {
-            fail(`ticket-88 stage: the ${project88} group never offered "View files"`)
+          // Reopen the side panel (the 86 stage left it collapsed) and open
+          // the Review tab over the seeded workspace: zero tabs → the picker
+          // page shows immediately, one click on the Review card.
+          const panelOpen = `(() => { const p = document.querySelector('.side-panel'); return p !== null && !p.hasAttribute('data-closed') })()`
+          if (!((await js(panelOpen)) as boolean)) {
+            await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', altKey: true, metaKey: true, bubbles: true }))`)
+            if (!(await waitForProbe(win, panelOpen, 10_000))) {
+              fail('ticket-88 stage: ⌥⌘B never reopened the collapsed panel')
+            }
           }
-          if (!(await waitForProbe(win, `document.querySelector('.fb-browser') !== null`, 10_000))) {
-            fail('ticket-88 stage: the file browser never opened')
+          await waitForProbe(win, `document.querySelector('.panel-tab-card[aria-label="Open Review tab"]') !== null`, 10_000)
+          await js(`document.querySelector('.panel-tab-card[aria-label="Open Review tab"]')?.click(); true`)
+          if (!(await waitForProbe(win, `document.querySelectorAll('.review-tree-file').length >= 5`, 20_000))) {
+            const diag = (await js(
+              `JSON.stringify({\n                tabs: [...document.querySelectorAll('.panel-tab-label span')].map((el) => el.textContent),\n                reviewView: document.querySelector('.review-view') !== null,\n                reviewTreeRows: document.querySelectorAll('.review-tree-file').length,\n                reviewEmpty: document.querySelector('.review-empty')?.textContent ?? null,\n                reviewToolbar: document.querySelector('.review-toolbar')?.textContent?.slice(0, 80) ?? null\n              })`
+            ).catch(() => 'unavailable')) as string
+            fail(`ticket-88 stage: the Review tree never listed the untracked fixtures; review: ${diag}`)
           }
+          log('preview_88_review_tree_ok')
 
           // Arm the frame-message collector BEFORE the html preview loads.
           await js(`window.__p88msgs = []; window.addEventListener('message', (e) => { window.__p88msgs.push(String(e.data)) }); true`)
 
+          /** Open one fixture from the Review tree and wait for its tab. */
+          const openFixture = async (name: string): Promise<void> => {
+            if (!(await waitForProbe(win, clickReviewChip(name), 10_000))) {
+              fail(`ticket-88 stage: the ${name} row never rendered its preview chip`)
+            }
+            if (!(await waitForProbe(win, tabOpen(name), 10_000))) {
+              fail(`ticket-88 stage: ${name} never deep-linked into a preview tab`)
+            }
+          }
+
           // ① HTML: default RENDERED inside the sandboxed iframe.
-          if (!(await waitForProbe(win, clickRow('report.html'), 10_000))) {
-            fail('ticket-88 stage: the report.html row never rendered in the file browser')
-          }
-          if (!(await waitForProbe(win, tabOpen('report.html'), 10_000))) {
-            fail('ticket-88 stage: report.html never deep-linked into a preview tab')
-          }
+          await openFixture('report.html')
           const frameOk = (await js(
             `(() => {\n              const frame = document.querySelector('${ACTIVE} .preview-html-frame')\n              return frame !== null\n                && frame.getAttribute('sandbox') === 'allow-scripts'\n                && (frame.getAttribute('src') ?? '').startsWith('preview-file://local/')\n                && frame.contentDocument === null\n            })()`
           )) as boolean
@@ -2934,12 +2961,7 @@ export function startSmokeIfEnabled(
           log('preview_88_html_source_ok')
 
           // ② SVG: default RENDERED as a static img data-URL; Source shows markup.
-          if (!(await waitForProbe(win, clickRow('diagram.svg'), 10_000))) {
-            fail('ticket-88 stage: the diagram.svg row never rendered in the file browser')
-          }
-          if (!(await waitForProbe(win, tabOpen('diagram.svg'), 10_000))) {
-            fail('ticket-88 stage: diagram.svg never deep-linked into a preview tab')
-          }
+          await openFixture('diagram.svg')
           if (
             !(await waitForProbe(
               win,
@@ -2966,12 +2988,7 @@ export function startSmokeIfEnabled(
           log('preview_88_svg_ok')
 
           // ③ PNG: direct display, single state — no segmented, no wrap toggle.
-          if (!(await waitForProbe(win, clickRow('dot.png'), 10_000))) {
-            fail('ticket-88 stage: the dot.png row never rendered in the file browser')
-          }
-          if (!(await waitForProbe(win, tabOpen('dot.png'), 10_000))) {
-            fail('ticket-88 stage: dot.png never deep-linked into a preview tab')
-          }
+          await openFixture('dot.png')
           if (
             !(await waitForProbe(
               win,
@@ -2993,12 +3010,7 @@ export function startSmokeIfEnabled(
           log('preview_88_png_ok')
 
           // ④ markdown dual-state zero-regression.
-          if (!(await waitForProbe(win, clickRow('notes.md'), 10_000))) {
-            fail('ticket-88 stage: the notes.md row never rendered in the file browser')
-          }
-          if (!(await waitForProbe(win, tabOpen('notes.md'), 10_000))) {
-            fail('ticket-88 stage: notes.md never deep-linked into a preview tab')
-          }
+          await openFixture('notes.md')
           if (!(await waitForProbe(win, `document.querySelector('${ACTIVE} .preview-md') !== null`, 10_000))) {
             fail('ticket-88 stage: markdown never opened rendered (regression)')
           }
@@ -3010,9 +3022,7 @@ export function startSmokeIfEnabled(
           log('preview_88_markdown_ok')
 
           // ⑤ binary refusal zero-regression (non-image binary).
-          if (!(await waitForProbe(win, clickRow('logo.bin'), 10_000))) {
-            fail('ticket-88 stage: the logo.bin row never rendered in the file browser')
-          }
+          await openFixture('logo.bin')
           if (
             !(await waitForProbe(
               win,
