@@ -12,7 +12,10 @@
  *      +2 −1" bar at the end of the after-answer segment, below the answer;
  *      a clean turn (read + text only) shows NO bar (no file changes, no bar);
  *   2. fb2-filebar-expanded — the bar expanded: per-file rows (icon + name +
- *      path + ± counts, the write as "+new") with Review / Open affordances.
+ *      path + ± counts, the write as "+new") with Review / Open affordances;
+ *   3. fb3-filebar-settled-only (ticket 92) — a live turn streams an edit:
+ *      NO bar while the container runs (frame captured); at agent_end the
+ *      bar lands in place below the turn's answer (frame captured).
  *
  * Seeding: the transcript is injected through the contract stream
  * (session_created(resumed) + history_loaded — the ticket-53/55 precedent,
@@ -235,6 +238,52 @@ export function startFilebarVisualIfEnabled(getWindow: () => BrowserWindow | nul
       )
       await sleep(300)
       await capture(win, 'fb2-filebar-expanded')
+
+      // ---- fb3 (ticket 92): settled-only — the live turn renders no bar;
+      // agent_end lands it in place below the answer. ----
+      const LIVE_ANSWER = 'Live edit settled: the bar lands below this answer at agent_end.'
+      emitContractEvent({ type: 'user_message', text: 'Now stream an edit live.' })
+      emitContractEvent({ type: 'agent_start' })
+      emitContractEvent({ type: 'tool_start', toolCallId: 'fb3-live-e1', name: 'edit', args: { path: 'src/constants.ts' } })
+      emitContractEvent({ type: 'tool_end', toolCallId: 'fb3-live-e1', output: 'ok', isError: false, diff: DIFF_B })
+      emitContractEvent({ type: 'message_start' })
+      emitContractEvent({ type: 'text_delta', delta: LIVE_ANSWER })
+      emitContractEvent({ type: 'message_end' })
+      const liveClean = await waitFor(
+        win,
+        `${SIG}.bars === 1 && document.querySelectorAll('.turn-container-open').length === 1`,
+        10_000
+      )
+      if (!liveClean) throw new Error('filebar visual fb3: the live turn leaked a file bar while streaming')
+      console.log('VISUAL probe fb3-live: no bar while streaming')
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const thread = document.querySelector('.chat-thread')
+          if (thread instanceof HTMLElement) thread.scrollTop = thread.scrollHeight
+          return true
+        })()`
+      )
+      await sleep(300)
+      await capture(win, 'fb3a-live-no-bar')
+
+      emitContractEvent({ type: 'agent_end' })
+      const settledBar = await waitFor(
+        win,
+        `${SIG}.bars === 2 && [...document.querySelectorAll('.turn-filebar')][1].querySelector('.turn-filebar-summary').textContent === '1 file changed' &&
+         document.querySelector('.chat-thread').lastElementChild.classList.contains('turn-filebar')`,
+        10_000
+      )
+      if (!settledBar) throw new Error('filebar visual fb3: the bar never landed below the answer at agent_end')
+      console.log('VISUAL probe fb3-settled: bar in place below the answer')
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const thread = document.querySelector('.chat-thread')
+          if (thread instanceof HTMLElement) thread.scrollTop = thread.scrollHeight
+          return true
+        })()`
+      )
+      await sleep(300)
+      await capture(win, 'fb3b-settled-bar-in-place')
 
       console.log('VISUAL turn-filebar done')
       app.exit(0)

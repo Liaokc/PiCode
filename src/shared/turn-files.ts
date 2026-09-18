@@ -7,9 +7,11 @@
  * display diff (`details.diff` — sign-prefixed rows with a padded line
  * number); write results carry none (a new file is recorded as "+new", never
  * line counts). The host relays that diff text on the live `tool_end` event
- * and the structured replay items carry it too, so live and settled turns
- * aggregate isomorphically (同构). read/ls/grep/find/bash never enter the
- * bar; a turn with no settled edit/write aggregates to no bar at all.
+ * and the structured replay items carry it too, so ONE counting rule serves
+ * both paths. Ticket 92 moves the live/settled decision up into `groupTurns`
+ * — the bar is settled-only (a live turn renders none) — so this fold only
+ * ever feeds settled turns. read/ls/grep/find/bash never enter the bar; a
+ * turn with no settled edit/write aggregates to no bar at all.
  */
 
 import type { ToolEntry } from './chat-reducer'
@@ -97,10 +99,11 @@ function pathOf(args: Record<string, unknown>): string | null {
 
 /**
  * Fold a turn's tool entries (transcript order) into per-file change rows.
- * Only SETTLED SUCCESSFUL edit/write calls count — the bar grows as tools
- * settle (live 与落定同构); a failed or still-running call changed nothing.
- * Same file merges into ONE row (diffs concatenated in order); a write in
- * the mix makes the row a new-file row ("+new" — counts never apply).
+ * Only SETTLED SUCCESSFUL edit/write calls count — a failed or still-running
+ * call changed nothing. Same file merges into ONE row (diffs concatenated in
+ * order); a write in the mix makes the row a new-file row ("+new" — counts
+ * never apply). Ticket 92: the live/settled gate lives in `groupTurns`, so
+ * this fold never sees a live turn.
  */
 export function aggregateTurnFiles(tools: readonly ToolEntry[]): TurnFileChange[] {
   const byPath = new Map<string, TurnFileChange>()

@@ -126,8 +126,14 @@ export interface TurnGroup {
   /** The turn's aggregated file changes (ticket 78): every settled edit/write
    * call in the TURN — fold body and after-answer segment alike — folded into
    * per-file rows for the "N files changed +X −Y" bar. Empty when the turn
-   * changed no files (无更改回合不出条). Live turns grow it as tools settle.
-   * Pure projection of `work` + `answer` + `afterAnswer`'s tool entries. */
+   * changed no files (无更改回合不出条). SETTLED-STATE ONLY (ticket 92): a
+   * live turn carries NO fileChanges — the bar never renders while the turn
+   * streams, and the aggregate lands in one move at agent_end, in place
+   * (below the answer / after the container, composition unchanged). A
+   * turn_error or a user Stop settles through the same path (settle(state,
+   * false)), so its bar still shows — file changes are a fact projection,
+   * unrelated to how the turn ended. Pure projection of `work` +
+   * `afterAnswer`'s tool entries. */
   fileChanges: TurnFileChange[]
   /** The turn currently streaming: container renders expanded and ticking. */
   live: boolean
@@ -304,9 +310,13 @@ export function groupTurns(entries: ChatEntry[], agentRunning: boolean): TurnGro
     const { work, answer, afterAnswer } = live ? chronologicalTurn(draft.raw) : splitTurn(draft.raw)
     // Ticket 78: the whole turn's tool entries in transcript order — fold
     // body and after-answer segment alike — feed the file change aggregation.
-    // splitTurn reorders nothing within each list; the live stream holds
-    // every tool in `work` already.
-    const toolsInOrder = [...work, ...afterAnswer].flatMap((item) => (item.kind === 'tool' ? [item.entry] : []))
+    // splitTurn reorders nothing within each list. Ticket 92 gates the bar on
+    // settle: a live turn carries NO fileChanges (the bar would be a moving
+    // distractor), the aggregate lands in one move at agent_end; stop/error
+    // turns settle too, so theirs still show.
+    const fileChanges = live
+      ? []
+      : aggregateTurnFiles([...work, ...afterAnswer].flatMap((item) => (item.kind === 'tool' ? [item.entry] : [])))
     return {
       id: draft.id,
       user: draft.user,
@@ -315,7 +325,7 @@ export function groupTurns(entries: ChatEntry[], agentRunning: boolean): TurnGro
       work,
       answer,
       afterAnswer,
-      fileChanges: aggregateTurnFiles(toolsInOrder),
+      fileChanges,
       live,
       // Ticket 56/82: only a pill inside the fold keeps it open. While live
       // every pill IS inside the fold (the whole stream is), so a gate ask

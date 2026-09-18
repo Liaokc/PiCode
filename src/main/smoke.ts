@@ -6049,7 +6049,9 @@ export function startSmokeIfEnabled(
     // pi15-post-answer-thinking-misplaced, fixed). At settle the
     // ticket-53/56 composition appears in one move: the answer below the
     // collapsed container, the tool + thinking in the segment below it
-    // (常显段) — live 与落定同构 through the shared projection. ----
+    // (常显段) — settled composition isomorphic with a replay through the
+    // shared projection. Ticket 92 gates the file bar to settled turns on
+    // top of this stage's neighbor (turn_filebar). ----
     log('turn_chronology_start')
     {
       const ANSWER = 'PICODE_TC_ANSWER: the deploy plan is ready'
@@ -6458,6 +6460,99 @@ export function startSmokeIfEnabled(
           )) as boolean
           if (!openLinked) fail('ticket-78 stage: the Open chip never deep-linked the preview tab')
           log('turn_filebar_open_deeplink_ok')
+
+          // ---- ticket 92: the bar is SETTLED-ONLY — the same session, now
+          // through the live stream. ⑤ a live turn with an already-settled
+          // edit renders NO bar while streaming; at agent_end the bar lands
+          // in place (after the container on this answer-less turn, the
+          // composition unchanged). ⑥ a STOP-interrupted turn (agent_end is
+          // exactly what an abort produces) keeps its bar: the done edit
+          // counts, the tool killed mid-run does not. ⑦ a no-change turn
+          // grows no bar live or settled. ----
+
+          // ⑤ Live turn with a settled edit: no bar while streaming.
+          emitContractEvent({ type: 'user_message', text: 'PICODE_FB_LIVE_PROMPT: live edit' })
+          emitContractEvent({ type: 'agent_start' })
+          emitContractEvent({ type: 'tool_start', toolCallId: 'fb-live-e1', name: 'edit', args: { path: 'turnbar_alpha.ts' } })
+          emitContractEvent({ type: 'tool_end', toolCallId: 'fb-live-e1', output: 'ok', isError: false, diff: FB_DIFF_A })
+          const liveNoBar = (await waitForProbe(
+            win,
+            `${sig}.bars === 1 && document.querySelectorAll('.turn-container-open').length === 1`,
+            10_000
+          )) as boolean
+          if (!liveNoBar) {
+            const diag = (await win.webContents.executeJavaScript(`JSON.stringify(${sig})`).catch(() => 'unavailable')) as string
+            fail(`ticket-92 stage: the live turn leaked a file bar while streaming; DOM: ${diag}`)
+          }
+          log('turn_filebar_live_no_bar_ok')
+
+          // agent_end: the bar lands in place — the turn's LAST rendered
+          // element, directly after its container (no answer → 容器后, the
+          // ticket-78 composition unchanged), counting the done edit
+          // (FB_DIFF_A = +1 −1, so the suite shows two del stats now).
+          emitContractEvent({ type: 'agent_end' })
+          const settleInPlace = (await waitForProbe(
+            win,
+            `${sig}.bars === 2 && ${sig}.adds.join() === '+2,+1' && ${sig}.dels.join() === '−1,−1' &&
+             document.querySelector('.chat-thread').lastElementChild.classList.contains('turn-filebar') &&
+             document.querySelectorAll('.turn-filebar')[1].previousElementSibling.classList.contains('turn-container') &&
+             [...document.querySelectorAll('.turn-filebar')][1].querySelector('.turn-filebar-summary').textContent === '1 file changed'`,
+            10_000
+          )) as boolean
+          if (!settleInPlace) {
+            const diag = (await win.webContents.executeJavaScript(`JSON.stringify(${sig})`).catch(() => 'unavailable')) as string
+            fail(`ticket-92 stage: the settled bar never landed in place after the container; DOM: ${diag}`)
+          }
+          log('turn_filebar_live_settle_in_place_ok')
+
+          // ⑥ Stop-interrupted turn: one edit settles, a second is killed
+          // mid-run by the abort (agent_end marks it error) — the bar still
+          // shows the done edit only.
+          emitContractEvent({ type: 'user_message', text: 'PICODE_FB_STOP_PROMPT: interrupt me' })
+          emitContractEvent({ type: 'agent_start' })
+          emitContractEvent({ type: 'tool_start', toolCallId: 'fb-stop-e1', name: 'edit', args: { path: 'turnbar_alpha.ts' } })
+          emitContractEvent({ type: 'tool_end', toolCallId: 'fb-stop-e1', output: 'ok', isError: false, diff: FB_DIFF_B })
+          emitContractEvent({ type: 'tool_start', toolCallId: 'fb-stop-e2', name: 'edit', args: { path: 'turnbar_beta.md' } })
+          const stopLiveNoBar = (await waitForProbe(
+            win,
+            `${sig}.bars === 2`,
+            10_000
+          )) as boolean
+          if (!stopLiveNoBar) {
+            const diag = (await win.webContents.executeJavaScript(`JSON.stringify(${sig})`).catch(() => 'unavailable')) as string
+            fail(`ticket-92 stage: the pre-stop live turn leaked a file bar; DOM: ${diag}`)
+          }
+          log('turn_filebar_stop_live_no_bar_ok')
+          emitContractEvent({ type: 'agent_end' })
+          const stopBar = (await waitForProbe(
+            win,
+            `${sig}.bars === 3 && ${sig}.adds.join() === '+2,+1,+1' && ${sig}.dels.join() === '−1,−1' &&
+             [...document.querySelectorAll('.turn-filebar')][2].querySelector('.turn-filebar-summary').textContent === '1 file changed'`,
+            10_000
+          )) as boolean
+          if (!stopBar) {
+            const diag = (await win.webContents.executeJavaScript(`JSON.stringify(${sig})`).catch(() => 'unavailable')) as string
+            fail(`ticket-92 stage: the stopped turn's bar never showed (done edit only, killed tool excluded); DOM: ${diag}`)
+          }
+          log('turn_filebar_stop_turn_bar_ok')
+
+          // ⑦ No-change turn: a read-only turn renders no bar live or settled.
+          emitContractEvent({ type: 'user_message', text: 'PICODE_FB_READ_PROMPT: just look' })
+          emitContractEvent({ type: 'agent_start' })
+          emitContractEvent({ type: 'tool_start', toolCallId: 'fb-live-r1', name: 'read', args: { path: 'turnbar_alpha.ts' } })
+          emitContractEvent({ type: 'tool_end', toolCallId: 'fb-live-r1', output: 'const a = 1;', isError: false })
+          const readLiveNoBar = (await waitForProbe(win, `${sig}.bars === 3`, 10_000)) as boolean
+          emitContractEvent({ type: 'agent_end' })
+          const readSettledNoBar = (await waitForProbe(
+            win,
+            `${sig}.bars === 3 && ${sig}.adds.join() === '+2,+1,+1' && ${sig}.dels.join() === '−1,−1'`,
+            10_000
+          )) as boolean
+          if (!readLiveNoBar || !readSettledNoBar) {
+            const diag = (await win.webContents.executeJavaScript(`JSON.stringify(${sig})`).catch(() => 'unavailable')) as string
+            fail(`ticket-92 stage: the no-change turn grew a bar (live=${String(readLiveNoBar)}, settled=${String(readSettledNoBar)}); DOM: ${diag}`)
+          }
+          log('turn_filebar_live_no_change_no_bar_ok')
         })
       } finally {
         rmSync(fbDir, { recursive: true, force: true })

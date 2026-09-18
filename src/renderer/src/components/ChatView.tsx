@@ -365,7 +365,11 @@ export default function ChatView({
                 {turn.fileChanges.length > 0 && (
                   /* Ticket 78: the turn file bar — collapsed "N files changed
                      +X −Y" at the end of the always-visible segment (below
-                     the answer; after the container on answer-less turns). */
+                     the answer; after the container on answer-less turns).
+                     Ticket 92: settled-only — the model carries no
+                     fileChanges while the turn streams, so the bar lands in
+                     place at agent_end (stop/error turns settle through the
+                     same path and keep theirs). */
                   <TurnFileBar turnId={turn.id} changes={turn.fileChanges} onReviewTurn={onReviewTurn} onOpenFile={onOpenFile} />
                 )}
               </Fragment>

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   chatReducer,
   initialChatState,
+  replayEntry,
   type ChatAction,
   type ChatState
 } from '../../src/shared/chat-reducer'
@@ -899,7 +900,7 @@ describe('groupTurns — turn file changes (ticket 78)', () => {
     expect(turn.fileChanges).toEqual([])
   })
 
-  it('table · live stream file data: tools on both sides of inline texts aggregate in transcript order (ticket 82)', () => {
+  it('table · settled-only gate: a LIVE turn carries NO fileChanges even with settled edits in the stream (ticket 92)', () => {
     const state = fold(
       initialChatState(),
       SESSION_CREATED,
@@ -915,22 +916,100 @@ describe('groupTurns — turn file changes (ticket 78)', () => {
     )
     const [turn] = groupTurns(state.entries, true)
     expect(turn.answer).toBeNull()
-    // Every settled tool in the stream feeds the bar — the inline text
-    // between them reorders nothing.
+    // Ticket 92: the bar is settled-only — the live stream never grows it,
+    // no matter how many edit calls have already landed.
+    expect(turn.fileChanges).toEqual([])
+  })
+
+  it('the same turn aggregates in transcript order the moment it settles (ticket-78 semantics intact)', () => {
+    const state = fold(
+      initialChatState(),
+      SESSION_CREATED,
+      USER('change files'),
+      { type: 'agent_start' },
+      { type: 'tool_start', toolCallId: 'e1', name: 'edit', args: { path: 'src/a.ts' } },
+      { type: 'tool_end', toolCallId: 'e1', output: 'ok', isError: false, diff: EDIT_DIFF_A },
+      { type: 'message_start' },
+      { type: 'text_delta', delta: 'Halfway.' },
+      { type: 'message_end' },
+      { type: 'tool_start', toolCallId: 'e2', name: 'edit', args: { path: 'src/a.ts' } },
+      { type: 'tool_end', toolCallId: 'e2', output: 'ok', isError: false, diff: EDIT_DIFF_B },
+      { type: 'agent_end' }
+    )
+    const [turn] = groupTurns(state.entries, false)
+    // agent_end lands the bar in one move — the inline text between the
+    // edits reorders nothing (same transcript-order aggregation as 78).
     expect(turn.fileChanges).toEqual([
       { path: 'src/a.ts', added: 2, removed: 1, diff: `${EDIT_DIFF_A}\n${EDIT_DIFF_B}`, calls: 2 }
     ])
   })
 
-  it('a still-running edit does not enter the bar yet — it grows as tools SETTLE (live 同构)', () => {
+  it('while live even a DONE edit stays out of the bar — settle brings it in (ticket 92)', () => {
     const state = fold(
       initialChatState(),
       SESSION_CREATED,
       USER('edit away'),
       { type: 'agent_start' },
-      { type: 'tool_start', toolCallId: 'e1', name: 'edit', args: { path: 'src/a.ts' } }
+      { type: 'tool_start', toolCallId: 'e1', name: 'edit', args: { path: 'src/a.ts' } },
+      { type: 'tool_end', toolCallId: 'e1', output: 'ok', isError: false, diff: EDIT_DIFF_A }
     )
-    const [turn] = groupTurns(state.entries, true)
-    expect(turn.fileChanges).toEqual([])
+    expect(groupTurns(state.entries, true)[0].fileChanges).toEqual([])
+    const settled = fold(state, { type: 'agent_end' })
+    const [turn] = groupTurns(settled.entries, false)
+    expect(turn.fileChanges).toEqual([{ path: 'src/a.ts', added: 1, removed: 0, diff: EDIT_DIFF_A, calls: 1 }])
+  })
+
+  it('a STOP-interrupted turn still shows the bar — done edits count, the tool killed mid-run does not (票 92 中断照出)', () => {
+    const state = fold(
+      initialChatState(),
+      SESSION_CREATED,
+      USER('edit away'),
+      { type: 'agent_start' },
+      { type: 'tool_start', toolCallId: 'e1', name: 'edit', args: { path: 'src/a.ts' } },
+      { type: 'tool_end', toolCallId: 'e1', output: 'ok', isError: false, diff: EDIT_DIFF_A },
+      // The interrupt lands mid-tool: settle marks it error — it changed
+      // nothing, the earlier done edit did. agent_end is exactly what a
+      // user Stop produces (the aborted run's settle event).
+      { type: 'tool_start', toolCallId: 'e2', name: 'edit', args: { path: 'src/b.ts' } },
+      { type: 'agent_end' }
+    )
+    const [turn] = groupTurns(state.entries, false)
+    expect(turn.fileChanges).toEqual([{ path: 'src/a.ts', added: 1, removed: 0, diff: EDIT_DIFF_A, calls: 1 }])
+  })
+
+  it('an ERRORED turn still shows the bar (票 92 出错照出 — fact projection)', () => {
+    const state = fold(
+      initialChatState(),
+      SESSION_CREATED,
+      USER('edit away'),
+      { type: 'agent_start' },
+      { type: 'tool_start', toolCallId: 'e1', name: 'edit', args: { path: 'src/a.ts' } },
+      { type: 'tool_end', toolCallId: 'e1', output: 'ok', isError: false, diff: EDIT_DIFF_A },
+      { type: 'turn_error', message: 'model overloaded' }
+    )
+    const [turn] = groupTurns(state.entries, false)
+    expect(turn.fileChanges).toEqual([{ path: 'src/a.ts', added: 1, removed: 0, diff: EDIT_DIFF_A, calls: 1 }])
+  })
+
+  it('FollowView projection: replayed items through groupTurns(entries, false) keep the settled bar (票 92 FollowView 同规)', () => {
+    const items: TranscriptItem[] = [
+      { role: 'user', id: 'fv-u1', text: 'change files', timestamp: 't1', skillName: null },
+      {
+        role: 'tool',
+        id: 'fv-e1',
+        timestamp: 't2',
+        name: 'edit',
+        args: { path: 'src/a.ts' },
+        output: 'ok',
+        isError: false,
+        diff: EDIT_DIFF_A
+      },
+      { role: 'assistant', id: 'fv-a1', timestamp: 't3', text: 'Done.', parts: [{ kind: 'text', text: 'Done.' }] }
+    ]
+    // FollowView maps the transcript through replayEntry and groups with
+    // agentRunning=false — replay IS the settled projection, so the bar
+    // renders exactly where the chat view's settled turns render theirs.
+    const [turn] = groupTurns(items.map(replayEntry), false)
+    expect(turn.fileChanges).toEqual([{ path: 'src/a.ts', added: 1, removed: 0, diff: EDIT_DIFF_A, calls: 1 }])
   })
 })

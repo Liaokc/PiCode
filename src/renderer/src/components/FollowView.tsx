@@ -96,7 +96,10 @@ export default function FollowView({ title, items, live, onStop, onOpen }: Follo
               {turn.fileChanges.length > 0 && (
                 /* Ticket 78: the same bar projection as the chat view, counts
                    only — a read-only follow has neither the turn-diff panel
-                   path nor a workspace to deep-link previews against. */
+                   path nor a workspace to deep-link previews against.
+                   Ticket 92: follow projects every turn settled
+                   (groupTurns(entries, false)), so the settled-only bar rule
+                   applies through the same model gate, unchanged. */
                 <TurnFileBar turnId={turn.id} changes={turn.fileChanges} />
               )}
             </div>

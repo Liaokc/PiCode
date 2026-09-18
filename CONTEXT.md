@@ -151,8 +151,8 @@ _Avoid_: 最终答案（暗示内容语义判定）；中间输出（含义过�
 _Avoid_: 尾部（含义过宽）；附加输出（暗示次要）。
 
 **回合文件条（Turn File Changes）**：
-每回合常显段末尾（正文下方）的文件更改聚合条（票 78）：折叠态「N files changed +X −Y」+ 展开箭头；展开为 per-file 行（图标 + 文件名 + 路径 + ± 计数 + Review + Open）。数据 = 回合内 edit/write 工具调用的纯投影：edit 的 ± 从工具结果 diff 文本解析、write 记 "+new" 不计行数、同文件多次 edit 合一行（diff 依序拼接）、read/ls 等不入条、无文件更改的回合不出条；live 随工具落定增长（live 与落定同构）。**Review** = 侧板回合 diff 标签（一回合一 tab，复用既有 diff 渲染语言渲染该回合 diff 文本——回合 diff 非 git diff，与 Review tab 并存）；**Open** = 既有预览深链。纯只读——无撤销钮（1.1 纪律）。
-_Avoid_: 撤销条（无撤销语义）；变更日志（含义过宽）；git 变更（回合 diff 非仓库 diff）。
+每回合常显段末尾（正文下方）的文件更改聚合条（票 78）：折叠态「N files changed +X −Y」+ 展开箭头；展开为 per-file 行（图标 + 文件名 + 路径 + ± 计数 + Review + Open）。数据 = 回合内 edit/write 工具调用的纯投影：edit 的 ± 从工具结果 diff 文本解析、write 记 "+new" 不计行数、同文件多次 edit 合一行（diff 依序拼接）、read/ls 等不入条、无文件更改的回合不出条。**settled-only（票 92）**：live 回合全程不携带、不渲染文件条（分组模型门——文件条不再随工具落定增长）；agent_end 落地瞬间原位出现（正文下方，无正文回合在容器后——构图不变）；Stop/中断/出错回合同样照条（文件更改是事实投影，与回合成败无关——中断时被杀工具不计入，已落定 edit 照常聚合）。FollowView 同规则。**Review** = 侧板回合 diff 标签（一回合一 tab，复用既有 diff 渲染语言渲染该回合 diff 文本——回合 diff 非 git diff，与 Review tab 并存）；**Open** = 既有预览深链。纯只读——无撤销钮（1.1 纪律）。
+_Avoid_: 撤销条（无撤销语义）；变更日志（含义过宽）；git 变更（回合 diff 非仓库 diff）；live 同构（随工具落定增长已随票 92 退役）。
 
 **过程叙述（Interim Narration）**：
 **落定回合**内、最后一个文本块之前的 assistant 文本块——模型夹在工具调用间的工作叙述；归 Worked 容器（折叠隐藏，容器展开时可见），不进正文。live 流式期无过程叙述（票 82）——文本块一律为容器流中的时间序文本块（正文同款渲染），落定划分才产生过程叙述。
