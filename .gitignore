@@ -5,6 +5,9 @@ release/
 *.log
 .DS_Store
 
+# derived icon ladder (ticket 102): only build/icon.svg, icon.png, icons/, icon.icns are tracked
+build/icon.iconset/
+
 # ZCode session bookkeeping
 .zcode/
 .worktrees/
