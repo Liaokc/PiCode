@@ -162,12 +162,12 @@ export default function ChatView({
     }
     // Ticket 75/93: movements whose scroll events have not delivered yet
     // (they landed between the last scroll event and this pass) read here
-    // via the live delta — the same transitions the scroll listener runs,
-    // so a gesture can never be coalesced away by a same-frame growth yank
-    // and the send latch can never out-rank a gesture that already happened.
+    // via the live delta — the same transitions the scroll listener runs
+    // (advanceScrollLatches below), so a gesture can never be coalesced
+    // away by a same-frame growth yank and the send latch can never
+    // out-rank a gesture that already happened.
     const liveDelta = el.scrollTop - lastScrollTop.current
-    heldAway.current = nextHeldAway(heldAway.current, liveDelta, el)
-    sendLatch.current = nextSendLatch(sendLatch.current, liveDelta, el)
+    advanceScrollLatches(liveDelta, el)
     // The user's own agency (own send, jump travel) asks for the bottom and
     // clears the hold (自发送/跳转复位) — the FRESH gesture outranks any hold
     // that predates it; a gesture that came after (the takeover above) has
@@ -180,6 +180,16 @@ export default function ChatView({
     }
     setJumpVisible(!isNearBottom(el))
   }, [chat.entries, chat.expandedTurns, chat.session])
+
+  // Ticket 75/93: the two scroll-stream latches advance together on every
+  // movement sample — the scroll listener and the stick effect (live-delta
+  // replay) run the SAME transition, so a gesture is never coalesced away
+  // by a same-frame growth yank and the send latch never out-ranks a
+  // gesture that already happened. Ref-only — zero extra renders.
+  function advanceScrollLatches(deltaPx: number, el: HTMLDivElement): void {
+    heldAway.current = nextHeldAway(heldAway.current, deltaPx, el)
+    sendLatch.current = nextSendLatch(sendLatch.current, deltaPx, el)
+  }
 
   // Ticket 45: track the reader's position for the Jump-to-Latest button,
   // and end the jump travel when it arrives — or when the user scrolls
@@ -196,8 +206,7 @@ export default function ChatView({
     if (!el) return
     const top = el.scrollTop
     const moved = top - lastScrollTop.current
-    heldAway.current = nextHeldAway(heldAway.current, moved, el)
-    sendLatch.current = nextSendLatch(sendLatch.current, moved, el)
+    advanceScrollLatches(moved, el)
     if (returning.current && (isNearBottom(el) || moved < -1)) {
       returning.current = false
     }
