@@ -149,6 +149,7 @@ import { projectNewTaskCatalog } from '../shared/new-task-models'
 import { FOLLOW_TAKEOVER_REJECTED_TOAST } from '../shared/sessions/group'
 import { CWD_MISSING_ROW_TOAST } from '../shared/sessions/cwd-liveness'
 import { EDIT_RESEND_TOAST } from '../shared/edit-resend'
+import { checkerboardPaint, pngBase64 } from './png-fixture'
 import type { SessionContextActionService } from './sessions/context-actions'
 import { emitContractEvent } from './visual'
 import { chmodSync } from 'node:fs'
@@ -5509,6 +5510,254 @@ export function startSmokeIfEnabled(
       }
     })
     log('composer_layout_81_done')
+
+    // ---- ticket 91: image preview overlay — an attachment thumbnail click
+    // opens the fullscreen mask preview (the deleted md-table-preview's
+    // mode, ticket 87). Asserted end to end without a model call:
+    // ① opening: a REAL mouse click on the 2nd thumbnail opens the overlay
+    //   rendering the FULL-resolution payload (the 1200×900 fixture's
+    //   naturalWidth/Height, while the displayed box fits the window and
+    //   stays below natural height — the source is oversampled, never a
+    //   small copy); dialog semantics on; the position chip at 2/3.
+    // ② walking: ←/→ step through the strip with wrap-around (2/3 → 3/3 →
+    //   1/3 → 3/3) and the <img> actually swaps payloads (data-URL string
+    //   identity across steps).
+    // ③ the four exits each close for real — Space / the top-right ❌ /
+    //   Esc / a REAL mouse click on mask blank (a hit-tested point) — and
+    //   after every close the caret is back on the composer input with the
+    //   draft and all three attachments untouched (预览零扰动).
+    log('image_preview_91_start')
+    await withWindow(getWindow, async (win) => {
+      const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+      const ta91 = `document.querySelector('.chat-dock textarea.composer-input')`
+      if (!(await waitForProbe(win, `${ta91} !== null && ${ta91}.clientHeight === 74`, 10_000))) {
+        fail('ticket-91 stage: the in-session composer never settled at the 74px floor')
+      }
+
+      // Stage the scene: one draft line + 3 pasted 1200×900 checkerboard
+      // PNGs (real decodable pixels — the naturalWidth assertion stands on
+      // them; the middle image phase-flips the pattern so the payloads —
+      // and their data URLs — genuinely differ). Real DataTransfer paste,
+      // the ticket-74 driver. Draft via the native-setter input event.
+      const DRAFT_91 = 'Ticket 91 draft line.'
+      const pngA91 = pngBase64(1200, 900, checkerboardPaint)
+      const pngB91 = pngBase64(1200, 900, (x, y) => checkerboardPaint(x + 8, y))
+      const pasted91 = (await js(`(() => {
+        const ta = document.querySelector('.chat-dock textarea.composer-input')
+        if (!(ta instanceof HTMLTextAreaElement)) return false
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+        setter.call(ta, ${JSON.stringify(DRAFT_91)})
+        ta.dispatchEvent(new Event('input', { bubbles: true }))
+        const decode = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+        const dt = new DataTransfer()
+        for (const b64 of [${JSON.stringify(pngA91)}, ${JSON.stringify(pngB91)}, ${JSON.stringify(pngA91)}]) {
+          dt.items.add(new File([decode(b64)], 'picode91.png', { type: 'image/png' }))
+        }
+        ta.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+        return true
+      })()`)) as boolean
+      if (!pasted91) fail('ticket-91 stage: the composer textarea is missing for the image paste')
+      if (
+        !(await waitForProbe(
+          win,
+          `(() => {
+            const ta = document.querySelector('.chat-dock textarea.composer-input')
+            return ta instanceof HTMLTextAreaElement && ta.value === ${JSON.stringify(DRAFT_91)} && document.querySelectorAll('.chat-dock .composer-attachment').length === 3
+          })()`,
+          10_000
+        ))
+      ) {
+        fail('ticket-91 stage: the draft or the 3 pasted attachments never staged (probe includes the draft byte-check)')
+      }
+
+      /** The overlay sample: geometry + semantics + position chip + the
+       * payload identity (the full data: URL — different fixtures differ
+       * byte-for-byte). open:false when the mask is down. */
+      const SAMPLE_91 = `(() => {
+        const backdrop = document.querySelector('.image-preview-backdrop')
+        if (!(backdrop instanceof HTMLElement)) return JSON.stringify({ open: false })
+        const img = backdrop.querySelector('.image-preview-img')
+        const stage = backdrop.querySelector('.image-preview-stage')
+        const count = backdrop.querySelector('.image-preview-count')
+        const closeBtn = backdrop.querySelector('.image-preview-close')
+        if (!(img instanceof HTMLImageElement)) return JSON.stringify({ open: false })
+        const r = img.getBoundingClientRect()
+        return JSON.stringify({
+          open: true,
+          naturalW: img.naturalWidth, naturalH: img.naturalHeight,
+          boxW: Math.round(r.width), boxH: Math.round(r.height),
+          maxW: Math.round(window.innerWidth * 0.9),
+          maxH: Math.round(window.innerHeight * 0.84),
+          dialog: stage instanceof HTMLElement && stage.getAttribute('role') === 'dialog' && stage.getAttribute('aria-modal') === 'true',
+          count: count instanceof HTMLElement ? count.textContent : null,
+          hasClose: closeBtn instanceof HTMLElement,
+          src: img.src
+        })
+      })()`
+      interface OverlaySample91 {
+        open: boolean
+        naturalW: number
+        naturalH: number
+        boxW: number
+        boxH: number
+        maxW: number
+        maxH: number
+        dialog: boolean
+        count: string | null
+        hasClose: boolean
+        src: string
+      }
+      const sample91 = async (): Promise<OverlaySample91> => JSON.parse(String(await js(SAMPLE_91)))
+
+      /** Closed-and-undisturbed: mask down, draft byte-equal, 3
+       * attachments, caret back on the input. The failure dump carries the
+       * value's length + char codes — one stray keystroke (the smoke window
+       * holds REAL focus while it runs; an operator's typing can land in
+       * the focused input, ticket-79/70/83 same-class environmental
+       * flakes) must name itself instead of looking like a product bug. */
+      const closedIntact91 = async (leg: string): Promise<void> => {
+        const s = await sample91()
+        const intact = JSON.parse(String(await js(`(() => {
+          const ta = document.querySelector('.chat-dock textarea.composer-input')
+          return JSON.stringify({
+            value: ta instanceof HTMLTextAreaElement ? ta.value : null,
+            codes: ta instanceof HTMLTextAreaElement ? [...ta.value].map((ch) => ch.codePointAt(0)).join(',') : null,
+            active: document.activeElement === ta ? 'textarea' : (document.activeElement?.tagName ?? 'none'),
+            attachments: document.querySelectorAll('.chat-dock .composer-attachment').length
+          })
+        })()`))) as { value: string | null; codes: string | null; active: string; attachments: number }
+        if (s.open) fail(`ticket-91 stage: the overlay never closed via the ${leg} exit`)
+        if (intact.value !== DRAFT_91 || intact.attachments !== 3) {
+          fail(
+            `ticket-91 stage: the ${leg} exit disturbed the composer (value ${JSON.stringify(intact.value)}, codes ${intact.codes ?? '-'}, active ${intact.active}, attachments ${intact.attachments}; a real keystroke in the focused input = environmental, see comment)`
+          )
+        }
+        if (!(await waitForProbe(win, `document.activeElement === ${ta91}`, 5_000))) {
+          fail(`ticket-91 stage: after the ${leg} exit the caret never returned to the composer input`)
+        }
+      }
+
+      /** Re-open from the 2nd thumbnail (synthetic click — no focus move,
+       * so the focus-return assertion stays honest across open modes). */
+      const reopen91 = async (): Promise<void> => {
+        await js(`document.querySelectorAll('.chat-dock .composer-attachment-thumb')[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true }))`)
+        if (!(await waitForProbe(win, `document.querySelector('.image-preview-count')?.textContent === '2/3'`, 5_000))) {
+          fail('ticket-91 stage: reopening the overlay from the 2nd thumbnail never showed 2/3')
+        }
+      }
+
+      // ① Open: a REAL mouse click on the 2nd thumbnail (user path — the
+      // button takes focus, the overlay captures it for the unmount
+      // restore, and the composer's close handler re-takes the caret).
+      const thumb91 = JSON.parse(String(await js(`(() => {
+        const el = document.querySelectorAll('.chat-dock .composer-attachment-thumb')[1]
+        if (!(el instanceof HTMLElement)) return null
+        const r = el.getBoundingClientRect()
+        return JSON.stringify({ x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) })
+      })()`))) as { x: number; y: number } | null
+      if (thumb91 === null) fail('ticket-91 stage: the 2nd attachment thumbnail is missing or unhittable')
+      await win.webContents.sendInputEvent({ type: 'mouseDown', x: thumb91.x, y: thumb91.y, button: 'left', clickCount: 1 })
+      await new Promise((r) => setTimeout(r, 60))
+      await win.webContents.sendInputEvent({ type: 'mouseUp', x: thumb91.x, y: thumb91.y, button: 'left', clickCount: 1 })
+      if (!(await waitForProbe(win, `document.querySelector('.image-preview-count')?.textContent === '2/3'`, 5_000))) {
+        fail('ticket-91 stage: the real thumbnail click never opened the overlay at 2/3')
+      }
+      const open91 = await sample91()
+      if (!open91.dialog || !open91.hasClose) fail('ticket-91 stage: the overlay lost its dialog semantics or its close button')
+      if (open91.naturalW !== 1200 || open91.naturalH !== 900) {
+        fail(`ticket-91 stage: the preview must render the FULL-resolution payload (natural ${open91.naturalW}×${open91.naturalH}, expected 1200×900)`)
+      }
+      if (open91.boxW > open91.maxW + 1 || open91.boxH > open91.maxH + 1 || open91.boxH >= 900) {
+        fail(`ticket-91 stage: the displayed box escaped its contain-fit (box ${open91.boxW}×${open91.boxH}, cap ${open91.maxW}×${open91.maxH})`)
+      }
+      log('image_preview_91_open_ok')
+
+      /** The exit-key shape of a REAL user: the overlay's autoFocus holds
+       * focus on its own ❌ while open — the key lands on the ❌ (inside
+       * the mask), never on the composer input. Focusing the ❌ before
+       * dispatch is both faithful and defensive: the smoke window holds
+       * REAL OS focus, and a stray REAL keystroke can only reach the
+       * focused element — never the input this stage byte-checks. */
+      const press91 = async (key: string): Promise<void> => {
+        const pressed = (await js(`(() => {
+          const btn = document.querySelector('.image-preview-close')
+          if (!(btn instanceof HTMLElement)) return false
+          btn.focus()
+          btn.dispatchEvent(new KeyboardEvent('keydown', { key: ${JSON.stringify(key)}, bubbles: true, cancelable: true }))
+          return true
+        })()`)) as boolean
+        if (!pressed) fail(`ticket-91 stage: the ❌ button vanished before the ${key} dispatch`)
+      }
+
+      // ② Walking: ArrowRight → 3/3 (payload swap), ArrowRight → 1/3 (wrap),
+      // ArrowLeft → back to 3/3 (the same payload as the first 3/3).
+      const srcAt2of391 = open91.src
+      await press91('ArrowRight')
+      if (!(await waitForProbe(win, `document.querySelector('.image-preview-count')?.textContent === '3/3'`, 5_000))) {
+        fail('ticket-91 stage: ArrowRight never walked to 3/3')
+      }
+      const at3of391 = await sample91()
+      if (at3of391.src === srcAt2of391) fail('ticket-91 stage: stepping to 3/3 never swapped the payload')
+      const srcAt3of391 = at3of391.src
+      await press91('ArrowRight')
+      if (!(await waitForProbe(win, `document.querySelector('.image-preview-count')?.textContent === '1/3'`, 5_000))) {
+        fail('ticket-91 stage: ArrowRight never wrapped 3/3 → 1/3')
+      }
+      await press91('ArrowLeft')
+      if (!(await waitForProbe(win, `document.querySelector('.image-preview-count')?.textContent === '3/3'`, 5_000))) {
+        fail('ticket-91 stage: ArrowLeft never walked back to 3/3')
+      }
+      const backAt3of391 = await sample91()
+      if (backAt3of391.src !== srcAt3of391) fail('ticket-91 stage: walking back to 3/3 landed on a different payload')
+      log('image_preview_91_walk_ok')
+
+      // ③ Exit A — Space (the operator-specified key exit).
+      await press91(' ')
+      await closedIntact91('Space')
+      log('image_preview_91_space_ok')
+
+      // Exit B — the top-right ❌.
+      await reopen91()
+      await js(`document.querySelector('.image-preview-close')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))`)
+      await closedIntact91('❌')
+      log('image_preview_91_close_btn_ok')
+
+      // Exit C — Escape (preventDefault upstream keeps the app-level
+      // Escape handler out: no draft park, no view change).
+      await reopen91()
+      await press91('Escape')
+      await closedIntact91('Escape')
+      log('image_preview_91_escape_ok')
+
+      // Exit D — a REAL mouse click on mask blank: hit-test a mid-left
+      // point first (30px in never touches the centered stage), then click
+      // it for real.
+      await reopen91()
+      const mask91 = JSON.parse(String(await js(`(() => {
+        const backdrop = document.querySelector('.image-preview-backdrop')
+        if (!(backdrop instanceof HTMLElement)) return null
+        const x = 30
+        const y = Math.round(window.innerHeight / 2)
+        return document.elementFromPoint(x, y) === backdrop ? JSON.stringify({ x, y }) : null
+      })()`))) as { x: number; y: number } | null
+      if (mask91 === null) fail('ticket-91 stage: the mask-blank probe point did not hit the backdrop (coverage broken)')
+      await win.webContents.sendInputEvent({ type: 'mouseDown', x: mask91.x, y: mask91.y, button: 'left', clickCount: 1 })
+      await new Promise((r) => setTimeout(r, 60))
+      await win.webContents.sendInputEvent({ type: 'mouseUp', x: mask91.x, y: mask91.y, button: 'left', clickCount: 1 })
+      await closedIntact91('mask-blank click')
+      log('image_preview_91_mask_ok')
+
+      // Leave the composer clean for the later stages.
+      await js(composerClearJs)
+      await js(`(() => {
+        document.querySelectorAll('.chat-dock .composer-attachment-remove').forEach((b) => (b instanceof HTMLElement) && b.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+        return true
+      })()`)
+      if (!(await waitForProbe(win, `document.querySelectorAll('.chat-dock .composer-attachment').length === 0`, 5_000))) {
+        fail('ticket-91 stage: the staged attachments never cleared for the later stages')
+      }
+    })
+    log('image_preview_91_done')
 
     // ---- ticket 53: turn answer split — a settled long turn shows its LAST
     // text block as the answer; earlier narration folds into the Worked

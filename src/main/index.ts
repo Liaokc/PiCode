@@ -52,6 +52,7 @@ import { startRailStackVisualIfEnabled, isolateRailStackUserData } from './visua
 import { startThinkingVisualIfEnabled, isolateThinkingUserData } from './visual-thinking'
 import { startExpandVisualIfEnabled, isolateExpandUserData } from './visual-expand'
 import { startComposerLayoutVisualIfEnabled, isolateComposerLayoutUserData } from './visual-composer-layout'
+import { startImagePreviewVisualIfEnabled, isolateImagePreviewUserData } from './visual-image-preview'
 import { startPreviewVisualIfEnabled, isolatePreviewUserData } from './visual-preview'
 import { startSkillCardVisualIfEnabled, isolateSkillCardUserData } from './visual-skill-card'
 import { startContextRingVisualIfEnabled, isolateContextRingUserData } from './visual-context-ring'
@@ -109,6 +110,9 @@ isolateExpandUserData()
 // Ticket-81 composer-layout harness — same throwaway-userData rule (no-op
 // unless PICODE_VISUAL_COMPOSER_LAYOUT=1).
 isolateComposerLayoutUserData()
+// Ticket-91 image-preview harness — same throwaway-userData rule (no-op
+// unless PICODE_VISUAL_IMAGE_PREVIEW=1).
+isolateImagePreviewUserData()
 // Ticket-88 preview dual-view harness — same throwaway-userData rule (no-op
 // unless PICODE_VISUAL_PREVIEW=1).
 isolatePreviewUserData()
@@ -493,6 +497,8 @@ app.whenReady().then(() => {
   startExpandVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-81 composer-layout harness — same seeding constraint.
   startComposerLayoutVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  // Ticket-91 image-preview harness — same seeding constraint.
+  startImagePreviewVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-88 preview dual-view harness — same seeding constraint (the fake
   // sidebar row lands in the isolated store before the index reads it; its
   // cwd is the real fixture directory the harness writes).

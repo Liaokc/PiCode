@@ -182,6 +182,10 @@ _Avoid_: 代码卡（回退态才是代码卡）；预览（是正式渲染非�
 Composer 模型 chip 左侧的小圆环（票 77，ZCode 同型）：会话上下文占用的纯投影——最近一条有效 assistant usage（input + output + cacheRead + cacheWrite 四元组全计入，即 usage.total 的 ADR-0002 口径）÷ 当前模型 contextWindow。ready 态 hover 弹**数据弹层**（非 Tooltip 组件）：百分比 + used/limit + IN/OUT/cacheRead/cacheWrite 四元组 + 缓存命中率（cacheRead/(input+cacheRead)）；无有效 usage 或窗口未知显**灰环**、无 hover（无分母不造百分比——数据源如实原则）。纯投影零特判：compaction 后自然取最新 usage；中断/出错的消息不留 usage。仅 ChatView（FollowView 无 composer、New Task 无会话可量——回底钮先例）。
 _Avoid_: 进度条（环不表达任务进度）；容量条（形态是环）；Tooltip（数据揭示不走悬停提示组件）；统计（Usage 是全局消耗口径，圆环只投影当前会话占用）。
 
+**图片预览浮层（Image Preview Overlay）**：
+composer 附件缩略图点击后的全屏遮罩大图预览（票 91，遮罩模式继承票 87 删除的 md-table-preview：fixed backdrop 顶层 + 居中 contain-fit 内容 + 右上角 ❌ + Esc）；四退出 = 空格 / ❌ / Esc / 点击遮罩空白；多图 ←/→ 环绕翻看带计数 chip。渲染物永远是全分辨率 data: URL（52px 缩略图是同一 payload 的 CSS 裁切——放大即真实像素，过采样缩放不糊）；预览纯视图态，开合零扰动草稿/附件，关闭后焦点回 composer 输入框。组件按 `images + index + onNavigate + onClose` 最小接缝设计，发送气泡缩略图（票 97）复用同一浮层。
+_Avoid_: lightbox（自造同义词，漂移源）；弹窗（非模态表单，是遮罩预览）；缩略图放大（缩略图本身不变，是开浮层看原图）。
+
 ## Constraints（词汇化的边界）
 
 **红线**：

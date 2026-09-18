@@ -7,6 +7,7 @@ import type { EditResendPrefill } from '../../../shared/edit-resend'
 import { applyMention, filterFiles, splitTruncatedFiles } from '../../../shared/composer/mention'
 import { accessModeLabel } from '../../../shared/composer/access'
 import { gateSlashCommand } from '../../../shared/composer/slash-gate'
+import { imageDataUrl } from '../../../shared/composer/image-preview'
 import { textMenuSurface } from '../../../shared/composer/menu-surface'
 import { filterCommands, pickCommand, composeCommandText, type ComposerCommandCard } from '../../../shared/composer/commands'
 import { clampIndex, flatMenuKey } from '../../../shared/composer/menu-keys'
@@ -23,6 +24,7 @@ import {
 import { AccessMenu, ModelMenu, ThinkingMenu, thinkingLabel } from './composer/menus'
 import { FileMenu, SlashMenu } from './composer/list-menus'
 import ContextRing from './ContextRing'
+import ImagePreviewOverlay from './ImagePreviewOverlay'
 import { ArrowUpIcon, CloseIcon, CubeIcon, FoldIcon, GaugeIcon, PlusIcon, ShieldCheckIcon, StopIcon, UnfoldIcon, WandIcon } from './icons'
 import QueuePanel from './QueuePanel'
 import Tooltip from './Tooltip'
@@ -178,6 +180,10 @@ export default function Composer({
   const [queuedMode, setQueuedMode] = useState<'follow-up' | 'steer'>('follow-up')
   const [menu, setMenu] = useState<MenuState>(null)
   const [menuIndex, setMenuIndex] = useState(0)
+  /** Ticket 91: which attached image the fullscreen preview shows — null
+   * closed. Pure view state over the untouched attachments: the preview
+   * reads `images`, opens/closes never rewrite them (草稿/附件零扰动). */
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null)
   const [fileOptions, setFileOptions] = useState<string[]>([])
   /** Ticket 71: the last `file_list` reply came from a capped walk — the @
    * menu appends the honest "truncated" hint row while this is set. */
@@ -601,6 +607,17 @@ export default function Composer({
     ])
   }
 
+  /** Ticket 91: any of the four exits — drop the view state, then re-take
+   * the caret. The overlay's own unmount restore hands focus to the opener
+   * (the thumbnail button); the rAF re-focus after that lands the caret on
+   * the input, so Enter always goes back to send (ticket-98 discipline —
+   * focus must never rest on a button Enter could re-fire). The draft and
+   * the attachments themselves are never touched. */
+  function closePreview(): void {
+    setPreviewIndex(null)
+    requestAnimationFrame(() => textareaRef.current?.focus())
+  }
+
   async function pickImages(): Promise<void> {
     const picked = await onPickImages()
     setImages((prev) => [
@@ -609,7 +626,7 @@ export default function Composer({
         id: imageSeq++,
         mimeType: img.mimeType,
         data: img.data,
-        preview: `data:${img.mimeType};base64,${img.data}`,
+        preview: imageDataUrl(img.mimeType, img.data),
         label: 'Image'
       }))
     ])
@@ -735,9 +752,21 @@ export default function Composer({
 
       {images.length > 0 && (
         <div className="composer-attachments" aria-label="Attached images">
-          {images.map((img) => (
+          {images.map((img, i) => (
             <figure key={img.id} className="composer-attachment">
-              <img src={img.preview} alt={img.label} />
+              {/* Ticket 91: the thumbnail opens the fullscreen preview — a
+                  bare button under the img (the remove ❌ stays its own
+                  absolute sibling; buttons can never nest). The overlay
+                  renders the SAME full-resolution data: URL the 52px box
+                  CSS-crops, so enlargement stays sharp. */}
+              <button
+                type="button"
+                className="composer-attachment-thumb"
+                aria-label={`Preview ${img.label}`}
+                onClick={() => setPreviewIndex(i)}
+              >
+                <img src={img.preview} alt={img.label} />
+              </button>
               <button
                 type="button"
                 className="composer-attachment-remove"
@@ -880,6 +909,19 @@ export default function Composer({
           </Tooltip>
         )}
       </footer>
+
+      {/* Ticket 91: the fullscreen preview over the attached images — the
+          deleted md-table-preview's mask mode, mounted from the composer
+          card (in-place fixed, the diagram-fullscreen precedent: no portal,
+          Q9=A). Reads images only; nothing here can disturb the draft. */}
+      {previewIndex !== null && images[previewIndex] !== undefined && (
+        <ImagePreviewOverlay
+          images={images.map((img) => ({ src: img.preview, label: img.label }))}
+          index={previewIndex}
+          onNavigate={setPreviewIndex}
+          onClose={closePreview}
+        />
+      )}
     </section>
   )
 }
@@ -889,15 +931,16 @@ function modelShortId(model: ModelRef): string {
 }
 
 /** Build the local attachment cards from {mimeType, data} parts — fresh
- * local ids, data-URL previews rebuilt from the raw base64 payload (previews
- * never leave this file). ONE builder for both restore paths: the ticket-74
- * parked-draft mount and the ticket-79 edit-resend prefill. */
+ * local ids, data-URL previews rebuilt from the raw base64 payload through
+ * the ONE builder (imageDataUrl — the seam ticket 97 rebuilds from too;
+ * previews never leave this file). ONE builder for both restore paths: the
+ * ticket-74 parked-draft mount and the ticket-79 edit-resend prefill. */
 function localImagesFrom(parts: ReadonlyArray<{ mimeType: string; data: string }>): LocalImage[] {
   return parts.map((img) => ({
     id: imageSeq++,
     mimeType: img.mimeType,
     data: img.data,
-    preview: `data:${img.mimeType};base64,${img.data}`,
+    preview: imageDataUrl(img.mimeType, img.data),
     label: 'Image'
   }))
 }

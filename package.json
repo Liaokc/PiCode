@@ -47,6 +47,7 @@
     "visual:rail-stack": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_RAIL_STACK=1 electron .",
     "visual:expand": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_EXPAND=1 electron .",
     "visual:composer-layout": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_COMPOSER_LAYOUT=1 electron .",
+    "visual:image-preview": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_IMAGE_PREVIEW=1 electron .",
     "visual:preview": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_PREVIEW=1 electron .",
     "visual:skill-card": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_SKILL_CARD=1 electron .",
     "visual:context-ring": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_CONTEXT_RING=1 electron .",
