@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   STICK_THRESHOLD_PX,
   distanceFromBottom,
+  isAtBottom,
   isNearBottom,
   nextHeldAway,
+  nextSendLatch,
   shouldAutoScroll,
   type ContentGrowth,
   type ScrollSnapshot,
@@ -115,5 +117,107 @@ describe('nextHeldAway latch transition (ticket 75: set by an upward movement of
     const afterGesture = nextHeldAway(false, -60, snap(2000, 1440, 500))
     expect(afterGesture).toBe(true)
     expect(shouldAutoScroll({ nearBottom: true, heldAway: afterGesture }, { grew: true }, false)).toBe(false)
+  })
+})
+
+describe('isAtBottom (ticket 93: the send latch\'s arrival arm — ON the bottom, not the 160px follow band)', () => {
+  it('reads true only at the bottom edge (±1px fractional-scrollTop noise)', () => {
+    expect(isAtBottom(snap(2000, 1500, 500))).toBe(true) // exactly on the bottom
+    expect(isAtBottom(snap(2000, 1499.5, 500))).toBe(true) // 0.5px off — sub-pixel rounding noise
+    expect(isAtBottom(snap(2000, 1341, 500))).toBe(false) // 159px away — inside the band, NOT arrived
+    expect(isAtBottom(snap(2000, 1000, 500))).toBe(false) // far away
+  })
+})
+
+describe('nextSendLatch transition (ticket 93: the send pin is an until-arrival latch — set by the user\'s own send, cleared by reaching the bottom or an upward takeover)', () => {
+  // Viewport geometry as in the held-away table: 2000px of content, 500px
+  // client — scrollTop 1500 sits on the bottom (distance 0), 1440 inside
+  // the band (60px away), 1000 far past it (500px away).
+  const TABLE: Array<{ current: boolean; deltaPx: number; viewport: ScrollSnapshot; next: boolean; why: string }> = [
+    { current: true, deltaPx: 0, viewport: snap(2000, 1000, 500), next: true, why: 'THE fix: the latch survives the pass that found nothing landed yet — entry arrives late, growth is multi-pass' },
+    { current: true, deltaPx: 0, viewport: snap(2000, 1440, 500), next: true, why: 'armed and inside the band but not ON the bottom — the agency keeps asking (queue injection pending)' },
+    { current: true, deltaPx: 2, viewport: snap(2000, 1000, 500), next: true, why: 'a downward stroll toward the bottom does not cancel the agency — only arrival or upward does' },
+    { current: true, deltaPx: -0.5, viewport: snap(2000, 1000, 500), next: true, why: 'hysteresis: sub-pixel noise is not a takeover' },
+    { current: true, deltaPx: 0, viewport: snap(2000, 1500, 500), next: false, why: 'THE settle arm: the view is ON the bottom — the latch\'s job is done, follow resumes under the near-bottom rule' },
+    { current: true, deltaPx: 900, viewport: snap(2000, 1500, 500), next: false, why: 'a manual scroll all the way to the bottom is arrival too (the reader brought it there)' },
+    { current: true, deltaPx: -3, viewport: snap(2000, 1500, 500), next: false, why: 'a bottom clamp (content shrank while pinned) reads as arrival — the view IS at the bottom' },
+    { current: true, deltaPx: -60, viewport: snap(2000, 1440, 500), next: false, why: 'THE takeover arm: any real upward movement during the latch hands control back — the wheel always wins (93 extends 75 to the send pin)' },
+    { current: true, deltaPx: -800, viewport: snap(2000, 700, 500), next: false, why: 'a page-up mid-travel cancels the agency outright' },
+    { current: false, deltaPx: 0, viewport: snap(2000, 1000, 500), next: false, why: 'un-armed stays un-armed' },
+    { current: false, deltaPx: -60, viewport: snap(2000, 1440, 500), next: false, why: 'a gesture without a send never arms anything' },
+    { current: false, deltaPx: 900, viewport: snap(2000, 1500, 500), next: false, why: 'arrival without the latch is nothing to clear' }
+  ]
+
+  it('transitions exactly on arrival (bottom) and real upward movement (takeover), nothing else', () => {
+    for (const row of TABLE) {
+      expect(nextSendLatch(row.current, row.deltaPx, row.viewport), row.why).toBe(row.next)
+    }
+  })
+
+  it('the takeover outranks the agency in the stick table: a wheel-up between the send and the echo kills the yank (the 75 law extended to the send pin)', () => {
+    // The 93 window: user sends, then wheels up BEFORE the echo pass runs.
+    // The gesture clears the latch (nextSendLatch) and sets the hold
+    // (nextHeldAway) — the echo pass must NOT yank (the pre-93 code
+    // out-ranked the fresh hold with the armed pin: `if (selfSent)
+    // heldAway = false` yanked anyway).
+    const afterGestureLatch = nextSendLatch(true, -60, snap(2000, 1440, 500))
+    const afterGestureHold = nextHeldAway(false, -60, snap(2000, 1440, 500))
+    expect(afterGestureLatch).toBe(false)
+    expect(afterGestureHold).toBe(true)
+    expect(shouldAutoScroll({ nearBottom: true, heldAway: afterGestureHold }, { grew: true }, afterGestureLatch)).toBe(false)
+  })
+})
+
+describe('send-latch lifecycle composition (ticket 93: 置位→到底才清 — armed by all four send paths, persists across passes, settles at the bottom)', () => {
+  // The four send paths arm the SAME latch; the queue-injection path rides
+  // the arming done at the original steer/follow-up gesture (the queue
+  // update itself changes no entries, so the latch is the only carrier from
+  // the gesture to the delivery pass). These rows walk the effect pass
+  // sequence: each iteration applies the transition + the stick decision
+  // exactly as the ChatView effect does.
+  function pass(latched: boolean, scrollTop: number, grew: boolean): { latched: boolean; stuck: boolean } {
+    const viewport = snap(2000, scrollTop, 500)
+    const deltaPx = 0 // no independent gesture between passes
+    const next = nextSendLatch(latched, deltaPx, viewport)
+    const heldAway = false // the armed latch and the hold never coexist (the gesture clears both ways)
+    const stuck = shouldAutoScroll({ nearBottom: isNearBottom(viewport), heldAway }, { grew }, next)
+    return { latched: next, stuck }
+  }
+
+  it('idle send from scrolled-away: armed passes yank until the view lands, then the latch settles and normal follow resumes', () => {
+    // Send from 500px away. Pass 1: armed, off-bottom → yank (agency).
+    let state = pass(true, 1000, true)
+    expect(state.stuck).toBe(true)
+    // Pass 2 runs at the landed bottom: arrival clears; the follow gate
+    // takes over (still sticky at the bottom while content grows).
+    state = pass(state.latched, 1500, true)
+    expect(state.latched).toBe(false)
+    expect(state.stuck).toBe(true)
+    // A reader wheel-up afterwards is pure ticket-75 territory again.
+    expect(nextHeldAway(false, -60, snap(2000, 1440, 500))).toBe(true)
+  })
+
+  it('queue injection (steer/follow-up arming): the latch rides every streaming pass until the delivery lands the view at the bottom', () => {
+    // The gesture arms; queue_update runs no pass; streaming passes with
+    // the view pinned clear it on the first arrival reading — the delivery
+    // later lands at the bottom through the un-held follow gate.
+    let state = pass(true, 1500, true)
+    expect(state.latched).toBe(false) // already at the bottom: arrival, job done
+    expect(state.stuck).toBe(true) // near-bottom follow keeps pinning through growth
+    // If the reader was NOT at the bottom when the delivery lands and never
+    // gestured upward, the surviving latch still yanks (多轮增长 coverage).
+    state = pass(true, 1000, true)
+    expect(state.stuck).toBe(true)
+  })
+
+  it('the takeover during the latch is permanent: no later pass re-yanks (滚轮赢，不回退)', () => {
+    // Send from scrolled-away, wheel up mid-travel, THEN the echo lands.
+    const takenOver = nextSendLatch(true, -60, snap(2000, 940, 500))
+    expect(takenOver).toBe(false)
+    const held = nextHeldAway(false, -60, snap(2000, 940, 500))
+    expect(held).toBe(true)
+    // Every subsequent growth pass reads through the held-away law: no yank.
+    expect(shouldAutoScroll({ nearBottom: false, heldAway: held }, { grew: true }, takenOver)).toBe(false)
+    expect(shouldAutoScroll({ nearBottom: true, heldAway: held }, { grew: true }, takenOver)).toBe(false)
   })
 })
