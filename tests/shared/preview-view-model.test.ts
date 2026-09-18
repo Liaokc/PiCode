@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { PREVIEW_SOURCE_MAX_LINES, PREVIEW_SOURCE_WINDOW_LINES } from '../../src/shared/preview/policy'
 import { initialPreviewTabState, previewTabReducer } from '../../src/shared/preview/view-model'
-import type { PreviewResult } from '../../src/shared/preview/types'
+import type { PreviewFileEntry, PreviewResult } from '../../src/shared/preview/types'
 
 const selA = { cwd: '/proj', path: '/proj/README.md', token: 1 }
 const selB = { cwd: '/proj', path: '/proj/src/a.ts', token: 2 }
@@ -81,6 +81,34 @@ describe('previewTabReducer — view mode', () => {
     expect(state.view).toBe('source')
     state = previewTabReducer(state, { type: 'set-view', view: 'rendered' })
     expect(state.view).toBe('rendered')
+  })
+
+  it('opens ticket-88 kinds rendered-first: svg, html and image; oversized html as source', () => {
+    const load = (file: Partial<PreviewFileEntry> & Pick<PreviewFileEntry, 'kind' | 'name'>): ReturnType<typeof initialPreviewTabState> => {
+      let state = previewTabReducer(initialPreviewTabState(), { type: 'load-start', sel: selA })
+      return previewTabReducer(state, {
+        type: 'load-success',
+        result: {
+          ok: true as const,
+          kind: 'file' as const,
+          file: {
+            absolutePath: '/proj/x',
+            cwd: '/proj',
+            relativePath: 'x',
+            sizeBytes: 10,
+            totalLines: 1,
+            text: null,
+            ...file
+          }
+        }
+      })
+    }
+    expect(load({ kind: 'svg', name: 'd.svg', text: '<svg/>' }).view).toBe('rendered')
+    expect(load({ kind: 'html', name: 'r.html', text: '<p>x</p>' }).view).toBe('rendered')
+    expect(load({ kind: 'image', name: 'p.png', dataUrl: 'data:image/png;base64,x' }).view).toBe('rendered')
+    // Oversized render kinds fall back to source from the start.
+    expect(load({ kind: 'html', name: 'r.html', text: '<p>x</p>', sizeBytes: 999_999_999 }).view).toBe('source')
+    expect(load({ kind: 'binary', name: 'logo.bin' }).view).toBe('source')
   })
 
   it('set-view is a no-op when the value is unchanged', () => {

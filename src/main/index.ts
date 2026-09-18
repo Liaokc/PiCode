@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, protocol, shell } from 'electron'
 import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { existsSync } from 'node:fs'
@@ -16,6 +16,7 @@ import { HostSupervisor, defaultHostEntryPath } from './host-supervisor'
 import { createApprovalNotifier, parseApprovalNotice } from './notifications'
 import { collectReview } from './review/collect'
 import { readPreview } from './preview/read'
+import { addServeRoot, installPreviewServe, previewServeSchemePrivileges } from './preview/serve'
 import { SessionIndexService, type FollowUpdate } from './sessions/index-service'
 import type { TracePayload } from '../shared/sessions/trace'
 import { SessionContextActionService } from './sessions/context-actions'
@@ -48,6 +49,7 @@ import { startRailStackVisualIfEnabled, isolateRailStackUserData } from './visua
 import { startThinkingVisualIfEnabled, isolateThinkingUserData } from './visual-thinking'
 import { startExpandVisualIfEnabled, isolateExpandUserData } from './visual-expand'
 import { startComposerLayoutVisualIfEnabled, isolateComposerLayoutUserData } from './visual-composer-layout'
+import { startPreviewVisualIfEnabled, isolatePreviewUserData } from './visual-preview'
 import { startSkillCardVisualIfEnabled, isolateSkillCardUserData } from './visual-skill-card'
 import { startContextRingVisualIfEnabled, isolateContextRingUserData } from './visual-context-ring'
 import { startTreeVisualIfEnabled, isolateTreeUserData } from './visual-tree'
@@ -104,6 +106,9 @@ isolateExpandUserData()
 // Ticket-81 composer-layout harness — same throwaway-userData rule (no-op
 // unless PICODE_VISUAL_COMPOSER_LAYOUT=1).
 isolateComposerLayoutUserData()
+// Ticket-88 preview dual-view harness — same throwaway-userData rule (no-op
+// unless PICODE_VISUAL_PREVIEW=1).
+isolatePreviewUserData()
 // Ticket-72 command-card harness — same throwaway-userData rule (no-op
 // unless PICODE_VISUAL_SKILL_CARD=1).
 isolateSkillCardUserData()
@@ -162,6 +167,10 @@ if (typeof layoutSmokeUserData === 'string' && layoutSmokeUserData !== '') {
   app.setPath('userData', layoutSmokeUserData)
 }
 
+// Ticket-88 preview-file serve scheme: privileges must be registered before
+// app ready; the handler installs inside whenReady below.
+protocol.registerSchemesAsPrivileged(previewServeSchemePrivileges)
+
 function createMainWindow(): BrowserWindow {
   const win = new BrowserWindow(createWindowOptions(path.join(__dirname, '../preload/index.js')))
   win.once('ready-to-show', () => win.show())
@@ -188,6 +197,11 @@ function broadcastChannel(channel: string, payload: unknown): void {
 }
 
 app.whenReady().then(() => {
+  // Ticket 88: the preview-file protocol serves previewed files' relative
+  // resources to the sandboxed HTML preview frame (see preview/serve.ts for
+  // the security contract).
+  installPreviewServe(protocol)
+
   // Usage charts consume only this aggregated snapshot — the renderer never
   // scans session files (ADR-0002 / Seam-2 contract). PICODE_FAKE_USAGE=1
   // serves the deterministic visual-QA fixture instead of the real scan.
@@ -407,6 +421,10 @@ app.whenReady().then(() => {
   startExpandVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-81 composer-layout harness — same seeding constraint.
   startComposerLayoutVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  // Ticket-88 preview dual-view harness — same seeding constraint (the fake
+  // sidebar row lands in the isolated store before the index reads it; its
+  // cwd is the real fixture directory the harness writes).
+  startPreviewVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-72 command-card harness — same seeding constraint (the seeded
   // session lands in the isolated store before the index reads it).
   startSkillCardVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
@@ -493,11 +511,19 @@ app.whenReady().then(() => {
 
   // File Preview tab (ticket 07): file contents + directory listings for the
   // breadcrumb navigation, read-only, with the policy's hard size cap.
+  // Ticket 88: an HTML preview registers its directory as a preview-file
+  // serve root so the sandboxed frame's RELATIVE resources load; nothing
+  // outside registered roots is ever served.
   ipcMain.handle('preview:load', (_event, cwd: unknown, target: unknown): Promise<PreviewResult> => {
     if (typeof cwd !== 'string' || cwd.length === 0 || typeof target !== 'string') {
       return Promise.resolve({ ok: false, reason: 'failed', message: 'No preview target selected.' })
     }
-    return readPreview(cwd, target)
+    return readPreview(cwd, target).then((result) => {
+      if (result.ok && result.kind === 'file' && result.file.kind === 'html') {
+        addServeRoot(path.dirname(result.file.absolutePath))
+      }
+      return result
+    })
   })
   // Terminal tab (ticket 08, Seam-3): the REAL pty lives here, behind the
   // node-pty factory adapter; bytes flow over terminal-dedicated batched

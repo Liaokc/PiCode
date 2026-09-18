@@ -25,6 +25,10 @@ export function createWindowOptions(preloadPath: string): BrowserWindowConstruct
       preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
+      // Ticket 88: sub-frames (the sandboxed HTML preview iframe) must have
+      // no preload bridge and no Node — the default, stated explicitly as
+      // part of the preview sandbox contract.
+      nodeIntegrationInSubFrames: false,
       sandbox: true
     }
   }

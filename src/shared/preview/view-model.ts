@@ -50,9 +50,12 @@ export function previewTabReducer(state: PreviewTabState, action: PreviewAction)
         visibleLines: PREVIEW_SOURCE_WINDOW_LINES
       }
     case 'load-success': {
-      // Markdown that is too big to parse presents as source from the start.
+      // Rendered-first kinds (markdown, plus ticket 88's svg/html) open in
+      // the rendered state; anything that presents only as source — including
+      // oversized render kinds — opens as source. The image kind is
+      // single-state, so its view value is unused by the tab.
       const view =
-        action.result.kind === 'file' && displayModeFor(action.result.file) === 'markdown' ? 'rendered' : 'source'
+        action.result.kind === 'file' && displayModeFor(action.result.file) !== 'source' ? 'rendered' : 'source'
       return { ...state, status: 'ready', result: action.result, view }
     }
     case 'load-failure':
