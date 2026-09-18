@@ -2,7 +2,7 @@
 
 > 每个工单一个新 pi 会话、一个 worktree、一条分支。本手册每块都可独立复制粘贴。
 > 约定详情见 `AGENTS.md › Parallel development (git worktrees)`。
-> 总 spec：`.scratch/picode-1-7/spec.md`（R1–R30 决议与验收口径；**每条 R 1:1 映射进票，81–108**（107 文件浏览器、109 visual fixture 修缮——已撤销由 87 顺带交付——为 intake 通道增补票；110 包互通挂 R31）——R5 拆三票、R7/R8/R10 合 81、R14/R17/R19 合 97）。
+> 总 spec：`.scratch/picode-1-7/spec.md`（R1–R31 决议与验收口径；**每条 R 1:1 映射进票，81–108**（107 文件浏览器、109 visual fixture 修缮——已撤销由 87 顺带交付——为 intake 通道增补票；110 包互通挂 R31）——R5 拆三票、R7/R8/R10 合 81、R14/R17/R19 合 97）。
 > 需求定稿全记录（23 痛点 × 六轮 25 问 + file:line 根因 + Pi 包取证 + ZCode bundle 键表 + 两处改判/一处加码）：`.scratch/picode-1-7/intake-grilling.md`。
 > 证据帧：`.scratch/compare/pi17-*`（操作者待复制——会话内贴图无法落盘）+ `icon-proposals/`（V2 定稿）。
 > 术语新增（子智能体目录/子代理对话/Manual 排序/图片预览/MCP 节 → 各票 rider；回合正文/常显段/过程叙述 live 语义修订 → 票 82）随票入 CONTEXT.md。
