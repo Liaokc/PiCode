@@ -7833,6 +7833,11 @@ export function startSmokeIfEnabled(
       const oauthDir = path.join(mcpBase, 'mcp-oauth')
       process.env['MCP_OAUTH_DIR'] = oauthDir
       process.env['MCP_OAUTH_CALLBACK_PORT'] = String(await freePort())
+      // The manual-paste leg re-authenticates the same server; the
+      // adapter's in-memory auth-entry cache would short-circuit it with
+      // leg-1's tokens (no flow, no dialog) — the stage runs with the
+      // adapter's own cache disable env.
+      process.env['PI_MCP_ADAPTER_DISABLE_AUTH_CACHE'] = '1'
       const keychainHasEntry = (): boolean => {
         try {
           execFileSync('security', ['find-generic-password', '-s', 'pi-mcp-adapter.oauth'], { stdio: 'pipe' })
@@ -8136,10 +8141,19 @@ export function startSmokeIfEnabled(
           // ⑩ The manual paste fallback: a fresh flow where the shim only
           // RECORDS (flag off — no browser leg) — the paste dialog appears,
           // the smoke completes the authorize handshake itself, pastes the
-          // callback URL, and the flow finishes.
+          // callback URL, and the flow finishes. The AUTO leg's credentials
+          // live in the keychain now — the adapter would short-circuit a
+          // re-authentication (tokens already valid, no flow, no dialog),
+          // so the smoke clears its own entry first (same cleanup the
+          // finally block performs).
           rmSync(autocompleteFlag, { force: true })
           rmSync(oauthDir, { recursive: true, force: true })
           rmSync(openLog, { force: true })
+          try {
+            execFileSync('security', ['delete-generic-password', '-s', 'pi-mcp-adapter.oauth'], { stdio: 'pipe' })
+          } catch {
+            // nothing to clear
+          }
           await js(`(() => {
             const row = document.querySelector('[data-mcp-server="mock-oauth"]')
             if (!(row instanceof HTMLElement)) return false
@@ -8218,12 +8232,24 @@ export function startSmokeIfEnabled(
           // cleanup (the mock server is already dead).
           if (!keychainHasEntry()) fail('ticket-89 stage: the OAuth credentials never reached the adapter/keychain store (the flow was not real)')
           log('mcp_credentials_zero_leak_ok')
+
+          // Leave the app on the workspace: Escape closes the settings
+          // window (the skills/packages stages' convention) — the later
+          // stages probe the sidebar, which the settings view replaces.
+          await js(`(() => {
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+            return true
+          })()`)
+          if (!(await waitForProbe(win, `document.querySelector('.settings-shell') === null`, 5_000))) {
+            fail('ticket-89 stage: Escape never closed the settings window')
+          }
         })
       } finally {
         // PATH + env hygiene for the later stages.
         process.env['PATH'] = realPath
         delete process.env['MCP_OAUTH_DIR']
         delete process.env['MCP_OAUTH_CALLBACK_PORT']
+        delete process.env['PI_MCP_ADAPTER_DISABLE_AUTH_CACHE']
         if (previousOffline === undefined) delete process.env['PI_OFFLINE']
         else process.env['PI_OFFLINE'] = previousOffline
         process.env['PICODE_MCP_HOME'] = previousMcpHome
