@@ -170,6 +170,11 @@ Status: ready-for-spec
 - **取证**：核心集成面**无 breaking**——RPC 通道 `subagents:rpc:v1:*` 与方法面（status/spawn/steer/interrupt/stop/resume）、fleetStatus DTO v1、async 工件路径与 status.json 字段（runId/sessionFile/state…）、async 事件族全部在位。0.70 变更 = 新能力（defaultSubagentOnlyExtensions / allowedAgents 启动限制 / typed gates）+ 修复（detached 子代理可见性、tool_budget_exhausted 报告、usage 对账、FleetView 分组/着色）。
 - **定稿**：**适配验证票**——在 0.70.0 上重验 90/99/101 全部集成面（RPC 回复形状、status.json 字段消费、事件、七态投影实测对照真实运行），漂移即修、不漂移留档确认；不新增功能面（allowedAgents 等新能力呈现 = 观察项不立项）。
 
+### R33 pi agent 0.86.0 升级适配 —— SDK 对齐检查点（Round 15 免问定稿）
+- **背景**：TUI 全局 pi 已升 **0.86.0**（`pi --version` 实测；lastChangelogVersion 尚 0.85.1）——ADR-0005 漂移**首次发生**（1.4 以来 SDK/TUI 恒 0.85.1）。npm 最新 0.86.0（09-19）。
+- **取证（changelog × PiCode 集成面交叉核对）**：0.86.0 三条 breaking **均不命中**——①Context→TranscriptContext 是自定义 provider API（PiCode 零自定义 provider）；②ToolCall.arguments/ToolResultMessage.details 收紧为 JSON 兼容（PiCode 消费的 details.diff/images/async 信息本就是 JSON 值）；③user_bash fail-closed（PiCode 不用 user_bash）。PiCode 用面签名全在位（createAgentSessionServices/FromServices/Runtime、SessionManager.open/create、steer/followUp/clearQueue/setSessionName、queue_update 形态不变）。**风险点**：TUI 0.86 写的会话含**新 entry 类型**（before_agent_start 持久化、pi.bug-report 等）——PiCode 0.85.1 parse 遇到的兼容性 + ADR-0005 会话格式冒烟正是为此。
+- **定稿**：**SDK 对齐检查点票**（ADR-0005 例行）——内嵌 SDK 升 0.86.0 + 会话格式兼容冒烟（TUI 0.86 写的会话 PiCode 能开、新 entry 类型优雅降级）+ changelog 影响面适配（typecheck 实证 breaking 不命中；pi.on 退订函数可选采纳）+ 回归全绿（vitest/host-contract/electron smoke）。
+
 ### R26 运行中重命名 —— 缺陷（Round 10 免问定稿）
 - **痛点**：agent 运行时重命名会话报错 toast（右下角）；TUI 的 `/name` 运行中可用。
 - **根因**：`host/index.ts` handleRename 开头 `requireSettledSession()` 守卫——运行中被拒发 session_command_error。SDK setSessionName 运行中可写（TUI 实证）。
@@ -206,6 +211,8 @@ Status: ready-for-spec
 - **Round 12（免问）**：Worked 时长显示（第 29 条痛点）——票 14 口径修订（条目时间戳可派生时长），落点 chevron 右侧，并入票 108。定稿见 R30。
 - **Round 13（免问）**：双端包安装互通（第 30 条痛点）——安装路径机制面已互通（installAndPersist 同 `pi install` 代码路径），缺口 = Packages 列表缓存对 TUI 侧安装不自动反映；定稿 = 节挂载 force 刷新 + 双端验证矩阵 + 新会话生效语义提示。定稿见 R31。
 - **Round 14（免问）**：pi-subagents 0.70.0 适配（第 31 条痛点）——核心集成面无 breaking 实证，适配 = 0.70.0 上重验 90/99/101 集成面、漂移即修。定稿见 R32。
+- **Round 15（免问）**：pi agent 0.86.0 升级适配（第 32 条痛点）——ADR-0005 SDK 对齐检查点：三条 breaking 均不命中（交叉核对实证）、新 entry 类型兼容冒烟是核心风险面。定稿见 R33。
+- 至此前沿树空：33 条痛点 → 33 个 R 簇 × 全部边界均有裁决。
 - 至此前沿树空：32 条痛点 → 32 个 R 簇 × 全部边界均有裁决。
 - 至此前沿树空：31 条痛点 → 31 个 R 簇 × 全部边界均有裁决。
 - 至此前沿树空：30 条痛点 → 30 个 R 簇 × 全部边界均有裁决。
@@ -216,6 +223,7 @@ Status: ready-for-spec
 - 缺陷 12：R7（图片遮盖）、R8（滚动条）、R10（动画缺失）、R13（发送不落底）、R14（票 79 live 丢图）、R16（焦点滞留）、R18（History 竞态）、R23 布局半边（queue 行边框重合）、R26（运行中重命名被拒）、R27（终端不聚焦）、R28（新卡片慢）、R29（Working 计时切换清零）。
 - 打通验证 1：R31（双端包安装互通——缓存盲区补齐 + 验证矩阵）。
 - 适配验证 1：R32（pi-subagents 0.70.0——集成面重验）。
+- SDK 对齐检查点 1：R33（pi 0.86.0——SDK 升级 + 会话格式兼容冒烟）。
 - 交付行为修订 6：R1（票 78 live 增长）、R2（1.4 表格卡 360px）、R6（容器无锚定）、R15（票 56 提升规则）、R19（技能 marker 容器内 + 空泡）、R30（票 14 无时长规则——条目时间戳可派生）。
 - 交付行为修订 5：R1（票 78 live 增长）、R2（1.4 表格卡 360px）、R6（容器无锚定）、R15（票 56 提升规则）、R19（技能 marker 容器内 + 空泡）。
 - 清理 1：R12（幽灵钮删除）。

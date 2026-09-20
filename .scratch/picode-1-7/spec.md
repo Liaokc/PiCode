@@ -28,10 +28,11 @@ v1.6.0 验收后的真实使用判定——**七处缺陷、四处交付行为�
 - **Worked 无时长**：回合结束后不显示工作了多久（重放回合恒无；本视图流式回合切回后也丢）——时长可从条目时间戳派生而不显。
 - **双端包安装互通**：要求任一侧（TUI/PiCode）安装 pi packages 两侧都直接能用；实测缺口 = TUI 安装后 PiCode Packages 列表缓存不自动反映。
 - **pi-subagents 升级**：0.68.0 → 0.70.0（本机 09-20 就位）——集成面（RPC/工件/事件）文档核对无 breaking，需在 0.70.0 上重验。
+- **pi agent 升级**：TUI 全局 0.85.1 → **0.86.0**（实测）——ADR-0005 漂移首次发生；0.86.0 三条 breaking 交叉核对均不命中 PiCode（自定义 provider API/JSON 兼容收紧/user_bash），风险面 = TUI 0.86 写的会话新 entry 类型的解析兼容。
 
 ## Solution
 
-三十二项需求（R1–R25）加七条 Round 10–14 增补（R26–R32），全部对齐实证参照（ZCode 实拍帧/bundle 键表 / Pi 包文档 / 会话记录形态）：
+三十三项需求（R1–R25）加八条 Round 10–15 增补（R26–R33），全部对齐实证参照（ZCode 实拍帧/bundle 键表 / Pi 包文档 / 会话记录形态）：
 
 0. **回合信息面三修**：文件条 settled-only（R1）；live 回合纯时间序单流、落定态维持「最终正文+折叠容器」的 ZCode 构图（R15）；发送消息气泡渲染图片缩略图（R17，与 R14 同增量）。
 1. **子智能体供面（R5）**：侧板「Subagents 目录 tab」（Running/Ended 两段、状态徽标、Show 20 more；父会话记录重放为主源 + async 工件 live 增补；嵌套只显顶层）→ 点击行开「子代理对话 tab」（一子代理一 tab：运行中可 steer、已结束只读）；停止钮带确认框；侧板开合钮运行计数徽标。host 经 pi-subagents 的 in-process RPC 桥接（additive 增量）。
@@ -53,6 +54,7 @@ v1.6.0 验收后的真实使用判定——**七处缺陷、四处交付行为�
 17. **Worked 时长显示（R30）**：落定回合统一在 chevron 右侧显时长（首末条目时间戳派生——含重放回合；票 14 无时长规则修订）；live 的 Working · Ns 内联位置不变。
 18. **双端包安装互通（R31）**：Packages 节挂载/设置窗打开时 force 刷新（消 TUI 安装后的缓存盲区）+ 双端验证矩阵（PiCode 装→TUI 用、TUI 装→PiCode 用；真实包现成测试对象）+ 安装成功文案注明「新会话生效」。
 19. **pi-subagents 适配（R32）**：0.70.0 上重验 90/99/101 集成面（RPC 回复形状/status.json 字段消费/事件/七态投影实测）——漂移即修、不漂移留档确认；不新增功能面。
+20. **pi 0.86.0 升级适配（R33）**：内嵌 SDK 0.85.1→0.86.0（ADR-0005 对齐检查点）+ 会话格式兼容冒烟（TUI 0.86 写的会话能开、新 entry 类型优雅降级）+ changelog 影响面适配 + 回归全绿。
 
 ## User Stories
 
@@ -274,6 +276,11 @@ v1.6.0 验收后的真实使用判定——**七处缺陷、四处交付行为�
 121. As an operator running the updated pi-subagents, I want PiCode's subagent surfaces verified against 0.70.0, so that the fleet directory, conversation tabs and stop control keep working.
 122. As an operator, I want any drift found during verification fixed and recorded, so that the integration tracks the extension's current contract.
 
+### R33 pi agent 0.86.0 升级适配
+
+123. As an operator whose TUI is on pi 0.86.0, I want PiCode's embedded SDK upgraded to match, so that both faces speak the same session format.
+124. As an operator opening a TUI-0.86-written session in PiCode, I want new entry types handled gracefully, so that seamless handoff holds across versions.
+
 ## Implementation Decisions
 
 - **R1 文件条 settled 门**：回合分组的文件条聚合仅在**落定回合**产出（live 回合不再携带），渲染门随分组模型走——live 全程无条、agent_end 落地即原位出现；Stop/中断/出错回合照出（更改是事实投影）；FollowView 同规则。零契约。
@@ -308,6 +315,7 @@ v1.6.0 验收后的真实使用判定——**七处缺陷、四处交付行为�
 - **R30 Worked 时长显示**：落定回合时长 = 回合首条目 ts → 末条目 ts 派生（**票 14「回放回合无时长」口径修订**——原前提「文件不记录时长」不成立，条目时间戳必在）；落定回合统一显于 **chevron 右侧**（含重放回合；流式过的落定回合同位置）；live 的 Working · Ns 内联不变。与 R29 同派生核、同组件——**并入票 108**（票题升级「计时与时长显示」）。
 - **R31 双端包安装互通**：安装路径已互通（Packages 节 `installAndPersist` = `pi install` 同代码路径、同一 settings.json packages 数组）；本票补 ①**节挂载/设置窗打开 force 刷新**（消 TUI 侧安装后的 per-dir 缓存盲区——`packages-service` 缓存无 TTL，force 现仅自家 op 触发）②**双端验证矩阵**（electron smoke：PiCode 装→settings.json 断言；TUI 装→列表反映+新会话可用；真实包 pi-mcp-adapter/pi-subagents 为现成对象）③安装成功文案注明「新会话生效」（运行中会话不热加载，两侧同语义——如实）。
 - **R32 pi-subagents 0.70.0 适配**：核心集成面文档核对**无 breaking**（RPC 通道/方法面、fleetStatus DTO v1、async 工件路径与字段、事件族全在位）；本票 = 0.70.0 上**重验** 90/99/101 的集成面（RPC 回复形状、status.json 字段消费、async 事件、七态投影实测对照真实运行）——漂移即修、不漂移留档确认；0.70 新能力（allowedAgents/defaultSubagentOnlyExtensions/typed gates）呈现 = 观察项不立项。
+- **R33 pi 0.86.0 升级适配**：**breaking 三条交叉核对均不命中**（①Context→TranscriptContext = 自定义 provider API，PiCode 零自定义 provider；②details/arguments JSON 兼容收紧——PiCode 消费的本就是 JSON 值；③user_bash fail-closed——不用）；用面签名全在位（createAgentSessionServices/FromServices/Runtime、SessionManager、steer/clearQueue/setSessionName、queue_update 不变）。本票 = 内嵌 SDK 0.85.1→0.86.0 + **会话格式兼容冒烟**（TUI 0.86 写的会话 PiCode 能开；新 entry 类型——before_agent_start 持久化、pi.bug-report 等——parse 优雅降级）+ pi.on 退订函数可选采纳 + 回归全绿。ADR-0005 例行检查点。
 - 术语随票入 CONTEXT.md：「子智能体目录（Subagent Directory）」「子代理对话（Subagent Transcript）」「Manual 排序（Manual Sort）」「图片预览（Image Preview）」「MCP 节（MCP Section）」+「回合正文/常显段/过程叙述」live 语义修订——草案见 `intake-grilling.md`。UI 文案全英文（词汇表约束不变）。
 
 ## Testing Decisions
@@ -316,7 +324,7 @@ v1.6.0 验收后的真实使用判定——**七处缺陷、四处交付行为�
 - **零新缝**，全落既有四缝：
   - **Seam-1 表驱动 vitest**（纯模型/投影族）：R1 文件条 settled 聚合门；R19 泡组合块模型（技能/文字/图片三段按存在性组合）；R21 预览分类纯函数（svg/html/image 识别、超限回退）；R22 零标签→折叠联动；R23 队列镜像模型（edit/remove 舞步保序、图片还原）；R24 折叠聚合（collapse/expand-all × 形状记忆）；R3 MCP 配置层合并与写入目标解析；R4 状态快照投影（含无会话降级）；R5 目录投影（会话记录重放 + 工件合并 + 状态映射表 + Show 20 more + 嵌套折叠）；R6 锚定位置差数学；R11 手动顺序模型（drag 进 Manual/切回/持久化形状/Timeline 排除）；R13 闩式决策表（四路发送 × 到底 × 上滑接管）；R14/R17 live 条目图片落账（echo 缺席兼容）；R15 live 时间序分组（无提升/落定同构）；R18 toggle 状态机（若收敛纯模型）。
   - **host-contract smoke**：四个 additive 增量到时报备入账并验证旧载荷兼容（既有惯例）——R4 MCP 状态事件、R5 子代理桥接事件与 steer/stop 命令、R14 user_message images 字段、R23 edit/remove_queue_entry ops；R3 OAuth 触发链（host 侧）。
-  - **electron smoke**：R1 落定出条/live 无条；R19 skill-only 泡渲染技能、技能+文字泡双段、容器内无 marker；R21 SVG 渲染态上屏 + 源码切换、HTML iframe 渲染（内联脚本探针 + 沙箱断言）、png 直显、markdown 不回归；R22 关到零自动折叠 + 重开显选择页；R23 queue 行无重合边 + Edit 预填（含图）+ 行删除；R24 collapse/expand-all 全组状态与形状记忆；R25 live 展开态底环存在 + 落定无环；R26 运行中改名成功；R27 开终端焦点即在；R28 新卡秒出 + 失败移除；R29 切回不归零；R30 落定时长含重放回合；R31 双端互通 + 挂载 force 刷新；R32 0.70.0 集成面重验；R2 表格全高无内滚 + 浮层已删；R5 目录开合/对话 tab/steer 发送/确认停止/徽标；R6 锚定两态；R7 带图多行输入现场（**复现脚本 = 第一验收项**）；R9 预览四退出；R13 四路发送落底 + 上滑接管；R14 Stop→Edit 带图还原（live 场景——正是本次缺陷现场）；R15 live 流时间序 + 落定构图；R16 点击后 Enter 仍发送 + Tab 圈；R17 气泡缩略图 + 预览；R18 History 再点必收。
+  - **electron smoke**：R1 落定出条/live 无条；R19 skill-only 泡渲染技能、技能+文字泡双段、容器内无 marker；R21 SVG 渲染态上屏 + 源码切换、HTML iframe 渲染（内联脚本探针 + 沙箱断言）、png 直显、markdown 不回归；R22 关到零自动折叠 + 重开显选择页；R23 queue 行无重合边 + Edit 预填（含图）+ 行删除；R24 collapse/expand-all 全组状态与形状记忆；R25 live 展开态底环存在 + 落定无环；R26 运行中改名成功；R27 开终端焦点即在；R28 新卡秒出 + 失败移除；R29 切回不归零；R30 落定时长含重放回合；R31 双端互通 + 挂载 force 刷新；R32 0.70.0 集成面重验；R33 SDK 0.86.0 对齐 + 兼容冒烟；R2 表格全高无内滚 + 浮层已删；R5 目录开合/对话 tab/steer 发送/确认停止/徽标；R6 锚定两态；R7 带图多行输入现场（**复现脚本 = 第一验收项**）；R9 预览四退出；R13 四路发送落底 + 上滑接管；R14 Stop→Edit 带图还原（live 场景——正是本次缺陷现场）；R15 live 流时间序 + 落定构图；R16 点击后 Enter 仍发送 + Tab 圈；R17 气泡缩略图 + 预览；R18 History 再点必收。
   - **visual harness**：R2 表格帧；R5 目录/对话 tab 帧（对照 z17-subagent-dir / z17-subagent-chat）；R9 预览帧；R11 拖拽指示帧；R15 live/落定两态帧（对照 pi17-container-*）；R20 图标各尺寸帧；R21 SVG/HTML 渲染帧。
 - 性能红线：R5 目录 live 刷新零轮询（事件驱动）；R11 拖拽零全列表重挂载（局部移动）；R15 不增流式路径渲染次数；R16 blur 不破坏既有菜单键盘导航（票 68/69 基座）。
 
@@ -349,6 +357,7 @@ v1.6.0 验收后的真实使用判定——**七处缺陷、四处交付行为�
 - 2026-09-17 (R23/R24 增补，Round 8)：Q24 queue 三件套（布局修复 / 行内 Edit 带图还原 / 行删除 + additive op）；Q25 一键折叠双钮。定稿见 R23/R24；记录见 `intake-grilling.md` Round 8。**additive 增量总数更新为四项**（R23 edit/remove_queue_entry 加入）。
 - 2026-09-17 (R25 增补，Round 9)：working 转环增强（免问定稿——规格操作者直给）。定稿见 R25；记录见 `intake-grilling.md` Round 9。
 - 2026-09-17 (R29 增补，Round 11)：Working 计时跨切换清零（根因 = tick 计数器无锚点、重挂载归零；修法 = 票 61 锚点派生口径迁移）。定稿见 R29；记录见 `intake-grilling.md` Round 11。
+- 2026-09-20 (R33 增补，Round 15)：pi agent 0.86.0 升级适配（ADR-0005 检查点；breaking 三条不命中实证；会话格式兼容冒烟为核心风险面）。定稿见 R33；记录见 `intake-grilling.md` Round 15。
 - 2026-09-20 (R32 增补，Round 14)：pi-subagents 0.68.0→0.70.0 适配验证（核心面无 breaking 实证；90/99/101 集成面重验、漂移即修）。定稿见 R32；记录见 `intake-grilling.md` Round 14。
 - 2026-09-17 (R31 增补，Round 13)：双端包安装互通（Packages 挂载 force 刷新消缓存盲区 + 双端验证矩阵 + 新会话生效提示）——免问定稿。定稿见 R31；记录见 `intake-grilling.md` Round 13。
 - 2026-09-17 (R30 增补，Round 12)：Worked 时长显示（chevron 右侧、含重放回合；票 14 口径修订）——并入票 108。定稿见 R30；记录见 `intake-grilling.md` Round 12。

@@ -2,7 +2,7 @@
 
 > 每个工单一个新 pi 会话、一个 worktree、一条分支。本手册每块都可独立复制粘贴。
 > 约定详情见 `AGENTS.md › Parallel development (git worktrees)`。
-> 总 spec：`.scratch/picode-1-7/spec.md`（R1–R32 决议与验收口径；**每条 R 1:1 映射进票，81–108**（107 文件浏览器、109 visual fixture 修缮——已撤销由 87 顺带交付——为 intake 通道增补票；110 包互通挂 R31）——R5 拆三票、R7/R8/R10 合 81、R14/R17/R19 合 97）。
+> 总 spec：`.scratch/picode-1-7/spec.md`（R1–R33 决议与验收口径；**每条 R 1:1 映射进票，81–108**（107 文件浏览器、109 visual fixture 修缮——已撤销由 87 顺带交付——为 intake 通道增补票；110 包互通挂 R31）——R5 拆三票、R7/R8/R10 合 81、R14/R17/R19 合 97）。
 > 需求定稿全记录（23 痛点 × 六轮 25 问 + file:line 根因 + Pi 包取证 + ZCode bundle 键表 + 两处改判/一处加码）：`.scratch/picode-1-7/intake-grilling.md`。
 > 证据帧：`.scratch/compare/pi17-*`（操作者待复制——会话内贴图无法落盘）+ `icon-proposals/`（V2 定稿）。
 > 术语新增（子智能体目录/子代理对话/Manual 排序/图片预览/MCP 节 → 各票 rider；回合正文/常显段/过程叙述 live 语义修订 → 票 82）随票入 CONTEXT.md。
@@ -70,6 +70,7 @@ cd ~/PiCode && bash scripts/merge-ticket.sh <NN>
 | **W10** | **108** 计时不丢 | 容器 header 锚点派生（票 61 口径迁移） | **94** |
 | | **110** 双端包安装互通 | PackagesSection force 刷新 + 验证矩阵 | **89** |
 | | **111** pi-subagents 0.70.0 适配 | 90/99/101 集成面重验 | **101** |
+| | **112** pi 0.86.0 升级适配 | SDK 升级 + 会话格式兼容冒烟 | 无（宜在 110/111 后） |
 
 > 群分：A（composer 群 81→91→98）/ B（转录群 82→92→94→97→103→108）/ C（侧栏群 84→95→106；107 文件浏览器 W9）/ D（子代理 90→99→101）/ 独立快线 83/85/86/87/88/89→96/93/100→104/105/110（110 = 包互通，同设置窗文件群随 89 后；109 visual fixture 修缮已撤销——87 顺带交付，票内注记）。
 > **防冲突纪律**（同 v1.1–v1.6，三件事）：
@@ -760,6 +761,27 @@ cd .worktrees/wt-111-subagents-070 && npm install
 七态投影对照真实子代理运行）——漂移即修、不漂移留档；0.70 新能力呈现 =
 观察项不立项。
 流程同 T81（merge-ticket.sh 111）。
+```
+
+---
+
+## T112 — pi 0.86.0 升级适配（无阻塞 · 宜在 110/111 后）
+
+```bash
+cd ~/PiCode
+git worktree add .worktrees/wt-112-pi-086 -b t112-pi-086 main
+cd .worktrees/wt-112-pi-086 && npm install
+```
+
+```text
+/implement .scratch/picode-1-7/issues/112-pi-086-adaptation.md
+
+规矩：同 T81（分支 t112-pi-086）。宜在 110/111 合入后跑（全量回归一次收口）。
+
+核心：①内嵌 SDK 0.85.1→0.86.0（TUI 已实测 0.86.0——ADR-0005 首次漂移收口）；
+②会话格式兼容冒烟——TUI 0.86 写的会话（新 entry 类型）PiCode 能开、优雅降级；
+③三条 breaking 交叉核对均不命中（typecheck 实证收口）；④全量回归绿。
+流程同 T81（merge-ticket.sh 112）。
 ```
 
 ---
