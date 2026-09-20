@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import type { ChatEntry, ChatState } from '../../../shared/chat-reducer'
-import { isNearBottom, nextHeldAway, shouldAutoScroll } from '../../../shared/scroll-stay'
+import { isNearBottom, nextHeldAway, nextSendLatch, shouldAutoScroll } from '../../../shared/scroll-stay'
 import { groupTurns } from '../../../shared/turn-collapse'
 import type { ComposerDraft, ComposerDraftEntry } from '../../../shared/composer/drafts'
 import type { SessionTreePayload } from '../../../shared/sessions/types'
@@ -95,13 +95,15 @@ export default function ChatView({
   const treeBtnRef = useRef<HTMLButtonElement>(null)
   // Ticket 45 scroll-stay bookkeeping: growth detection by reference (every
   // reducer rewrite of entries/expandedTurns), the focused session's id, and
-  // the two pin latches — send (one decision pass) and jump travel (until
-  // the bottom is reached or the user's own scroll takes over).
+  // the two pin latches — send (ticket 93: armed by the user's own send and
+  // held UNTIL THE BOTTOM IS REACHED or an upward gesture takes over — no
+  // longer one decision pass) and jump travel (until the bottom is reached
+  // or the user's own scroll takes over).
   const lastEntries = useRef<ChatEntry[] | null>(null)
   const lastTurns = useRef<ReadonlySet<string> | null>(null)
   const lastSessionId = useRef<string | null>(null)
   const arrivalPending = useRef(true)
-  const sendPin = useRef(false)
+  const sendLatch = useRef(false)
   const returning = useRef(false)
   const lastScrollTop = useRef(0)
   // Ticket 75 adds the reader-held-away latch: any upward scroll movement
@@ -147,25 +149,30 @@ export default function ChatView({
       lastEntries.current = null
       lastTurns.current = null
       heldAway.current = false
+      sendLatch.current = false
     }
     const grew = chat.entries !== lastEntries.current || chat.expandedTurns !== lastTurns.current
     lastEntries.current = chat.entries
     lastTurns.current = chat.expandedTurns
-    const selfSent = sendPin.current || returning.current
-    sendPin.current = false
     if (arrivalPending.current) {
       el.scrollTop = el.scrollHeight
       setJumpVisible(false)
       if (chat.entries.length > 0) arrivalPending.current = false
       return
     }
-    // Ticket 75: a movement whose scroll event has not delivered yet (it
-    // landed between the last scroll event and this pass) reads here via
-    // the live delta — the same transition the scroll listener runs, so a
-    // gesture can never be coalesced away by a same-frame growth yank.
-    heldAway.current = nextHeldAway(heldAway.current, el.scrollTop - lastScrollTop.current, el)
+    // Ticket 75/93: movements whose scroll events have not delivered yet
+    // (they landed between the last scroll event and this pass) read here
+    // via the live delta — the same transitions the scroll listener runs
+    // (advanceScrollLatches below), so a gesture can never be coalesced
+    // away by a same-frame growth yank and the send latch can never
+    // out-rank a gesture that already happened.
+    const liveDelta = el.scrollTop - lastScrollTop.current
+    advanceScrollLatches(liveDelta, el)
     // The user's own agency (own send, jump travel) asks for the bottom and
-    // clears the hold (自发送/跳转复位).
+    // clears the hold (自发送/跳转复位) — the FRESH gesture outranks any hold
+    // that predates it; a gesture that came after (the takeover above) has
+    // already disarmed the latch.
+    const selfSent = sendLatch.current || returning.current
     if (selfSent) heldAway.current = false
     const nearBottom = isNearBottom(el)
     if (shouldAutoScroll({ nearBottom, heldAway: heldAway.current }, { grew }, selfSent)) {
@@ -174,19 +181,32 @@ export default function ChatView({
     setJumpVisible(!isNearBottom(el))
   }, [chat.entries, chat.expandedTurns, chat.session])
 
+  // Ticket 75/93: the two scroll-stream latches advance together on every
+  // movement sample — the scroll listener and the stick effect (live-delta
+  // replay) run the SAME transition, so a gesture is never coalesced away
+  // by a same-frame growth yank and the send latch never out-ranks a
+  // gesture that already happened. Ref-only — zero extra renders.
+  function advanceScrollLatches(deltaPx: number, el: HTMLDivElement): void {
+    heldAway.current = nextHeldAway(heldAway.current, deltaPx, el)
+    sendLatch.current = nextSendLatch(sendLatch.current, deltaPx, el)
+  }
+
   // Ticket 45: track the reader's position for the Jump-to-Latest button,
   // and end the jump travel when it arrives — or when the user scrolls
   // upward mid-travel (their wheel took over; the pin must not survive it
   // and yank them back on the next growth pass). Ticket 75 rides the same
   // scroll stream: any real upward movement holds the viewport away (the
   // wheel always wins), a downward return into the bottom band clears it
-  // (the next growth pass resumes following — 滚回底部恢复吸底).
+  // (the next growth pass resumes following — 滚回底部恢复吸底). Ticket 93:
+  // the send latch rides the same stream — an upward gesture disarms the
+  // send agency outright (the wheel outranks the pin), reaching the bottom
+  // settles it (arrival).
   function handleScroll(): void {
     const el = scrollRef.current
     if (!el) return
     const top = el.scrollTop
     const moved = top - lastScrollTop.current
-    heldAway.current = nextHeldAway(heldAway.current, moved, el)
+    advanceScrollLatches(moved, el)
     if (returning.current && (isNearBottom(el) || moved < -1)) {
       returning.current = false
     }
@@ -206,11 +226,12 @@ export default function ChatView({
     el.scrollTo({ top: el.scrollHeight, behavior: reduced ? 'auto' : 'smooth' })
   }
 
-  // Ticket 45: the user's own send (send, steer, follow-up) asks for the
-  // bottom — the stick decision honors it on the pass that lands the
-  // message (spec: 自发送置底).
+  // Ticket 45/93: the user's own send (send, steer, follow-up — and the
+  // queued message's later injection rides this arming) arms the send
+  // latch: the stick decision honors it every pass UNTIL the view reaches
+  // the bottom (到达底部才清) or an upward gesture disarms it (滚轮赢).
   const withPin = (send: ComposerApi['onSend']): ComposerApi['onSend'] => (text, images) => {
-    sendPin.current = true
+    sendLatch.current = true
     send(text, images)
   }
   const pinnedComposerApi = useMemo<ComposerApi>(

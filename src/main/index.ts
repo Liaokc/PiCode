@@ -48,6 +48,7 @@ import { startMermaidVisualIfEnabled, isolateMermaidUserData } from './visual-me
 import { startCodeCardVisualIfEnabled, isolateCodeCardUserData } from './visual-codecard'
 import { startWorkedVisualIfEnabled, isolateWorkedUserData } from './visual-worked-container'
 import { startChronologyVisualIfEnabled, isolateChronologyUserData } from './visual-chronology'
+import { startSendPinVisualIfEnabled, isolateSendPinUserData } from './visual-send-pin'
 import { startFilebarVisualIfEnabled, isolateFilebarUserData } from './visual-filebar'
 import { startRailStackVisualIfEnabled, isolateRailStackUserData } from './visual-rail-stack'
 import { startThinkingVisualIfEnabled, isolateThinkingUserData } from './visual-thinking'
@@ -149,6 +150,10 @@ isolateWorkedUserData()
 // Ticket-56 turn-chronology harness — same throwaway-userData rule (no-op
 // unless PICODE_VISUAL_CHRONOLOGY=1).
 isolateChronologyUserData()
+
+// Ticket-93 send-pin harness — same throwaway-userData rule (no-op unless
+// PICODE_VISUAL_SEND_PIN=1).
+isolateSendPinUserData()
 
 // Ticket-78 turn-file-bar harness — same throwaway-userData rule (no-op
 // unless PICODE_VISUAL_FILEBAR=1).
@@ -530,6 +535,8 @@ app.whenReady().then(() => {
   startWorkedVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-56 turn-chronology harness — live turn past the approval gate.
   startChronologyVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  // Ticket-93 send-pin harness — a real send drives the landing composition.
+  startSendPinVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-78 turn-file-bar harness — settled-replay injection, same pattern.
   startFilebarVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-62 rail-stacking harness — same seeding constraint (it seeds an

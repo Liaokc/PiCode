@@ -1,7 +1,7 @@
 /**
- * Transcript scroll-stay model (ticket 45, extended by ticket 75): the stick
- * decision behind the chat transcript's auto-scroll, converged into pure
- * functions.
+ * Transcript scroll-stay model (ticket 45, extended by ticket 75 and ticket
+ * 93): the stick decision behind the chat transcript's auto-scroll,
+ * converged into pure functions.
  *
  * Ticket 45 is a behavior change (spec Q12): the old rule — "the transcript
  * grew, so force the reader to the bottom" — yanked anyone who had scrolled
@@ -23,6 +23,20 @@
  * no longer sticks. The 160px threshold keeps its remaining jobs: the
  * Jump-to-Latest button's visibility (CONTEXT.md: 回底钮), the latch's
  * restore arm, and the un-held follow gate.
+ *
+ * Ticket 93 completes the selfSent arm: the send pin is no longer consumed
+ * by the first decision pass — it is an UNTIL-ARRIVAL LATCH (`nextSendLatch`).
+ * Armed by every send path (idle send, steer, follow-up — and the queued
+ * message's later injection rides the arming done at the original gesture,
+ * since a queue update itself changes no entries), the latch keeps the
+ * agency alive across passes: a late-arriving entry, multi-pass growth or a
+ * viewport shift between the gesture and the landing all re-pin until the
+ * view actually reaches the bottom. Two things clear it: ARRIVAL (the
+ * viewport found on the bottom — the job is done, follow resumes under the
+ * near-bottom rule) and TAKEOVER (any real upward scroll gesture — the
+ * ticket-75 wheel law now also out-ranks the send pin itself: a wheel-up
+ * between the send and the echo pass can no longer be overridden by
+ * `selfSent`).
  */
 
 /** Stick threshold carried over from the pre-ticket behavior (~160px). */
@@ -68,7 +82,10 @@ export interface ContentGrowth {
  * bottom AND not holding the viewport away. A held-away reader is never
  * yanked by growth — the ticket-75 direction-aware completion of the Q12
  * law ("growth never moves a reader who scrolled away"), now covering the
- * in-band strong stick too.
+ * in-band strong stick too. Ticket 93: `selfSent` is the SEND LATCH's armed
+ * state (until-arrival, see nextSendLatch), not a one-pass flag — the
+ * component keeps it armed across passes and the table semantics are
+ * unchanged for every reachable row.
  */
 export function shouldAutoScroll(state: ScrollState, growth: ContentGrowth, selfSent: boolean): boolean {
   if (selfSent) return true
@@ -103,5 +120,43 @@ export function shouldAutoScroll(state: ScrollState, growth: ContentGrowth, self
 export function nextHeldAway(current: boolean, deltaPx: number, viewport: ScrollSnapshot): boolean {
   if (deltaPx < -1) return distanceFromBottom(viewport) > 0
   if (deltaPx > 1 && isNearBottom(viewport)) return false
+  return current
+}
+
+/** True while the viewport sits ON the bottom (distance 0, ±1px absorbing
+ * fractional-scrollTop rounding). Ticket 93: the send latch's ARRIVAL arm —
+ * deliberately stricter than the 160px stick band: arrival is where the pin
+ * lands, not the follow gate; a reader parked anywhere inside the band but
+ * off the bottom has NOT arrived, and the armed agency still asks. */
+export function isAtBottom(snapshot: ScrollSnapshot): boolean {
+  return distanceFromBottom(snapshot) < 1
+}
+
+/**
+ * The send-latch transition (ticket 93), driven by the same scroll stream
+ * the held-away latch rides (zero extra renders):
+ *
+ * - any REAL upward movement clears the latch — during the latch's travel
+ *   the reader's wheel takes over immediately (the ticket-75 law extended
+ *   to the send pin: the wheel always wins, and the agency must not
+ *   out-rank a gesture that happened after it);
+ * - a viewport found ON the bottom clears it — ARRIVAL: the pin's job is
+ *   done (a manual scroll to the bottom, a bottom clamp, or the previous
+ *   pass's own pin all read here); follow resumes under the ticket-45
+ *   near-bottom rule;
+ * - anything else (downward travel toward the bottom, sub-pixel noise,
+ *   pure growth with no scrollTop movement) keeps the latch armed — a late
+ *   entry, multi-pass growth or a viewport shift between the gesture and
+ *   the landing all re-pin (到达底部才清).
+ *
+ * deltaPx: scrollTop delta since the previous sample; the ±1px hysteresis
+ * matches nextHeldAway. The stick effect replays the live delta through
+ * BOTH latches, so a gesture coalesced into a growth pass is never lost —
+ * the armed latch and the held-away latch can therefore never coexist after
+ * a transition (the same movement clears one and sets the other).
+ */
+export function nextSendLatch(current: boolean, deltaPx: number, viewport: ScrollSnapshot): boolean {
+  if (deltaPx < -1) return false
+  if (isAtBottom(viewport)) return false
   return current
 }

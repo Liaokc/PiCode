@@ -68,6 +68,7 @@ import { skillCardVisualEnabled } from './visual-skill-card'
 import { answerVisualEnabled } from './visual-answer'
 import { workedVisualEnabled } from './visual-worked-container'
 import { chronologyVisualEnabled } from './visual-chronology'
+import { sendPinVisualEnabled } from './visual-send-pin'
 import { thinkingVisualEnabled } from './visual-thinking'
 import { filebarVisualEnabled } from './visual-filebar'
 import { previewVisualEnabled } from './visual-preview'
@@ -229,6 +230,9 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
   if (workedVisualEnabled()) return
   // And for the turn-chronology harness (ticket 56).
   if (chronologyVisualEnabled()) return
+  // And for the send-pin landing harness (ticket 93) — it owns the window
+  // alone: a real send drives it.
+  if (sendPinVisualEnabled()) return
   // And for the thinking-row harness (ticket 61).
   if (thinkingVisualEnabled()) return
   // And for the turn-file-bar harness (ticket 78).

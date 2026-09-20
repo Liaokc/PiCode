@@ -4798,6 +4798,239 @@ export function startSmokeIfEnabled(
     })
     log('scroll75_done')
 
+    // ---- ticket 93: send-pin latch — every send lands the bottom and the
+    // live Working container is the bottom-most element above the composer;
+    // an upward gesture during the latch travel takes over immediately ----
+    // A FRESH session (createSession focuses it — in-app ChatView by
+    // construction) drives the acceptance assertions on top of the
+    // ticket-45/75 stages above (which stay as the no-regression harnesses):
+    // ① queueing a follow-up while scrolled away yanks the bottom (the
+    //    steer/follow-up arming IS the send latch — 排队注入 rides it; the
+    //    queue panel's own viewport shift is repaired by the armed latch);
+    // ② the queued injection lands at the bottom with the new turn's
+    //    Working container as the bottom-most element and the view pinned
+    //    through the injected turn's streaming;
+    // ③ THE 93 WINDOW: an idle send followed immediately (same JS task —
+    //    before the echo's IPC round-trip) by an upward wheel — the echo
+    //    pass must NOT yank (the wheel disarms the send latch; the pre-93
+    //    pin out-ranked the fresh hold and yanked anyway);
+    // ④ an idle send from scrolled-away lands the bottom with the Working
+    //    container bottom-most (操作者原话: 输入框上最下面的应该是 agent 的
+    //    worked 内容).
+    // Steer rides the identical renderer path (same withPin arming, same
+    // user_message delivery relay — only the SDK delivery timing differs),
+    // so the queued phases cover it; the Seam-1 table pins all four paths.
+    log('scroll93_start')
+    const scroll93Created = waitFor(
+      (e) => e.type === 'session_created',
+      'scroll93 session_created'
+    ) as Promise<Extract<Scoped, { type: 'session_created' }>>
+    supervisor.createSession(cwd)
+    const scroll93Session = await scroll93Created
+    const scroll93Id = scroll93Session.sessionId
+    // The host run streams long enough to outlive phases ①–② (the queued
+    // injection delivers only when the run ends NATURALLY — an abort would
+    // leave the delivery timing undefined), and its 100 blank lines make the
+    // transcript scrollable regardless of the reply's wrapping.
+    const COUNT_PROMPT_93_HOST =
+      'PICODE_SCROLL_93_HOST: Count from 1 to 200. Output each number on its own line, one number per line. Do not summarize and do not stop early. Do not use any tools — write the numbers directly in your reply text.\n' +
+      '\n'.repeat(100)
+    const COUNT_PROMPT_93_Q =
+      'PICODE_93_Q: Count from 1 to 40. Output each number on its own line, one number per line. Do not summarize and do not stop early. Do not use any tools — write the numbers directly in your reply text.'
+    const COUNT_PROMPT_93_W =
+      'PICODE_93_W: Count from 1 to 60. Output each number on its own line, one number per line. Do not summarize and do not stop early. Do not use any tools — write the numbers directly in your reply text.'
+    const COUNT_PROMPT_93_E =
+      'PICODE_93_E: Count from 1 to 40. Output each number on its own line, one number per line. Do not summarize and do not stop early. Do not use any tools — write the numbers directly in your reply text.'
+    await withWindow(getWindow, async (win) => {
+      const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+      const AT_BOTTOM = `(() => { const el = document.querySelector('.chat-scroll'); return el !== null && el.scrollHeight - el.scrollTop - el.clientHeight < 40 })()`
+      const SCROLL_DIAG = `JSON.stringify({
+        scrollTop: document.querySelector('.chat-scroll')?.scrollTop ?? null,
+        scrollH: document.querySelector('.chat-scroll')?.scrollHeight ?? null,
+        clientH: document.querySelector('.chat-scroll')?.clientHeight ?? null,
+        chatView: document.querySelector('.chat-view') !== null
+      })`
+      /** The live turn's container row is the bottom-most element: 'Working'
+       * label and its bottom edge inside the scroll viewport. */
+      const WORKING_BOTTOMMOST = `(() => {
+        const sc = document.querySelector('.chat-scroll')
+        const rows = [...document.querySelectorAll('.turn-container')]
+        const last = rows[rows.length - 1]
+        if (sc === null || last === undefined) return false
+        const label = last.querySelector('.turn-container-label')?.textContent ?? ''
+        if (label !== 'Working') return false
+        return last.getBoundingClientRect().bottom <= sc.getBoundingClientRect().bottom + 1
+      })()`
+      const IDLE_COMPOSER = `document.querySelector('.cmp-send') !== null`
+
+      if (!(await waitForProbe(win, `document.querySelector('.chat-view') !== null`, 10_000))) {
+        fail('ticket-93 stage: the fresh session never reached the chat view')
+      }
+
+      // Start the LONG host run; the view pins at the bottom (arrival).
+      supervisor.handleParentCommand({
+        type: 'session_command',
+        sessionId: scroll93Id,
+        command: { type: 'prompt', text: COUNT_PROMPT_93_HOST }
+      })
+      await waitFor((e) => e.type === 'agent_start' && e.sessionId === scroll93Id, 'scroll93 agent_start')
+      if (
+        !(await waitForProbe(
+          win,
+          `(document.querySelector('.chat-thread')?.textContent ?? '').includes('PICODE_SCROLL_93_HOST')`,
+          10_000
+        ))
+      ) {
+        fail('ticket-93 stage: the host count prompt never rendered in the focused transcript')
+      }
+      await waitFor((e) => e.type === 'text_delta' && e.sessionId === scroll93Id, 'scroll93 first text_delta')
+      if (!(await waitForProbe(win, AT_BOTTOM, 5_000))) {
+        fail('ticket-93 stage: the streaming transcript did not stay pinned at the bottom')
+      }
+
+      // ① Queue a follow-up while scrolled away: the send latch yanks the
+      // bottom on the next growth pass (the queue panel itself shifts the
+      // viewport — the armed latch repairs that too).
+      await js(
+        `(() => { const el = document.querySelector('.chat-scroll'); el.scrollTop = Math.floor(el.scrollHeight / 2); return true })(); true`
+      )
+      await new Promise((r) => setTimeout(r, 300)) // the mid-scroll event settles (held-away latched)
+      if (!(await win.webContents.executeJavaScript(composerTypeJs(COUNT_PROMPT_93_Q)).catch(() => false))) {
+        fail('ticket-93 stage: composer textarea missing for the queued follow-up')
+      }
+      await win.webContents.executeJavaScript(composerKeyJs('Enter'))
+      if (!(await waitForProbe(win, `document.querySelector('.queue-item') !== null`, 5_000))) {
+        fail('ticket-93 stage: the queued follow-up never showed in the queue panel')
+      }
+      if (!(await waitForProbe(win, AT_BOTTOM, 5_000))) {
+        const diag = (await js(SCROLL_DIAG).catch(() => 'unavailable')) as string
+        fail(`ticket-93 stage: the queued send never yanked the scrolled-away reader to the bottom; DOM: ${diag}`)
+      }
+      for (let seen = 0; seen < 2; seen++) {
+        await waitFor((e) => e.type === 'text_delta' && e.sessionId === scroll93Id, 'scroll93 queue yank delta')
+      }
+      await new Promise((r) => setTimeout(r, 300))
+      if (!(await win.webContents.executeJavaScript(AT_BOTTOM))) {
+        const diag = (await js(SCROLL_DIAG).catch(() => 'unavailable')) as string
+        fail(`ticket-93 stage: the view drifted off the bottom after the queued send yank; DOM: ${diag}`)
+      }
+      log('scroll93_queue_yank_ok')
+
+      // ② The queued injection: the delivered turn opens live ('Working')
+      // and streams — the view must be pinned at the bottom with the new
+      // live Working container as the bottom-most element, and stay pinned
+      // through the injected turn's streaming. The probe anchors on the
+      // delivery appearing in the DOM — NOT on agent_end, which the SDK
+      // emits only AFTER the injected turn completes (by then the container
+      // has settled to 'Worked', too late for the live-geometry probe).
+      if (
+        !(await waitForProbe(
+          win,
+          `(document.querySelector('.chat-thread')?.textContent ?? '').includes('PICODE_93_Q') && (${AT_BOTTOM}) && (${WORKING_BOTTOMMOST})`,
+          150_000
+        ))
+      ) {
+        const diag = (await js(SCROLL_DIAG).catch(() => 'unavailable')) as string
+        fail(`ticket-93 stage: the queued injection never landed the bottom with the Working container bottom-most; DOM: ${diag}`)
+      }
+      for (let seen = 0; seen < 3; seen++) {
+        await waitFor((e) => e.type === 'text_delta' && e.sessionId === scroll93Id, 'scroll93 injection delta')
+      }
+      await new Promise((r) => setTimeout(r, 300))
+      if (!(await win.webContents.executeJavaScript(`(${AT_BOTTOM}) && (${WORKING_BOTTOMMOST})`))) {
+        const diag = (await js(SCROLL_DIAG).catch(() => 'unavailable')) as string
+        fail(`ticket-93 stage: the injected turn's streaming drifted off the bottom; DOM: ${diag}`)
+      }
+      log('scroll93_queue_inject_ok')
+
+      // The injected turn completes on its own; wait out the settle for the
+      // idle-send phases.
+      await waitFor((e) => e.type === 'agent_end' && e.sessionId === scroll93Id, 'scroll93 injected turn agent_end')
+      await new Promise((r) => setTimeout(r, 500))
+
+      // ③ THE 93 WINDOW: idle send + upward wheel in the same JS task —
+      // the wheel lands before the echo's IPC round-trip, so the echo pass
+      // must find the latch disarmed (滚轮赢 — the pre-93 pin yanked here).
+      await js(
+        `(() => { const el = document.querySelector('.chat-scroll'); el.scrollTop = Math.floor(el.scrollHeight / 2); return true })(); true`
+      )
+      await new Promise((r) => setTimeout(r, 300))
+      await win.webContents.executeJavaScript(
+        `${composerTypeJs(COUNT_PROMPT_93_W)}; ${composerKeyJs('Enter')}; (() => { const el = document.querySelector('.chat-scroll'); el.scrollTop -= 60; return true })(); true`
+      )
+      const wheelTop = (await js(`document.querySelector('.chat-scroll').scrollTop`)) as number
+      if (
+        !(await waitForProbe(
+          win,
+          `(document.querySelector('.chat-thread')?.textContent ?? '').includes('PICODE_93_W')`,
+          10_000
+        ))
+      ) {
+        fail('ticket-93 stage: the wheel-window send echo never rendered')
+      }
+      for (let seen = 0; seen < 3; seen++) {
+        await waitFor((e) => e.type === 'text_delta' && e.sessionId === scroll93Id, 'scroll93 wheel delta')
+      }
+      await new Promise((r) => setTimeout(r, 500))
+      const wheelAfter = (await js(`document.querySelector('.chat-scroll').scrollTop`)) as number
+      if (Math.abs(wheelAfter - wheelTop) > 1) {
+        const diag = (await js(SCROLL_DIAG).catch(() => 'unavailable')) as string
+        fail(`ticket-93 stage: the wheel-up during the send latch did not take over (${wheelTop} → ${wheelAfter}); DOM: ${diag}`)
+      }
+      log('scroll93_wheel_wins_ok')
+
+      // Settle the wheel-window run.
+      supervisor.handleParentCommand({
+        type: 'session_command',
+        sessionId: scroll93Id,
+        command: { type: 'abort_turn' }
+      })
+      if (!(await waitForProbe(win, IDLE_COMPOSER, 15_000))) {
+        fail('ticket-93 stage: the composer never left the busy state after the wheel-window abort')
+      }
+      await new Promise((r) => setTimeout(r, 500))
+
+      // ④ Idle send from scrolled-away: the echo lands the bottom with the
+      // new turn's Working container as the bottom-most element above the
+      // composer.
+      await js(`(() => { const el = document.querySelector('.chat-scroll'); el.scrollTop = 0; return true })(); true`)
+      if (!(await win.webContents.executeJavaScript(composerTypeJs(COUNT_PROMPT_93_E)).catch(() => false))) {
+        fail('ticket-93 stage: composer textarea missing for the landing send')
+      }
+      await win.webContents.executeJavaScript(composerKeyJs('Enter'))
+      if (
+        !(await waitForProbe(
+          win,
+          `(document.querySelector('.chat-thread')?.textContent ?? '').includes('PICODE_93_E') && (${AT_BOTTOM}) && (${WORKING_BOTTOMMOST})`,
+          15_000
+        ))
+      ) {
+        const diag = (await js(SCROLL_DIAG).catch(() => 'unavailable')) as string
+        fail(`ticket-93 stage: the scrolled-away send never landed the bottom with the Working container bottom-most; DOM: ${diag}`)
+      }
+      for (let seen = 0; seen < 2; seen++) {
+        await waitFor((e) => e.type === 'text_delta' && e.sessionId === scroll93Id, 'scroll93 landing delta')
+      }
+      await new Promise((r) => setTimeout(r, 300))
+      if (!(await win.webContents.executeJavaScript(`(${AT_BOTTOM}) && (${WORKING_BOTTOMMOST})`))) {
+        const diag = (await js(SCROLL_DIAG).catch(() => 'unavailable')) as string
+        fail(`ticket-93 stage: the landing turn's streaming drifted off the bottom; DOM: ${diag}`)
+      }
+      log('scroll93_send_land_ok')
+
+      // Leave a quiet session.
+      supervisor.handleParentCommand({
+        type: 'session_command',
+        sessionId: scroll93Id,
+        command: { type: 'abort_turn' }
+      })
+      if (!(await waitForProbe(win, IDLE_COMPOSER, 15_000))) {
+        fail('ticket-93 stage: the composer never left the busy state at stage end')
+      }
+      await win.webContents.executeJavaScript(composerClearJs)
+    })
+    log('scroll93_done')
+
     // ---- ticket 46: the turn navigator rail ----
     // A FRESH session (createSession focuses it — in-app ChatView by
     // construction) drives the acceptance chain:
