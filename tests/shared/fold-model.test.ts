@@ -20,6 +20,12 @@ const other = '/work/web-app'
 const toggle = (): GroupFoldAction => ({ type: 'toggle-fold', cwd })
 const more = (total = 12): GroupFoldAction => ({ type: 'show-more', cwd, total })
 const less = (): GroupFoldAction => ({ type: 'show-less', cwd })
+const toggleOther = (): GroupFoldAction => ({ type: 'toggle-fold', cwd: other })
+const moreOther = (total: number): GroupFoldAction => ({ type: 'show-more', cwd: other, total })
+/** The section row's aggregate pair (ticket 95): default list = BOTH table
+ * groups, exactly what the sidebar passes for a two-group Projects list. */
+const collapseAll = (cwds: readonly string[] = [cwd, other]): GroupFoldAction => ({ type: 'collapse-all', cwds })
+const expandAll = (cwds: readonly string[] = [cwd, other]): GroupFoldAction => ({ type: 'expand-all', cwds })
 
 function run(actions: GroupFoldAction[]): GroupFoldState {
   return actions.reduce((state, action) => groupFoldReducer(state, action), initialFoldState())
@@ -174,6 +180,106 @@ describe('groupFoldReducer — groups are isolated by cwd', () => {
   })
 })
 
+describe('groupFoldReducer — collapse all / expand all (ticket 95)', () => {
+  it.each([
+    [
+      'one stepped group: the remembered 10-row step survives the pair',
+      [more(), collapseAll(), expandAll()],
+      10,
+      'more'
+    ],
+    [
+      'two steps: full expansion (Show less) survives the pair',
+      [more(), more(), collapseAll(), expandAll()],
+      12,
+      'less'
+    ],
+    [
+      'an untouched group returns to the default page after the pair',
+      [collapseAll(), expandAll()],
+      SHOW_FIRST,
+      'more'
+    ]
+  ] as Array<[string, GroupFoldAction[], number, 'more' | 'less' | null]>)(
+    '%s',
+    (_name, actions, visible, control) => {
+      const state = run(actions)
+      expect(foldShapeOf(state, cwd).folded).toBe(false)
+      expect(visibleRowCount(state, cwd, 12)).toBe(visible)
+      expect(showMoreControl(state, cwd, 12)).toBe(control)
+    }
+  )
+
+  it('collapse-all folds EVERY listed group, each keeping its pre-fold step', () => {
+    const state = run([more(), moreOther(20), collapseAll()])
+    // Zero rows everywhere…
+    expect(visibleRowCount(state, cwd, 12)).toBe(0)
+    expect(visibleRowCount(state, other, 20)).toBe(0)
+    // …and the remembered steps intact under the fold (the unfold brings
+    // them back — the acceptance core, plural).
+    expect(foldShapeOf(state, cwd)).toEqual({ visible: 10, folded: true })
+    expect(foldShapeOf(state, other)).toEqual({ visible: 10, folded: true })
+  })
+
+  it('expand-all unfolds EVERY listed group restoring the remembered shapes', () => {
+    const state = run([more(), moreOther(20), collapseAll(), expandAll()])
+    expect(visibleRowCount(state, cwd, 12)).toBe(10)
+    expect(visibleRowCount(state, other, 20)).toBe(10)
+    expect(showMoreControl(state, cwd, 12)).toBe('more')
+    expect(showMoreControl(state, other, 20)).toBe('more')
+  })
+
+  it('expands only the LISTED groups — a hidden group keeps its exact shape', () => {
+    const state = run([more(), toggleOther(), expandAll([cwd])])
+    expect(foldShapeOf(state, cwd).folded).toBe(false)
+    expect(foldShapeOf(state, other)).toEqual({ visible: SHOW_FIRST, folded: true })
+  })
+
+  it('mixes with a manual single-group fold: expand-all clears it (全部展开)', () => {
+    const state = run([more(), toggleOther(), collapseAll(), expandAll()])
+    expect(foldShapeOf(state, other).folded).toBe(false)
+    expect(visibleRowCount(state, other, 20)).toBe(SHOW_FIRST)
+    // The stepped group still restores its own memory alongside.
+    expect(visibleRowCount(state, cwd, 12)).toBe(10)
+  })
+
+  it('mixes the other way: a manual toggle after collapse-all re-opens just that group', () => {
+    const state = run([collapseAll(), toggle()])
+    expect(foldShapeOf(state, cwd).folded).toBe(false)
+    expect(foldShapeOf(state, other).folded).toBe(true)
+  })
+
+  it('is a no-op (same reference) on an empty Projects list', () => {
+    const initial = initialFoldState()
+    expect(groupFoldReducer(initial, collapseAll([]))).toBe(initial)
+    expect(groupFoldReducer(initial, expandAll([]))).toBe(initial)
+  })
+
+  it('expand-all with nothing folded is the same reference (no junk keys)', () => {
+    const initial = initialFoldState()
+    expect(groupFoldReducer(initial, expandAll())).toBe(initial)
+    const stepped = run([more()])
+    // Unfolded groups are skipped too — the map only ever stores changes.
+    expect(groupFoldReducer(stepped, expandAll())).toBe(stepped)
+  })
+
+  it('collapse-all twice is the same reference the second time', () => {
+    const once = run([collapseAll()])
+    expect(groupFoldReducer(once, collapseAll())).toBe(once)
+  })
+
+  it('duplicate cwds in the list stay safe', () => {
+    const state = groupFoldReducer(initialFoldState(), collapseAll([cwd, cwd, other]))
+    expect(foldShapeOf(state, cwd).folded).toBe(true)
+    expect(foldShapeOf(state, other).folded).toBe(true)
+  })
+
+  it('expand-all over groups missing from the map materializes nothing', () => {
+    const state = groupFoldReducer(initialFoldState(), expandAll())
+    expect(state).toEqual({})
+  })
+})
+
 describe('fold shape table — whole click sequences (spec R5)', () => {
   interface Row {
     name: string
@@ -193,7 +299,9 @@ describe('fold shape table — whole click sequences (spec R5)', () => {
     { name: 'fold after Show less, unfold back to five', total: 12, actions: [more(), more(), less(), toggle(), toggle()], visible: 5, folded: false, control: 'more' },
     { name: 'a page-sized group shows no control', total: 4, actions: [], visible: 4, folded: false, control: null },
     { name: 'a page-sized group still folds', total: 4, actions: [toggle()], visible: 0, folded: true, control: null },
-    { name: 'remembered steps clamp when the list shrinks', total: 15, actions: [more(15), more(15)], visible: 15, folded: false, control: 'less' }
+    { name: 'remembered steps clamp when the list shrinks', total: 15, actions: [more(15), more(15)], visible: 15, folded: false, control: 'less' },
+    { name: 'collapse-all folds the group (aggregate pair, ticket 95)', total: 12, actions: [collapseAll([cwd])], visible: 0, folded: true, control: null },
+    { name: 'the pair restores the pre-collapse step', total: 12, actions: [more(), collapseAll([cwd]), expandAll([cwd])], visible: 10, folded: false, control: 'more' }
   ]
   it.each(rows)('$name', ({ total, actions, visible, folded, control }) => {
     const state = run(actions)
