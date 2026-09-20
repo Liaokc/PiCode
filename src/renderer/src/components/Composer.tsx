@@ -368,6 +368,23 @@ export default function Composer({
     return () => window.removeEventListener(PREFILL_EVENT, prefill)
   }, [disabled])
 
+  // Ticket 98 (spec R16): when a mounted menu closes — keyboard pick,
+  // Escape, an outside mousedown, the owning chip's toggle — the popover
+  // that captured focus unmounts and focus falls to <body>. Reclaim the
+  // caret for the input so the next Enter always goes back to send. The
+  // text menus (slash/files) never hold focus (the textarea keeps it
+  // through every pick), so their closes are no-ops here. The rAF runs
+  // after the unmount commit — and after any button a click landed on,
+  // so the same rule the document-level discipline applies holds: focus
+  // must never rest on a control Enter could re-fire.
+  const prevMenuRef = useRef<MenuState>(null)
+  useEffect(() => {
+    if (prevMenuRef.current !== null && menu === null) {
+      requestAnimationFrame(() => textareaRef.current?.focus())
+    }
+    prevMenuRef.current = menu
+  }, [menu])
+
   // The `/model` and `/thinking` built-ins open their menus from anywhere.
   useEffect(() => {
     function openModel(): void {

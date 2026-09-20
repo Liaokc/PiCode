@@ -206,6 +206,10 @@ _Avoid_: 进度条（环不表达任务进度）；容量条（形态是环）�
 composer 附件缩略图点击后的全屏遮罩大图预览（票 91，遮罩模式继承票 87 删除的 md-table-preview：fixed backdrop 顶层 + 居中 contain-fit 内容 + 右上角 ❌ + Esc）；四退出 = 空格 / ❌ / Esc / 点击遮罩空白；多图 ←/→ 环绕翻看带计数 chip。渲染物永远是全分辨率 data: URL（52px 缩略图是同一 payload 的 CSS 裁切——放大即真实像素，过采样缩放不糊）；预览纯视图态，开合零扰动草稿/附件，关闭后焦点回 composer 输入框。组件按 `images + index + onNavigate + onClose` 最小接缝设计，发送气泡缩略图（票 97，已落地）复用同一浮层（泡内开合焦点回开启缩略图——泡无输入框，无 ticket-98 Enter 重发纪律）。
 _Avoid_: lightbox（自造同义词，漂移源）；弹窗（非模态表单，是遮罩预览）；缩略图放大（缩略图本身不变，是开浮层看原图）。
 
+**按钮焦点纪律（Button Focus Discipline）**：
+全局规则（票 98，spec R16）：鼠标点击与菜单键盘选择完成后按钮立即 blur、焦点归还 composer 输入框——Enter 永远回到发送，焦点不得滞留在 Enter 会再触发的钮上。纯决策收敛于 Seam-1（shared/composer/focus-discipline.ts：caret 持有者与 data-focus-keep 表面除外），渲染层唯一胶水在 composer-focus.ts：document 级 click 纪律（workspace 窗口一个监听器，rAF 延迟探测点击后的终态焦点）+ 菜单关闭路径显式归还（键盘拾取无 click 事件）。captureKeys 菜单的焦点落在选中行（真实键盘 ↑↓/Enter 才能进 flatMenuKey——票 68/69 键盘模型的真实可达性）。橙色 focus 圈仅 ：focus-visible（纯键盘 Tab）呈现（Q19 Tab 圈保留），鼠标流永不显圈。
+_Avoid_: 焦点抢劫（是归还，不是随机夺焦——caret 持有者与 data-focus-keep 表面永不被夺）；focus 环（圈只在 ：focus-visible，不用 ：focus）；每个控件各自 focus()（纪律是 document 级一个监听器 + 一个纯决策，不许散布）。
+
 ## Constraints（词汇化的边界）
 
 **红线**：

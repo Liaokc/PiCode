@@ -81,7 +81,13 @@ export default function SettingsWindow({
   const { snapshot, error } = useUsageSnapshot()
 
   return (
-    <div className="settings-shell">
+    // data-focus-keep (ticket 98): the settings shell is a window-in-window
+    // surface that owns its own focus lifecycle — the workspace composer is
+    // hidden behind it, and the R16 click discipline must never rob its
+    // live controls to feed a caret nobody can see. Exiting back to the
+    // workspace unmounts the shell, so the back button's own click still
+    // ends with the composer reclaim (focus fell off with the shell).
+    <div className="settings-shell" data-focus-keep>
       <nav className="settings-nav" aria-label="Settings">
         <button type="button" className="settings-back" onClick={() => dispatchShell({ type: 'back-to-workspace' })}>
           <ChevronLeftIcon size={14} />

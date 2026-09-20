@@ -100,7 +100,11 @@ export default function ImagePreviewOverlay({
   }
 
   return (
-    <div className="image-preview-backdrop" role="presentation" onClick={onBackdropClick}>
+    // data-focus-keep (ticket 98): the overlay owns its own focus lifecycle
+    // (mount capture, the ❌'s hold, unmount restore) — the R16 click
+    // discipline never fights it. In practice every exit already lands the
+    // caret on the composer via the callers' own rAF re-take.
+    <div className="image-preview-backdrop" role="presentation" data-focus-keep onClick={onBackdropClick}>
       <div
         className="image-preview-stage"
         role="dialog"
