@@ -55,12 +55,14 @@ export interface UserEntry {
   /** Skill name sniffed from injected `<skill name="…">` text; null when the
    * message was not skill-driven (ticket 14 payload; ticket 23 renders it). */
   skillName: string | null
-  /** The replayed message's inline image parts, in content order (ticket 79,
-   * additive projection): the edit-resend prefill restores them into composer
-   * attachment state. ABSENT on live entries (the user_message echo carries
-   * text only — images reach the entry on the next replay), imageless
-   * messages and pre-79 payloads; consumers must treat absence as "no
-   * images", never default it. */
+  /** The message's inline image parts, in content order (tickets 79+97,
+   * additive projection): the bubble's thumbnail strip and the edit-resend
+   * prefill restore them into composer attachment state. Present ONLY on
+   * messages that carry images — absent on imageless messages, on live
+   * entries whose echo did not project them (pre-97 hosts), and on pre-79
+   * payloads; consumers must treat absence as "no images", never default
+   * it. (Ticket 97: the live `user_message` echo now carries the parts, so
+   * the entry no longer waits for the next replay.) */
   images?: TranscriptImagePart[]
 }
 
@@ -439,15 +441,22 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       // the new turn starts expanded so its run streams in view. Ticket 51:
       // a real session entry id rides the event when the host read it back
       // at persistence (live fork anchor); absence (aborted/failed prompt
-      // shapes) falls back to the positional synthetic id.
+      // shapes) falls back to the positional synthetic id. Ticket 97
+      // (additive): the echo's image parts land on the live entry so the
+      // bubble shows its thumbnails immediately and Edit-with-images
+      // restores them right after Stop — absence (or empty) keeps the
+      // pre-97 entry shape byte-identical (imageless messages never grow
+      // the field).
       const folded = collapseCurrentTurn(state)
+      const images = event.images !== undefined && event.images.length > 0 ? event.images : undefined
       const entries: ChatEntry[] = [
         ...folded.entries,
         {
           id: event.entryId ?? entryId(folded.entries.length),
           role: 'user',
           text: event.text,
-          skillName: sniffSkillName(event.text)
+          skillName: sniffSkillName(event.text),
+          ...(images !== undefined ? { images } : {})
         }
       ]
       return withExpandedTurn({ ...folded, entries }, currentTurnId(entries))

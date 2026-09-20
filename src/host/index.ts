@@ -35,8 +35,8 @@ import type {
 import { FILE_LIST_TRUNCATED } from '../shared/contract'
 import type { SessionDefaults } from '../shared/preferences'
 import { assistantUsageOfMessage, lastAssistantUsage } from '../shared/context-ring'
-import { buildSessionTree, extractTranscriptItems, type RawSessionEntry } from '../shared/sessions/parse'
-import type { SessionTreePayload } from '../shared/sessions/types'
+import { buildSessionTree, extractTranscriptItems, userImageParts, type RawSessionEntry } from '../shared/sessions/parse'
+import type { SessionTreePayload, TranscriptImagePart } from '../shared/sessions/types'
 import { toolResultText } from '../shared/tool-format'
 import { isPackagesOpDescriptor, packagesOpRefusal, type PackagesOpDescriptor } from '../shared/packages-management'
 import { homedir } from 'node:os'
@@ -116,7 +116,17 @@ const mcpStatusBridge = new McpStatusBridge(send)
  * appendMessage monitor consumes them at the persistence moment, where the
  * echo is relayed WITH the real session entry id (ticket 51). A prompt that
  * fails before persisting echoes id-less from its catch (flushPendingEcho). */
-const pendingEchoes: string[] = []
+/** The pending prompt echoes (ticket 51): pre-recorded at send time and
+ * consumed by the persistence monitor, so a prompt echoes exactly once.
+ * Ticket 97: each echo also carries the prompt's attachments — the
+ * failure-path echo (the entry never persisted) restores them into the
+ * live entry just like the persisted path's content projection does. */
+interface PendingEcho {
+  text: string
+  images?: TranscriptImagePart[]
+}
+
+const pendingEchoes: PendingEcho[] = []
 
 /** Ticket 51: the current session's held assistant message_end (see
  * live-entry-ids). Re-armed per session wiring; released by the
@@ -311,12 +321,24 @@ function wireSessionEvents(agentSession: AgentSession): void {
  * for prompt echoes AND delivered Steer/Follow-up messages — the
  * appendMessage monitor calls this at the persistence moment, where the real
  * session entry id is known. Prompt echoes are pre-recorded and consumed
- * here so delivered messages surface exactly once (ticket 05 semantics). */
-function relayDeliveredUserText(text: string | null, entryId: string | undefined): void {
+ * here so delivered messages surface exactly once (ticket 05 semantics).
+ * Ticket 97 (additive): the persisted content's inline image parts ride the
+ * echo when the message carries any — the live entry shows its thumbnails
+ * (and restores them on Edit) without waiting for the next replay. */
+function relayDeliveredUserText(text: string | null, images: TranscriptImagePart[], entryId: string | undefined): void {
   if (text === null || text === '') return
-  const echoIndex = pendingEchoes.indexOf(text)
+  const echoIndex = pendingEchoes.findIndex((echo) => echo.text === text)
   if (echoIndex !== -1) pendingEchoes.splice(echoIndex, 1)
-  send(entryId !== undefined ? { type: 'user_message', text, entryId } : { type: 'user_message', text })
+  send(userMessageEcho(text, images, entryId))
+}
+
+/** The `user_message` echo event: the additive `images` field appears only
+ * on messages that carry images — imageless echoes keep the exact pre-97
+ * event shape (old renderers/payloads validate unchanged). */
+function userMessageEcho(text: string, images: TranscriptImagePart[], entryId: string | undefined): Extract<HostToParent, { type: 'user_message' }> {
+  const imagesField = images.length > 0 ? { images } : {}
+  if (entryId !== undefined) return { type: 'user_message', text, ...imagesField, entryId }
+  return { type: 'user_message', text, ...imagesField }
 }
 
 /** The appendMessage monitor callback (ticket 51): the persistence moment of
@@ -324,7 +346,7 @@ function relayDeliveredUserText(text: string | null, entryId: string | undefined
  * messages release the held message_end with theirs. */
 function onMessageAppended(message: Parameters<SessionManager['appendMessage']>[0], entryId: string): void {
   if (message.role === 'user') {
-    relayDeliveredUserText(userEntryText(message.content), entryId)
+    relayDeliveredUserText(userEntryText(message.content), userImageParts(message.content), entryId)
     return
   }
   if (message.role === 'assistant' && heldMessageEnd.settle()) {
@@ -502,8 +524,9 @@ function handlePrompt(text: string, images?: ImageAttachment[]): void {
   // Ticket 51: the user_message echo waits for the entry's persistence (the
   // appendMessage monitor) so it carries the real session entry id. A prompt
   // that fails before persisting echoes id-less from its catch — the message
-  // still surfaces next to its error.
-  pendingEchoes.push(text)
+  // still surfaces next to its error. Ticket 97: the attachments ride the
+  // pending echo so the failure path restores them too.
+  pendingEchoes.push({ text, ...(images !== undefined && images.length > 0 ? { images: imagePartsOf(images) } : {}) })
   try {
     agentSession.prompt(text, { images: toImageContents(images) }).catch((err: unknown) => {
       flushPendingEcho(text)
@@ -515,13 +538,21 @@ function handlePrompt(text: string, images?: ImageAttachment[]): void {
   }
 }
 
+/** Contract attachment shape (ticket 97): the prompt command's raw base64
+ * attachments become the echo's image parts — the same shape the replay
+ * projection builds from persisted content. */
+function imagePartsOf(images: readonly ImageAttachment[]): TranscriptImagePart[] {
+  return images.map((image) => ({ kind: 'image' as const, mimeType: image.mimeType, data: image.data }))
+}
+
 /** Echo a prompt whose entry never persisted — id-less (the renderer falls
- * back to its synthetic id). No-op when the monitor already relayed it. */
+ * back to its synthetic id). No-op when the monitor already relayed it.
+ * The pending echo's attachments (ticket 97) ride along. */
 function flushPendingEcho(text: string): void {
-  const index = pendingEchoes.indexOf(text)
+  const index = pendingEchoes.findIndex((echo) => echo.text === text)
   if (index === -1) return
-  pendingEchoes.splice(index, 1)
-  send({ type: 'user_message', text })
+  const [echo] = pendingEchoes.splice(index, 1)
+  send(userMessageEcho(echo.text, echo.images ?? [], undefined))
 }
 
 /** Explicit Steer: inject into the RUNNING turn (renderer chose the mode).

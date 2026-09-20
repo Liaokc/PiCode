@@ -5,6 +5,7 @@ import type { TranscriptItem } from '../../../shared/sessions/types'
 import TurnContainer from './TurnContainer'
 import TurnFileBar from './TurnFileBar'
 import AnswerBlock from './AnswerBlock'
+import UserBubble from './UserBubble'
 
 interface FollowViewProps {
   title: string
@@ -82,7 +83,12 @@ export default function FollowView({ title, items, live, onStop, onOpen }: Follo
           {turns.length === 0 && <div className="follow-empty">Waiting for activity in this session…</div>}
           {turns.map((turn) => (
             <div key={turn.id}>
-              {turn.user !== null && <div className="msg msg-user">{turn.userText}</div>}
+              {turn.user !== null && (
+                /* Ticket 97: the same composite bubble as the chat view —
+                   replayed entries project their image parts (ticket 79), so
+                   the skill segment and the thumbnail strip render here too. */
+                <UserBubble entry={turn.user} />
+              )}
               {turn.hasContainer && (
                 /* Ticket 55: same projection as the chat view, zero switches
                   — replayed pure-text turns own their "Worked" row too. */

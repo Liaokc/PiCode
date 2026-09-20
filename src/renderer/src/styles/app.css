@@ -4344,26 +4344,75 @@ button.heat:hover {
   gap: 6px;
 }
 
-.skill-marker-row {
+/* ---------- composite user bubble (ticket 97, spec R19) ----------
+   The bubble renders the Seam-1 model's segments in order: skill row →
+   user text → image thumbnail strip, combined by presence (skill-only
+   bubbles show the skill alone — the empty gray box is gone). The skill
+   row reuses the retired container marker's visual (wand + "Skill" +
+   name) but lives INSIDE the bubble: outside the fold, constant live and
+   settled. The image strip reuses the composer attachment geometry
+   (52px CSS-cropped thumbnails over the full-resolution payload) and the
+   ticket-91 preview overlay. */
+.msg-user-composite {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.user-skill-row {
   display: flex;
   align-items: center;
   gap: 7px;
-  height: 26px;
   font-size: 13px;
   color: var(--text-secondary);
-  padding: 0 6px;
-  margin-left: -6px;
 }
 
-.skill-marker-icon {
+.user-skill-icon {
   color: var(--text-faint);
+  flex: none;
 }
 
-.skill-marker-name {
+.user-skill-label {
+  color: var(--text-secondary);
+}
+
+.user-skill-name {
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.user-image-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.user-image-thumb {
+  display: block;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: none;
+  cursor: zoom-in;
+  flex: none;
+}
+
+.user-image-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.user-image-thumb:focus-visible {
+  outline: 2px solid var(--accent-orange);
+  outline-offset: 1px;
 }
 
 .spin {

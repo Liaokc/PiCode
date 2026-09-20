@@ -56,7 +56,7 @@ describe('turn grouping (groupTurns) — ticket 53 answer split', () => {
     const turn = turns[0]
     expect(turn.id).toBe('m0')
     expect(turn.user?.text).toBe('fix the bug')
-    expect(turn.skillName).toBeNull()
+    expect(turn.user?.skillName).toBeNull()
     expect(turn.answer?.text).toBe('All green.')
     expect(turn.pendingApproval).toBe(false)
   })
@@ -305,10 +305,14 @@ describe('turn grouping (groupTurns) — ticket 53 answer split', () => {
       USER('<skill name="grilling" location="~/.pi/agent/skills/grilling/SKILL.md">\nGrill the plan.\n</skill>\nNow go')
     )
     const turns = groupTurns(state.entries, false)
-    expect(turns[0].skillName).toBe('grilling')
-    expect(turns[0].hasWork).toBe(true)
-    // The injected prologue never shows in the bubble — the marker row carries
-    // it instead (ZCode evidence: clean user bubbles + skill row inside).
+    // Ticket 97: the SKILL STORY moved to the user bubble (the composite
+    // model reads it off the entry) — the group no longer carries it.
+    expect(turns[0].user?.skillName).toBe('grilling')
+    // The turn has no work items, so the container body is EMPTY — the
+    // retired marker no longer keeps it expandable.
+    expect(turns[0].hasWork).toBe(false)
+    // The injected prologue never shows in the bubble — the bubble's skill
+    // segment carries it instead (ZCode evidence: clean user bubbles).
     expect(turns[0].userText).toBe('Now go')
     expect(turns[0].user?.text).toContain('<skill name="grilling"')
   })
@@ -632,17 +636,20 @@ describe('worked container presence (groupTurns) — ticket 55, operator-approve
     expect(emptyHead.hasContainer).toBe(false)
   })
 
-  it('table · skill-only turn: the marker row is body content — the container stays expandable', () => {
+  it('table · skill-only turn: the marker retired (ticket 97) — the body is empty and inert', () => {
     const state = fold(
       initialChatState(),
       SESSION_CREATED,
       USER('<skill name="grilling" location="~/.pi/agent/skills/grilling/SKILL.md">\nGrill it.\n</skill>\nGo')
     )
     const [turn] = groupTurns(state.entries, false)
-    expect(turn.skillName).toBe('grilling')
+    expect(turn.user?.skillName).toBe('grilling')
     expect(turn.work).toEqual([])
-    expect(turn.hasWork).toBe(true) // body non-empty (the marker row)…
-    expect(turn.hasContainer).toBe(true) // …and the row, like every turn
+    // Ticket 97: the skill story lives in the BUBBLE now (live/settled,
+    // fold-proof) — the container body no longer holds a marker row, so the
+    // expandable ⇔ body-non-empty rule makes the row bare and inert.
+    expect(turn.hasWork).toBe(false)
+    expect(turn.hasContainer).toBe(true) // every turn with a user bubble owns its row
   })
 
   it('table · live HEAD turn keeps the ticket-23 live-shell behavior', () => {

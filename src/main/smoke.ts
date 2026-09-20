@@ -11272,6 +11272,202 @@ export function startSmokeIfEnabled(
     }
     log('edit_resend_done')
 
+    // ---- ticket 97: the composite user bubble — skill/text/image segments
+    // combined by presence, the retired container marker, the bubble
+    // thumbnail → ticket-91 preview, and the R14 defect scene (send with an
+    // image → Stop → Edit → composer restores the ORIGINAL TEXT + IMAGE
+    // immediately, no replay needed: the live echo carries the parts).
+    // Seeded file + resume = the ticket-79 driver; ONE real model turn
+    // supplies the live-with-image leg. ----
+    log('bubble_trio_start')
+    const bubbleProject97 = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-bubble97-'))
+    try {
+      const bubbleStore97 = process.env['PICODE_SESSION_DIR']
+      if (!bubbleStore97) fail('ticket-97 stage: PICODE_SESSION_DIR is not set')
+      const stamp97 = new Date().toISOString()
+      const bubbleFile97 = path.join(bubbleStore97, 'bubble97.jsonl')
+      const png97 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+      const skillPrologue97 = (name: string): string =>
+        `<skill name="${name}" location="${path.join(bubbleProject97, 'SKILL.md')}">\nSkill body.\n</skill>\n`
+      writeFileSync(
+        bubbleFile97,
+        [
+          JSON.stringify({ type: 'session', version: 3, id: 'bubble97-electron-id', timestamp: stamp97, cwd: bubbleProject97 }),
+          // u1: SKILL-ONLY message — the stripped text is empty, so the bubble
+          // must show the skill segment alone (the pre-97 empty gray box is gone).
+          JSON.stringify({
+            type: 'message', id: 'b97-u1', parentId: null, timestamp: stamp97,
+            message: { role: 'user', content: [{ type: 'text', text: skillPrologue97('implement') }] }
+          }),
+          JSON.stringify({
+            type: 'message', id: 'b97-a1', parentId: 'b97-u1', timestamp: stamp97,
+            message: { role: 'assistant', content: [{ type: 'text', text: 'PICODE_97 skill-only reply' }], stopReason: 'stop' }
+          }),
+          // u2: SKILL + TEXT — both segments render.
+          JSON.stringify({
+            type: 'message', id: 'b97-u2', parentId: 'b97-a1', timestamp: stamp97,
+            message: { role: 'user', content: [{ type: 'text', text: `${skillPrologue97('grilling')}PICODE_97 skill and text together` }] }
+          }),
+          JSON.stringify({
+            type: 'message', id: 'b97-a2', parentId: 'b97-u2', timestamp: stamp97,
+            message: { role: 'assistant', content: [{ type: 'text', text: 'PICODE_97 second reply' }], stopReason: 'stop' }
+          }),
+          // u3: TEXT + IMAGE — the thumbnail strip renders (ticket-79 replay
+          // projection feeds it).
+          JSON.stringify({
+            type: 'message', id: 'b97-u3', parentId: 'b97-a2', timestamp: stamp97,
+            message: { role: 'user', content: [
+              { type: 'text', text: 'PICODE_97 check this shot' },
+              { type: 'image', data: png97, mimeType: 'image/png' }
+            ] }
+          }),
+          JSON.stringify({
+            type: 'message', id: 'b97-a3', parentId: 'b97-u3', timestamp: stamp97,
+            message: { role: 'assistant', content: [{ type: 'text', text: 'PICODE_97 third reply' }], stopReason: 'stop' }
+          })
+        ].join('\n') + '\n'
+      )
+
+      supervisor.handleParentCommand({ type: 'resume_session', sessionFile: bubbleFile97, cwd: bubbleProject97 })
+      const created97 = (await waitFor(
+        (e) => e.type === 'session_created' && e.sessionFile === bubbleFile97,
+        'ticket-97 resume session_created'
+      )) as Extract<Scoped, { type: 'session_created' }>
+      const bubbleSessionId = created97.sessionId
+      await waitFor((e) => e.type === 'history_loaded' && e.sessionId === bubbleSessionId, 'ticket-97 resume replay')
+
+      await withWindow(getWindow, async (win) => {
+        const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+        const userBlocks97 = (): string => `document.querySelectorAll('.chat-thread > .msg-user-block').length`
+        const blockShape97 = `(() => {
+          const blocks = [...document.querySelectorAll('.chat-thread > .msg-user-block')]
+          return JSON.stringify(blocks.map((b) => ({
+            skill: b.querySelectorAll('.user-skill-row').length,
+            text: b.querySelectorAll('.user-bubble-text').length,
+            thumbs: b.querySelectorAll('.user-image-thumb').length
+          })))
+        })()`
+
+        if (!(await waitForProbe(win, `document.querySelector('.chat-view') !== null`, 10_000))) {
+          fail('ticket-97 stage: the resumed session never reached the chat view')
+        }
+        if (!(await waitForProbe(win, `${userBlocks97()} === 3`, 10_000))) {
+          fail('ticket-97 stage: the three seeded user blocks never rendered')
+        }
+
+        // ① The composition table in the live DOM: skill-only / skill+text /
+        // text+image — and the RETIRED MARKER absent from the whole thread
+        // (also with every container open).
+        const shapes97 = JSON.parse(String(await js(blockShape97))) as { skill: number; text: number; thumbs: number }[]
+        if (JSON.stringify(shapes97) !== JSON.stringify([
+          { skill: 1, text: 0, thumbs: 0 },
+          { skill: 1, text: 1, thumbs: 0 },
+          { skill: 0, text: 1, thumbs: 1 }
+        ])) {
+          fail(`ticket-97 stage: the composite bubble table broke, got ${JSON.stringify(shapes97)}`)
+        }
+        await openAllTurnContainers(win)
+        const markers97 = (await js(`document.querySelectorAll('.skill-marker-row').length`)) as number
+        if (markers97 !== 0) fail(`ticket-97 stage: the retired skill marker rendered ${markers97}× inside containers`)
+        log('bubble_composition_ok')
+
+        // ② The bubble thumbnail opens the ticket-91 preview; Escape closes.
+        await js(
+          `document.querySelectorAll('.chat-thread .user-image-thumb')[0]?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
+        )
+        if (!(await waitForProbe(win, `document.querySelector('.image-preview-backdrop') !== null`, 5_000))) {
+          fail('ticket-97 stage: the bubble thumbnail click never opened the preview overlay')
+        }
+        await js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); true`)
+        if (!(await waitForProbe(win, `document.querySelector('.image-preview-backdrop') === null`, 5_000))) {
+          fail('ticket-97 stage: Escape never closed the bubble preview overlay')
+        }
+        log('bubble_thumb_preview_ok')
+
+        // ③ THE R14 DEFECT SCENE: send a message with a pasted image (real
+        // model turn), watch the live echo carry the images (the additive
+        // contract field), Stop mid-run, then Edit — the composer must hold
+        // the original text AND the restored attachment IMMEDIATELY (no
+        // replay wait — the pre-97 echo dropped the parts).
+        const pasted97 = (await js(`(() => {
+          const ta = document.querySelector('.composer-input')
+          if (!(ta instanceof HTMLTextAreaElement)) return false
+          const bytes = Uint8Array.from(atob(${JSON.stringify(png97)}), (c) => c.charCodeAt(0))
+          const dt = new DataTransfer()
+          dt.items.add(new File([bytes], 'picode97-live.png', { type: 'image/png' }))
+          ta.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+          return true
+        })()`)) as boolean
+        if (!pasted97) fail('ticket-97 stage: the composer textarea is missing for the live image paste')
+        if (!(await waitForProbe(win, `document.querySelectorAll('.composer-attachments figure').length === 1`, 10_000))) {
+          fail('ticket-97 stage: the pasted live image never rendered an attachment card')
+        }
+        const LIVE_TEXT_97 = 'PICODE_97 live shot — reply with exactly: PICODE_97_LIVE_ACK'
+        const liveEcho97 = waitFor(
+          (e) => e.type === 'user_message' && e.sessionId === bubbleSessionId && Array.isArray(e.images) && e.images.length === 1,
+          'ticket-97 live echo with images'
+        )
+        const liveStart97 = waitFor((e) => e.type === 'agent_start' && e.sessionId === bubbleSessionId, 'ticket-97 live agent_start')
+        if (!(await js(composerTypeJs(LIVE_TEXT_97)).catch(() => false))) {
+          fail('ticket-97 stage: the composer textarea is missing for the live send')
+        }
+        await js(composerKeyJs('Enter'))
+        await liveEcho97
+        await liveStart97
+        // The LIVE bubble shows its thumbnail immediately (the echo's parts
+        // landed on the live entry — R14 reducer accounting).
+        if (!(await waitForProbe(win, `${userBlocks97()} === 4`, 10_000))) {
+          fail('ticket-97 stage: the live user block never rendered')
+        }
+        const liveThumbs97 = (await js(
+          `[...document.querySelectorAll('.chat-thread > .msg-user-block')].map((b) => b.querySelectorAll('.user-image-thumb').length).join(',')`
+        )) as string
+        if (liveThumbs97 !== '0,0,1,1') {
+          fail(`ticket-97 stage: the live bubble never showed its thumbnail from the echo (thumbs: ${liveThumbs97})`)
+        }
+        log('bubble_live_echo_images_ok')
+
+        // Stop mid-run (the defect scene's Stop) — the settle brings Edit back.
+        await js(`document.querySelector('.cmp-stop')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
+        await waitFor((e) => e.type === 'agent_end' && e.sessionId === bubbleSessionId, 'ticket-97 stop agent_end')
+        if (!(await waitForProbe(win, `document.querySelector('.cmp-send') !== null`, 15_000))) {
+          fail('ticket-97 stage: the composer never left the busy state after the Stop')
+        }
+
+        // Edit the live message: composer restores the original text + image.
+        const clickEdit97 = `(() => {
+          const blocks = document.querySelectorAll('.chat-thread > .msg-user-block')
+          const block = blocks[blocks.length - 1]
+          if (!(block instanceof HTMLElement)) return false
+          const btn = [...block.querySelectorAll('.msg-action-btn')].find((b) => b.textContent?.includes('Edit'))
+          if (!(btn instanceof HTMLElement)) return false
+          btn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+          return true
+        })()`
+        if (!((await js(clickEdit97)) as boolean)) fail('ticket-97 stage: the live user row never rendered Edit after the Stop')
+        const restored97 = await waitForProbe(
+          win,
+          `(() => {
+            const ta = document.querySelector('.composer-input')
+            return ta instanceof HTMLTextAreaElement && ta.value === ${JSON.stringify(LIVE_TEXT_97)} &&
+              document.querySelectorAll('.composer-attachments figure').length === 1
+          })()`,
+          10_000
+        )
+        if (!restored97) {
+          const diag = (await js(`JSON.stringify({
+            value: document.querySelector('.composer-input')?.value ?? null,
+            figures: document.querySelectorAll('.composer-attachments figure').length
+          })`).catch(() => 'diag-failed')) as string
+          fail(`ticket-97 stage: the Stop→Edit restore never brought back the original text + image — ${diag}`)
+        }
+        log('bubble_edit_with_images_ok')
+      })
+    } finally {
+      rmSync(bubbleProject97, { recursive: true, force: true })
+    }
+    log('bubble_trio_done')
+
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
     const livePids = supervisor.hostPids
     if (livePids.length < 2) fail(`expected at least 2 live hosts before quit, saw ${livePids.length}`)

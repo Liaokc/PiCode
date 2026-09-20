@@ -17,7 +17,7 @@
  */
 import type { SessionDefaults } from './preferences.ts'
 import type { McpRuntimeStatus, McpServerStatusData, McpStatusSnapshotData } from './mcp-status.ts'
-import type { SessionTreePayload, TranscriptItem } from './sessions/types.ts'
+import type { SessionTreePayload, TranscriptImagePart, TranscriptItem } from './sessions/types.ts'
 import type { SubagentCallInfo, SubagentFleetDTO, SubagentRunState } from './subagents/types.ts'
 import type { UsageTokens } from './usage/types.ts'
 
@@ -213,8 +213,14 @@ export type SessionScopedEvent =
   /** Echo of a prompt accepted by the host, before the agent starts.
    * `entryId` (ticket 51, additive): the real session entry id, present when
    * the host relayed the message at its persistence moment; absent → the
-   * renderer falls back to its synthetic positional id. */
-  | { type: 'user_message'; text: string; entryId?: string }
+   * renderer falls back to its synthetic positional id. `images`
+   * (ticket 97, additive, reported into the host-contract smoke): the
+   * persisted message's inline image parts, in content order — present only
+   * on messages that carry images (prompt AND delivered steer/follow-up
+   * echoes alike); absent → imageless messages keep the exact pre-97 event
+   * shape. Feeds the live bubble's thumbnail strip and the edit-resend
+   * prefill (the images no longer wait for the next replay). */
+  | { type: 'user_message'; text: string; entryId?: string; images?: TranscriptImagePart[] }
   /** The agent began processing a run (one prompt, possibly many turns). */
   | { type: 'agent_start' }
   /** A new assistant message opened inside the running agent turn. */

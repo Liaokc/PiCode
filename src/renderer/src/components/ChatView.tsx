@@ -12,6 +12,7 @@ import TurnFileBar from './TurnFileBar'
 import AnswerBlock from './AnswerBlock'
 import MessageActions from './MessageActions'
 import Tooltip from './Tooltip'
+import UserBubble from './UserBubble'
 import { ChevronDownIcon, GitBranchIcon, PencilIcon } from './icons'
 
 interface ChatViewProps {
@@ -337,9 +338,12 @@ export default function ChatView({
                     the raw message as sent (the display text already strips the
                     injected skill prologue); no Fork — that anchor lives on
                     assistant entries. `data-turn-id` is the navigator rail's
-                    scroll/anchor hook (ticket 46). */
+                    scroll/anchor hook (ticket 46). Ticket 97: the bubble is a
+                    COMPOSITE (skill + text + image thumbnails, presence
+                    composition — the Seam-1 model decides); the skill story
+                    lives here now, no longer inside the container. */
                   <div className="msg-user-block" data-turn-id={turn.id}>
-                    <div className="msg msg-user">{turn.userText}</div>
+                    <UserBubble entry={turn.user} />
                     {/* Ticket 79: Edit joins the persistent row — hidden while
                         the agent runs (agentRunning) and back the moment the
                         agent_end settle lands (derived, no extra state). */}
