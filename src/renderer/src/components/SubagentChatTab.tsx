@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } from 'react'
 import { replayEntry } from '../../../shared/chat-reducer'
 import { groupTurns } from '../../../shared/turn-collapse'
 import { isNearBottom, nextHeldAway, nextSendLatch, shouldAutoScroll } from '../../../shared/scroll-stay'
@@ -14,6 +14,7 @@ import { subagentChatStore } from './subagent-chat-store'
 import TurnContainer from './TurnContainer'
 import AnswerBlock from './AnswerBlock'
 import UserBubble from './UserBubble'
+import MessageActions from './MessageActions'
 import { ArrowUpIcon, ChevronDownIcon, LoaderIcon, PulseIcon } from './icons'
 
 interface SubagentChatTabProps {
@@ -248,13 +249,27 @@ export default function SubagentChatTab({ sessionId, row, onSteer }: SubagentCha
                 {turns.map((turn) => {
                   const open = turn.live ? !collapsedLive.has(turn.id) : openTurns.has(turn.id)
                   return (
-                    <div key={turn.id}>
-                      {turn.user !== null && <UserBubble entry={turn.user} />}
+                    /* A Fragment, not a wrapper div: the user row's
+                       msg-user-block right-alignment is an align-self against
+                       the .chat-thread flex container — an intermediate block
+                       would cut the flex context and the input would hug the
+                       panel's LEFT edge again. The ChatView projection is the
+                       same shape. */
+                    <Fragment key={turn.id}>
+                      {turn.user !== null && (
+                        /* Copy-only actions: the main row's Edit targets the
+                           ACTIVE session's leaf, which a child transcript
+                           must never touch. */
+                        <div className="msg-user-block">
+                          <UserBubble entry={turn.user} />
+                          <MessageActions text={turn.userText} showTime={false} />
+                        </div>
+                      )}
                       {turn.hasContainer && (
                         <TurnContainer turn={turn} open={open} onToggle={() => toggleTurn(turn.id, turn.live)} scrollRef={scrollRef} />
                       )}
                       {turn.answer !== null && <AnswerBlock turn={turn} />}
-                    </div>
+                    </Fragment>
                   )
                 })}
                 {receipts.length > 0 && (

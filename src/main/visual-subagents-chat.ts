@@ -191,12 +191,27 @@ export function startSubagentChatVisualIfEnabled(getWindow: () => BrowserWindow 
       }
       const runningHead = (await js(`(() => ({
         state: document.querySelector('.subchat-head-state')?.textContent ?? '',
-        turns: document.querySelectorAll('[data-testid="subagent-chat-tab"] .chat-thread > div').length
-      }))()`)) as { state: string; turns: number }
+        turns: document.querySelectorAll('[data-testid="subagent-chat-tab"] .chat-thread > div').length,
+        // The user bubble must hug the thread's RIGHT edge (the main
+        // transcript's msg-user-block alignment) — a regression here means
+        // the wrapper was lost and the input hugs the left again.
+        bubble: (() => {
+          const b = document.querySelector('[data-testid="subagent-chat-tab"] .msg-user-block .msg-user')
+          const t = document.querySelector('[data-testid="subagent-chat-tab"] .chat-thread')
+          if (b === null || t === null) return null
+          const bb = b.getBoundingClientRect()
+          const tb = t.getBoundingClientRect()
+          return { rightGap: Math.round(tb.right - bb.right), leftGap: Math.round(bb.left - tb.left) }
+        })()
+      }))()`)) as { state: string; turns: number; bubble: { rightGap: number; leftGap: number } | null }
       assert(runningHead.state === 'running', `the head chip must read running, saw ${runningHead.state}`)
       // The child fixture is one turn (user + assistant) — the same
       // groupTurns projection the main transcript renders.
       assert(runningHead.turns >= 1, `the child transcript must hold the fixture turn, saw ${runningHead.turns}`)
+      assert(
+        runningHead.bubble !== null && runningHead.bubble.rightGap <= 2 && runningHead.bubble.rightGap < runningHead.bubble.leftGap,
+        `the user bubble must right-align in the conversation tab, got ${JSON.stringify(runningHead.bubble)}`
+      )
       await capture(win, 's99-1-chat')
 
       // ---- s99-2: the child file grows → the live entry lands (real tail) ----
