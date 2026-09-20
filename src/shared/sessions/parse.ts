@@ -274,12 +274,14 @@ export function toolCalls(content: unknown): ToolCallPart[] {
   return calls
 }
 
-/** Inline base64 image blocks of a user message content value (ticket 79,
- * additive projection): the edit-resend prefill's raw material — the session
- * file records ImageContent inline in user message content, so the restore
- * reads it directly. Only well-formed blocks project; anything else is
- * skipped so the field can never carry a half-shaped part. */
-function userImageParts(content: unknown): TranscriptImagePart[] {
+/** Inline base64 image blocks of a user message content value (tickets
+ * 79+97, additive projection): the edit-resend prefill's raw material AND
+ * the live echo's — the session file records ImageContent inline in user
+ * message content, so both the replay and the live `user_message` echo
+ * read it through this ONE projection (identical shapes guaranteed).
+ * Only well-formed blocks project; anything else is skipped so the field
+ * can never carry a half-shaped part. */
+export function userImageParts(content: unknown): TranscriptImagePart[] {
   if (!Array.isArray(content)) return []
   const parts: TranscriptImagePart[] = []
   for (const part of content) {

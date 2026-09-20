@@ -5,7 +5,10 @@
  *
  *   Round A (fresh session)
  *   session_created → composer_state + models_available + slash_commands
- *   → prompt → agent_start → text_delta… → abort → agent_end
+ *   → prompt (WITH an image, ticket 97报备) → agent_start → text_delta… →
+ *   abort → agent_end (the echo projected its image parts; the imageless
+ *   round-2 echo stays field-absent; the delivered steer's echo projects
+ *   its parts too — steer/follow-up 同修)
  *   → prompt → approval_required (gate) → approve+remember → tool_start
  *   → tool_update? → tool_end → agent_end
  *   → prompt → NO approval_required (remembered) → tool_end → agent_end
@@ -93,6 +96,13 @@ const SMOKE_LABEL = 'PICODE_SMOKE_RENAMED'
 // once the isolated store is settled below).
 const STAMP_79 = '2026-09-14T10:00:00.000Z'
 const EDIT79_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+// Ticket 97报备: the same real decodable 1×1 PNG rides the live prompt (and
+// the steer) so the additive user_message echo images projection is proven
+// against the real persistence path, not a fixture.
+const T97_PNG = EDIT79_PNG
+/** Ticket 97报备 ledger: per-echo images presence — the echo text keys which
+ * prompt/steer an echo belongs to. */
+const echo97 = { withImages: [], imageless: [] }
 let edit79File = ''
 
 // Ticket 90 round H: the seeded subagent-bridge fixture + its throwaway
@@ -586,7 +596,32 @@ function onEvent(event) {
   if (fatal.has(event.type)) fail(`${event.type}: ${event.message}`)
   // Ticket 03 coverage: these arrive around the step transitions, so count
   // them globally (never asserted — model-dependent — only reported).
-  if (event.type === 'user_message') seen.user_message++
+  if (event.type === 'user_message') {
+    seen.user_message++
+    // Ticket 97报备: shape-validate the additive images projection on EVERY
+    // echo — a carried field must be a non-empty array of well-formed image
+    // parts; the imageless shape stays field-absent (tracked per-echo text
+    // so the round steps can assert presence/absence per prompt). An old
+    // host without the field would validate unchanged (absent → imageless
+    // ledger, the additive discipline).
+    if (event.images !== undefined) {
+      if (!Array.isArray(event.images) || event.images.length === 0) {
+        fail('ticket-97: a user_message echo carrying images must carry a non-empty array')
+      }
+      for (const part of event.images) {
+        if (
+          part?.kind !== 'image' ||
+          typeof part.mimeType !== 'string' || part.mimeType === '' ||
+          typeof part.data !== 'string' || part.data === ''
+        ) {
+          fail(`ticket-97: malformed image part in a user_message echo: ${JSON.stringify(part)}`)
+        }
+      }
+      echo97.withImages.push(event.text)
+    } else {
+      echo97.imageless.push(event.text)
+    }
+  }
   if (event.type === 'thinking_delta') seen.thinking_delta++
   if (event.type === 'approval_required') seen.approval_required++
   if (event.type === 'queue_update') seen.queue_update++
@@ -641,7 +676,14 @@ function onEvent(event) {
         if (totalModels === 0) fail('models_available lists no models')
         console.log(`SMOKE composer push ok (${providersCache.length} provider(s), ${thinkingLevelsCache.length} thinking levels)`)
         step = 'A agent_start 1'
-        child.send({ type: 'prompt', text: 'Count slowly from one to twenty, one number per sentence.' })
+        // Ticket 97报备: the round-1 prompt CARRIES an image so the live
+        // echo's additive projection (persisted content → parts) is proven
+        // on the real path; the assertion lands at 'A agent_end 1'.
+        child.send({
+          type: 'prompt',
+          text: 'Count slowly from one to twenty, one number per sentence.',
+          images: [{ mimeType: 'image/png', data: T97_PNG }]
+        })
       }
       return
     }
@@ -669,6 +711,12 @@ function onEvent(event) {
       seen.agent_end++
       if (seen.text_delta < 3) fail('fewer than 3 text deltas before abort')
       if (seen.approval_required !== 0) fail('text-only round must not trigger the approval gate')
+      // Ticket 97报备: the image-carrying prompt's echo must have projected
+      // its image parts by the run's end (persistence precedes streaming).
+      if (!echo97.withImages.some((text) => text.includes('Count slowly from one to twenty'))) {
+        fail('ticket-97: the image-carrying prompt echo never carried its images (R14 live accounting)')
+      }
+      console.log('SMOKE ticket-97 prompt echo images ok (persisted content → parts on the live echo)')
       console.log('SMOKE abort ok — streaming round 2 (tool round through the approval gate)')
       step = 'A agent_start 2'
       child.send({
@@ -728,6 +776,16 @@ function onEvent(event) {
         if (seen.approval_required < 1) fail('the gate never asked before the first bash call')
         if (seen.tool_start < 1) fail('no tool_start in the tool round')
         if (!toolRoundSucceeded) fail('no successful tool_end in the tool round')
+        // Ticket 97报备: the imageless round-2 prompt's echo must have kept
+        // the EXACT pre-97 event shape — no images field at all (additive
+        // discipline: absence, not an empty array).
+        if (echo97.imageless.some((text) => text.includes('picode_tool_round')) === false) {
+          fail('ticket-97: the imageless prompt echo never surfaced (relay broken?)')
+        }
+        if (echo97.withImages.some((text) => text.includes('picode_tool_round'))) {
+          fail('ticket-97: an imageless prompt echo must keep the old shape (no images field)')
+        }
+        console.log('SMOKE ticket-97 imageless echo shape ok (field absent, pre-97 shape intact)')
         console.log(`SMOKE gated tool round ok: ${JSON.stringify({ tool_start: seen.tool_start, tool_update: seen.tool_update, tool_end: seen.tool_end, approval_required: seen.approval_required })}`)
         console.log('SMOKE remember round: same tool should not ask again')
         step = 'A agent_start 3'
@@ -901,7 +959,10 @@ function onEvent(event) {
       if (event.type === 'agent_start') {
         seen.agent_start++
         step = 'A queue steer'
-        child.send({ type: 'steer_prompt', text: 'Skip ahead — jump straight to fifty.' })
+        // Ticket 97报备: the steer carries an image — its DELIVERY echo (the
+        // persistence monitor's relay) must project the parts too (steer
+        // echo 同修). Asserted at 'A queue settle'.
+        child.send({ type: 'steer_prompt', text: 'Skip ahead — jump straight to fifty.', images: [{ mimeType: 'image/png', data: T97_PNG }] })
       }
       return
     }
@@ -943,6 +1004,12 @@ function onEvent(event) {
       // The run settles (steered + follow-up round may still produce text).
       if (event.type === 'agent_end') {
         seen.agent_end++
+        // Ticket 97报备: the delivered steer's echo projected its image
+        // parts (the delivery relay reads the persisted content).
+        if (!echo97.withImages.some((text) => text.includes('jump straight to fifty'))) {
+          fail('ticket-97: the delivered steer echo never carried its images (steer 同修 broken)')
+        }
+        console.log('SMOKE ticket-97 steer delivery echo images ok (persisted delivery → parts)')
         console.log('SMOKE queue round ok')
         console.log('SMOKE composer controls: thinking level, model, file list')
         step = 'A thinking set'

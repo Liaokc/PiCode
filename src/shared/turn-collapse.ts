@@ -1,10 +1,10 @@
 /**
  * Turn-collapse model (ticket 23, split rules revised by tickets 53 and 56,
- * container permanence by ticket 55, live chronology by ticket 82): the
- * transcript folds each turn's work — thinking rows, tool cards, approval
- * pills, skill marker and (settled only) interim narration — into a single
- * "Working · Ns" / "Worked · Ns" container row. ZCode-evidence behavior with
- * ONE operator-approved deviation (ticket 55):
+ * container permanence by ticket 55, live chronology by ticket 82, skill
+ * marker retirement by ticket 97): the transcript folds each turn's work —
+ * thinking rows, tool cards, approval pills and (settled only) interim
+ * narration — into a single "Working · Ns" / "Worked · Ns" container row.
+ * ZCode-evidence behavior with ONE operator-approved deviation (ticket 55):
  *
  *   - turn boundary = the user message; everything after it (thinking, tools,
  *     approvals, assistant text) belongs to that turn;
@@ -58,9 +58,10 @@ const SKILL_PROLOGUE = new RegExp('^<skill name="[^"]+" location="[^"]*">[\\r\\n
 
 /**
  * Display text for the user bubble: the raw message minus the sniffed skill
- * injection prologue — the container's skill marker row carries that story,
- * so the bubble shows only what the user actually typed (ZCode evidence:
- * clean bubbles). Defensive: any mismatch leaves the raw text untouched.
+ * injection prologue — the bubble's skill segment carries that story (ticket
+ * 97: the retired container marker moved into the composite bubble), so the
+ * bubble shows only what the user actually typed (ZCode evidence: clean
+ * bubbles). Defensive: any mismatch leaves the raw text untouched.
  */
 export function stripSkillPrologue(text: string, skillName: string | null): string {
   if (skillName === null) return text
@@ -94,11 +95,10 @@ export interface TurnGroup {
   /** Stable turn id — the boundary user entry's id (HEAD_TURN_ID for the
    * defensive head segment). React key + expansion-set key. */
   id: string
-  /** The boundary user message; null only for the head segment. */
+  /** The boundary user message; null only for the head segment. The bubble
+   * composition (ticket 97) reads the skill story and the image parts off
+   * this entry — the group carries no copies. */
   user: UserEntry | null
-  /** Skill name sniffed from the user message's injected `<skill>` prologue;
-   * rendered as the marker row inside the container. */
-  skillName: string | null
   /** Bubble display text: the raw user message with the skill prologue
    * stripped (raw text stays on the entry — display-only derivation). */
   userText: string
@@ -145,10 +145,12 @@ export interface TurnGroup {
    * live (ticket 82) every pill is inside the stream, so a gate ask always
    * re-engages the open — even over a manual mid-stream collapse. */
   pendingApproval: boolean
-  /** The container BODY holds foldable content: the skill marker or at least
-   * one work item (after-answer rows don't count — they render without the
-   * container, ticket 56). Doubles as the ticket-55 empty-body flag: 可展开 ⇔ hasWork
-   * — a zero-work turn's container is a bare, non-expandable row. */
+  /** The container BODY holds foldable content: at least one work item
+   * (after-answer rows don't count — they render without the container,
+   * ticket 56). Doubles as the ticket-55 empty-body flag: 可展开 ⇔ hasWork
+   * — a zero-work turn's container is a bare, non-expandable row. Ticket 97:
+   * the skill story moved to the user bubble, so a skill no longer counts —
+   * the retired marker was the last body content a skill-only turn had. */
   hasWork: boolean
   /** The container ROW renders at all (ticket 55, operator-approved ZCode
    * deviation — ZCode drops the row for zero-work turns, the operator ruled
@@ -171,7 +173,6 @@ type RawItem =
 interface TurnDraft {
   id: string
   user: UserEntry | null
-  skillName: string | null
   userText: string
   raw: RawItem[]
   /** Ordinal for the next assistant part inside this turn. Part keys are
@@ -254,7 +255,6 @@ export function groupTurns(entries: ChatEntry[], agentRunning: boolean): TurnGro
       current = {
         id: entry.id,
         user: entry,
-        skillName: entry.skillName,
         userText: stripSkillPrologue(entry.text, entry.skillName),
         raw: [],
         nextPartIndex: 0
@@ -266,7 +266,6 @@ export function groupTurns(entries: ChatEntry[], agentRunning: boolean): TurnGro
       current = {
         id: HEAD_TURN_ID,
         user: null,
-        skillName: null,
         userText: '',
         raw: [],
         nextPartIndex: 0
@@ -320,7 +319,6 @@ export function groupTurns(entries: ChatEntry[], agentRunning: boolean): TurnGro
     return {
       id: draft.id,
       user: draft.user,
-      skillName: draft.skillName,
       userText: draft.userText,
       work,
       answer,
@@ -334,8 +332,10 @@ export function groupTurns(entries: ChatEntry[], agentRunning: boolean): TurnGro
       // must not force the container (otherwise the fold opened for it would
       // slam shut on the decision, jumping the two-state slot).
       pendingApproval: work.some((item) => item.kind === 'approval' && item.entry.state === 'pending'),
-      hasWork: draft.skillName !== null || work.length > 0,
-      hasContainer: draft.user !== null || draft.skillName !== null || work.length > 0 || live
+      // Ticket 97: the skill story lives in the user bubble — only real work
+      // items keep the body expandable.
+      hasWork: work.length > 0,
+      hasContainer: draft.user !== null || work.length > 0 || live
     }
   })
   return groups

@@ -144,7 +144,10 @@ async function capture(win: BrowserWindow, name: string): Promise<string> {
       toolOpen: document.querySelectorAll('.tool-card-open').length,
       turns: document.querySelectorAll('.turn-container').length,
       turnsOpen: document.querySelectorAll('.turn-container-open').length,
-      skills: document.querySelectorAll('.skill-marker-row').length,
+      // Ticket 97: the skill story renders in the user BUBBLE now — the
+      // retired container marker (.skill-marker-row) must stay at zero.
+      skills: document.querySelectorAll('.user-skill-row').length,
+      markers: document.querySelectorAll('.skill-marker-row').length,
       banner: document.querySelectorAll('.error-banner').length,
       previewMd: document.querySelectorAll('.preview-md').length,
       previewCrumbs: document.querySelectorAll('.preview-crumb').length,
@@ -864,16 +867,23 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
       await sleep(300)
       const openedSig = (await win.webContents.executeJavaScript(
         `(() => ({
-          skills: document.querySelectorAll('.skill-marker-row').length,
+          // Ticket 97: the container marker is retired — the skill story
+          // lives in the user bubble; the body must hold ZERO marker rows
+          // even with every container opened, and the bubble must carry the
+          // skill segment instead.
+          skills: document.querySelectorAll('.user-skill-row').length,
+          markers: document.querySelectorAll('.skill-marker-row').length,
           thinkingRows: document.querySelectorAll('.thinking-row').length,
           thinkingOpen: document.querySelectorAll('.thinking-row-open').length,
           thinkingDurations: document.querySelectorAll('.thinking-row .thinking-row-duration').length,
           tools: document.querySelectorAll('.tool-card').length,
           toolErrors: document.querySelectorAll('.tool-card-error').length
         }))()`
-      )) as { skills: number; thinkingRows: number; thinkingOpen: number; thinkingDurations: number; tools: number; toolErrors: number }
-      if (openedSig.skills !== 1) {
-        throw new Error(`visual 3c-replayed: expected exactly one skill marker row ${JSON.stringify(openedSig)}`)
+      )) as { skills: number; markers: number; thinkingRows: number; thinkingOpen: number; thinkingDurations: number; tools: number; toolErrors: number }
+      if (openedSig.skills !== 1 || openedSig.markers !== 0) {
+        throw new Error(
+          `visual 3c-replayed: expected the skill story in the bubble and zero retired markers ${JSON.stringify(openedSig)}`
+        )
       }
       if (openedSig.thinkingRows < 3 || openedSig.tools < 2 || openedSig.toolErrors !== 1) {
         throw new Error(`visual 3c-replayed: unexpected replay signature ${JSON.stringify(openedSig)}`)

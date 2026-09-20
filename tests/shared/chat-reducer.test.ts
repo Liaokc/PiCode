@@ -101,6 +101,24 @@ describe('chatReducer — streaming turn', () => {
     expect(state.entries).toEqual([{ id: 'm0', role: 'user', text: 'hi there', skillName: null }])
   })
 
+  it('ticket 97: the echo\'s images ride onto the live entry (Edit-with-images restore)', () => {
+    const images = [{ kind: 'image' as const, mimeType: 'image/png', data: 'AAAA' }]
+    const state = run(initialChatState(), SESSION_CREATED, { type: 'user_message', text: 'with a shot', images })
+    expect(state.entries).toEqual([{ id: 'm0', role: 'user', text: 'with a shot', skillName: null, images }])
+  })
+
+  it('ticket 97: an imageless echo keeps the pre-97 entry shape (images field ABSENT)', () => {
+    const state = run(initialChatState(), SESSION_CREATED, { type: 'user_message', text: 'plain' })
+    expect(state.entries).toEqual([{ id: 'm0', role: 'user', text: 'plain', skillName: null }])
+    expect('images' in state.entries[0]).toBe(false)
+  })
+
+  it('ticket 97: an EMPTY images array is treated as absent — the entry shape stays unchanged', () => {
+    const state = run(initialChatState(), SESSION_CREATED, { type: 'user_message', text: 'plain', images: [] })
+    expect(state.entries).toEqual([{ id: 'm0', role: 'user', text: 'plain', skillName: null }])
+    expect('images' in state.entries[0]).toBe(false)
+  })
+
   it('streams text deltas into one assistant entry and settles on agent_end', () => {
     const state = run(initialChatState(), SESSION_CREATED, ...streamedTurn(' there'))
     expect(state.entries).toEqual([

@@ -2,7 +2,7 @@ import { memo, useRef, type JSX, type RefObject } from 'react'
 import type { TurnGroup, TurnWorkItem } from '../../../shared/turn-collapse'
 import { useElapsedSeconds } from './use-elapsed-seconds'
 import { useFoldAnchor } from './use-fold-anchor'
-import { ChevronDownIcon, ChevronRightIcon, LoaderIcon, WandIcon } from './icons'
+import { ChevronDownIcon, ChevronRightIcon, LoaderIcon } from './icons'
 import ApprovalPill from './ApprovalPill'
 import Markdown from './Markdown'
 import NarrationRow from './NarrationRow'
@@ -181,13 +181,11 @@ export default function TurnContainer({
       </button>
       {expandable && open && (
         <div className="turn-container-body">
-          {turn.skillName !== null && (
-            <div className="skill-marker-row">
-              <WandIcon size={13} className="skill-marker-icon" />
-              <span className="skill-marker-label">Skill</span>
-              <span className="skill-marker-name">{turn.skillName}</span>
-            </div>
-          )}
+          {/* Ticket 97: the skill marker row is RETIRED — the skill story
+              lives in the user bubble now (composite block, outside the
+              fold, live/settled constant); rendering it here too would
+              double-show it. A skill-only turn's body is empty, so its
+              container is a bare inert row (hasWork rule). */}
           <TurnWorkRows
             items={turn.work}
             onOpenFile={onOpenFile}
