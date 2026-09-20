@@ -360,6 +360,26 @@ kbd {
   flex: 1;
 }
 
+/* Section-row resident action pair (ticket 95): Collapse all / Expand all
+   on the Projects section row — the spot the section-row grip vacated
+   (ticket 84). Always visible (常驻), unlike the hover-revealed group
+   actions; toned down to the label's weight until hovered. */
+.sb-section-action {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.sb-section-action:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
 .sb-task,
 .sb-group-header,
 .sb-show-more {

@@ -16,6 +16,18 @@
  *   5. The second step reaches ALL 12 — the control flips to "Show less".
  *   6. "Show less" resets to the initial five in ONE click.
  *
+ * Ticket 95 adds the section row's aggregate pair (a SECOND seeded group
+ * of 3 makes the aggregate real — 多组):
+ *
+ *   7. The Projects section row renders BOTH resident buttons (Collapse
+ *      all / Expand all) alongside the stepped group.
+ *   8. Collapse all folds EVERY listed group (zero rows, headers only)
+ *      while each keeps its remembered step.
+ *   9. Expand all restores every remembered shape — the stepped 10 comes
+ *      back (Show more 位置不丢), the small group unfolds at its page.
+ *  10. The Timeline view hides the whole section row — the pair with it.
+ *  11. Back to By project the pair AND the shapes are still there.
+ *
  * Seeding: an isolated session store (PICODE_SESSION_DIR tmpdir) with a
  * 12-session project group, distinct ascending mtimes so the newest-first
  * order is deterministic. Throwaway userData keeps the default 'projects'
@@ -28,6 +40,11 @@
  *   f4-fold-restored  — the pre-fold step restored (ten rows)
  *   f5-fold-all       — all twelve + Show less
  *   f6-fold-reset     — back at the initial five + Show more
+ *   c1-collapse-row   — the section row pair (A stepped to 10, B at 3)
+ *   c2-collapse-all   — every group folded by ONE click
+ *   c3-expand-all     — every remembered shape restored
+ *   c4-timeline-pair  — Timeline: the section row (pair included) hidden
+ *   c5-back-projects  — the pair back, shapes still remembered
  */
 
 import { mkdirSync, utimesSync } from 'node:fs'
@@ -54,11 +71,18 @@ export function isolateFoldUserData(): void {
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
 const FOLD_SESSIONS = 12
+/** The second (ticket-95) group's size — fits one page, no control. */
+const FOLD_SECOND_SESSIONS = 3
 
 /** The seeded group's project directory — a REAL tmpdir (the dead-cwd
  * filter must never drop these rows) whose basename is the group label. */
 function foldProjectDir(): string {
   return path.join(tmpdir(), `picode-visual-fold-projects-${process.pid}`)
+}
+
+/** The ticket-95 second group's project directory (same rules). */
+function foldSecondDir(): string {
+  return path.join(tmpdir(), `picode-visual-fold-second-${process.pid}`)
 }
 
 /** Click one element inside the seeded group's section (bubbling DOM click
@@ -103,6 +127,18 @@ export function startFoldVisualIfEnabled(getWindow: () => BrowserWindow | null):
     const then = new Date(Date.now() - (FOLD_SESSIONS - i) * 60_000)
     utimesSync(file, then, then)
   }
+  // The ticket-95 second group: three sessions in their own project dir.
+  const second = foldSecondDir()
+  mkdirSync(second, { recursive: true })
+  for (let i = 0; i < FOLD_SECOND_SESSIONS; i++) {
+    const file = writeVisualSession(store, {
+      id: `fold-b-${i}`,
+      cwd: second,
+      userText: `Fold probe task ${i + 1} of ${FOLD_SECOND_SESSIONS} (b)`
+    })
+    const then = new Date(Date.now() - (FOLD_SECOND_SESSIONS - i) * 60_000)
+    utimesSync(file, then, then)
+  }
 
   void (async () => {
     try {
@@ -122,21 +158,28 @@ export function startFoldVisualIfEnabled(getWindow: () => BrowserWindow | null):
       await sleep(500)
 
       const projectName = path.basename(project)
-      const groupExpr = `([...document.querySelectorAll('.sb-group')].find((g) => g.querySelector('.sb-group-header span')?.textContent === '${projectName}') ?? null)`
-      const stateExpr = `(() => {
-        const g = ${groupExpr}
+      const secondName = path.basename(second)
+      const groupExprOf = (label: string): string =>
+        `([...document.querySelectorAll('.sb-group')].find((g) => g.querySelector('.sb-group-header span')?.textContent === '${label}') ?? null)`
+      const stateExprOf = (label: string): string => `(() => {
+        const g = ${groupExprOf(label)}
         if (!g) return '-1|none'
         const m = g.querySelector('.sb-show-more')
         return g.querySelectorAll('.sb-task').length + '|' + (m ? (m.textContent ?? '').trim() : 'none')
       })()`
+      const groupExpr = groupExprOf(projectName)
+      const stateExpr = stateExprOf(projectName)
+      const stateSecondExpr = stateExprOf(secondName)
       /** One poll that also FAILS loudly when the shape is not the expected one. */
-      const expectState = async (expected: string, what: string): Promise<void> => {
-        const ok = await waitFor(getWindow, `${stateExpr} === '${expected}'`, 15_000)
+      const expectExpr = async (expr: string, expected: string, what: string): Promise<void> => {
+        const ok = await waitFor(getWindow, `${expr} === '${expected}'`, 15_000)
         if (!ok) {
-          const state = (await win.webContents.executeJavaScript(stateExpr).catch(() => '?')) as string
+          const state = (await win.webContents.executeJavaScript(expr).catch(() => '?')) as string
           throw new Error(`fold visual: ${what} never reached ${expected} (state: ${state})`)
         }
       }
+      const expectState = async (expected: string, what: string): Promise<void> => expectExpr(stateExpr, expected, what)
+      const expectSecond = async (expected: string, what: string): Promise<void> => expectExpr(stateSecondExpr, expected, what)
       const click = async (selector: string, what: string): Promise<void> => {
         const clicked = (await win.webContents.executeJavaScript(clickInGroup(groupExpr, selector)).catch(() => false)) as boolean
         if (!clicked) throw new Error(`fold visual: could not click the ${what}`)
@@ -185,6 +228,63 @@ export function startFoldVisualIfEnabled(getWindow: () => BrowserWindow | null):
       await click('.sb-show-more', 'Show less control')
       await expectState('5|Show more', 'the Show less reset')
       await capture(win, 'f6-fold-reset', '5|Show more')
+
+      // ---- ticket 95: the section row's Collapse all / Expand all pair ----
+      // Both buttons live on the Projects section row (Projects view only);
+      // the second seeded group makes the aggregate real.
+
+      // 7. Seed a non-default shape again (f6 left the default five), then
+      //    capture the section row WITH the pair — both groups visible.
+      await click('.sb-show-more', 'Show more control')
+      await expectState('10|Show more', 'the pre-collapse step')
+      await expectSecond('3|none', 'the second group at its page')
+      await expectGlobal(`document.querySelectorAll('.sb-section-action').length === 2`, 'the section row pair is not resident (ticket 95)')
+      await capture(win, 'c1-collapse-row', 'A 10|Show more, B 3')
+
+      // 8. Collapse all: ONE click folds BOTH listed groups (headers only).
+      const clickPairButton = async (aria: string, what: string): Promise<void> => {
+        const clicked = (await win.webContents.executeJavaScript(`(() => { const b = document.querySelector('button[aria-label="${aria}"]'); if (b instanceof HTMLElement) { b.dispatchEvent(new MouseEvent('click', { bubbles: true })); return true } return false })()`).catch(() => false)) as boolean
+        if (!clicked) throw new Error(`fold visual: could not click the ${what}`)
+        await sleep(250)
+      }
+      await clickPairButton('Collapse all', 'Collapse all button')
+      await expectState('0|none', 'the collapsed-by-pair stepped group')
+      await expectSecond('0|none', 'the collapsed-by-pair second group')
+      await capture(win, 'c2-collapse-all', 'A 0, B 0, pinned untouched')
+
+      // 9. Expand all: every remembered shape restored — the stepped 10
+      //    comes back (Show more 位置不丢), the small group at its page.
+      await clickPairButton('Expand all', 'Expand all button')
+      await expectState('10|Show more', 'the restored stepped shape after Expand all')
+      await expectSecond('3|none', 'the restored second group')
+      await capture(win, 'c3-expand-all', 'A 10|Show more, B 3')
+
+      // 10. Timeline hides the whole section row — the pair with it.
+      const openDropdown = `(() => { const b = document.querySelector('button[aria-label="Filter tasks"]'); if (b instanceof HTMLElement) { b.dispatchEvent(new MouseEvent('click', { bubbles: true })); return true } return false })()`
+      const clickMenuItem = (label: string): string =>
+        `(() => { const item = [...document.querySelectorAll('.sb-filter-menu .sb-filter-menu-item')].find((n) => n.querySelector('span')?.textContent === '${label}'); if (item instanceof HTMLElement) { item.dispatchEvent(new MouseEvent('click', { bubbles: true })); return true } return false })()`
+      await win.webContents.executeJavaScript(openDropdown)
+      await waitFor(getWindow, `document.querySelector('.sb-filter-menu') !== null`, 5_000)
+      await win.webContents.executeJavaScript(clickMenuItem('Timeline'))
+      await waitFor(
+        getWindow,
+        `document.querySelector('.sb-section-label-projects') === null && document.querySelectorAll('.sb-section-action').length === 0`,
+        5_000
+      )
+      await expectGlobal(
+        `document.querySelector('.sb-section-label-projects') === null && document.querySelectorAll('.sb-section-action').length === 0`,
+        'the Timeline view still shows the section row pair (ticket 95)'
+      )
+      await capture(win, 'c4-timeline-pair', 'Timeline: no section row, no pair')
+
+      // 11. Back to By project: the pair AND the remembered shapes.
+      await win.webContents.executeJavaScript(openDropdown)
+      await waitFor(getWindow, `document.querySelector('.sb-filter-menu') !== null`, 5_000)
+      await win.webContents.executeJavaScript(clickMenuItem('By project'))
+      await expectState('10|Show more', 'the stepped shape after the view round-trip')
+      await expectSecond('3|none', 'the second group after the view round-trip')
+      await expectGlobal(`document.querySelectorAll('.sb-section-action').length === 2`, 'the section row pair never returned from Timeline')
+      await capture(win, 'c5-back-projects', 'A 10|Show more, B 3, pair back')
 
       console.log('VISUAL fold done')
       app.exit(0)

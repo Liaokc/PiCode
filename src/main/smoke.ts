@@ -3571,6 +3571,194 @@ export function startSmokeIfEnabled(
     }
     log('group_fold_done')
 
+    // ---- ticket 95: Collapse all / Expand all (the section row pair) ----
+    // Two seeded project groups (12 + 3 sessions, deterministic mtimes)
+    // drive the aggregate pair end to end: the section row renders the two
+    // resident buttons in the Projects view; one Show more step seeds a
+    // non-default shape; one group gets PINNED (置顶区不受影响) and another
+    // manually folded (手动混用); Collapse all folds BOTH listed groups
+    // while the pinned row stays; Expand all restores each remembered
+    // shape (the stepped 10 survives — Show more 位置不丢) and clears the
+    // manual fold; the Timeline view hides the whole section row (双钮
+    // 隐藏); back to By project the shapes are still there; a renderer
+    // reload (the restart proxy) returns every group to the DEFAULT shape
+    // while the pin SURVIVES (memory-level folds vs the persisted pin
+    // preference, in one restart); the pin is undone so later stages are
+    // untouched (the ticket-84 courtesy).
+    log('collapse_all_start')
+    const collapseDirA = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-collapseA-'))
+    const collapseDirB = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-collapseB-'))
+    const collapseStore = process.env['PICODE_SESSION_DIR']
+    if (!collapseStore) fail('ticket-95 stage: PICODE_SESSION_DIR is not set')
+    try {
+      // Group A: 12 sessions (steppable), group B: 3 (fits one page).
+      const collapseSeeds: Array<{ id: string; cwd: string; ageMin: number }> = []
+      for (let i = 0; i < 12; i++) collapseSeeds.push({ id: `fold95-a${i}`, cwd: collapseDirA, ageMin: 20 + i })
+      for (let i = 0; i < 3; i++) collapseSeeds.push({ id: `fold95-b${i}`, cwd: collapseDirB, ageMin: 40 + i })
+      for (const seed of collapseSeeds) {
+        const stamp = new Date().toISOString()
+        const lines = [
+          JSON.stringify({ type: 'session', version: 3, id: seed.id, timestamp: stamp, cwd: seed.cwd }),
+          JSON.stringify({
+            type: 'message',
+            id: `${seed.id}-u1`,
+            parentId: null,
+            timestamp: stamp,
+            message: { role: 'user', content: [{ type: 'text', text: `PICODE_COLLAPSE_95 task ${seed.id}` }] }
+          })
+        ]
+        const file = path.join(collapseStore, `${seed.id}.jsonl`)
+        writeFileSync(file, lines.join('\n') + '\n')
+        const mtime = new Date(Date.now() - seed.ageMin * 60_000)
+        utimesSync(file, mtime, mtime)
+      }
+
+      await withWindow(getWindow, async (win) => {
+        const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+        // The keymap stage may have left the sidebar closed — open with ⌘B
+        // (press-until-present, the panel-stage pattern).
+        const sidebarPresent = `(document.querySelector('.sidebar') !== null)`
+        if (!((await js(sidebarPresent)) as boolean)) {
+          await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', metaKey: true, bubbles: true })); true`)
+          await waitForProbe(win, sidebarPresent, 5_000)
+        }
+
+        const labelA = path.basename(collapseDirA)
+        const labelB = path.basename(collapseDirB)
+        const groupExprOf = (label: string): string =>
+          `([...document.querySelectorAll('.sb-group')].find((g) => g.querySelector('.sb-group-header span')?.textContent === '${label}') ?? null)`
+        const stateOf = (label: string): string => `(() => {
+          const g = ${groupExprOf(label)}
+          if (!g) return '-1|none'
+          const m = g.querySelector('.sb-show-more')
+          return g.querySelectorAll('.sb-task').length + '|' + (m ? (m.textContent ?? '').trim() : 'none')
+        })()`
+        const clickInGroupOf = (label: string, selector: string): string =>
+          `(() => { const g = ${groupExprOf(label)}; const el = g?.querySelector('${selector}'); if (el instanceof HTMLElement) { el.dispatchEvent(new MouseEvent('click', { bubbles: true })); return true } return false })()`
+        const pinnedCountExpr = `document.querySelectorAll('.sb-scroll > .sb-task').length`
+        const clickSectionButton = (aria: string): string =>
+          `(() => { const b = document.querySelector('button[aria-label="${aria}"]'); if (b instanceof HTMLElement) { b.dispatchEvent(new MouseEvent('click', { bubbles: true })); return true } return false })()`
+        const openDropdownJs = `(() => { const b = document.querySelector('button[aria-label="Filter tasks"]'); if (b instanceof HTMLElement) { b.dispatchEvent(new MouseEvent('click', { bubbles: true })); return true } return false })()`
+        const clickMenuItemJs = (label: string): string =>
+          `(() => { const item = [...document.querySelectorAll('.sb-filter-menu .sb-filter-menu-item')].find((n) => n.querySelector('span')?.textContent === '${label}'); if (item instanceof HTMLElement) { item.dispatchEvent(new MouseEvent('click', { bubbles: true })); return true } return false })()`
+
+        // Index poll: both seeded groups render at their DEFAULT shapes
+        // (A 5|Show more, B 3 rows without a control) with the pair present.
+        const bothUp = `${stateOf(labelA)} === '5|Show more' && ${stateOf(labelB)} === '3|none' && document.querySelectorAll('.sb-section-action').length === 2`
+        if (!(await waitForProbe(win, bothUp, 20_000))) {
+          fail(`ticket-95 stage: the seeded groups never reached the default shapes with the section pair (A: ${String(await js(stateOf(labelA)))}, B: ${String(await js(stateOf(labelB)))})`)
+        }
+        log('collapse_default_shapes_ok')
+
+        // Seed a non-default shape: one Show more step on A (10 of 12).
+        await js(clickInGroupOf(labelA, '.sb-show-more'))
+        if (!(await waitForProbe(win, `${stateOf(labelA)} === '10|Show more'`, 5_000))) {
+          fail(`ticket-95 stage: the pre-collapse step never landed (A: ${String(await js(stateOf(labelA)))})`)
+        }
+        log('collapse_step_seeded_ok')
+
+        // Pin one group-B session through its context menu (the ticket-84
+        // path): it leaves group B (2 rows remain) for the pinned section.
+        const rowCtxMenuJs = `(() => {
+          const row = document.querySelector('[data-file$="fold95-b0.jsonl"]')
+          if (!(row instanceof HTMLElement)) return 'missing'
+          const rect = row.getBoundingClientRect()
+          row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: rect.left + 10, clientY: rect.top + 10 }))
+          return 'ok'
+        })()`
+        const clickPinJs = `(() => { const item = document.querySelector('[data-menu-action="toggle-pin"]'); if (!(item instanceof HTMLElement)) return false; item.dispatchEvent(new MouseEvent('click', { bubbles: true })); return true })()`
+        if ((await js(rowCtxMenuJs)) !== 'ok') fail('ticket-95 stage: the pin target row went missing')
+        if (!(await waitForProbe(win, `document.querySelector('[data-menu-action="toggle-pin"]') !== null`, 5_000))) {
+          fail('ticket-95 stage: the row context menu never opened for the pin')
+        }
+        if (!((await js(clickPinJs)) as boolean)) fail('ticket-95 stage: the toggle-pin menu item never clicked')
+        if (!(await waitForProbe(win, `${pinnedCountExpr} === 1 && ${stateOf(labelB)} === '2|none'`, 5_000))) {
+          fail(`ticket-95 stage: the pin never moved the row into the pinned section (pinned: ${String(await js(pinnedCountExpr))}, B: ${String(await js(stateOf(labelB)))})`)
+        }
+        log('collapse_pin_seeded_ok')
+
+        // Manual single-group fold on B (与手动单组折叠混用).
+        await js(clickInGroupOf(labelB, '.sb-group-header'))
+        if (!(await waitForProbe(win, `${stateOf(labelB)} === '0|none'`, 5_000))) {
+          fail(`ticket-95 stage: the manual pre-fold of group B never landed (B: ${String(await js(stateOf(labelB)))})`)
+        }
+        log('collapse_manual_mix_ok')
+
+        // Collapse all: BOTH listed groups fold; the pinned row stays.
+        if (!((await js(clickSectionButton('Collapse all'))) as boolean)) {
+          fail('ticket-95 stage: the Collapse all button never clicked')
+        }
+        if (!(await waitForProbe(win, `${stateOf(labelA)} === '0|none' && ${stateOf(labelB)} === '0|none' && ${pinnedCountExpr} === 1`, 5_000))) {
+          fail(`ticket-95 stage: Collapse all never folded both listed groups / pinned row lost (A: ${String(await js(stateOf(labelA)))}, B: ${String(await js(stateOf(labelB)))}, pinned: ${String(await js(pinnedCountExpr))})`)
+        }
+        log('collapse_all_folds_ok')
+
+        // Expand all: each remembered shape restored — A back at its
+        // stepped 10 (Show more 位置不丢), B's manual fold cleared back to
+        // its 2 remaining rows — and the pinned row still first.
+        if (!((await js(clickSectionButton('Expand all'))) as boolean)) {
+          fail('ticket-95 stage: the Expand all button never clicked')
+        }
+        if (!(await waitForProbe(win, `${stateOf(labelA)} === '10|Show more' && ${stateOf(labelB)} === '2|none' && ${pinnedCountExpr} === 1`, 5_000))) {
+          fail(`ticket-95 stage: Expand all never restored the remembered shapes (A: ${String(await js(stateOf(labelA)))}, B: ${String(await js(stateOf(labelB)))}, pinned: ${String(await js(pinnedCountExpr))})`)
+        }
+        log('expand_all_restores_ok')
+
+        // Timeline hides the whole section row — the pair with it.
+        await js(openDropdownJs)
+        if (!(await waitForProbe(win, `document.querySelector('.sb-filter-menu') !== null`, 5_000))) {
+          fail('ticket-95 stage: the filter dropdown never opened for the timeline switch')
+        }
+        await js(clickMenuItemJs('Timeline'))
+        // In the Timeline the pinned row is a flat-list sibling, so the
+        // pinned-area count is probed by the row itself, not by position.
+        if (!(await waitForProbe(win, `document.querySelector('.sb-section-label-projects') === null && document.querySelectorAll('.sb-section-action').length === 0 && document.querySelector('.sb-task[data-file$="fold95-b0.jsonl"]') !== null`, 5_000))) {
+          fail('ticket-95 stage: the Timeline view never hid the section row pair / pinned row lost')
+        }
+        log('collapse_timeline_hidden_ok')
+
+        // Back to By project: the pair returns AND the fold memory is
+        // still there (memory-level state survives the view switch).
+        await js(openDropdownJs)
+        if (!(await waitForProbe(win, `document.querySelector('.sb-filter-menu') !== null`, 5_000))) {
+          fail('ticket-95 stage: the filter dropdown never opened for the projects switch back')
+        }
+        await js(clickMenuItemJs('By project'))
+        if (!(await waitForProbe(win, `document.querySelectorAll('.sb-section-action').length === 2 && ${stateOf(labelA)} === '10|Show more' && ${pinnedCountExpr} === 1`, 5_000))) {
+          fail(`ticket-95 stage: the projects switch back never restored the pair + shapes (A: ${String(await js(stateOf(labelA)))})`)
+        }
+        log('collapse_view_switch_ok')
+
+        // RESTART: fold shapes are memory-level (Q5) — the reload returns
+        // BOTH groups to the DEFAULT fold shapes (A 5|Show more; B unfolds
+        // at its remembered default page) while the pinned row SURVIVES —
+        // the pin is a persisted preference, B keeps only its 2 remaining
+        // rows. One restart proves both semantics at once.
+        await win.webContents.reload()
+        await waitForProbe(win, `document.documentElement.dataset['chatSubscribed'] === 'true'`, 15_000)
+        await new Promise((r) => setTimeout(r, 500))
+        if (!(await waitForProbe(win, `${stateOf(labelA)} === '5|Show more' && ${stateOf(labelB)} === '2|none' && ${pinnedCountExpr} === 1`, 20_000))) {
+          fail(`ticket-95 stage: after the restart the shapes are not default / pin lost (A: ${String(await js(stateOf(labelA)))}, B: ${String(await js(stateOf(labelB)))}, pinned: ${String(await js(pinnedCountExpr))})`)
+        }
+        log('collapse_restart_default_ok')
+
+        // Unpin (the ticket-84 courtesy: later stages see no leftover pin).
+        if ((await js(rowCtxMenuJs)) !== 'ok') fail('ticket-95 stage: the pinned row went missing for the unpin')
+        if (!(await waitForProbe(win, `document.querySelector('[data-menu-action="toggle-pin"]') !== null`, 5_000))) {
+          fail('ticket-95 stage: the pinned row context menu never opened for the unpin')
+        }
+        if (!((await js(clickPinJs)) as boolean)) fail('ticket-95 stage: the toggle-pin menu item never clicked for the unpin')
+        if (!(await waitForProbe(win, `${pinnedCountExpr} === 0 && ${stateOf(labelB)} === '3|none'`, 5_000))) {
+          fail(`ticket-95 stage: the unpin never returned the row to group B (pinned: ${String(await js(pinnedCountExpr))}, B: ${String(await js(stateOf(labelB)))})`)
+        }
+        log('collapse_unpin_cleanup_ok')
+      })
+    } finally {
+      rmSync(collapseDirA, { recursive: true, force: true })
+      rmSync(collapseDirB, { recursive: true, force: true })
+    }
+    log('collapse_all_done')
+
     // ---- ticket 84: sidebar drag-reorder, end to end ----
     // Three seeded project groups drive the whole ticket: a session-row
     // drag within its own group (auto-enters Manual, dropdown check state),

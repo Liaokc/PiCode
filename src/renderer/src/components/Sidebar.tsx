@@ -49,6 +49,7 @@ import {
   FilesListIcon,
   FilterIcon,
   FolderIcon,
+  FoldIcon,
   GearIcon,
   GripDotsIcon,
   HistoryIcon,
@@ -56,6 +57,7 @@ import {
   PinIcon,
   PlusIcon,
   SearchIcon,
+  UnfoldIcon,
 } from './icons'
 
 /** Context-menu clamp (viewport fit): keeps the fixed-position menu inside
@@ -894,6 +896,35 @@ export default function Sidebar({
               <FolderIcon />
               Projects
               <span className="sb-section-spacer" />
+              {/* The section row's resident action pair (ticket 95): one
+                  click folds / unfolds EVERY listed group. The spot the
+                  section-row grip vacated (ticket 84) is exactly this. Each
+                  group keeps its pre-fold shape memory (ticket 39) — the
+                  reducer flips only `folded` — and hidden projects are not
+                  in the list, so they are untouched. Memory-level like the
+                  single-group toggle: a restart returns every group to the
+                  default shape. Timeline has no groups, so this whole row
+                  (buttons included) renders only in the Projects view. */}
+              <Tooltip label="Collapse all">
+                <button
+                  type="button"
+                  className="sb-section-action"
+                  aria-label="Collapse all"
+                  onClick={() => dispatchFold({ type: 'collapse-all', cwds: visibleProjectGroups.map((g) => g.cwd) })}
+                >
+                  <FoldIcon size={13} />
+                </button>
+              </Tooltip>
+              <Tooltip label="Expand all">
+                <button
+                  type="button"
+                  className="sb-section-action"
+                  aria-label="Expand all"
+                  onClick={() => dispatchFold({ type: 'expand-all', cwds: visibleProjectGroups.map((g) => g.cwd) })}
+                >
+                  <UnfoldIcon size={13} />
+                </button>
+              </Tooltip>
             </div>
 
             {visibleProjectGroups.map((group, groupIndex) => {

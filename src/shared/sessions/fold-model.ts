@@ -42,6 +42,14 @@ export type GroupFoldState = Readonly<Record<string, GroupFoldShape>>
 export type GroupFoldAction =
   /** The group ROW's click: fold when unfolded, unfold when folded. */
   | { type: 'toggle-fold'; cwd: string }
+  /** The Projects section row's aggregate pair (ticket 95): one click folds
+ * or unfolds EVERY LISTED group at once. The listed cwds ride the action —
+ * the sidebar passes exactly the groups it renders, so hidden projects
+ * (ticket 19) keep their exact shape. Each group's `visible` step is
+ * preserved either way — collapse-all 记形状 / expand-all 复原, the
+ * manual-toggle semantics scaled to every group (ticket 39 untouched). */
+  | { type: 'collapse-all'; cwds: readonly string[] }
+  | { type: 'expand-all'; cwds: readonly string[] }
   /** Reveal SHOW_MORE_STEP more rows, clamped to the group's total. */
   | { type: 'show-more'; cwd: string; total: number }
   /** Reset to the initial page in one click. */
@@ -103,6 +111,23 @@ export function groupFoldReducer(state: GroupFoldState, action: GroupFoldAction)
       const shape = foldShapeOf(state, action.cwd)
       if (shape.folded || shape.visible === SHOW_FIRST) return state
       return { ...state, [action.cwd]: { ...shape, visible: SHOW_FIRST } }
+    }
+    case 'collapse-all':
+    case 'expand-all': {
+      // One pass over the listed groups; each shape flips ONLY `folded`.
+      // Reading from `next` (not `state`) keeps duplicate cwds and repeated
+      // dispatches idempotent, and unchanged groups keep the original map
+      // entries — the no-op case returns the SAME reference.
+      const folded = action.type === 'collapse-all'
+      let changed = false
+      const next: Record<string, GroupFoldShape> = { ...state }
+      for (const cwd of action.cwds) {
+        const shape = foldShapeOf(next, cwd)
+        if (shape.folded === folded) continue
+        next[cwd] = { ...shape, folded }
+        changed = true
+      }
+      return changed ? next : state
     }
   }
 }
