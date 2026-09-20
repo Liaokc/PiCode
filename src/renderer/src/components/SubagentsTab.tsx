@@ -29,6 +29,9 @@ interface SubagentsTabProps {
   /** Which session the entries belong to — the component remounts on focus
    * switch (the App keys it), so paging resets per session. */
   sessionId: string
+  /** Open one run's conversation tab (ticket 99): the row click deep-links
+   * into the side panel's subagent-chat slot. Absent → rows are inert. */
+  onOpenChat?: (row: SubagentDirectoryRow) => void
 }
 
 /** Badge copy: the seven-state vocabulary, verbatim (ZCode calibration). */
@@ -42,7 +45,7 @@ const STATE_LABELS: Record<SubagentRowState, string> = {
   lost: 'Lost'
 }
 
-export default function SubagentsTab({ entries, runs }: SubagentsTabProps): JSX.Element {
+export default function SubagentsTab({ entries, runs, onOpenChat }: SubagentsTabProps): JSX.Element {
   const [visibleEnded, setVisibleEnded] = useState(ENDED_VISIBLE_INITIAL)
   const now = useNowTick(30_000)
   // A focus switch remounts this tab (the App keys by session id), so the
@@ -63,7 +66,7 @@ export default function SubagentsTab({ entries, runs }: SubagentsTabProps): JSX.
         ) : (
           <div className="subagents-rows">
             {model.running.map((row) => (
-              <DirectoryRow key={row.id} row={row} now={now} />
+              <DirectoryRow key={row.id} row={row} now={now} onOpenChat={onOpenChat} />
             ))}
           </div>
         )}
@@ -75,7 +78,7 @@ export default function SubagentsTab({ entries, runs }: SubagentsTabProps): JSX.
           </h3>
           <div className="subagents-rows">
             {model.ended.map((row) => (
-              <DirectoryRow key={row.id} row={row} now={now} />
+              <DirectoryRow key={row.id} row={row} now={now} onOpenChat={onOpenChat} />
             ))}
           </div>
           {model.showMoreVisible && (
@@ -98,10 +101,27 @@ export default function SubagentsTab({ entries, runs }: SubagentsTabProps): JSX.
   )
 }
 
-function DirectoryRow({ row, now }: { row: SubagentDirectoryRow; now: number }): JSX.Element {
+function DirectoryRow({ row, now, onOpenChat }: { row: SubagentDirectoryRow; now: number; onOpenChat?: (row: SubagentDirectoryRow) => void }): JSX.Element {
   const timeMs = row.state === 'running' || row.state === 'waiting' || row.state === 'blocked' ? row.startedAtMs : row.endedAtMs ?? row.startedAtMs
   return (
-    <div className={`subagents-row subagents-row-${row.state}`} data-subagent-row={row.id}>
+    <div
+      className={`subagents-row subagents-row-${row.state}${onOpenChat !== undefined ? ' subagents-row-clickable' : ''}`}
+      data-subagent-row={row.id}
+      role={onOpenChat !== undefined ? 'button' : undefined}
+      tabIndex={onOpenChat !== undefined ? 0 : undefined}
+      aria-label={onOpenChat !== undefined ? `Open ${row.title} conversation` : undefined}
+      onClick={onOpenChat !== undefined ? () => onOpenChat(row) : undefined}
+      onKeyDown={
+        onOpenChat !== undefined
+          ? (event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                onOpenChat(row)
+              }
+            }
+          : undefined
+      }
+    >
       <span className={`subagents-badge subagents-badge-${row.state}`}>{STATE_LABELS[row.state]}</span>
       <div className="subagents-row-main">
         <div className="subagents-row-title">

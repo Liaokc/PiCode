@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, afterEach, describe, expect, it } from 'vitest'
 import { mkdir, mkdtemp, rm, stat, writeFile, utimes, appendFile, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -296,6 +296,178 @@ describe('SessionIndexService trace follow (ticket 37)', () => {
       service.stop()
     }
     service.stopTraceFollowing(file)
+  })
+})
+
+describe('SessionIndexService subagent-transcript follow (ticket 99)', () => {
+  const childLine = (id: string, parentId: string | null, text: string): string =>
+    JSON.stringify({
+      type: 'message',
+      id,
+      parentId,
+      timestamp: '2026-08-27T13:06:00.000Z',
+      message: { role: 'user', content: [{ type: 'text', text }] }
+    })
+
+  let runRoot: string
+
+  beforeEach(async () => {
+    runRoot = await mkdtemp(path.join(tmpdir(), 'picode-subagent99-'))
+  })
+
+  afterEach(async () => {
+    await rm(runRoot, { recursive: true, force: true })
+  })
+
+  /** One run's artifact dir with a status.json naming `sessionFile`. */
+  async function seedRun(runId: string, status: Record<string, unknown>): Promise<string> {
+    const runDir = path.join(runRoot, 'runs', runId)
+    await mkdir(runDir, { recursive: true })
+    await writeFile(path.join(runDir, 'status.json'), JSON.stringify(status))
+    return runDir
+  }
+
+  it('resolves the child session file from the artifact and returns the transcript payload', async () => {
+    const child = path.join(runRoot, 'child-1.jsonl')
+    await writeFile(child, sessionText(await cwdFor('projG'), 'child-1', [childLine('c1', null, 'child task text')]) + '\n')
+    const runDir = await seedRun('run-1', { runId: 'run-1', state: 'running', sessionFile: child })
+    const service = new SessionIndexService({ sessionsDir: dir, onIndexChanged: () => {} })
+    const payload = await service.startSubagentTranscriptFollowing(runDir)
+    expect(payload).not.toBeNull()
+    expect(payload?.asyncDir).toBe(runDir)
+    expect(payload?.sessionFile).toBe(child)
+    expect(payload?.error).toBeNull()
+    expect(payload?.items.map((i) => (i.role === 'user' ? i.text : ''))).toContain('child task text')
+    service.stopSubagentTranscriptFollowing(runDir)
+  })
+
+  it('pushes a rebuilt payload when the child file grows (live update, no re-request)', async () => {
+    const child = path.join(runRoot, 'child-2.jsonl')
+    await writeFile(child, sessionText(await cwdFor('projG'), 'child-2', [childLine('c1', null, 'first')]) + '\n')
+    const runDir = await seedRun('run-2', { runId: 'run-2', state: 'running', sessionFile: child })
+    const updates: Array<{ asyncDir: string; items: Array<{ id?: string }> }> = []
+    const service = new SessionIndexService({
+      sessionsDir: dir,
+      onIndexChanged: () => {},
+      onSubagentTranscriptUpdate: (payload) => updates.push(payload)
+    })
+    await service.startSubagentTranscriptFollowing(runDir)
+    service.start(25)
+    const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+    try {
+      await appendFile(child, childLine('c2', 'c1', 'second — the live tail lands') + '\n')
+      const t = Date.now()
+      await utimes(child, new Date(t), new Date(t))
+      await sleep(300)
+      expect(updates.length).toBeGreaterThanOrEqual(1)
+      const pushed = updates.at(-1)
+      expect(pushed?.asyncDir).toBe(runDir)
+      expect(pushed?.items.map((i) => i.id)).toEqual(['c1', 'c2'])
+    } finally {
+      service.stop()
+    }
+    service.stopSubagentTranscriptFollowing(runDir)
+  })
+
+  it('an absent artifact resolves the honest error payload and registers anyway (late artifact still lands)', async () => {
+    const runDir = path.join(runRoot, 'runs', 'never-was')
+    const service = new SessionIndexService({ sessionsDir: dir, onIndexChanged: () => {} })
+    const payload = await service.startSubagentTranscriptFollowing(runDir)
+    expect(payload?.error).toBe('artifact-missing')
+    expect(payload?.items).toEqual([])
+    // The artifact appears later: the poll picks it up without a re-request.
+    const child = path.join(runRoot, 'child-3.jsonl')
+    await writeFile(child, sessionText(await cwdFor('projG'), 'child-3', [childLine('c1', null, 'late arrival')]) + '\n')
+    await seedRun('never-was', { runId: 'never-was', state: 'running', sessionFile: child })
+    const updates: Array<{ asyncDir: string; error: string | null }> = []
+    const live = new SessionIndexService({
+      sessionsDir: dir,
+      onIndexChanged: () => {},
+      onSubagentTranscriptUpdate: (p) => updates.push(p)
+    })
+    // Re-register on the SAME service shape: the error → resolved transition
+    // pushes once the poll sees the artifact (the registration from the
+    // first call persists on this second service instance for the test).
+    await live.startSubagentTranscriptFollowing(runDir)
+    live.start(25)
+    const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+    try {
+      await sleep(300)
+      expect(updates.some((u) => u.asyncDir === runDir && u.error === null)).toBe(true)
+    } finally {
+      live.stop()
+    }
+    live.stopSubagentTranscriptFollowing(runDir)
+  })
+
+  it('an artifact with no sessionFile resolves no-session-file; an unreadable child resolves unreadable', async () => {
+    const noFileRun = await seedRun('run-4', { runId: 'run-4', state: 'running' })
+    const corruptRun = path.join(runRoot, 'runs', 'run-5')
+    await mkdir(corruptRun, { recursive: true })
+    await writeFile(path.join(corruptRun, 'status.json'), '{oops')
+    const child = path.join(runRoot, 'child-5.jsonl')
+    await writeFile(child, '')
+    const badChildRun = await seedRun('run-6', { runId: 'run-6', state: 'running', sessionFile: path.join(runRoot, 'gone.jsonl') })
+    const service = new SessionIndexService({ sessionsDir: dir, onIndexChanged: () => {} })
+    expect((await service.startSubagentTranscriptFollowing(noFileRun))?.error).toBe('no-session-file')
+    expect((await service.startSubagentTranscriptFollowing(corruptRun))?.error).toBe('artifact-missing')
+    expect((await service.startSubagentTranscriptFollowing(badChildRun))?.error).toBe('unreadable')
+    for (const run of [noFileRun, corruptRun, badChildRun]) service.stopSubagentTranscriptFollowing(run)
+  })
+
+  it('one-shot reads (ended runs) never register a tail', async () => {
+    const child = path.join(runRoot, 'child-7.jsonl')
+    await writeFile(child, sessionText(await cwdFor('projG'), 'child-7', [childLine('c1', null, 'settled')]) + '\n')
+    const runDir = await seedRun('run-7', { runId: 'run-7', state: 'complete', sessionFile: child })
+    const service = new SessionIndexService({ sessionsDir: dir, onIndexChanged: () => {} })
+    const payload = await service.subagentTranscriptOnce(runDir)
+    expect(payload?.error).toBeNull()
+    expect(payload?.items.length).toBeGreaterThan(0)
+    // A one-shot never registered: the poll has nothing to push.
+    const updates: unknown[] = []
+    const live = new SessionIndexService({
+      sessionsDir: dir,
+      onIndexChanged: () => {},
+      onSubagentTranscriptUpdate: (p) => updates.push(p)
+    })
+    live.start(25)
+    const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+    try {
+      await appendFile(child, childLine('c2', 'c1', 'grown after the fact') + '\n')
+      await sleep(200)
+      expect(updates).toEqual([])
+    } finally {
+      live.stop()
+    }
+  })
+
+  it('stops only the requested run (several conversation tabs tail independently)', async () => {
+    const childA = path.join(runRoot, 'child-a.jsonl')
+    const childB = path.join(runRoot, 'child-b.jsonl')
+    await writeFile(childA, sessionText(await cwdFor('projG'), 'child-a', [childLine('ca', null, 'A')]) + '\n')
+    await writeFile(childB, sessionText(await cwdFor('projG'), 'child-b', [childLine('cb', null, 'B')]) + '\n')
+    const runA = await seedRun('run-a', { runId: 'run-a', state: 'running', sessionFile: childA })
+    const runB = await seedRun('run-b', { runId: 'run-b', state: 'running', sessionFile: childB })
+    const updates: string[] = []
+    const service = new SessionIndexService({
+      sessionsDir: dir,
+      onIndexChanged: () => {},
+      onSubagentTranscriptUpdate: (p) => updates.push(p.asyncDir)
+    })
+    await service.startSubagentTranscriptFollowing(runA)
+    await service.startSubagentTranscriptFollowing(runB)
+    service.stopSubagentTranscriptFollowing(runA)
+    service.start(25)
+    const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+    try {
+      await appendFile(childA, childLine('ca2', 'ca', 'A grown') + '\n')
+      await appendFile(childB, childLine('cb2', 'cb', 'B grown') + '\n')
+      await sleep(300)
+      expect(updates).toEqual([runB])
+    } finally {
+      service.stop()
+    }
+    service.stopSubagentTranscriptFollowing(runB)
   })
 })
 

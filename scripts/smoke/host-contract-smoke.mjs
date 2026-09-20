@@ -78,6 +78,13 @@
  *   for the OLD rounds is proven by A–H passing unchanged with the
  *   adapter's mcp_status events interleaving in the stream.
  *
+ *   Round J (ticket 99报备: the subagent steer contract) — a SEEDED session
+ *   file, zero model calls:
+ *   resume → session_created(resumed) → history_loaded → subagent_steer →
+ *   subagent_steer_receipt(ok=false, requestId + asyncId echo, the error
+ *   verbatim — an unknown run fails honestly against the REAL pi-subagents
+ *   RPC; a missing package answers 'unavailable') → shutdown → exit 0.
+ *
  * Usage: npm run build && node scripts/smoke/host-contract-smoke.mjs
  * Expects working model auth in ~/.pi/agent (same as the pi TUI). Session
  * files land in an isolated throwaway store (PICODE_SESSION_DIR, ticket 13)
@@ -114,6 +121,7 @@ let edit79File = ''
 let subagent90File = ''
 let subagent90RunDir = ''
 let subagent90TempRoot = ''
+let subagent99File = ''
 
 // Ticket 96 round I: a workspace whose seeded .mcp.json drives the ADAPTER
 // (loaded from the real agent dir's packages — round G already requires it)
@@ -589,6 +597,46 @@ async function onHostExit(exited, code) {
   }
   if (step === 'I shutdown') {
     if (code !== 0) fail(`round I exit should be clean 0, got ${code}`)
+    // Ticket 99报备: round J — the subagent steer contract (additive host
+    // messages), zero model calls. The receipt must echo the request ids
+    // and answer ok:false with a non-empty verbatim error (an unknown run
+    // against the REAL pi-subagents RPC, or the honest unavailable
+    // degradation when the package is absent).
+    const seedDir99 = path.join(tmpdir(), 'picode-smoke-seed99-workspace')
+    mkdirSync(seedDir99, { recursive: true })
+    subagent99File = path.join(process.env.PICODE_SESSION_DIR, 'subagent99-seeded.jsonl')
+    const stamp99 = new Date().toISOString()
+    writeFileSync(
+      subagent99File,
+      [
+        JSON.stringify({ type: 'session', version: 3, id: 'sub99-seeded-id', timestamp: stamp99, cwd: seedDir99 }),
+        JSON.stringify({
+          type: 'message', id: 's99-u1', parentId: null, timestamp: stamp99,
+          message: { role: 'user', content: [{ type: 'text', text: 'PICODE_SUB99 fan out the work' }] }
+        }),
+        JSON.stringify({
+          type: 'message', id: 's99-a1', parentId: 's99-u1', timestamp: stamp99,
+          message: { role: 'assistant', content: [{ type: 'toolCall', id: 's99-c-async', name: 'subagent', arguments: { agent: 'scout', task: 'PICODE_SUB99 scout the answer', async: true } }] }
+        }),
+        JSON.stringify({
+          type: 'message', id: 's99-r1', parentId: 's99-a1', timestamp: stamp99,
+          message: {
+            role: 'toolResult', toolCallId: 's99-c-async', toolName: 'subagent',
+            content: [{ type: 'text', text: 'Async: scout [sub99-run-1]' }],
+            isError: false,
+            details: { mode: 'single', runId: 'sub99-run-1', asyncId: 'sub99-run-1', asyncDir: path.join(tmpdir(), 'picode-smoke-subagent99-gone'), results: [] }
+          }
+        })
+      ].join('\n') + '\n'
+    )
+    console.log('SMOKE round I shutdown ok — starting round J (ticket-99 subagent steer contract)')
+    step = 'J session_created'
+    bumpTimeout()
+    child = forkHost([seedDir99, subagent99File], onEvent)
+    return
+  }
+  if (step === 'J shutdown') {
+    if (code !== 0) fail(`round J exit should be clean 0, got ${code}`)
     await finishClean(code)
     return
   }
@@ -1537,6 +1585,36 @@ function onEvent(event) {
       }
       console.log(`SMOKE ticket-90 subagent_status ok (available=${event.available}, runs=${event.runs.length}, artifact-driven state=${seeded.state})`)
       step = 'H shutdown'
+      child.send({ type: 'shutdown' })
+      return
+    }
+
+    // ---------- Round J: ticket 99报备 — the subagent steer contract ----------
+    case 'J session_created': {
+      if (event.type !== 'session_created') return
+      if (!event.resumed) fail('round J must open the seeded file as a resume')
+      if (event.sessionFile !== subagent99File) fail(`round J resumed the wrong file: ${event.sessionFile}`)
+      console.log('SMOKE round J session ok (seeded ticket-99 subagent fixture)')
+      step = 'J steer'
+      return
+    }
+    case 'J steer': {
+      if (event.type !== 'history_loaded') return
+      console.log('SMOKE round J replay ok — sending subagent_steer for the unknown run')
+      step = 'J receipt'
+      child.send({ type: 'subagent_steer', requestId: 'sub99-steer-1', asyncId: 'sub99-run-1', text: 'PICODE_SUB99 steer probe' })
+      return
+    }
+    case 'J receipt': {
+      if (event.type !== 'subagent_steer_receipt') return
+      if (event.requestId !== 'sub99-steer-1') fail(`the steer receipt must echo its requestId, got ${event.requestId}`)
+      if (event.asyncId !== 'sub99-run-1') fail(`the steer receipt must echo its asyncId, got ${event.asyncId}`)
+      if (event.ok !== false) fail(`the steer receipt must answer ok:false for an unknown run, got ${JSON.stringify(event)}`)
+      if (typeof event.error !== 'string' || event.error.length === 0) {
+        fail('the steer receipt must carry the failure verbatim (non-empty error)')
+      }
+      console.log(`SMOKE ticket-99 subagent_steer ok (ok=false, error="${event.error}")`)
+      step = 'J shutdown'
       child.send({ type: 'shutdown' })
       return
     }

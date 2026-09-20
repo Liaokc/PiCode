@@ -100,6 +100,20 @@ export class HostSupervisor {
             })
             break
           }
+          // Ticket 99: `subagent_steer` against a hostless session degrades
+          // to an honest FAILED receipt (never a toast, never a hang) — the
+          // conversation tab renders the truth: this run cannot be steered
+          // because its session has no live host.
+          if (message.command.type === 'subagent_steer') {
+            this.emitScoped(message.sessionId, {
+              type: 'subagent_steer_receipt',
+              requestId: message.command.requestId,
+              asyncId: message.command.asyncId,
+              ok: false,
+              error: 'This session has no live host — reopen it from the sidebar.'
+            })
+            break
+          }
           // The session has no live host (crashed, detached, or never
           // announced). Tell ITS scope so the entry can react; the renderer's
           // click routing normally prevents reaching here.

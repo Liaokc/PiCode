@@ -102,7 +102,7 @@ export interface SlashCommandItem {
  * most recently announced session). */
 export type SessionCommand = Extract<
   ParentToHost,
-  { type: 'prompt' | 'abort_turn' | 'steer_prompt' | 'follow_up_prompt' | 'clear_queue' | 'edit_queue_entry' | 'remove_queue_entry' | 'set_model' | 'set_thinking_level' | 'set_access_mode' | 'approve_tool' | 'deny_tool' | 'compact_session' | 'list_files' | 'navigate_tree' | 'fork_session' | 'set_session_label' | 'request_tree' | 'get_branch' | 'mcp_auth_start' | 'mcp_auth_input_resolve' | 'subagent_status' }
+  { type: 'prompt' | 'abort_turn' | 'steer_prompt' | 'follow_up_prompt' | 'clear_queue' | 'edit_queue_entry' | 'remove_queue_entry' | 'set_model' | 'set_thinking_level' | 'set_access_mode' | 'approve_tool' | 'deny_tool' | 'compact_session' | 'list_files' | 'navigate_tree' | 'fork_session' | 'set_session_label' | 'request_tree' | 'get_branch' | 'mcp_auth_start' | 'mcp_auth_input_resolve' | 'subagent_status' | 'subagent_steer' }
 >
 
 /** Renderer → agent host system. */
@@ -185,6 +185,13 @@ export type ParentToHost =
    * bridge is unavailable (`available: false`) so the renderer's polling
    * needs no timeout logic. */
   | { type: 'subagent_status'; requestId: string }
+  /** Steer ONE running async subagent run (ticket 99, additive): the bridge
+   * sends pi-subagents' in-process RPC `steer` (acknowledged delivery,
+   * nonRecoveringSteer semantics — RPC steering never pauses-and-revives)
+   * and answers with `subagent_steer_receipt` — the delivery receipt shown
+   * verbatim: delivered / queued / failed. Answered even when the bridge or
+   * the run is unavailable (ok:false) so the conversation tab never hangs. */
+  | { type: 'subagent_steer'; requestId: string; asyncId: string; text: string }
 
 /** Supervisor → host process lifecycle control (never sent by the renderer). */
 export type HostControlCommand = { type: 'shutdown' }
@@ -355,6 +362,15 @@ export type SessionScopedEvent =
    * one child's stop lifecycle (duplicates possible; not authoritative —
    * status snapshots are). Feeds later surfaces; the directory ignores it. */
   | { type: 'subagent_child_status'; runId: string; childId: string; status: 'stopping' | 'stopped'; ts: number; agent?: string; stepIndex?: number; label?: string }
+  /** The acknowledged-delivery receipt for one `subagent_steer` (ticket 99,
+   * additive): `ok:true` carries pi-subagents' `deliveryStatus`
+   * (delivered = injected into the running child; queued = waits for the
+   * current step to end); `ok:false` carries the failure verbatim (unknown
+   * run, ended run, foreign-session ownership, no bridge, timeout). The
+   * conversation tab renders every outcome — the receipt is the truth, the
+   * steered text itself appears in the child transcript only once the child
+   * session records it. */
+  | { type: 'subagent_steer_receipt'; requestId: string; asyncId: string; ok: boolean; deliveryStatus?: 'delivered' | 'queued'; error?: string }
   // ---- ticket 96: the MCP status bridge (additive, reported into the
   // host-contract smoke). The host's inline extension subscribes to the
   // adapter's versioned status channel (pi.events in-process bus) and

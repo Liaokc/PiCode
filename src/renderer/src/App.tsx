@@ -10,8 +10,11 @@ import {
 import { initialChatState, type ChatAction } from '../../shared/chat-reducer'
 import { isMcpAuthEvent, mcpAuthStore } from './components/settings/mcp-auth-store'
 import { isMcpStatusEvent, mcpStatusStore } from './components/settings/mcp-status-store'
+import { isSteerReceiptEvent, subagentChatStore } from './components/subagent-chat-store'
+import { subagentDirectoryFromEntries, type SubagentDirectoryRow } from '../../shared/subagents/directory'
 import { groupTurns } from '../../shared/turn-collapse'
 import type { HostToParent, SessionCommand, SessionScopedEvent } from '../../shared/contract'
+import type { PanelTabId } from '../../shared/panel-model'
 import { resolvePreviewPath } from '../../shared/preview/policy'
 import { initialShellUiState, shellUiReducer, SIDEBAR_WIDTH_PX, SIDEBAR_MIN_WIDTH_PX, MAIN_ZONE_MIN_WIDTH_PX, clampSidebarWidth, shouldAutoCollapseSidePanel, type ShellUiAction } from '../../shared/layout-model'
 import { resolveKeybinding } from '../../shared/keymap'
@@ -376,6 +379,12 @@ export default function App(): JSX.Element {
       if (event.type === 'session_event' && isMcpStatusEvent(event.event)) {
         mcpStatusStore.dispatch(event.event, event.sessionId)
         return
+      }
+      // Ticket 99: steer receipts feed the subagent conversation tabs'
+      // receipt store (the chat reducer no-ops them) — the acknowledged-
+      // delivery receipt is shown verbatim in the tab that sent it.
+      if (event.type === 'session_event' && isSteerReceiptEvent(event.event)) {
+        subagentChatStore.dispatch(event.event, event.sessionId)
       }
       // The session's runtime is gone (crash / detached after in-host fork)
       // — its snapshot is stale; the honest no-data state takes over.
@@ -1403,6 +1412,38 @@ export default function App(): JSX.Element {
 
   const handlePreviewNavigate = openPreview
 
+  /** Ticket 99: the subagent conversation tabs' bridge. The row click opens
+   * a task-named tab (one per parent tool call); the resolver re-projects
+   * the directory row for that call against the registry on every render
+   * (live badge flips reach the tab without it owning state); steers
+   * target the run's own session host. */
+  const subagentChatBridge = useMemo(
+    () => ({
+      resolve: (tab: Extract<PanelTabId, { kind: 'subagent-chat' }>): { sessionId: string; row: SubagentDirectoryRow | null } | null => {
+        const session = registryRef.current.sessions.find((s) => s.id === tab.sessionId)
+        if (session === undefined) return null
+        const model = subagentDirectoryFromEntries(session.chat.entries, session.subagents.runs)
+        return { sessionId: tab.sessionId, row: model.rows.find((row) => row.id === tab.callId) ?? null }
+      },
+      onSteer: (sessionId: string, asyncId: string, requestId: string, text: string): void => {
+        window.picode.chat.sendToHost({
+          type: 'session_command',
+          sessionId,
+          command: { type: 'subagent_steer', requestId, asyncId, text }
+        })
+      },
+      onOpenChat: (row: SubagentDirectoryRow): void => {
+        const id = focusedIdRef.current
+        if (id === null) return
+        panelDispatch({
+          type: 'open-tab',
+          tab: { kind: 'subagent-chat', sessionId: id, callId: row.id, title: row.title }
+        })
+      }
+    }),
+    [panelDispatch]
+  )
+
   /** Recently closed persistence (ticket 31): every change to the panel's
    * closed-history stack writes the whole list into preferences (capacity 10,
    * already enforced by the reducer). The JSON guard keeps hydration and
@@ -1717,6 +1758,7 @@ export default function App(): JSX.Element {
                 ? { sessionId: focused.id, entries: focused.chat.entries, runs: focused.subagents.runs }
                 : null
             }
+            subagentChat={subagentChatBridge}
           />
         </div>
         {/* Bottom dock: ONE frame, sibling panels — terminal (⌘J) and the

@@ -8530,3 +8530,224 @@ button.preview-crumb:hover {
 .subagents-show-more:hover {
   text-decoration: underline;
 }
+
+/* ---------- subagent conversation tab (ticket 99, z17-subagent-chat) ----------
+   The child session's transcript in the main transcript component family, a
+   compact steer composer while the run is live, read-only once it settled.
+   The × on the tab closes the view only — a running child keeps running. */
+
+.subchat-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg-main);
+}
+
+.subchat-view-idle {
+  align-items: center;
+  justify-content: center;
+}
+
+.subchat-head {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.subchat-head-state {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 8px;
+  border-radius: 9px;
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: capitalize;
+  white-space: nowrap;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-active);
+  color: var(--text-secondary);
+}
+
+.subchat-head-state-running,
+.subchat-head-state-waiting {
+  color: var(--accent-blue);
+  border-color: color-mix(in srgb, var(--accent-blue) 35%, transparent);
+  background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+}
+
+.subchat-head-state-blocked {
+  color: var(--accent-orange);
+  border-color: color-mix(in srgb, var(--accent-orange) 35%, transparent);
+  background: color-mix(in srgb, var(--accent-orange) 10%, transparent);
+}
+
+.subchat-head-state-completed {
+  color: #3d8a3d;
+  border-color: color-mix(in srgb, #3d8a3d 35%, transparent);
+  background: color-mix(in srgb, #3d8a3d 10%, transparent);
+}
+
+.subchat-head-state-failed {
+  color: #d64545;
+  border-color: color-mix(in srgb, #d64545 35%, transparent);
+  background: color-mix(in srgb, #d64545 10%, transparent);
+}
+
+.subchat-head-agent {
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.subchat-head-note {
+  flex-shrink: 0;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.subchat-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The panel is narrow: the transcript family's 48px gutters shrink to the
+   panel's own padding scale — the row shapes stay identical. */
+.subchat-scroll {
+  padding: 10px 14px 12px;
+}
+
+.subchat-receipts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.subchat-receipt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-end;
+  max-width: 92%;
+  padding: 3px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+}
+
+.subchat-receipt-delivered {
+  color: #3d8a3d;
+  border-color: color-mix(in srgb, #3d8a3d 30%, transparent);
+  background: color-mix(in srgb, #3d8a3d 8%, transparent);
+}
+
+.subchat-receipt-queued {
+  color: var(--accent-blue);
+  border-color: color-mix(in srgb, var(--accent-blue) 30%, transparent);
+  background: color-mix(in srgb, var(--accent-blue) 8%, transparent);
+}
+
+.subchat-receipt-failed {
+  color: #d64545;
+  border-color: color-mix(in srgb, #d64545 30%, transparent);
+  background: color-mix(in srgb, #d64545 8%, transparent);
+}
+
+.subchat-receipt-icon {
+  flex-shrink: 0;
+}
+
+.subchat-dock {
+  position: relative; /* anchors the Jump-to-Latest button */
+  flex-shrink: 0;
+  padding: 0 14px 12px;
+}
+
+/* The compact steer composer (running children only): input + send, the
+   main composer's send shape at panel scale. */
+.subchat-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--bg-card);
+}
+
+.subchat-composer-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: none;
+  resize: none;
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-primary);
+  max-height: 120px;
+}
+
+.subchat-composer-input::placeholder {
+  color: var(--text-faint);
+}
+
+.subchat-composer-send {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent-blue);
+  color: #fff;
+  cursor: pointer;
+}
+
+.subchat-composer-send:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.subchat-readonly {
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 1px dashed var(--border-strong);
+  font-size: 11.5px;
+  color: var(--text-faint);
+  text-align: center;
+  background: var(--bg-card);
+}
+
+/* Directory rows deep-link into the conversation tab (ticket 99) — an
+   honest affordance only when the handler exists. */
+.subagents-row-clickable {
+  cursor: pointer;
+  transition: border-color 120ms ease-out, background 120ms ease-out;
+}
+
+.subagents-row-clickable:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-active);
+}
+
+.subagents-row-clickable:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 1px;
+}

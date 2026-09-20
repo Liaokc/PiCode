@@ -16,9 +16,20 @@ import PreviewTab from './PreviewTab'
 import TraceTab from './TraceTab'
 import TurnDiffTab from './TurnDiffTab'
 import SubagentsTab from './SubagentsTab'
+import SubagentChatTab from './SubagentChatTab'
 import PanelTabMenu, { panelTabGlyph } from './PanelTabMenu'
 import Tooltip from './Tooltip'
 import { ChevronDownIcon, CloseIcon, FileTextIcon, PlusIcon } from './icons'
+import type { SubagentDirectoryRow } from '../../../shared/subagents/directory'
+
+/** Ticket 99: how the panel resolves one open subagent-chat tab against the
+ * session registry (the row context) and sends its steers. */
+export interface SubagentChatBridge {
+  resolve: (tab: Extract<PanelTabId, { kind: 'subagent-chat' }>) => { sessionId: string; row: SubagentDirectoryRow | null } | null
+  onSteer: (sessionId: string, asyncId: string, requestId: string, text: string) => void
+  /** Open one run's conversation tab (the directory row click). */
+  onOpenChat: (row: SubagentDirectoryRow) => void
+}
 
 interface SidePanelProps {
   /** Open/closed shell state (⌥⌘B / titlebar toggle, ticket 27). The panel
@@ -39,6 +50,9 @@ interface SidePanelProps {
    * entries + the bridge's live run states. null while no session view is
    * focused (the tab renders its empty state). */
   subagentsDirectory?: { sessionId: string; entries: readonly ChatEntry[]; runs: Readonly<Record<string, import('../../../shared/subagents/types').SubagentRunState>> } | null
+  /** Ticket 99: the subagent conversation tabs' resolver + steer sender +
+   * the directory row click handler. */
+  subagentChat?: SubagentChatBridge
 }
 
 /**
@@ -71,7 +85,8 @@ export default function SidePanel({
   workspaceCwd,
   onPreviewNavigate,
   resolveTurnChanges,
-  subagentsDirectory
+  subagentsDirectory,
+  subagentChat
 }: SidePanelProps): JSX.Element {
   const drag = useRef<{ startX: number; startWidth: number; width: number; raf: number } | null>(null)
   const frameRef = useRef<HTMLElement | null>(null)
@@ -169,12 +184,36 @@ export default function SidePanel({
             sessionId={subagentsDirectory.sessionId}
             entries={subagentsDirectory.entries}
             runs={subagentsDirectory.runs}
+            onOpenChat={subagentChat?.onOpenChat}
           />
         ) : (
           <div className="subagents-view subagents-view-idle">
             <p className="subagents-empty">No running subagents</p>
           </div>
         )
+      case 'subagent-chat': {
+        // One subagent's conversation (ticket 99, z17-subagent-chat): the
+        // child transcript + steer composer. The resolver re-projects the
+        // row on every render so live badge flips reach the tab; the tab
+        // is keyed by its identity (session + call), never by the row's
+        // state — closing other tabs or focus switches must not remount it.
+        if (subagentChat === undefined) {
+          return (
+            <div className="subchat-view subchat-view-idle">
+              <p className="subagents-empty">No subagent context</p>
+            </div>
+          )
+        }
+        const resolved = subagentChat.resolve(tab)
+        return (
+          <SubagentChatTab
+            key={`${tab.sessionId}:${tab.callId}`}
+            sessionId={tab.sessionId}
+            row={resolved?.row ?? null}
+            onSteer={subagentChat.onSteer}
+          />
+        )
+      }
     }
   }
 

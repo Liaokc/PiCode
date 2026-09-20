@@ -137,6 +137,10 @@ export function projectDirectoryRowState(
 export interface SubagentDirectoryRow {
   /** The parent tool call id — the stable row identity. */
   id: string
+  /** The run's status.json artifact dir when the call recorded one (ticket
+   * 99, additive) — the conversation tab's transcript follow key. Null for
+   * foreground calls and pre-90 payloads. */
+  asyncDir: string | null
   /** Agent name (single) / first-task agent / the mode label. */
   agent: string
   /** Title: the task text (first task for parallel), else the agent, else
@@ -238,6 +242,7 @@ function projectRow(entry: ToolEntry, runs: Readonly<Record<string, SubagentRunS
     currentTool: live !== undefined && !isTerminalBadge(state) ? (live.currentTool ?? null) : null,
     nestedCount: live?.nestedCount ?? 0,
     asyncId: info?.asyncId ?? null,
+    asyncDir: info?.asyncDir ?? null,
     childCount: info?.children?.length ?? 0
   }
 }

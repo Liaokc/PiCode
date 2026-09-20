@@ -247,6 +247,181 @@ describe('subagent_status handling', () => {
   })
 })
 
+// ---- the steer command (ticket 99) ------------------------------------------
+
+describe('subagent_steer handling', () => {
+  it('sends the acknowledged-delivery receipt (delivered) with the RPC params verbatim', async () => {
+    let captured: { requestId: string; method: string; params: Record<string, unknown> } | null = null
+    const sent: HostEvent[] = []
+    const bridge = new SubagentBridge((event) => sent.push(event), 100)
+    const { factory } = bridge.extension as unknown as FactoryExtension
+    const handlers = new Map<string, Array<(data: unknown) => void>>()
+    factory({
+      events: {
+        emit: (channel: string, data: unknown) => {
+          if (channel === 'subagents:rpc:v1:request') {
+            captured = data as { requestId: string; method: string; params: Record<string, unknown> }
+            const req = captured
+            queueMicrotask(() => {
+              for (const handler of handlers.get(`subagents:rpc:v1:reply:${req.requestId}`) ?? []) {
+                handler({ version: 1, requestId: req.requestId, success: true, data: { requestId: 'pi-r-1', state: 'delivered', deliveryStatus: 'delivered', sourceRunId: 'run-1' } })
+              }
+            })
+          }
+          for (const handler of handlers.get(channel) ?? []) handler(data)
+        },
+        on: (channel: string, handler: (data: unknown) => void) => {
+          handlers.set(channel, [...(handlers.get(channel) ?? []), handler])
+          return () => {}
+        }
+      }
+    } as never)
+    await bridge.handleSteerRequest('req-s1', 'run-1', 'Focus on the auth bypass')
+    expect(captured).not.toBeNull()
+    expect(captured!.method).toBe('steer')
+    expect(captured!.params).toMatchObject({ id: 'run-1', message: 'Focus on the auth bypass' })
+    expect(sent).toEqual([
+      { type: 'subagent_steer_receipt', requestId: 'req-s1', asyncId: 'run-1', ok: true, deliveryStatus: 'delivered' }
+    ])
+  })
+
+  it('queued deliveries ride the same receipt shape', async () => {
+    const sent: HostEvent[] = []
+    const bridge = new SubagentBridge((event) => sent.push(event), 100)
+    const { factory } = bridge.extension as unknown as FactoryExtension
+    const handlers = new Map<string, Array<(data: unknown) => void>>()
+    factory({
+      events: {
+        emit: (channel: string, data: unknown) => {
+          if (channel === 'subagents:rpc:v1:request') {
+            const req = data as { requestId: string }
+            queueMicrotask(() => {
+              for (const handler of handlers.get(`subagents:rpc:v1:reply:${req.requestId}`) ?? []) {
+                handler({ version: 1, requestId: req.requestId, success: true, data: { deliveryStatus: 'queued', state: 'scheduled' } })
+              }
+            })
+          }
+          for (const handler of handlers.get(channel) ?? []) handler(data)
+        },
+        on: (channel: string, handler: (data: unknown) => void) => {
+          handlers.set(channel, [...(handlers.get(channel) ?? []), handler])
+          return () => {}
+        }
+      }
+    } as never)
+    await bridge.handleSteerRequest('req-s2', 'run-2', 'Also check the docs')
+    expect(sent).toEqual([
+      { type: 'subagent_steer_receipt', requestId: 'req-s2', asyncId: 'run-2', ok: true, deliveryStatus: 'queued' }
+    ])
+  })
+
+  it('the RPC error reply rides the receipt verbatim (unknown run / foreign session / ended run)', async () => {
+    const sent: HostEvent[] = []
+    const bridge = new SubagentBridge((event) => sent.push(event), 100)
+    const { factory } = bridge.extension as unknown as FactoryExtension
+    const handlers = new Map<string, Array<(data: unknown) => void>>()
+    factory({
+      events: {
+        emit: (channel: string, data: unknown) => {
+          if (channel === 'subagents:rpc:v1:request') {
+            const req = data as { requestId: string }
+            queueMicrotask(() => {
+              for (const handler of handlers.get(`subagents:rpc:v1:reply:${req.requestId}`) ?? []) {
+                handler({ version: 1, requestId: req.requestId, success: false, error: { code: 'not_found', message: 'no such async run' } })
+              }
+            })
+          }
+          for (const handler of handlers.get(channel) ?? []) handler(data)
+        },
+        on: (channel: string, handler: (data: unknown) => void) => {
+          handlers.set(channel, [...(handlers.get(channel) ?? []), handler])
+          return () => {}
+        }
+      }
+    } as never)
+    await bridge.handleSteerRequest('req-s3', 'ghost', 'hello?')
+    expect(sent).toEqual([
+      { type: 'subagent_steer_receipt', requestId: 'req-s3', asyncId: 'ghost', ok: false, error: 'no such async run' }
+    ])
+  })
+
+  it('a success reply without a usable deliveryStatus lands as an honest failure (no invented claim)', async () => {
+    const sent: HostEvent[] = []
+    const bridge = new SubagentBridge((event) => sent.push(event), 100)
+    const { factory } = bridge.extension as unknown as FactoryExtension
+    const handlers = new Map<string, Array<(data: unknown) => void>>()
+    factory({
+      events: {
+        emit: (channel: string, data: unknown) => {
+          if (channel === 'subagents:rpc:v1:request') {
+            const req = data as { requestId: string }
+            queueMicrotask(() => {
+              for (const handler of handlers.get(`subagents:rpc:v1:reply:${req.requestId}`) ?? []) {
+                handler({ version: 1, requestId: req.requestId, success: true, data: { unexpected: true } })
+              }
+            })
+          }
+          for (const handler of handlers.get(channel) ?? []) handler(data)
+        },
+        on: (channel: string, handler: (data: unknown) => void) => {
+          handlers.set(channel, [...(handlers.get(channel) ?? []), handler])
+          return () => {}
+        }
+      }
+    } as never)
+    await bridge.handleSteerRequest('req-s4', 'run-4', 'hello')
+    expect(sent).toHaveLength(1)
+    const receipt = sent[0]
+    if (receipt.type !== 'subagent_steer_receipt') throw new Error('wrong event')
+    expect(receipt.ok).toBe(false)
+    expect(receipt.error).toContain('delivery status')
+  })
+
+  it('an unanswered RPC times out into a failed receipt (the tab never hangs)', async () => {
+    const sent: HostEvent[] = []
+    const bridge = new SubagentBridge((event) => sent.push(event), 20)
+    const { factory } = bridge.extension as unknown as FactoryExtension
+    const handlers = new Map<string, Array<(data: unknown) => void>>()
+    factory({
+      events: {
+        emit: (channel: string, data: unknown) => {
+          for (const handler of handlers.get(channel) ?? []) handler(data)
+        },
+        on: (channel: string, handler: (data: unknown) => void) => {
+          handlers.set(channel, [...(handlers.get(channel) ?? []), handler])
+          return () => {}
+        }
+      }
+    } as never)
+    await bridge.handleSteerRequest('req-s5', 'run-5', 'anyone there?')
+    expect(sent).toHaveLength(1)
+    const receipt = sent[0]
+    if (receipt.type !== 'subagent_steer_receipt') throw new Error('wrong event')
+    expect(receipt.ok).toBe(false)
+    expect(receipt.error).toContain('timed out')
+  })
+
+  it('an unwired bus answers a failed receipt immediately', async () => {
+    const sent: HostEvent[] = []
+    const bridge = new SubagentBridge((event) => sent.push(event))
+    await bridge.handleSteerRequest('req-s6', 'run-6', 'hello')
+    expect(sent).toHaveLength(1)
+    const receipt = sent[0]
+    if (receipt.type !== 'subagent_steer_receipt') throw new Error('wrong event')
+    expect(receipt.ok).toBe(false)
+    expect(receipt.error).toContain('unavailable')
+  })
+
+  it('an empty message never reaches the RPC (failed receipt, no request)', async () => {
+    const sent: HostEvent[] = []
+    const bridge = new SubagentBridge((event) => sent.push(event))
+    await bridge.handleSteerRequest('req-s7', 'run-7', '   ')
+    expect(sent).toEqual([
+      { type: 'subagent_steer_receipt', requestId: 'req-s7', asyncId: 'run-7', ok: false, error: 'the steer message is empty' }
+    ])
+  })
+})
+
 // ---- the artifact reader ----------------------------------------------------
 
 describe('readRunStateFromArtifact', () => {

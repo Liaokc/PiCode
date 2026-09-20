@@ -725,6 +725,9 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     // correlation in App), not transcript state — the composer prefill rides
     // the PREFILL_EVENT dispatch, the queue itself moves via queue_update.
     case 'queue_entry_edited':
+    // Steer receipts (ticket 99) belong to the subagent conversation tab's
+    // receipt store, not the transcript — the chat reducer no-ops them.
+    case 'subagent_steer_receipt':
       return state
 
     case 'host_exit': {

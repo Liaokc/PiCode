@@ -149,7 +149,7 @@ import os, { homedir } from 'node:os'
 import { randomUUID, createHash } from 'node:crypto'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { app, clipboard, type BrowserWindow } from 'electron'
 import type { HostSupervisor } from './host-supervisor'
 import { focusSessionFromNotification, type ApprovalNotice } from './notifications'
@@ -10127,6 +10127,282 @@ export function startSmokeIfEnabled(
         rmSync(seedDir90, { recursive: true, force: true })
       }
       log('subagent_dir_done')
+    }
+
+    // ---- ticket 99: the subagent conversation tab — the directory row
+    // click opens a task-named tab (one subagent per tab); the child
+    // transcript renders through the main component family and follows the
+    // child session file live (the sessions service's real tail); the
+    // composer send steers through pi-subagents' RPC (the acknowledged-
+    // delivery receipt lands verbatim — an unknown run fails honestly); a
+    // settled run is read-only; the × closes the VIEW (the run keeps its
+    // state); a lost run's error path renders honestly. Seeded fixtures
+    // (zero model calls) — the child session file + status.json artifact
+    // the bridge/sessions service read in production. ----
+    log('subagent_chat_start')
+    {
+      const store99 = process.env['PICODE_SESSION_DIR']
+      if (!store99) fail('ticket-99 stage: PICODE_SESSION_DIR is not set')
+      const subRoot99 = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-subagent99-'))
+      const runDir99 = path.join(subRoot99, 'async-subagent-runs', 'sub99-live-1')
+      const seedDir99 = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-seed99-'))
+      const childFile99 = path.join(store99, 'sub99-child.jsonl')
+      const stamp99 = new Date().toISOString()
+      /** The child session file: a REAL Pi session (the follow machinery
+       * parses it through the same path as every session surface). */
+      const writeChild99 = (entries: string[]): void => {
+        writeFileSync(
+          childFile99,
+          [
+            JSON.stringify({ type: 'session', version: 3, id: 'sub99-child-id', timestamp: stamp99, cwd: seedDir99 }),
+            ...entries
+          ].join('\n') + '\n'
+        )
+      }
+      writeChild99([
+        JSON.stringify({
+          type: 'message', id: 'c1', parentId: null, timestamp: stamp99,
+          message: { role: 'user', content: [{ type: 'text', text: 'PICODE_SUB99 child task — scout the routing' }] }
+        }),
+        JSON.stringify({
+          type: 'message', id: 'c2', parentId: 'c1', timestamp: stamp99,
+          message: { role: 'assistant', content: [{ type: 'text', text: 'PICODE_SUB99 scouting: found 4 middleware hops.' }] }
+        })
+      ])
+      /** The live run's artifact; the child sessionFile is the transcript
+       * source the conversation tab resolves. */
+      const writeArtifact99 = (state: 'running' | 'complete'): void => {
+        mkdirSync(runDir99, { recursive: true })
+        writeFileSync(
+          path.join(runDir99, 'status.json'),
+          JSON.stringify({
+            lifecycleArtifactVersion: 1,
+            runId: 'sub99-live-1',
+            mode: 'single',
+            state,
+            startedAt: Date.now() - 60_000,
+            ...(state === 'complete' ? { endedAt: Date.now() - 5_000 } : {}),
+            lastUpdate: Date.now(),
+            sessionFile: childFile99,
+            agents: ['scout']
+          })
+        )
+      }
+      const seedFile99 = path.join(store99, 'subagent99-seeded.jsonl')
+      writeFileSync(
+        seedFile99,
+        [
+          JSON.stringify({ type: 'session', version: 3, id: 'sub99-seeded-id', timestamp: stamp99, cwd: seedDir99 }),
+          JSON.stringify({
+            type: 'message', id: 's99-u1', parentId: null, timestamp: stamp99,
+            message: { role: 'user', content: [{ type: 'text', text: 'PICODE_SUB99 fan out the work' }] }
+          }),
+          // The live async launch (artifact + child file land with it).
+          JSON.stringify({
+            type: 'message', id: 's99-a-live', parentId: 's99-u1', timestamp: stamp99,
+            message: { role: 'assistant', content: [{ type: 'toolCall', id: 's99-call-live', name: 'subagent', arguments: { agent: 'scout', task: 'PICODE_SUB99 live scout task', async: true } }] }
+          }),
+          JSON.stringify({
+            type: 'message', id: 's99-r-live', parentId: 's99-a-live', timestamp: stamp99,
+            message: {
+              role: 'toolResult', toolCallId: 's99-call-live', toolName: 'subagent',
+              content: [{ type: 'text', text: 'Async: scout [sub99-live-1]' }],
+              isError: false,
+              details: { mode: 'single', runId: 'sub99-live-1', asyncId: 'sub99-live-1', asyncDir: runDir99, results: [] }
+            }
+          }),
+          // A second async launch whose artifact NEVER exists — the lost
+          // error path (the tab must say so honestly).
+          JSON.stringify({
+            type: 'message', id: 's99-a-lost', parentId: 's99-r-live', timestamp: stamp99,
+            message: { role: 'assistant', content: [{ type: 'toolCall', id: 's99-call-lost', name: 'subagent', arguments: { agent: 'auditor', task: 'PICODE_SUB99 audit the budgets', async: true } }] }
+          }),
+          JSON.stringify({
+            type: 'message', id: 's99-r-lost', parentId: 's99-a-lost', timestamp: stamp99,
+            message: {
+              role: 'toolResult', toolCallId: 's99-call-lost', toolName: 'subagent',
+              content: [{ type: 'text', text: 'Async: auditor [sub99-lost-1]' }],
+              isError: false,
+              details: { mode: 'single', runId: 'sub99-lost-1', asyncId: 'sub99-lost-1', asyncDir: path.join(subRoot99, 'never-existed'), results: [] }
+            }
+          })
+        ].join('\n') + '\n'
+      )
+
+      try {
+        await withWindow(getWindow, async (win) => {
+          const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+          // Resume the seeded file (a real Handoff — fresh host, fresh replay).
+          const resumed99 = waitFor((e) => e.type === 'session_created' && e.sessionFile === seedFile99, 'subagent99 resume session_created')
+          supervisor.createSession(seedDir99, seedFile99)
+          const created99 = (await resumed99) as Extract<Scoped, { type: 'session_created' }>
+          await waitFor((e) => e.type === 'history_loaded' && e.sessionId === created99.sessionId, 'subagent99 history_loaded')
+          log('subagent99_resumed_ok', created99.sessionId)
+
+          // Normalize the panel: close every open tab, then open Subagents
+          // through the picker card (the ticket-90 stage precedent).
+          await js(`(() => {
+            const panel = document.querySelector('.side-panel')
+            if (panel && !panel.hasAttribute('data-closed')) {
+              for (const btn of document.querySelectorAll('.panel-tab .panel-tab-close')) {
+                if (btn instanceof HTMLElement) btn.click()
+              }
+            }
+            return true
+          })()`)
+          await new Promise((r) => setTimeout(r, 300))
+          await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', altKey: true, metaKey: true, bubbles: true })); true`)
+          if (!(await waitForProbe(win, `document.querySelector('.panel-tab-card[aria-label="Open Subagents tab"]') !== null`, 10_000))) {
+            fail('ticket-99 stage: the picker never offered the Subagents card')
+          }
+          await js(`document.querySelector('.panel-tab-card[aria-label="Open Subagents tab"]')?.click(); true`)
+          if (!(await waitForProbe(win, `document.querySelector('[data-testid="subagents-tab"]') !== null`, 10_000))) {
+            fail('ticket-99 stage: the Subagents tab never rendered')
+          }
+
+          // ① The live run drives the directory (artifact → status pull →
+          // Running row); the lost launch projects Lost.
+          mkdirSync(runDir99, { recursive: true })
+          writeArtifact99('running')
+          const statusRt99 = waitFor((e) => e.type === 'subagent_status' && e.sessionId === created99.sessionId && e.runs.some((r) => r.runId === 'sub99-live-1' && r.state === 'running'), 'subagent99 status roundtrip')
+          supervisor.handleParentCommand({ type: 'session_command', sessionId: created99.sessionId, command: { type: 'subagent_status', requestId: 'stage-99-1' } })
+          await statusRt99
+          if (!(await waitForProbe(win, `document.querySelector('[data-subagent-row="s99-call-live"] .subagents-badge-running') !== null`, 10_000))) {
+            fail('ticket-99 stage: the live run never showed its Running badge')
+          }
+
+          // ② The row click opens the task-named conversation tab with the
+          // child transcript (the main component family) + the steer
+          // composer (the run is live).
+          await js(`document.querySelector('[data-subagent-row="s99-call-live"]')?.click(); true`)
+          if (!(await waitForProbe(win, `(() => {
+            const named = [...document.querySelectorAll('.panel-tab .panel-tab-label span')].some((s) => s.textContent === 'PICODE_SUB99 live scout task')
+            return named && document.querySelector('[data-testid="subagent-chat-tab"]') !== null
+          })()`, 10_000))) {
+            fail('ticket-99 stage: the row click never opened the task-named conversation tab')
+          }
+          if (!(await waitForProbe(win, `(() => {
+            const view = document.querySelector('[data-testid="subagent-chat-tab"]')
+            return view !== null && view.textContent.includes('PICODE_SUB99 scouting: found 4 middleware hops.') && view.querySelector('.subchat-composer') !== null
+          })()`, 10_000))) {
+            fail('ticket-99 stage: the child transcript or the live composer never rendered')
+          }
+          log('subagent99_chat_open_ok')
+
+          // ③ LIVE update: the child file grows → the entry lands without
+          // any re-request (the sessions service's real tail).
+          appendFileSync(
+            childFile99,
+            JSON.stringify({
+              type: 'message', id: 'c3', parentId: 'c2', timestamp: new Date().toISOString(),
+              message: { role: 'assistant', content: [{ type: 'text', text: 'PICODE_SUB99 live tail: hop 5 discovered.' }] }
+            }) + '\n'
+          )
+          if (!(await waitForProbe(win, `document.querySelector('[data-testid="subagent-chat-tab"]')?.textContent.includes('hop 5 discovered') === true`, 15_000))) {
+            fail('ticket-99 stage: the child file growth never landed as a live transcript update')
+          }
+          log('subagent99_live_update_ok')
+
+          // ④ Steer: the composer send rides the session_command → bridge
+          // RPC; the receipt lands verbatim (the unknown run fails honestly
+          // against the real pi-subagents package).
+          const receiptEvent99 = waitFor((e) => e.type === 'subagent_steer_receipt' && e.sessionId === created99.sessionId, 'subagent99 steer receipt event')
+          await js(`(() => {
+            const input = document.querySelector('.subchat-composer-input')
+            if (input instanceof HTMLTextAreaElement) {
+              const setter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value').set
+              setter.call(input, 'PICODE_SUB99 also check the auth bypass keys')
+              input.dispatchEvent(new Event('input', { bubbles: true }))
+            }
+            return true
+          })()`)
+          await js(`document.querySelector('.subchat-composer-send')?.click(); true`)
+          const receipt99 = (await receiptEvent99) as Extract<Scoped, { type: 'subagent_steer_receipt' }>
+          if (receipt99.ok !== false || typeof receipt99.error !== 'string' || receipt99.error === '') {
+            fail(`ticket-99 stage: the steer receipt must fail honestly for an unknown run, got ${JSON.stringify(receipt99)}`)
+          }
+          if (!(await waitForProbe(win, `(() => {
+            const r = document.querySelector('[data-subchat-receipt="failed"]')
+            return r !== null && r.textContent.includes('Steer failed')
+          })()`, 10_000))) {
+            fail('ticket-99 stage: the failed receipt never rendered in the conversation tab')
+          }
+          const cleared99 = (await js(`document.querySelector('.subchat-composer-input')?.value === ''`)) as boolean
+          if (!cleared99) fail('ticket-99 stage: the steer send never emptied the composer')
+          log('subagent99_receipt_ok', receipt99.error ?? '')
+
+          // ⑤ The × closes the VIEW while the run is LIVE: the tab goes
+          // away, the row click re-opens it, and a fresh bridge pull still
+          // reports the run running — the × never kills the child.
+          const chatTabIndex99 = await js(`(() => {
+            const labels = [...document.querySelectorAll('.panel-tab .panel-tab-label span')]
+            const index = labels.findIndex((s) => s.textContent === 'PICODE_SUB99 live scout task')
+            const close = document.querySelectorAll('.panel-tab .panel-tab-close')[index]
+            if (close instanceof HTMLElement) close.click()
+            return index
+          })()`)
+          if (typeof chatTabIndex99 !== 'number' || chatTabIndex99 < 0) fail('ticket-99 stage: the conversation tab vanished before its close')
+          if (!(await waitForProbe(win, `document.querySelector('[data-testid="subagent-chat-tab"]') === null`, 10_000))) {
+            fail('ticket-99 stage: the × never closed the conversation tab')
+          }
+          // THE assertion: after the close, the run is STILL running (a
+          // fresh artifact pull — the same evidence the directory renders).
+          const stillRunning99 = waitFor((e) => e.type === 'subagent_status' && e.sessionId === created99.sessionId && e.runs.some((r) => r.runId === 'sub99-live-1' && r.state === 'running'), 'subagent99 still-running pull')
+          supervisor.handleParentCommand({ type: 'session_command', sessionId: created99.sessionId, command: { type: 'subagent_status', requestId: 'stage-99-3' } })
+          await stillRunning99
+          await js(`(() => {
+            const tab = [...document.querySelectorAll('.panel-tab-label')].find((el) => el.textContent?.includes('Subagents'))
+            if (tab instanceof HTMLElement) tab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+            return true
+          })()`)
+          if (!(await waitForProbe(win, `document.querySelector('[data-subagent-row="s99-call-live"] .subagents-badge-running') !== null`, 10_000))) {
+            fail('ticket-99 stage: the live row lost its Running badge after the chat tab closed')
+          }
+          log('subagent99_close_alive_ok')
+
+          // The row click re-opens the conversation tab (still live).
+          await js(`document.querySelector('[data-subagent-row="s99-call-live"]')?.click(); true`)
+          if (!(await waitForProbe(win, `(() => {
+            const view = document.querySelector('[data-testid="subagent-chat-tab"]')
+            return view !== null && view.querySelector('.subchat-composer') !== null
+          })()`, 10_000))) {
+            fail('ticket-99 stage: the closed tab never reopened from its row (live composer missing)')
+          }
+          log('subagent99_close_reopen_ok')
+
+          // ⑥ The run settles: the tab flips read-only (no composer).
+          writeArtifact99('complete')
+          const statusRt99b = waitFor((e) => e.type === 'subagent_status' && e.sessionId === created99.sessionId && e.runs.some((r) => r.runId === 'sub99-live-1' && r.state === 'complete'), 'subagent99 status roundtrip 2')
+          supervisor.handleParentCommand({ type: 'session_command', sessionId: created99.sessionId, command: { type: 'subagent_status', requestId: 'stage-99-2' } })
+          await statusRt99b
+          if (!(await waitForProbe(win, `(() => {
+            const view = document.querySelector('[data-testid="subagent-chat-tab"]')
+            return view !== null && view.querySelector('.subchat-composer') === null && view.querySelector('[data-subchat-readonly]') !== null
+          })()`, 10_000))) {
+            fail('ticket-99 stage: the settled run never flipped the tab to read-only')
+          }
+          log('subagent99_readonly_ok')
+
+          // ⑦ The lost run's tab: the honest error state (artifact gone).
+          await js(`(() => {
+            const tab = [...document.querySelectorAll('.panel-tab-label')].find((el) => el.textContent?.includes('Subagents'))
+            if (tab instanceof HTMLElement) tab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+            return true
+          })()`)
+          await js(`document.querySelector('[data-subagent-row="s99-call-lost"]')?.click(); true`)
+          if (!(await waitForProbe(win, `(() => {
+            const views = [...document.querySelectorAll('[data-testid="subagent-chat-tab"]')]
+            return views.length === 2 && views.some((v) => v.textContent.includes('Transcript unavailable'))
+          })()`, 10_000))) {
+            fail('ticket-99 stage: the lost run never opened its honest error state')
+          }
+          log('subagent99_error_path_ok')
+        })
+      } finally {
+        rmSync(subRoot99, { recursive: true, force: true })
+        rmSync(seedDir99, { recursive: true, force: true })
+      }
+      log('subagent_chat_done')
     }
 
     // ---- ticket 73: the New Task dead-end fix — from the new-task empty

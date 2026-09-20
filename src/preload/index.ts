@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { HostToParent, ImageAttachment, ParentToHost } from '../shared/contract'
 import type { FollowUpdate, SessionSummary, TranscriptItem } from '../shared/sessions/types'
 import type { TracePayload } from '../shared/sessions/trace'
+import type { SubagentTranscriptPayload } from '../shared/subagents/chat-model'
 import type { SessionContextAction } from '../shared/sessions/context-actions'
 import type { UsageSnapshot } from '../shared/usage/aggregate'
 import type { ReviewResult } from '../shared/review/types'
@@ -114,6 +115,27 @@ contextBridge.exposeInMainWorld('picode', {
       ipcRenderer.on('sessions:trace-update', wrapped)
       return () => {
         ipcRenderer.removeListener('sessions:trace-update', wrapped)
+      }
+    },
+    /** Subagent conversation-tab transcript (ticket 99): one run's child
+     * session transcript resolved through its status.json artifact.
+     * `follow: true` registers the live tail (running subagents) and
+     * resolves the initial snapshot; `follow: false` is a one-shot read
+     * (settled runs). Error states ride the payload (`error`), null =
+     * invalid input. */
+    subagentTranscript: (asyncDir: string, follow: boolean): Promise<SubagentTranscriptPayload | null> =>
+      ipcRenderer.invoke('sessions:subagent-transcript', asyncDir, follow),
+    /** End one conversation tab's live tail (tab closed / run settled). */
+    unsubagentTranscriptFollow: (asyncDir: string): void => {
+      ipcRenderer.send('sessions:unsubagent-transcript-follow', asyncDir)
+    },
+    /** Conversation-tab live-follow push (ticket 99): the rebuilt child
+     * transcript after the run's artifact / child session file changed. */
+    onSubagentTranscriptUpdate: (listener: (payload: SubagentTranscriptPayload) => void): (() => void) => {
+      const wrapped = (_event: IpcRendererEvent, payload: SubagentTranscriptPayload): void => listener(payload)
+      ipcRenderer.on('sessions:subagent-transcript-update', wrapped)
+      return () => {
+        ipcRenderer.removeListener('sessions:subagent-transcript-update', wrapped)
       }
     },
     /** Read-only context-menu actions (ticket 35): reveal the session file

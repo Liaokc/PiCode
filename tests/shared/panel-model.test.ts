@@ -21,6 +21,12 @@ const file = (path: string, cwd = '/work/api'): PanelTabId => ({ kind: 'file', c
 const trace = (sessionFile: string): PanelTabId => ({ kind: 'trace', sessionFile })
 const turnDiff = (turnId: string): PanelTabId => ({ kind: 'turn-diff', turnId })
 const subagents = (): PanelTabId => ({ kind: 'subagents' })
+const subagentChat = (sessionId: string, callId: string, title: string): PanelTabId => ({
+  kind: 'subagent-chat',
+  sessionId,
+  callId,
+  title
+})
 
 describe('tab identity (ticket 31)', () => {
   it('treats tabs with the same kind and coordinates as the same tab', () => {
@@ -68,6 +74,30 @@ describe('tab identity (ticket 31)', () => {
     expect(state.recentlyClosed).toEqual([])
     // A forged persisted entry is dropped defensively too.
     expect(normalizeRecentlyClosed([{ tab: { kind: 'subagents' }, closedAt: 1 }])).toEqual([])
+  })
+
+  it('subagent-chat tabs (ticket 99) are one per parent tool call, named after the task', () => {
+    const chatA = subagentChat('s1', 'call-1', 'Map the gateway routing table')
+    const chatB = subagentChat('s1', 'call-2', 'Review the rate limiter')
+    expect(samePanelTab(chatA, subagentChat('s1', 'call-1', 'Map the gateway routing table'))).toBe(true)
+    expect(samePanelTab(chatA, chatB)).toBe(false)
+    expect(samePanelTab(chatA, subagentChat('s2', 'call-1', 'Map the gateway routing table'))).toBe(false)
+    // The title is display-only: the same call under a re-derived title is
+    // still the same tab (identities never duplicate).
+    expect(samePanelTab(chatA, subagentChat('s1', 'call-1', 'Retitled'))).toBe(true)
+    expect(panelTabKey(chatA)).toBe(panelTabKey(subagentChat('s1', 'call-1', 'Retitled')))
+    expect(panelTabKey(chatA)).not.toBe(panelTabKey(chatB))
+    expect(panelTabLabel(chatA)).toBe('Map the gateway routing table')
+  })
+
+  it('closing a subagent-chat tab is not tracked in the recently closed history (ticket 99)', () => {
+    const tab = subagentChat('s1', 'call-1', 'Scout the answer')
+    let state = initialPanelState()
+    state = panelReducer(state, { type: 'open-tab', tab })
+    state = panelReducer(state, { type: 'close-tab', tab, at: 2000 })
+    expect(state.recentlyClosed).toEqual([])
+    // A forged persisted entry is dropped defensively too.
+    expect(normalizeRecentlyClosed([{ tab: { ...tab }, closedAt: 1 }])).toEqual([])
   })
 })
 

@@ -20,6 +20,7 @@ import { readPreview } from './preview/read'
 import { addServeRoot, installPreviewServe, previewServeSchemePrivileges } from './preview/serve'
 import { SessionIndexService, type FollowUpdate } from './sessions/index-service'
 import type { TracePayload } from '../shared/sessions/trace'
+import type { SubagentTranscriptPayload } from '../shared/subagents/chat-model'
 import { SessionContextActionService } from './sessions/context-actions'
 import { SettingsService, type SettingsSnapshot } from './settings/service'
 import { runAuthProbeHost } from './settings/probe-runner'
@@ -41,6 +42,7 @@ import { startAccessVisualIfEnabled } from './visual-access'
 import { startContextMenuVisualIfEnabled, isolateContextMenuUserData } from './visual-context-menu'
 import { startTraceVisualIfEnabled, isolateTraceUserData } from './visual-trace'
 import { startSubagentsVisualIfEnabled, isolateSubagentsUserData } from './visual-subagents'
+import { startSubagentChatVisualIfEnabled, isolateSubagentChatUserData } from './visual-subagents-chat'
 import { startFoldVisualIfEnabled, isolateFoldUserData } from './visual-fold'
 import { startCodeblockVisualIfEnabled, isolateCodeblockUserData } from './visual-codeblock'
 import { startAnswerVisualIfEnabled, isolateAnswerUserData } from './visual-answer'
@@ -108,6 +110,9 @@ isolateDragUserData()
 // Ticket-90 subagent-directory harness — same throwaway-userData rule
 // (no-op unless PICODE_VISUAL_SUBAGENTS=1).
 isolateSubagentsUserData()
+// Ticket-99 subagent-chat harness — same throwaway-userData rule (no-op
+// unless PICODE_VISUAL_SUBAGENTS_CHAT=1).
+isolateSubagentChatUserData()
 // Ticket-39 group-fold harness reads the default 'projects' view from a
 // throwaway userData (no-op unless PICODE_VISUAL_FOLD=1).
 isolateFoldUserData()
@@ -508,6 +513,9 @@ app.whenReady().then(() => {
   // Ticket-90 subagent-directory harness — same seeding constraint (the
   // artifact root rides the env before any host spawns).
   startSubagentsVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  // Ticket-99 subagent-chat harness — the child-file follow is REAL (the
+  // main process's sessions service tails the seeded fixtures).
+  startSubagentChatVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-38 access-menu harness — renderer-only injection, no store writes.
   startAccessVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-39 group-fold harness — same seeding constraint (12 fake
@@ -680,7 +688,12 @@ app.whenReady().then(() => {
     onFollowUpdate: (update: FollowUpdate) => broadcastChannel('sessions:follow-update', update),
     // Trace-tab live follow (ticket 37): the rebuilt payload after the
     // traced file changed size — same push semantics as the transcript tail.
-    onTraceUpdate: (payload: TracePayload) => broadcastChannel('sessions:trace-update', payload)
+    onTraceUpdate: (payload: TracePayload) => broadcastChannel('sessions:trace-update', payload),
+    // Subagent conversation-tab live follow (ticket 99): the rebuilt child
+    // transcript after the run's artifact / child session file changed —
+    // same push semantics as the trace tail.
+    onSubagentTranscriptUpdate: (payload: SubagentTranscriptPayload) =>
+      broadcastChannel('sessions:subagent-transcript-update', payload)
   })
   ipcMain.handle('sessions:list', () => sessionIndex?.list())
   ipcMain.handle('sessions:rename', (_event, file: string, name: string) => {
@@ -711,6 +724,20 @@ app.whenReady().then(() => {
   })
   ipcMain.on('sessions:untrace-follow', (_event, file: unknown) => {
     if (typeof file === 'string' && file.length > 0) sessionIndex?.stopTraceFollowing(file)
+  })
+  // Subagent conversation-tab transcript (ticket 99): one run's child
+  // session transcript, resolved through its status.json artifact. `follow`
+  // registers the live tail (running subagents); false is a one-shot read
+  // (settled runs). Error states are honest payload members — the tab
+  // renders them, never an empty fake. Additive members of the sessions
+  // family (read-only; the child file is never written).
+  ipcMain.handle('sessions:subagent-transcript', (_event, asyncDir: unknown, follow: unknown) => {
+    if (typeof asyncDir !== 'string' || asyncDir.length === 0) return Promise.resolve(null)
+    if (follow === true) return sessionIndex?.startSubagentTranscriptFollowing(asyncDir) ?? Promise.resolve(null)
+    return sessionIndex?.subagentTranscriptOnce(asyncDir) ?? Promise.resolve(null)
+  })
+  ipcMain.on('sessions:unsubagent-transcript-follow', (_event, asyncDir: unknown) => {
+    if (typeof asyncDir === 'string' && asyncDir.length > 0) sessionIndex?.stopSubagentTranscriptFollowing(asyncDir)
   })
   sessionIndex.start()
 
