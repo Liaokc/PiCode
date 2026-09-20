@@ -1,6 +1,7 @@
-import { memo, type JSX } from 'react'
+import { memo, useRef, type JSX, type RefObject } from 'react'
 import type { TurnGroup, TurnWorkItem } from '../../../shared/turn-collapse'
 import { useElapsedSeconds } from './use-elapsed-seconds'
+import { useFoldAnchor } from './use-fold-anchor'
 import { ChevronDownIcon, ChevronRightIcon, LoaderIcon, WandIcon } from './icons'
 import ApprovalPill from './ApprovalPill'
 import Markdown from './Markdown'
@@ -87,6 +88,13 @@ interface TurnContainerProps {
    * (the structured payload carries none), so the pill simply doesn't render. */
   onApprove?: (toolCallId: string, remember: boolean) => void
   onDeny?: (toolCallId: string, reason: string) => void
+  /** Ticket 94: the transcript scroll container this render lives in —
+   * every view (ChatView, FollowView) passes its scroller so the fold-anchor
+   * hook can hold the deterministic rule across folds: the header row stays
+   * put off the bottom, the bottom stays pinned (fold-anchor.ts). The rule
+   * is core to the container now — renders without a scroller have no
+   * anchor to honor and don't exist. */
+  scrollRef: RefObject<HTMLDivElement | null>
 }
 
 /**
@@ -118,9 +126,13 @@ export default function TurnContainer({
   onOpenFile,
   onShowInBridge,
   onApprove,
-  onDeny
+  onDeny,
+  scrollRef
 }: TurnContainerProps): JSX.Element {
   const seconds = useElapsedSeconds(turn.live)
+  // Ticket 94: the header element is the fold anchor — its viewport row is
+  // what the deterministic rule holds still across open flips.
+  const headerRef = useRef<HTMLButtonElement | null>(null)
   // Turns that streamed in this view keep their ticked duration frozen after
   // settling (the hook retains its count once inactive); replayed turns never
   // tick and degrade to a duration-less row (same rule as replayed thinking,
@@ -130,13 +142,22 @@ export default function TurnContainer({
   // (only the body unmounts), so the header timer survives folding and
   // reopening without resetting.
   const expandable = turn.hasWork
+  // Ticket 94: every open flip of THIS container obeys the shared
+  // deterministic anchor rule (pure model in shared/fold-anchor.ts) — the
+  // same law for the click toggles, the settle auto-fold and the
+  // pending-approval force-open, in every view that passes its scroller.
+  // The click capture runs FIRST in the header's onClick: it reads the
+  // viewport the user saw at click time (synchronous — no scroll event has
+  // to have delivered yet).
+  const captureFoldAnchor = useFoldAnchor(scrollRef, headerRef, expandable && open)
 
   return (
     <div className={`turn-container${expandable && open ? ' turn-container-open' : ''}`}>
       <button
+        ref={headerRef}
         type="button"
         className="turn-container-header"
-        onClick={expandable ? onToggle : undefined}
+        onClick={expandable ? () => { captureFoldAnchor(); onToggle() } : undefined}
         aria-disabled={expandable ? undefined : true}
         aria-expanded={expandable ? open : undefined}
         aria-label={

@@ -94,13 +94,15 @@ export default function ChatView({
   // close the panel; the click toggle does).
   const treeBtnRef = useRef<HTMLButtonElement>(null)
   // Ticket 45 scroll-stay bookkeeping: growth detection by reference (every
-  // reducer rewrite of entries/expandedTurns), the focused session's id, and
-  // the two pin latches — send (ticket 93: armed by the user's own send and
-  // held UNTIL THE BOTTOM IS REACHED or an upward gesture takes over — no
-  // longer one decision pass) and jump travel (until the bottom is reached
-  // or the user's own scroll takes over).
+  // reducer rewrite of entries), the focused session's id, and the two pin
+  // latches — send (ticket 93: armed by the user's own send and held UNTIL
+  // THE BOTTOM IS REACHED or an upward gesture takes over — no longer one
+  // decision pass) and jump travel (until the bottom is reached or the
+  // user's own scroll takes over). Ticket 94: fold toggles are NOT growth —
+  // expandedTurns left the grew check; a toggle's scroll is the fold-anchor
+  // rule's (shared/fold-anchor.ts: header row restored, or the bottom kept
+  // when pinned), and the streaming stick must not fight it near the band.
   const lastEntries = useRef<ChatEntry[] | null>(null)
-  const lastTurns = useRef<ReadonlySet<string> | null>(null)
   const lastSessionId = useRef<string | null>(null)
   const arrivalPending = useRef(true)
   const sendLatch = useRef(false)
@@ -147,13 +149,11 @@ export default function ChatView({
       lastSessionId.current = sessionId
       arrivalPending.current = true
       lastEntries.current = null
-      lastTurns.current = null
       heldAway.current = false
       sendLatch.current = false
     }
-    const grew = chat.entries !== lastEntries.current || chat.expandedTurns !== lastTurns.current
+    const grew = chat.entries !== lastEntries.current
     lastEntries.current = chat.entries
-    lastTurns.current = chat.expandedTurns
     if (arrivalPending.current) {
       el.scrollTop = el.scrollHeight
       setJumpVisible(false)
@@ -364,6 +364,10 @@ export default function ChatView({
                        the fold shut on decision, jumping the two-state slot). */
                     open={chat.expandedTurns.has(turn.id) || turn.pendingApproval}
                     onToggle={() => onToggleTurn(turn.id)}
+                    /* Ticket 94: the transcript scroller — the deterministic
+                       fold-anchor rule holds the header row / bottom pin
+                       across this container's open flips. */
+                    scrollRef={scrollRef}
                     onOpenFile={onOpenFile}
                     onShowInBridge={onShowInBridge}
                     onApprove={onApprove}
