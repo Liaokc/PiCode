@@ -19,6 +19,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { app, type BrowserWindow, type WebContents } from 'electron'
+import { emitContractEvent } from './visual'
 
 export function settingsVisualEnabled(): boolean {
   return process.env['PICODE_VISUAL_SETTINGS'] === '1'
@@ -232,7 +233,70 @@ export function startSettingsVisualIfEnabled(getWindow: () => BrowserWindow | nu
       // read-only .agents row and the per-layer open-config chips.
       if (!(await clickNavItem(wc, 'MCP'))) throw new Error('settings visual: MCP nav item missing')
       await sleep(400)
+      // Ticket 96: with NO focused session the status projection must show
+      // the honest no-session line and zero runtime badges — the frame
+      // captures the empty state as built.
+      const noSessionLine = await execute<string | null>(wc, `document.querySelector('[data-mcp-status-line]')?.textContent ?? null`)
+      if (noSessionLine === null || !noSessionLine.includes('focused session')) {
+        throw new Error(`settings visual: the no-session status line is missing (${JSON.stringify(noSessionLine)})`)
+      }
+      const badgeCount = await execute<number>(wc, `document.querySelectorAll('.skill-badge-status').length`)
+      if (badgeCount !== 0) throw new Error(`settings visual: ${badgeCount} runtime badges rendered without a session`)
+      console.log('VISUAL mcp no-session honest empty state ok')
       await capture(win, 's7-settings-mcp')
+
+      // 7b. MCP status projection (ticket 96): inject a focused session +
+      // its adapter snapshot (the WRAPPED contract shapes — the same
+      // injection surface the subagents visual uses) and capture the full
+      // status vocabulary: connected (2 tools), cached, failed, needs-auth
+      // (with its Authenticate button), not-connected; the disabled row
+      // keeps its config badge. The honest status line hides.
+      const mcp96Session = 'visual-mcp96'
+      emitContractEvent({ type: 'session_event', sessionId: mcp96Session, event: { type: 'session_created', sessionId: mcp96Session, cwd: '/Users/demo/Projects/picode', model: 'claude-opus-4-5', resumed: true } })
+      emitContractEvent({
+        type: 'session_event',
+        sessionId: mcp96Session,
+        event: {
+          type: 'mcp_status',
+          snapshot: {
+            version: 1,
+            servers: [
+              { name: 'deepwiki', status: 'connected', toolCount: 12, directToolCount: 12, disabled: false },
+              { name: 'docs-cache', status: 'cached', toolCount: 8, directToolCount: 8, disabled: false },
+              { name: 'flaky', status: 'failed', toolCount: 0, directToolCount: 0, disabled: false, failedAgoSeconds: 42 },
+              { name: 'notion', status: 'needs-auth', toolCount: 0, directToolCount: 0, disabled: false },
+              { name: 'repo-tools', status: 'not-connected', toolCount: 0, directToolCount: 0, disabled: false }
+            ],
+            totalTools: 20,
+            totalResources: 0,
+            connectedCount: 1,
+            disabledCount: 1
+          }
+        }
+      })
+      let mcpBadges = 0
+      for (let waited = 0; waited < 5_000; waited += 100) {
+        mcpBadges = await execute<number>(wc, `document.querySelectorAll('.skill-badge-status').length`)
+        if (mcpBadges >= 5) break
+        await sleep(100)
+      }
+      if (mcpBadges < 5) throw new Error(`settings visual: the injected snapshot never rendered its badges (${mcpBadges})`)
+      const liveLine = await execute<string | null>(wc, `document.querySelector('[data-mcp-status-line]')?.textContent ?? null`)
+      if (liveLine !== null) throw new Error('settings visual: the honest status line must hide once live data is on display')
+      const needsAuthRow = await execute<{ status: string | null; authBtn: boolean } | null>(wc, `(() => {
+        const row = document.querySelector('[data-mcp-server="notion"]')
+        if (!(row instanceof HTMLElement)) return null
+        return {
+          status: row.querySelector('[data-mcp-status="notion"]')?.textContent ?? null,
+          authBtn: row.querySelector('button[aria-label="Authenticate notion"]') !== null
+        }
+      })()`)
+      if (needsAuthRow === null || needsAuthRow.status !== 'Needs auth' || !needsAuthRow.authBtn) {
+        throw new Error(`settings visual: the needs-auth row must surface the badge + Authenticate button (${JSON.stringify(needsAuthRow)})`)
+      }
+      console.log('VISUAL mcp status projection ok (five live badges, needs-auth + Authenticate, line hidden)')
+      await sleep(300)
+      await capture(win, 's7b-settings-mcp-status')
 
       console.log('VISUAL settings done')
       app.exit(0)

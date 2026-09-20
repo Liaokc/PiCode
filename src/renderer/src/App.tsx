@@ -9,6 +9,7 @@ import {
 } from '../../shared/session-registry'
 import { initialChatState, type ChatAction } from '../../shared/chat-reducer'
 import { isMcpAuthEvent, mcpAuthStore } from './components/settings/mcp-auth-store'
+import { isMcpStatusEvent, mcpStatusStore } from './components/settings/mcp-status-store'
 import { groupTurns } from '../../shared/turn-collapse'
 import type { HostToParent, SessionCommand, SessionScopedEvent } from '../../shared/contract'
 import { resolvePreviewPath } from '../../shared/preview/policy'
@@ -347,6 +348,24 @@ export default function App(): JSX.Element {
       // section through its own tiny store (the chat reducer no-ops them).
       if (event.type === 'session_event' && isMcpAuthEvent(event.event)) {
         mcpAuthStore.dispatch(event.event, event.sessionId)
+      }
+      // Ticket 96: MCP status snapshots feed the same section's status
+      // projection (receive-only bridge; the chat reducer no-ops them).
+      // They are ALSO skipped here — never folded into the session registry:
+      // the status belongs to the section store, and the adapter republishes
+      // on every runtime change (health retries included), so a fold would
+      // replace the whole registry state mid-stream for zero chat effect.
+      if (event.type === 'session_event' && isMcpStatusEvent(event.event)) {
+        mcpStatusStore.dispatch(event.event, event.sessionId)
+        return
+      }
+      // The session's runtime is gone (crash / detached after in-host fork)
+      // — its snapshot is stale; the honest no-data state takes over.
+      if (
+        event.type === 'session_event' &&
+        (event.event.type === 'host_exit' || event.event.type === 'session_detached')
+      ) {
+        mcpStatusStore.dropSession(event.sessionId)
       }
       // Ticket 74: an announcement switches the view (create/resume/fork/
       // takeover all re-announce and auto-focus) — park the mounted

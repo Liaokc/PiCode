@@ -7990,6 +7990,51 @@ button.preview-crumb:hover {
   color: var(--accent-blue);
 }
 
+/* Ticket 96: the focused session's live adapter status projection — one
+   badge per server row, tone = the runtime state. 'disabled' renders no
+   runtime badge (the config Disabled badge covers it). */
+.skill-badge-status-connected {
+  background: color-mix(in srgb, #34a853 14%, transparent);
+  color: #2c8a44;
+}
+
+.skill-badge-status-cached {
+  background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
+  color: var(--accent-blue);
+}
+
+.skill-badge-status-failed {
+  background: color-mix(in srgb, #d5422f 12%, transparent);
+  color: #d5422f;
+}
+
+.skill-badge-status-needs-auth {
+  background: color-mix(in srgb, var(--accent-orange) 14%, transparent);
+  color: var(--accent-orange);
+}
+
+.skill-badge-status-not-connected {
+  background: var(--bg-active);
+  color: var(--text-secondary);
+}
+
+.skill-badge-tools {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.settings-mcp-status-line {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--bg-inset);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
 .settings-mcp-summary {
   padding: 0;
   border: none;

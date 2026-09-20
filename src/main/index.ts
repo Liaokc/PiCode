@@ -879,7 +879,11 @@ function fakeMcpReport(cwd: unknown): McpLayerReport {
         error: null,
         servers: {
           deepwiki: { url: 'https://mcp.deepwiki.com/mcp', protocolVersion: 'auto' },
-          notion: { url: 'https://mcp.notion.com/mcp', auth: 'oauth' }
+          notion: { url: 'https://mcp.notion.com/mcp', auth: 'oauth' },
+          // Ticket 96: two more rows so the s7b status frame can show the
+          // whole runtime-state vocabulary (cached + failed join the six).
+          'docs-cache': { url: 'https://docs.example.com/mcp' },
+          flaky: { command: 'flaky-mcp-bin' }
         }
       },
       {

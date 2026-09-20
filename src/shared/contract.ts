@@ -16,11 +16,13 @@
  * Every member must stay JSON-serializable (it crosses process IPC).
  */
 import type { SessionDefaults } from './preferences.ts'
+import type { McpRuntimeStatus, McpServerStatusData, McpStatusSnapshotData } from './mcp-status.ts'
 import type { SessionTreePayload, TranscriptItem } from './sessions/types.ts'
 import type { SubagentCallInfo, SubagentFleetDTO, SubagentRunState } from './subagents/types.ts'
 import type { UsageTokens } from './usage/types.ts'
 
 export type { SubagentCallInfo, SubagentFleetDTO, SubagentRunState }
+export type { McpRuntimeStatus, McpServerStatusData, McpStatusSnapshotData }
 
 // ---- ticket 05: composer + approval gate shared vocabulary ----
 
@@ -326,6 +328,19 @@ export type SessionScopedEvent =
    * one child's stop lifecycle (duplicates possible; not authoritative —
    * status snapshots are). Feeds later surfaces; the directory ignores it. */
   | { type: 'subagent_child_status'; runId: string; childId: string; status: 'stopping' | 'stopped'; ts: number; agent?: string; stepIndex?: number; label?: string }
+  // ---- ticket 96: the MCP status bridge (additive, reported into the
+  // host-contract smoke). The host's inline extension subscribes to the
+  // adapter's versioned status channel (pi.events in-process bus) and
+  // forwards the VALIDATED snapshot; receive-only — the renderer never
+  // commands a status read, so viewing the section can never connect a
+  // lazy server (zero-side-effect by construction). ----
+  /** The focused session's adapter status snapshot (versioned, bounded —
+   * shared/mcp-status.ts): per-server runtime status + tool counts, plus
+   * the snapshot totals. Session-scoped: the renderer projects it onto the
+   * config rows of the FOCUSED session only; no snapshot (adapter absent,
+   * host booting) renders the honest no-data state, never an invented
+   * status. An EMPTY snapshot rides the session shutdown. */
+  | { type: 'mcp_status'; snapshot: McpStatusSnapshotData }
   /** Supervisor-synthesized: this session's host moved on to a DIFFERENT
    * session (in-host fork re-announcement). The session no longer has a
    * backing host; its file remains and can be resumed (ticket 20). */

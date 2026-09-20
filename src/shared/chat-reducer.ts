@@ -706,6 +706,12 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case 'subagent_child_status':
       return state
 
+    // MCP status snapshots (ticket 96) belong to the settings window's MCP
+    // section store (focused-session projection), not the transcript —
+    // defensively no-op here like the OAuth bridge events above.
+    case 'mcp_status':
+      return state
+
     case 'host_exit': {
       const cwd = state.session?.cwd ?? null
       // A dead host settles like any run end: the turn folds away and the
