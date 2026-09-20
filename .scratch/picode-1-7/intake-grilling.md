@@ -165,6 +165,11 @@ Status: ready-for-spec
 - **盘点**：安装路径机制面已互通——Packages 节安装走 `DefaultPackageManager.installAndPersist`（与 `pi install` 同代码路径，落盘同一 `~/.pi/agent/settings.json` packages 数组，TUI 下次启动即加载）。**缺口实锤**：Packages 节列表有 per-dir 缓存（`packages-service.ts` cache，无 TTL），`force` 刷新仅在 PiCode 自家 op 后触发——**TUI 侧安装后 PiCode 列表不自动反映**（缓存盲区）。会话生效语义 = 新会话加载（运行中会话 TUI 也需 /reload，两侧同语义）。
 - **定稿**：①**缓存盲区补齐**——Packages 节挂载/设置窗打开时 force 刷新（用户动作驱动的即时真值； PiCode 内 op 后仍走既有 force）；②**双端互通验证矩阵**（electron smoke + 实测留档）：PiCode 装 → TUI 可用（settings.json 断言 + TUI 加载）、TUI 装 → PiCode 列表反映 + 新会话可用；真实包 pi-mcp-adapter/pi-subagents 为现成测试对象；③**生效语义如实提示**——安装成功文案注明「新会话生效」（运行中会话不热加载，两侧同语义）。
 
+### R32 pi-subagents 0.70.0 适配 —— 适配验证（Round 14 免问定稿）
+- **背景**：pi-subagents 已更新 0.68.0 → **0.70.0**（0.69.0 于 09-18、0.70.0 于 09-19 发布；本机 09-20 13:52 就位）。PiCode 集成面（90/99/101）是照 0.68.0 文档写的。
+- **取证**：核心集成面**无 breaking**——RPC 通道 `subagents:rpc:v1:*` 与方法面（status/spawn/steer/interrupt/stop/resume）、fleetStatus DTO v1、async 工件路径与 status.json 字段（runId/sessionFile/state…）、async 事件族全部在位。0.70 变更 = 新能力（defaultSubagentOnlyExtensions / allowedAgents 启动限制 / typed gates）+ 修复（detached 子代理可见性、tool_budget_exhausted 报告、usage 对账、FleetView 分组/着色）。
+- **定稿**：**适配验证票**——在 0.70.0 上重验 90/99/101 全部集成面（RPC 回复形状、status.json 字段消费、事件、七态投影实测对照真实运行），漂移即修、不漂移留档确认；不新增功能面（allowedAgents 等新能力呈现 = 观察项不立项）。
+
 ### R26 运行中重命名 —— 缺陷（Round 10 免问定稿）
 - **痛点**：agent 运行时重命名会话报错 toast（右下角）；TUI 的 `/name` 运行中可用。
 - **根因**：`host/index.ts` handleRename 开头 `requireSettledSession()` 守卫——运行中被拒发 session_command_error。SDK setSessionName 运行中可写（TUI 实证）。
@@ -200,6 +205,8 @@ Status: ready-for-spec
 - **Round 11（免问）**：Working 计时跨切换清零（第 28 条痛点）——根因实锤（tick 计数器无锚点、重挂载归零），修法 = 票 61 的锚点派生口径迁移，免问定稿。定稿见 R29。
 - **Round 12（免问）**：Worked 时长显示（第 29 条痛点）——票 14 口径修订（条目时间戳可派生时长），落点 chevron 右侧，并入票 108。定稿见 R30。
 - **Round 13（免问）**：双端包安装互通（第 30 条痛点）——安装路径机制面已互通（installAndPersist 同 `pi install` 代码路径），缺口 = Packages 列表缓存对 TUI 侧安装不自动反映；定稿 = 节挂载 force 刷新 + 双端验证矩阵 + 新会话生效语义提示。定稿见 R31。
+- **Round 14（免问）**：pi-subagents 0.70.0 适配（第 31 条痛点）——核心集成面无 breaking 实证，适配 = 0.70.0 上重验 90/99/101 集成面、漂移即修。定稿见 R32。
+- 至此前沿树空：32 条痛点 → 32 个 R 簇 × 全部边界均有裁决。
 - 至此前沿树空：31 条痛点 → 31 个 R 簇 × 全部边界均有裁决。
 - 至此前沿树空：30 条痛点 → 30 个 R 簇 × 全部边界均有裁决。
 - 至此前沿树空：28 条痛点 → 29 个 R 簇 × 全部边界均有裁决。
@@ -208,6 +215,7 @@ Status: ready-for-spec
 
 - 缺陷 12：R7（图片遮盖）、R8（滚动条）、R10（动画缺失）、R13（发送不落底）、R14（票 79 live 丢图）、R16（焦点滞留）、R18（History 竞态）、R23 布局半边（queue 行边框重合）、R26（运行中重命名被拒）、R27（终端不聚焦）、R28（新卡片慢）、R29（Working 计时切换清零）。
 - 打通验证 1：R31（双端包安装互通——缓存盲区补齐 + 验证矩阵）。
+- 适配验证 1：R32（pi-subagents 0.70.0——集成面重验）。
 - 交付行为修订 6：R1（票 78 live 增长）、R2（1.4 表格卡 360px）、R6（容器无锚定）、R15（票 56 提升规则）、R19（技能 marker 容器内 + 空泡）、R30（票 14 无时长规则——条目时间戳可派生）。
 - 交付行为修订 5：R1（票 78 live 增长）、R2（1.4 表格卡 360px）、R6（容器无锚定）、R15（票 56 提升规则）、R19（技能 marker 容器内 + 空泡）。
 - 清理 1：R12（幽灵钮删除）。

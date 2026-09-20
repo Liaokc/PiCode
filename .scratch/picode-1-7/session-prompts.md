@@ -2,7 +2,7 @@
 
 > 每个工单一个新 pi 会话、一个 worktree、一条分支。本手册每块都可独立复制粘贴。
 > 约定详情见 `AGENTS.md › Parallel development (git worktrees)`。
-> 总 spec：`.scratch/picode-1-7/spec.md`（R1–R31 决议与验收口径；**每条 R 1:1 映射进票，81–108**（107 文件浏览器、109 visual fixture 修缮——已撤销由 87 顺带交付——为 intake 通道增补票；110 包互通挂 R31）——R5 拆三票、R7/R8/R10 合 81、R14/R17/R19 合 97）。
+> 总 spec：`.scratch/picode-1-7/spec.md`（R1–R32 决议与验收口径；**每条 R 1:1 映射进票，81–108**（107 文件浏览器、109 visual fixture 修缮——已撤销由 87 顺带交付——为 intake 通道增补票；110 包互通挂 R31）——R5 拆三票、R7/R8/R10 合 81、R14/R17/R19 合 97）。
 > 需求定稿全记录（23 痛点 × 六轮 25 问 + file:line 根因 + Pi 包取证 + ZCode bundle 键表 + 两处改判/一处加码）：`.scratch/picode-1-7/intake-grilling.md`。
 > 证据帧：`.scratch/compare/pi17-*`（操作者待复制——会话内贴图无法落盘）+ `icon-proposals/`（V2 定稿）。
 > 术语新增（子智能体目录/子代理对话/Manual 排序/图片预览/MCP 节 → 各票 rider；回合正文/常显段/过程叙述 live 语义修订 → 票 82）随票入 CONTEXT.md。
@@ -69,6 +69,7 @@ cd ~/PiCode && bash scripts/merge-ticket.sh <NN>
 | | **107** 文件浏览器实时刷新 + 置顶行 View files | Sidebar 置顶行 + FileBrowser（watch 通路则契约增量） | **84** |
 | **W10** | **108** 计时不丢 | 容器 header 锚点派生（票 61 口径迁移） | **94** |
 | | **110** 双端包安装互通 | PackagesSection force 刷新 + 验证矩阵 | **89** |
+| | **111** pi-subagents 0.70.0 适配 | 90/99/101 集成面重验 | **101** |
 
 > 群分：A（composer 群 81→91→98）/ B（转录群 82→92→94→97→103→108）/ C（侧栏群 84→95→106；107 文件浏览器 W9）/ D（子代理 90→99→101）/ 独立快线 83/85/86/87/88/89→96/93/100→104/105/110（110 = 包互通，同设置窗文件群随 89 后；109 visual fixture 修缮已撤销——87 顺带交付，票内注记）。
 > **防冲突纪律**（同 v1.1–v1.6，三件事）：
@@ -737,6 +738,28 @@ cd .worktrees/wt-110-packages-cross && npm install
 新会话可用；真实包 pi-mcp-adapter/pi-subagents 现成测试对象）；③安装成功
 文案注明「新会话生效」（两侧同语义，如实）。
 流程同 T81（merge-ticket.sh 110）。
+```
+
+---
+
+## T111 — pi-subagents 0.70.0 适配（W10，Blocked by 101）
+
+```bash
+cd ~/PiCode
+git worktree add .worktrees/wt-111-subagents-070 -b t111-subagents-070 main
+cd .worktrees/wt-111-subagents-070 && npm install
+```
+
+```text
+/implement .scratch/picode-1-7/issues/111-subagents-070-adaptation.md
+
+规矩：同 T81（分支 t111-subagents-070）。开工前 rebase main 拿 101 的基座。
+
+核心：pi-subagents 已 0.68.0→0.70.0（核心集成面文档核对无 breaking）。在
+0.70.0 上重验 90/99/101 全部集成面（RPC 回复形状/status.json 字段/事件/
+七态投影对照真实子代理运行）——漂移即修、不漂移留档；0.70 新能力呈现 =
+观察项不立项。
+流程同 T81（merge-ticket.sh 111）。
 ```
 
 ---
