@@ -6,11 +6,12 @@
 
 **Blocked by:** 90（子智能体桥接 + 目录 tab——目录行是入口、桥接是数据面）.
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 ## Acceptance
 
-- [ ] electron smoke：目录行点击开对话 tab（任务命名）；运行中子代理转录 live 更新；steer 发送 → 回执上屏；已结束只读（无 composer）
-- [ ] 多 tab 并存互不影响；× 关闭不杀运行中的子代理（仅关视图——断言子代理仍在跑）
-- [ ] 回底钮/滚动语义与主转录一致；横向边界：嵌套/foreign session 的错误路径如实显示
-- [ ] vitest / typecheck 全绿；跑 dev app / smoke 前 `ps` 自查（dev-app serialization）
+- [x] electron smoke：目录行点击开对话 tab（任务命名）；运行中子代理转录 live 更新；steer 发送 → 回执上屏；已结束只读（无 composer）
+- [x] 多 tab 并存互不影响；× 关闭不杀运行中的子代理（仅关视图——断言子代理仍在跑）
+- [x] 回底钮/滚动语义与主转录一致；横向边界：嵌套/foreign session 的错误路径如实显示
+- [x] vitest / typecheck 全绿；跑 dev app / smoke 前 `ps` 自查（dev-app serialization）
+- 2026-09-20 (merge session，per 操作者验收指令「99 工单已验收」)：Status 翻转 ready-for-human + 四验收框按提交证据链勾选——本票证据全存于提交与 harness（票文件原 16 行无 Comments，本批唯一形态）：host-contract smoke **Round J**（subagent_steer 契约 additive 报备：命令 + receipt 回执 requestId/asyncId echo 断言，+78 行）；smoke ticket-99 stage（目录行开任务命名 tab / live 更新 / **×-close live 中关闭 + re-pull 断言子代理仍在跑** = 验收项 2 原文）；visual s99-1..5 五帧（chat/live/receipt/readonly/error）；7 测试文件 +~700 行。合并会话仅簿记未重跑——合并后 main 上 typecheck + vitest 复验闭环。
