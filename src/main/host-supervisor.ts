@@ -12,6 +12,7 @@
  */
 
 import { fork, type ChildProcess } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import path from 'node:path'
 import type { SessionDefaults } from '../shared/preferences'
 import type { HostControlCommand, HostToParent, ParentToHost, SessionScopedEvent } from '../shared/contract'
@@ -144,9 +145,20 @@ export class HostSupervisor {
    */
   createSession(cwd: string, sessionFile?: string, defaults?: SessionDefaults): void {
     const args = encodeSessionArgs(cwd, sessionFile, defaults)
+    // Ticket 96: the fork runs IN the session's workspace — the pi TUI's own
+    // semantics (its process cwd IS the project dir). The adapter resolves
+    // its EARLY config and cache-reuse fast-path against process.cwd(); a
+    // host forked at the app's launch dir defers the whole MCP runtime even
+    // for sessions that configure servers, so no status snapshot would ever
+    // flow. Session files, agent dir and every other path are argv/env —
+    // nothing in the host depends on the old inherited cwd. A workspace
+    // that has vanished keeps the inherited cwd (the host boots and fails
+    // on its own, preserving the dead-cwd exit(1) semantics).
+    const cwdExists = existsSync(cwd)
     const child = fork(this.options.hostEntryPath, args, {
       env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-      stdio: ['ignore', 'pipe', 'pipe', 'ipc']
+      stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+      ...(cwdExists ? { cwd } : {})
     })
     const binding: HostBinding = {
       child,

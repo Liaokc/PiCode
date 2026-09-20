@@ -396,6 +396,51 @@ export function startSmokeIfEnabled(
     if (smokeWin === null) fail('smoke window missing for the empty-state stage')
     const win = smokeWin
     let pickedModelId: string | null = null
+
+    // ⓪ (ticket 96): the MCP section's HONEST NO-SESSION state — no session
+    // exists yet, so the status projection must say so instead of inventing
+    // states. Zero runtime badges anywhere; the status line carries the
+    // no-session copy; Escape returns to the workspace. Run BEFORE the
+    // pick chain: the empty-state's model/thinking/access picks are
+    // component-local state — a settings round-trip AFTER a pick would
+    // unmount the empty state and lose them (pre-existing view-switch
+    // semantics — the probe must not sit between a pick and its send).
+    await win.webContents.executeJavaScript(`(() => {
+      const gear = document.querySelector('button[aria-label="Settings"]')
+      if (gear instanceof HTMLElement) gear.click()
+      return true
+    })()`).catch(() => false)
+    if (!(await waitForProbe(win, `document.querySelector('.settings-shell') !== null`, 5_000))) {
+      fail('ticket-96 stage: the settings window never opened for the no-session probe')
+    }
+    await win.webContents.executeJavaScript(`(() => {
+      const item = [...document.querySelectorAll('.settings-item')].find((el) => el.textContent?.trim() === 'MCP')
+      if (item instanceof HTMLElement) item.click()
+      return true
+    })()`).catch(() => false)
+    if (!(await waitForProbe(win, `document.querySelector('[data-mcp-section]') !== null`, 5_000))) {
+      fail('ticket-96 stage: the MCP section never rendered for the no-session probe')
+    }
+    {
+      const emptyState = (await win.webContents.executeJavaScript(`(() => ({
+        line: document.querySelector('[data-mcp-status-line]')?.textContent ?? null,
+        badges: document.querySelectorAll('.skill-badge-status').length
+      }))()`).catch(() => null)) as { line: string | null; badges: number } | null
+      if (emptyState === null) fail('ticket-96 stage: the no-session MCP probe failed to read the section')
+      if (emptyState!.line === null || !emptyState!.line.includes('focused session')) {
+        fail(`ticket-96 stage: without a session the status line must carry the no-session copy, got ${JSON.stringify(emptyState!.line)}`)
+      }
+      if (emptyState!.badges !== 0) fail(`ticket-96 stage: no runtime badge may render without a session, got ${emptyState!.badges}`)
+      log('mcp_status_no_session_ok')
+    }
+    await win.webContents.executeJavaScript(`(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      return true
+    })()`)
+    if (!(await waitForProbe(win, `document.querySelector('.settings-shell') === null`, 5_000))) {
+      fail('ticket-96 stage: Escape never closed the settings window after the no-session probe')
+    }
+
     {
       const modelPrefix = 'Model:'
 
@@ -5049,8 +5094,6 @@ export function startSmokeIfEnabled(
         clientH: document.querySelector('.chat-scroll')?.clientHeight ?? null,
         chatView: document.querySelector('.chat-view') !== null
       })`
-      /** The live turn's container row is the bottom-most element: 'Working'
-       * label and its bottom edge inside the scroll viewport. */
       /** The turn tail (live 'Working' or freshly settled 'Worked') is the
        * bottom-most element: its bottom edge inside the scroll viewport.
        * Fast-model tolerant (ticket-93 stage's glm-5.3-flash class race):
@@ -8917,11 +8960,21 @@ export function startSmokeIfEnabled(
       // endpoint (the adapter RECONNECTS after a successful auth).
       const mockPort = await listenMockOAuth()
       const mockUrl = `http://127.0.0.1:${mockPort}`
+      // Ticket 96: the status-projection servers — a bearer server that
+      // CONNECTS at init (the connected badge from the initial snapshot),
+      // an eager OAuth server whose connect 401s (the needs-auth badge —
+      // no flow opens, no browser appears), and a lazy stdio server whose
+      // command writes a marker file IF it ever connects (viewing the
+      // section must never trigger it — the zero-trigger probe).
+      const lazyMarker96 = path.join(mcpBase, 'lazy-probe-marker')
       writeFileSync(projectShared, JSON.stringify({
         mcpServers: {
           'shared-search': { args: ['--fast'] },
           'repo-tools': { command: 'node', args: ['tools/repo-mcp.js'] },
-          'mock-oauth': { url: `${mockUrl}/mcp`, auth: 'oauth' }
+          'mock-oauth': { url: `${mockUrl}/mcp`, auth: 'oauth' },
+          'bearer-api': { url: `${mockUrl}/mcp`, auth: 'bearer', bearerToken: 'picode-smoke-bearer-96', lifecycle: 'eager' },
+          'eager-cms': { url: `${mockUrl}/mcp`, auth: 'oauth', lifecycle: 'eager' },
+          'lazy-probe': { command: 'node', args: ['-e', `require('fs').writeFileSync(${JSON.stringify(lazyMarker96)}, 'x')`] }
         }
       }))
 
@@ -9075,6 +9128,73 @@ export function startSmokeIfEnabled(
           // args from project.
           if (rowSigs.sharedSearch.summary !== 'shared-search-bin --fast') fail(`ticket-89 stage: the merged summary is wrong (got ${JSON.stringify(rowSigs.sharedSearch.summary)})`)
           log('mcp_cards_badges_ok')
+
+          // ③b (ticket 96): the focused session's live status projection.
+          // The session's adapter (loaded from the sandbox agent dir) has
+          // published its initial snapshot by now — the badges reflect the
+          // RUNTIME, not the config: bearer-api connected from init with
+          // its real tool count, eager-cms parked at needs-auth (a 401 at
+          // init connect — no flow, no browser), the lazy servers honestly
+          // not-connected, the disabled row WITHOUT a runtime badge (its
+          // config Disabled badge already says it), and the honest status
+          // line HIDDEN (live data on display).
+          type StatusSig = { status: string | null; tools: string | null; authBtn: boolean }
+          type StatusSigs = {
+            bearerApi: StatusSig | null
+            eagerCms: StatusSig | null
+            lazyProbe: { status: string | null; tools: string | null } | null
+            mockOauth: { status: string | null } | null
+            piOnly: { status: string | null; configDisabled: boolean } | null
+          }
+          let statusSigs: StatusSigs | null = null
+          for (let waited = 0; waited < 30_000; waited += 250) {
+            statusSigs = (await js(`(() => {
+              const sig = (name) => {
+                const row = document.querySelector('[data-mcp-server="' + name + '"]')
+                if (!(row instanceof HTMLElement)) return null
+                const badge = row.querySelector('[data-mcp-status="' + name + '"]')
+                return {
+                  status: badge?.textContent ?? null,
+                  tools: [...row.querySelectorAll('.skill-badge-tools')].map((b) => b.textContent ?? '').join(','),
+                  authBtn: row.querySelector('button[aria-label="Authenticate ' + name + '"]') !== null
+                }
+              }
+              const piOnlyRow = document.querySelector('[data-mcp-server="pi-only"]')
+              return {
+                bearerApi: sig('bearer-api'),
+                eagerCms: sig('eager-cms'),
+                lazyProbe: sig('lazy-probe'),
+                mockOauth: sig('mock-oauth'),
+                piOnly: piOnlyRow === null ? null : {
+                  status: piOnlyRow.querySelector('[data-mcp-status]')?.textContent ?? null,
+                  configDisabled: [...piOnlyRow.querySelectorAll('.skill-badge')].some((b) => b.textContent === 'Disabled')
+                }
+              }
+            })()`).catch(() => null)) as StatusSigs | null
+            if (
+              statusSigs !== null &&
+              statusSigs.bearerApi?.status === 'Connected' &&
+              statusSigs.eagerCms?.status === 'Needs auth' &&
+              statusSigs.lazyProbe?.status === 'Not connected'
+            ) break
+            await new Promise((r) => setTimeout(r, 250))
+          }
+          const sigs = statusSigs as StatusSigs | null
+          if (sigs === null || sigs.bearerApi === null || sigs.eagerCms === null || sigs.lazyProbe === null || sigs.mockOauth === null || sigs.piOnly === null) {
+            fail(`ticket-96 stage: the status projection never rendered (diag=${JSON.stringify(statusSigs)})`)
+          }
+          if (sigs.bearerApi!.status !== 'Connected') fail(`ticket-96 stage: bearer-api must be Connected from the initial snapshot, got ${JSON.stringify(sigs.bearerApi)}`)
+          if (sigs.bearerApi!.tools !== '2 tools') fail(`ticket-96 stage: bearer-api must carry its real tool count, got ${JSON.stringify(sigs.bearerApi!.tools)}`)
+          if (sigs.eagerCms!.status !== 'Needs auth') fail(`ticket-96 stage: eager-cms must be Needs auth, got ${JSON.stringify(sigs.eagerCms)}`)
+          if (!sigs.eagerCms!.authBtn) fail('ticket-96 stage: the needs-auth row must surface the Authenticate button (the 89 flow hook-up)')
+          if (sigs.lazyProbe!.status !== 'Not connected') fail(`ticket-96 stage: the lazy server must be Not connected, got ${JSON.stringify(sigs.lazyProbe)}`)
+          if (sigs.mockOauth!.status !== 'Not connected') fail(`ticket-96 stage: pre-flow mock-oauth must be Not connected, got ${JSON.stringify(sigs.mockOauth)}`)
+          if (sigs.piOnly!.status !== null) fail(`ticket-96 stage: the disabled row must keep its config badge, not a runtime badge (got ${JSON.stringify(sigs.piOnly)})`)
+          if (!sigs.piOnly!.configDisabled) fail('ticket-96 stage: the disabled row lost its config Disabled badge')
+          const statusLineHidden = (await js(`document.querySelector('[data-mcp-status-line]') === null`).catch(() => false)) as boolean
+          if (!statusLineHidden) fail('ticket-96 stage: the honest status line must hide once live data is on display')
+          if (existsSync(lazyMarker96)) fail('ticket-96 stage: THE ZERO-TRIGGER RED LINE — viewing the section connected the lazy server (the marker file exists)')
+          log('mcp_status_projection_ok')
 
           // ④ The enable/disable switch writes ONLY the disabled flag into
           // the project Pi override (enable: the flag drops, because the
@@ -9272,6 +9392,36 @@ export function startSmokeIfEnabled(
           }
           log('mcp_oauth_autocomplete_ok', mockUrl)
 
+          // ⑨b (ticket 96): the status row follows the LIVE snapshot — the
+          // flow's successful auth made the adapter reconnect, and the
+          // forwarded snapshot flips mock-oauth from Not connected to
+          // Connected with its real tool count (the OAuth needs-auth →
+          // Authenticate → flow → connected hook-up, end to end).
+          let liveFlip = false
+          for (let waited = 0; waited < 30_000 && !liveFlip; waited += 250) {
+            const sig = (await js(`(() => {
+              const row = document.querySelector('[data-mcp-server="mock-oauth"]')
+              if (!(row instanceof HTMLElement)) return null
+              return {
+                status: row.querySelector('[data-mcp-status="mock-oauth"]')?.textContent ?? null,
+                tools: row.querySelector('.skill-badge-tools')?.textContent ?? null
+              }
+            })()`).catch(() => null)) as { status: string | null; tools: string | null } | null
+            liveFlip = sig !== null && sig.status === 'Connected' && sig.tools === '2 tools'
+            if (!liveFlip) await new Promise((r) => setTimeout(r, 250))
+          }
+          if (!liveFlip) {
+            const diag = (await js(`(() => {
+              const row = document.querySelector('[data-mcp-server="mock-oauth"]')
+              return row === null ? 'row missing' : JSON.stringify({
+                status: row.querySelector('[data-mcp-status]')?.textContent ?? null,
+                badges: [...row.querySelectorAll('.skill-badge')].map((b) => b.textContent ?? '')
+              })
+            })()`).catch(() => '(probe failed)')) as string
+            fail(`ticket-96 stage: mock-oauth's status badge never followed the post-auth snapshot (diag=${diag})`)
+          }
+          log('mcp_status_live_update_ok')
+
           // ⑩ The manual paste fallback: a fresh flow where the shim only
           // RECORDS (flag off — no browser leg) — the paste dialog appears,
           // the smoke completes the authorize handshake itself, pastes the
@@ -9366,6 +9516,12 @@ export function startSmokeIfEnabled(
           // cleanup (the mock server is already dead).
           if (!keychainHasEntry()) fail('ticket-89 stage: the OAuth credentials never reached the adapter/keychain store (the flow was not real)')
           log('mcp_credentials_zero_leak_ok')
+
+          // ⑪b (ticket 96): the zero-trigger red line holds across the WHOLE
+          // stage — flows, reconnects, and every view of the section never
+          // connected the lazy server.
+          if (existsSync(lazyMarker96)) fail('ticket-96 stage: THE ZERO-TRIGGER RED LINE — the lazy server connected during the stage (the marker file exists)')
+          log('mcp_status_lazy_untouched_ok')
 
           // Leave the app on the workspace: Escape closes the settings
           // window (the skills/packages stages' convention) — the later
@@ -11559,6 +11715,21 @@ function mockHandle(req: http.IncomingMessage, res: http.ServerResponse): void {
     return
   }
   if (url.pathname === '/mcp') {
+    // Ticket 96: the endpoint is PROTECTED — unauthenticated requests 401
+    // (an eager OAuth server's init connect lands at needs-auth WITHOUT any
+    // flow or browser opening; the adapter retries stay at needs-auth), the
+    // static bearer token connects (the bearer server), and an issued OAuth
+    // token connects (the post-auth reconnect after the ticket-89 flow). The
+    // catalog carries TWO tools so the status projection can assert a real
+    // toolCount on the connected badge.
+    const auth = req.headers['authorization'] ?? ''
+    const token = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : ''
+    if (token !== 'picode-smoke-bearer-96' && !issuedTokens.has(token)) {
+      void readBody(req)
+      res.writeHead(401, { 'Content-Type': 'application/json', ...cors })
+      res.end(JSON.stringify({ jsonrpc: '2.0', error: { code: -32000, message: 'Unauthorized' } }))
+      return
+    }
     void readBody(req)
       .then((body) => {
         let message: { id?: unknown; method?: string } = {}
@@ -11581,7 +11752,16 @@ function mockHandle(req: http.IncomingMessage, res: http.ServerResponse): void {
           return
         }
         if (message.method === 'tools/list') {
-          json(200, { jsonrpc: '2.0', id: message.id ?? null, result: { tools: [] } })
+          json(200, {
+            jsonrpc: '2.0',
+            id: message.id ?? null,
+            result: {
+              tools: [
+                { name: 'mock_echo', description: 'Echo the text back.', inputSchema: { type: 'object', properties: { text: { type: 'string' } }, required: [] } },
+                { name: 'mock_ping', description: 'Ping the mock server.', inputSchema: { type: 'object', properties: {}, required: [] } }
+              ]
+            }
+          })
           return
         }
         if (message.method?.startsWith('notifications/')) {

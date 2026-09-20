@@ -55,6 +55,7 @@ import { readGitBranch } from './git-branch'
 import { createApprovalGateExtension, toImageContents } from './gate-extension'
 import { HeldMessageEnd, monitorSessionManager } from './live-entry-ids'
 import { McpAuthBridge } from './mcp-auth-bridge'
+import { McpStatusBridge } from './mcp-status-bridge'
 import { parseSessionArgs } from './session-args'
 import { collectSessionAsyncDirs, SubagentBridge } from './subagent-bridge'
 import { subagentInfoOfDetails } from '../shared/sessions/parse'
@@ -105,6 +106,11 @@ const mcpAuthBridge = new McpAuthBridge(send)
  * RPC + lifecycle events and forwards bounded contract events; serves the
  * `subagent_status` command (artifact reads + fleet DTO). */
 const subagentBridge = new SubagentBridge(send)
+
+/** Ticket 96: the MCP status bridge — subscribes to the adapter's versioned
+ * status channel and forwards validated snapshots. Receive-only: no command
+ * surface, so viewing the status can never connect a lazy server. */
+const mcpStatusBridge = new McpStatusBridge(send)
 
 /** User messages this process already echoed via the `prompt` command; the
  * appendMessage monitor consumes them at the persistence moment, where the
@@ -416,7 +422,7 @@ async function createSession(): Promise<void> {
   const factory = async (opts: { cwd: string; sessionManager: SessionManager; sessionStartEvent?: SessionStartEvent }) => {
     const services = await sdk.createAgentSessionServices({
       cwd: opts.cwd,
-      resourceLoaderOptions: { extensionFactories: [approvalExtension, subagentBridge.extension] }
+      resourceLoaderOptions: { extensionFactories: [approvalExtension, subagentBridge.extension, mcpStatusBridge.extension] }
     })
     // Ticket 51: wrap the manager BEFORE the AgentSession consumes it, so
     // every message persistence reports its real entry id (live fork anchor

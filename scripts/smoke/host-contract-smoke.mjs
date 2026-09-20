@@ -62,6 +62,15 @@
  *   run's live state read from its status.json artifact) → shutdown →
  *   exit 0.
  *
+ *   Round I (ticket 96报备: the MCP status projection contract) — a SEEDED
+ *   .mcp.json workspace, zero model calls (the adapter loads from the real
+ *   agent dir's packages; round G already requires it):
+ *   session_created → mcp_status(snapshot: version 1, bounded per-server
+ *   fields, the never-triggered lazy server honestly not-connected, the
+ *   disabled server disabled) → shutdown → exit 0. The additive discipline
+ *   for the OLD rounds is proven by A–H passing unchanged with the
+ *   adapter's mcp_status events interleaving in the stream.
+ *
  * Usage: npm run build && node scripts/smoke/host-contract-smoke.mjs
  * Expects working model auth in ~/.pi/agent (same as the pi TUI). Session
  * files land in an isolated throwaway store (PICODE_SESSION_DIR, ticket 13)
@@ -69,7 +78,8 @@
  */
 
 import { mkdtemp, readFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { tmpdir, homedir } from 'node:os'
+import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { rmSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -91,6 +101,13 @@ let subagent90File = ''
 let subagent90RunDir = ''
 let subagent90TempRoot = ''
 
+// Ticket 96 round I: a workspace whose seeded .mcp.json drives the ADAPTER
+// (loaded from the real agent dir's packages — round G already requires it)
+// to publish its versioned status snapshot, which the host's status bridge
+// must forward as the additive `mcp_status` event. (The file is seeded
+// below, once the node:fs destructuring exists.)
+const mcp96Cwd = await mkdtemp(path.join(tmpdir(), 'picode-smoke-mcp96-'))
+
 // Session isolation (ticket 13): hosts must never write the real
 // ~/.pi/agent/sessions. Use the suite-wide store when run through
 // scripts/smoke/run-all.sh (which owns its cleanup), otherwise create and
@@ -109,6 +126,19 @@ const cwd = await mkdtemp(path.join(tmpdir(), 'picode-smoke-'))
 // A real file so the @-mention candidate listing has something to return.
 const { mkdirSync, writeFileSync, readFileSync } = await import('node:fs')
 writeFileSync(path.join(cwd, 'alpha.txt'), 'mention me')
+
+// Ticket 96 round I seed: a lazy stdio server whose binary does not exist
+// (it must ride the snapshot as not-connected — reading status NEVER
+// connects it) and a disabled server (runtime status disabled).
+writeFileSync(
+  path.join(mcp96Cwd, '.mcp.json'),
+  JSON.stringify({
+    mcpServers: {
+      'picode-status-lazy': { command: 'picode-missing-bin-96' },
+      'picode-status-off': { command: 'picode-off-bin-96', disabled: true }
+    }
+  })
+)
 
 // Ticket 21: the branch readout roundtrip. With git available the workspace
 // becomes a repo on a KNOWN branch and branch_info must report exactly that;
@@ -211,6 +241,53 @@ function assertModelRefShape(ref, where) {
     fail(`${where}: contextWindow must be a positive finite number, got ${JSON.stringify(ref.contextWindow)}`)
   }
 }
+// Ticket 96 round I state: the snapshot and the session announcement may
+// arrive in either order — both are required before the round asserts.
+let snapshot96 = null
+let mcp96Created = false
+
+/** Round I's snapshot assertions: the versioned envelope, the bounded
+ * per-server projection, and the honest statuses of the two seeded servers. */
+function assertRoundI(snapshot) {
+  if (typeof snapshot !== 'object' || snapshot === null) fail('mcp_status must carry a snapshot object')
+  if (snapshot.version !== 1) fail(`the snapshot must be version 1, got ${String(snapshot.version)}`)
+  if (!Array.isArray(snapshot.servers)) fail('the snapshot must carry a servers array')
+  for (const key of ['totalTools', 'totalResources', 'connectedCount', 'disabledCount']) {
+    const value = snapshot[key]
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+      fail(`snapshot.${key} must be a non-negative finite number, got ${JSON.stringify(value)}`)
+    }
+  }
+  // The bounded per-server projection: only the documented fields ride
+  // (adapter-internal listenState/catalogStale stay behind).
+  for (const server of snapshot.servers) {
+    const allowed = ['name', 'status', 'toolCount', 'directToolCount', 'disabled', 'resourceCount', 'failedAgoSeconds']
+    for (const key of Object.keys(server)) {
+      if (!allowed.includes(key)) fail(`a server entry carries the undocumented field '${key}' — the contract projection must stay bounded`)
+    }
+  }
+  // The lazy server: reading status never connects it — the seeded
+  // binary does not exist, and the snapshot must still report it
+  // honestly as not-connected (zero-side-effect by construction).
+  const lazy = snapshot.servers.find((s) => s.name === 'picode-status-lazy')
+  if (lazy === undefined) fail(`the seeded lazy server must appear in the snapshot, got ${JSON.stringify(snapshot.servers.map((s) => s.name))}`)
+  if (lazy.status !== 'not-connected') fail(`a never-triggered lazy server must be not-connected, got ${lazy.status}`)
+  if (lazy.disabled !== false || lazy.toolCount !== 0) fail(`the lazy server's counts must be honest zeros, got ${JSON.stringify(lazy)}`)
+  // The disabled server: runtime status disabled, flag carried.
+  const off = snapshot.servers.find((s) => s.name === 'picode-status-off')
+  if (off === undefined) fail('the seeded disabled server must appear in the snapshot')
+  if (off.status !== 'disabled' || off.disabled !== true) fail(`the disabled server must project disabled, got ${JSON.stringify(off)}`)
+  if (snapshot.disabledCount < 1) fail(`disabledCount must count the disabled server, got ${snapshot.disabledCount}`)
+}
+
+/** Round I completion: assert the captured snapshot, then shut down. */
+function finishRoundI() {
+  assertRoundI(snapshot96)
+  console.log(`SMOKE ticket-96 mcp_status ok (version 1, ${snapshot96.servers.length} servers, lazy=not-connected, off=disabled) — additive报备 complete`)
+  step = 'I shutdown'
+  child.send({ type: 'shutdown' })
+}
+
 const seen = {
   agent_start: 0,
   text_delta: 0,
@@ -239,8 +316,8 @@ function bumpTimeout() {
   timeout = armTimeout()
 }
 
-function forkHost(args, handler) {
-  const c = fork(HOST_ENTRY, args, { stdio: ['ignore', 'inherit', 'inherit', 'ipc'] })
+function forkHost(args, handler, opts = {}) {
+  const c = fork(HOST_ENTRY, args, { stdio: ['ignore', 'inherit', 'inherit', 'ipc'], ...opts })
   c.on('message', (event) => {
     if (typeof event === 'object' && event !== null && typeof event.type === 'string') handler(event)
   })
@@ -456,6 +533,27 @@ async function onHostExit(exited, code) {
     if (code !== 0) fail(`round H exit should be clean 0, got ${code}`)
     // The throwaway PI_SUBAGENTS_TEMP_ROOT root is smoke-local — discard it.
     rmSync(subagent90TempRoot, { recursive: true, force: true })
+    // Ticket 96报备: round I — the MCP status projection contract (additive
+    // host messages), zero model calls. The adapter must be installed (the
+    // round drives the REAL adapter's status channel); a missing package is
+    // an explicit setup failure with the install hint, not a timeout.
+    const realAdapter96 = path.join(homedir(), '.pi', 'agent', 'npm', 'node_modules', 'pi-mcp-adapter')
+    if (!existsSync(path.join(realAdapter96, 'package.json'))) {
+      fail(`round I: the pi-mcp-adapter package is not installed at ${realAdapter96} — install it (pi install npm:pi-mcp-adapter) and rerun`)
+    }
+    console.log('SMOKE round H shutdown ok — starting round I (ticket-96 MCP status projection contract)')
+    step = 'I session_created'
+    bumpTimeout()
+    // The fork cwd IS the workspace: the adapter resolves its EARLY config
+    // against process.cwd(), and with a cached-but-empty early config it
+    // defers the whole session runtime (the cache-reuse fast path — no
+    // snapshot would ever come). Forking inside the workspace mirrors the
+    // pi TUI (cwd = project dir) and makes the snapshot deterministic.
+    child = forkHost([mcp96Cwd], onEvent, { cwd: mcp96Cwd })
+    return
+  }
+  if (step === 'I shutdown') {
+    if (code !== 0) fail(`round I exit should be clean 0, got ${code}`)
     await finishClean(code)
     return
   }
@@ -1255,6 +1353,37 @@ function onEvent(event) {
       console.log(`SMOKE ticket-90 subagent_status ok (available=${event.available}, runs=${event.runs.length}, artifact-driven state=${seeded.state})`)
       step = 'H shutdown'
       child.send({ type: 'shutdown' })
+      return
+    }
+
+    // ---------- Round I: ticket 96报备 — the MCP status projection contract ----------
+    case 'I session_created': {
+      // Order-robust: the live snapshot and the session announcement may
+      // arrive in either order. Empty snapshots are IGNORED here — the
+      // previous host's session-shutdown flush can land late (empty by
+      // design); the live snapshot must carry the seeded servers.
+      if (event.type === 'mcp_status') {
+        if (Array.isArray(event.snapshot?.servers) && event.snapshot.servers.length > 0) {
+          if (snapshot96 !== null) fail('round I must receive exactly one usable mcp_status snapshot')
+          snapshot96 = event.snapshot
+        }
+        if (snapshot96 !== null && mcp96Created) finishRoundI()
+        return
+      }
+      if (event.type !== 'session_created') return
+      if (event.cwd !== mcp96Cwd) fail(`round I resumed the wrong cwd: ${event.cwd}`)
+      console.log('SMOKE round I session ok (MCP status projection round)')
+      mcp96Created = true
+      if (snapshot96 !== null) finishRoundI()
+      return
+    }
+    case 'I snapshot': {
+      if (event.type !== 'mcp_status') return
+      if (Array.isArray(event.snapshot?.servers) && event.snapshot.servers.length > 0) {
+        if (snapshot96 !== null) fail('round I must receive exactly one usable mcp_status snapshot')
+        snapshot96 = event.snapshot
+      }
+      if (snapshot96 !== null && mcp96Created) finishRoundI()
       return
     }
     default:

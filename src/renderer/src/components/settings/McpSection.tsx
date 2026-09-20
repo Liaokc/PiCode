@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
+import { useCallback, useEffect, useReducer, useRef, useState, type JSX } from 'react'
 import {
   MCP_SECURITY_COPY,
   filterMcpRows,
@@ -14,7 +14,17 @@ import {
   type McpServerEntry,
   type McpServerForm
 } from '../../../../shared/mcp-management'
+import {
+  mcpStatusBadgeLabel,
+  mcpStatusLine,
+  mcpStatusToolCountLabel,
+  serverStatusEntry,
+  shouldShowRuntimeBadge,
+  type McpServerStatusData,
+  type McpStatusSnapshotData
+} from '../../../../shared/mcp-status'
 import { mcpAuthStore, type McpAuthState } from './mcp-auth-store'
+import { mcpStatusStore } from './mcp-status-store'
 import { FolderIcon, LoaderIcon, PlusIcon, RefreshIcon, TrashIcon } from '../icons'
 
 /**
@@ -61,6 +71,10 @@ export default function McpSection({ cwd, focusedSessionId, onNotify }: McpSecti
   const [form, setForm] = useState<FormState>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [authState, setAuthState] = useState<McpAuthState>(mcpAuthStore.getState())
+  // Ticket 96: the focused session's live adapter snapshot (last-wins per
+  // session; the store notifies on every forwarded snapshot).
+  const [, bumpStatus] = useReducer((count: number) => count + 1, 0)
+  useEffect(() => mcpStatusStore.subscribe(bumpStatus), [])
 
   useEffect(() => mcpAuthStore.subscribe(setAuthState), [])
   useEffect(() => {
@@ -93,6 +107,10 @@ export default function McpSection({ cwd, focusedSessionId, onNotify }: McpSecti
   const { global: globalRows, project: projectRows } = partitionMcpRows(rows)
   const visibleGlobal = filterMcpRows(globalRows, query)
   const visibleProject = filterMcpRows(projectRows, query)
+  // Ticket 96: the focused session's live adapter snapshot (null = no
+  // session / the adapter has not reported — the honest no-data state).
+  const statusSnapshot = mcpStatusStore.snapshotFor(focusedSessionId)
+  const statusLine = mcpStatusLine({ focusedSessionId, snapshot: statusSnapshot, configRowCount: rows.length })
 
   async function toggle(row: McpEffectiveServer, disable: boolean): Promise<void> {
     setBusy(row.name)
@@ -220,6 +238,12 @@ export default function McpSection({ cwd, focusedSessionId, onNotify }: McpSecti
         </p>
       )}
 
+      {statusLine !== null && (
+        <p className="settings-mcp-status-line" data-mcp-status-line>
+          {statusLine}
+        </p>
+      )}
+
       <McpCard
         title="Global servers"
         fileNote="~/.config/mcp/mcp.json · ~/.pi/agent/mcp.json"
@@ -236,6 +260,7 @@ export default function McpSection({ cwd, focusedSessionId, onNotify }: McpSecti
         onAuthenticate={authenticate}
         busy={busy}
         authServerName={authState.running ? authState.serverName : null}
+        statusSnapshot={statusSnapshot}
       />
 
       <McpCard
@@ -260,6 +285,7 @@ export default function McpSection({ cwd, focusedSessionId, onNotify }: McpSecti
         onAuthenticate={authenticate}
         busy={busy}
         authServerName={authState.running ? authState.serverName : null}
+        statusSnapshot={statusSnapshot}
       />
 
       {confirm !== null && (
@@ -307,6 +333,7 @@ interface McpCardProps {
   onAuthenticate: (row: McpEffectiveServer) => void
   busy: string | null
   authServerName: string | null
+  statusSnapshot: McpStatusSnapshotData | null
 }
 
 function McpCard(props: McpCardProps): JSX.Element {
@@ -352,6 +379,7 @@ function McpCard(props: McpCardProps): JSX.Element {
         <McpRow
           key={row.name}
           row={row}
+          statusEntry={serverStatusEntry(row.name, props.statusSnapshot)}
           busy={props.busy === row.name}
           onToggle={(disable) => props.onToggle(row, disable)}
           onEdit={() => props.onEdit(row)}
@@ -369,6 +397,9 @@ function McpCard(props: McpCardProps): JSX.Element {
 
 interface McpRowProps {
   row: McpEffectiveServer
+  /** The focused session's live status for this server (undefined = no
+   * data — the row renders without a runtime badge, never an invention). */
+  statusEntry: McpServerStatusData | undefined
   busy: boolean
   onToggle: (disable: boolean) => void
   onEdit: () => void
@@ -378,17 +409,30 @@ interface McpRowProps {
   onReveal: (layerPath: string) => void
 }
 
-function McpRow({ row, busy, onToggle, onEdit, onDelete, onAuthenticate, authRunning, onReveal }: McpRowProps): JSX.Element {
+function McpRow({ row, statusEntry, busy, onToggle, onEdit, onDelete, onAuthenticate, authRunning, onReveal }: McpRowProps): JSX.Element {
   const [expanded, setExpanded] = useState(false)
   const url = typeof row.entry['url'] === 'string' ? (row.entry['url'] as string) : null
   const command = typeof row.entry['command'] === 'string' ? (row.entry['command'] as string) : null
   const args = Array.isArray(row.entry['args']) ? (row.entry['args'] as unknown[]).filter((a): a is string => typeof a === 'string') : null
   const summary = url ?? (command !== null ? [command, ...(args ?? [])].join(' ') : null)
+  // Ticket 96: the runtime badge (skipped for 'disabled' — the config
+  // Disabled badge below already says it) + the tool chip where the count
+  // is the server's truth (connected / cached).
+  const status = statusEntry?.status ?? null
+  const showToolCount = status === 'connected' || status === 'cached'
   return (
     <div className={row.disabled ? 'skill-row skill-row-broken' : 'skill-row'} data-mcp-server={row.name}>
       <div className="skill-row-main">
         <div className="skill-row-title">
           <span className="skill-row-name">{row.name}</span>
+          {status !== null && shouldShowRuntimeBadge(status) && (
+            <span className={`skill-badge skill-badge-status skill-badge-status-${status}`} data-mcp-status={row.name}>
+              {mcpStatusBadgeLabel(status)}
+            </span>
+          )}
+          {showToolCount && statusEntry !== undefined && (
+            <span className="skill-badge skill-badge-tools">{mcpStatusToolCountLabel(statusEntry.toolCount)}</span>
+          )}
           <span className={`skill-badge skill-badge-${row.winnerKind === 'pi' ? 'pi' : 'shared'}`}>{mcpWinnerBadgeLabel(row)}</span>
           {row.definedIn.length > 1 && (
             <span className="skill-badge skill-badge-layers" title={row.definedIn.map((d) => d.label).join(' → ')}>
@@ -415,7 +459,7 @@ function McpRow({ row, busy, onToggle, onEdit, onDelete, onAuthenticate, authRun
       </div>
 
       <div className="skill-row-actions">
-        {row.oauth && (
+        {(row.oauth || status === 'needs-auth') && (
           <button
             type="button"
             className="settings-skills-refresh"
