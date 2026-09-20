@@ -90,6 +90,9 @@ export default function FollowView({ title, items, live, onStop, onOpen }: Follo
                   turn={turn}
                   open={openTurns.has(turn.id)}
                   onToggle={() => toggleTurn(turn.id)}
+                  /* Ticket 94: same deterministic fold-anchor rule as the
+                     chat view — the follow scroller feeds the same hook. */
+                  scrollRef={scrollRef}
                 />
               )}
               {turn.answer !== null && <AnswerBlock turn={turn} />}

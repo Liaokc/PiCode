@@ -2203,7 +2203,17 @@ export function startSmokeIfEnabled(
           const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
           setter.call(input, '${BG_DENY_REASON}')
           input.dispatchEvent(new Event('input', { bubbles: true }))
-          await new Promise((r) => setTimeout(r, 150))
+          // The React state must CARRY the reason before the confirm click —
+          // a fixed 150ms sleep raced the controlled-input re-render once
+          // (the deny resolved with the reason's tail period missing), so
+          // poll until the value is really in the DOM field.
+          for (let waited = 0; waited < 2000; waited += 50) {
+            if (input.value === '${BG_DENY_REASON}') break
+            setter.call(input, '${BG_DENY_REASON}')
+            input.dispatchEvent(new Event('input', { bubbles: true }))
+            await new Promise((r) => setTimeout(r, 50))
+          }
+          if (input.value !== '${BG_DENY_REASON}') return 'value-never-registered'
           const denyBtn = [...pill.querySelectorAll('.approval-pill-deny button')].find((b) => b.textContent?.trim() === 'Deny')
           if (!denyBtn || denyBtn.disabled) return 'no-confirm'
           denyBtn.click()
@@ -5026,7 +5036,8 @@ export function startSmokeIfEnabled(
     const COUNT_PROMPT_93_Q =
       'PICODE_93_Q: Count from 1 to 40. Output each number on its own line, one number per line. Do not summarize and do not stop early. Do not use any tools — write the numbers directly in your reply text.'
     const COUNT_PROMPT_93_W =
-      'PICODE_93_W: Count from 1 to 60. Output each number on its own line, one number per line. Do not summarize and do not stop early. Do not use any tools — write the numbers directly in your reply text.'
+      'PICODE_93_W: Count from 1 to 1200. Output each number on its own line, one number per line. Do not summarize and do not stop early. Do not use any tools — write the numbers directly in your reply text.\n' +
+      '\n'.repeat(100)
     const COUNT_PROMPT_93_E =
       'PICODE_93_E: Count from 1 to 40. Output each number on its own line, one number per line. Do not summarize and do not stop early. Do not use any tools — write the numbers directly in your reply text.'
     await withWindow(getWindow, async (win) => {
@@ -5040,13 +5051,19 @@ export function startSmokeIfEnabled(
       })`
       /** The live turn's container row is the bottom-most element: 'Working'
        * label and its bottom edge inside the scroll viewport. */
-      const WORKING_BOTTOMMOST = `(() => {
+      /** The turn tail (live 'Working' or freshly settled 'Worked') is the
+       * bottom-most element: its bottom edge inside the scroll viewport.
+       * Fast-model tolerant (ticket-93 stage's glm-5.3-flash class race):
+       * an injected count can deliver AND settle inside one poll step, so
+       * the live-geometry probe reads the folded tail as the same landed
+       * state. */
+      const WORKING_OR_SETTLED_BOTTOMMOST = `(() => {
         const sc = document.querySelector('.chat-scroll')
         const rows = [...document.querySelectorAll('.turn-container')]
         const last = rows[rows.length - 1]
         if (sc === null || last === undefined) return false
         const label = last.querySelector('.turn-container-label')?.textContent ?? ''
-        if (label !== 'Working') return false
+        if (label !== 'Working' && label !== 'Worked') return false
         return last.getBoundingClientRect().bottom <= sc.getBoundingClientRect().bottom + 1
       })()`
       const IDLE_COMPOSER = `document.querySelector('.cmp-send') !== null`
@@ -5106,15 +5123,19 @@ export function startSmokeIfEnabled(
 
       // ② The queued injection: the delivered turn opens live ('Working')
       // and streams — the view must be pinned at the bottom with the new
-      // live Working container as the bottom-most element, and stay pinned
+      // turn's container as the bottom-most element, and stay pinned
       // through the injected turn's streaming. The probe anchors on the
       // delivery appearing in the DOM — NOT on agent_end, which the SDK
       // emits only AFTER the injected turn completes (by then the container
       // has settled to 'Worked', too late for the live-geometry probe).
+      // Fast-model tolerance (the stage's own glm-5.3-flash class race): a
+      // delivery that settles before the first poll step already folded the
+      // tail — the landed-and-bottom-most property reads the same either
+      // way (WORKING_OR_SETTLED_BOTTOMMOST, defined below).
       if (
         !(await waitForProbe(
           win,
-          `(document.querySelector('.chat-thread')?.textContent ?? '').includes('PICODE_93_Q') && (${AT_BOTTOM}) && (${WORKING_BOTTOMMOST})`,
+          `(document.querySelector('.chat-thread')?.textContent ?? '').includes('PICODE_93_Q') && (${AT_BOTTOM}) && (${WORKING_OR_SETTLED_BOTTOMMOST})`,
           150_000
         ))
       ) {
@@ -5125,15 +5146,20 @@ export function startSmokeIfEnabled(
         await waitFor((e) => e.type === 'text_delta' && e.sessionId === scroll93Id, 'scroll93 injection delta')
       }
       await new Promise((r) => setTimeout(r, 300))
-      if (!(await win.webContents.executeJavaScript(`(${AT_BOTTOM}) && (${WORKING_BOTTOMMOST})`))) {
+      if (!(await win.webContents.executeJavaScript(`(${AT_BOTTOM}) && (${WORKING_OR_SETTLED_BOTTOMMOST})`))) {
         const diag = (await js(SCROLL_DIAG).catch(() => 'unavailable')) as string
         fail(`ticket-93 stage: the injected turn's streaming drifted off the bottom; DOM: ${diag}`)
       }
       log('scroll93_queue_inject_ok')
 
       // The injected turn completes on its own; wait out the settle for the
-      // idle-send phases.
-      await waitFor((e) => e.type === 'agent_end' && e.sessionId === scroll93Id, 'scroll93 injected turn agent_end')
+      // idle-send phases. The agent_end EVENT may have already fired before
+      // this line (the fast-model race — the whole count can land inside the
+      // assert window above), so anchor on the DOM consequence instead: the
+      // composer's idle send button.
+      if (!(await waitForProbe(win, IDLE_COMPOSER, 90_000))) {
+        fail('ticket-93 stage: the injected turn never settled (composer never went idle)')
+      }
       await new Promise((r) => setTimeout(r, 500))
 
       // ③ THE 93 WINDOW: idle send + upward wheel in the same JS task —
@@ -5189,7 +5215,7 @@ export function startSmokeIfEnabled(
       if (
         !(await waitForProbe(
           win,
-          `(document.querySelector('.chat-thread')?.textContent ?? '').includes('PICODE_93_E') && (${AT_BOTTOM}) && (${WORKING_BOTTOMMOST})`,
+          `(document.querySelector('.chat-thread')?.textContent ?? '').includes('PICODE_93_E') && (${AT_BOTTOM}) && (${WORKING_OR_SETTLED_BOTTOMMOST})`,
           15_000
         ))
       ) {
@@ -5200,7 +5226,7 @@ export function startSmokeIfEnabled(
         await waitFor((e) => e.type === 'text_delta' && e.sessionId === scroll93Id, 'scroll93 landing delta')
       }
       await new Promise((r) => setTimeout(r, 300))
-      if (!(await win.webContents.executeJavaScript(`(${AT_BOTTOM}) && (${WORKING_BOTTOMMOST})`))) {
+      if (!(await win.webContents.executeJavaScript(`(${AT_BOTTOM}) && (${WORKING_OR_SETTLED_BOTTOMMOST})`))) {
         const diag = (await js(SCROLL_DIAG).catch(() => 'unavailable')) as string
         fail(`ticket-93 stage: the landing turn's streaming drifted off the bottom; DOM: ${diag}`)
       }
@@ -5218,6 +5244,322 @@ export function startSmokeIfEnabled(
       await win.webContents.executeJavaScript(composerClearJs)
     })
     log('scroll93_done')
+
+    // ---- ticket 94: deterministic fold anchoring — the header never jumps ----
+    // The Worked-container fold/unfold obeys ONE table instead of the
+    // browser's overflow-anchor heuristic (Q10 ruling): ① viewport not on
+    // the bottom → the toggled header stays on its viewport row (pixel-level
+    // assertion below); ② bottom-pinned → the bottom stays pinned and the
+    // header rides up. ChatView drives ①+② on an emitted settled replay (no
+    // model call); FollowView drives ① on a hand-seeded live session file
+    // (the ticket-52 seeding shape) opened through the real sidebar row →
+    // Live Follow path. The renderer also runs with overflow-anchor: none
+    // (the CSS side of the fix) — these assertions hold the JS rule in place
+    // on top of it.
+    log('fold_anchor_start')
+    {
+      // Three settled turns, each with thinking + tool + multi-line text so
+      // every container is expandable (ticket 55: hasWork) and the opened
+      // body is tall enough to move the header measurably while pinned. The
+      // user bubbles carry 30 blank-padded lines each — the transcript is
+      // scrollable no matter how the renderer wraps the rest (the ticket-45
+      // precedent).
+      const FOLD_TURN_TEXT = (n: number): string =>
+        `PICODE_FOLD_94_T${n}: body content line\n` + Array.from({ length: 18 }, (_, i) => `body line ${i + 1} for turn ${n}`).join('\n')
+      const foldItems94: Extract<HostToParent, { type: 'history_loaded' }>['items'] = []
+      for (let n = 1; n <= 3; n++) {
+        // Turn shape (ticket 53 semantics): thinking + tool land INSIDE the
+        // fold (before the turn's last text), the last text lifts as the
+        // answer below the container. Tool-before-answer is what makes the
+        // tool card a fold-body row for the expand assertions.
+        foldItems94.push(
+          {
+            role: 'user',
+            id: `f94-u${n}`,
+            text: `PICODE_FOLD_94 turn ${n} prompt\n${'\n'.repeat(30)}`,
+            timestamp: `t${n}u`,
+            skillName: null
+          },
+          {
+            role: 'assistant',
+            id: `f94-a${n}w`,
+            timestamp: `t${n}aw`,
+            text: '',
+            parts: [{ kind: 'thinking', text: `PICODE_FOLD_94 thinking for turn ${n}`, durationMs: 1200 }]
+          },
+          {
+            role: 'tool',
+            id: `f94-t${n}`,
+            timestamp: `t${n}t`,
+            name: 'bash',
+            args: { command: `echo turn-${n}` },
+            output: `turn-${n} ok\n${Array.from({ length: 10 }, (_, i) => `output line ${i + 1}`).join('\n')}`,
+            isError: false
+          },
+          {
+            role: 'assistant',
+            id: `f94-a${n}`,
+            timestamp: `t${n}a`,
+            text: FOLD_TURN_TEXT(n),
+            parts: [{ kind: 'text', text: FOLD_TURN_TEXT(n) }]
+          }
+        )
+      }
+      emitContractEvent({
+        type: 'session_created',
+        sessionId: 'smoke-fold-anchor-94',
+        cwd,
+        model: 'claude-opus-4-5',
+        resumed: true
+      })
+      emitContractEvent({ type: 'history_loaded', items: foldItems94 })
+      await withWindow(getWindow, async (win) => {
+        const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+        /** Header-row + scroll-geometry probe for container index i. */
+        const GEOM = (i: number): string => `(() => {
+          const el = document.querySelector('.chat-scroll')
+          const header = document.querySelectorAll('.turn-container-header')[${i}]
+          if (!el || !header) return null
+          return JSON.stringify({
+            headerRow: header.getBoundingClientRect().top - el.getBoundingClientRect().top,
+            scrollTop: el.scrollTop,
+            dist: el.scrollHeight - el.scrollTop - el.clientHeight,
+            containers: document.querySelectorAll('.turn-container').length,
+            open: document.querySelectorAll('.turn-container-open').length
+          })
+        })()`
+        const readGeom = async (i: number): Promise<{ headerRow: number; scrollTop: number; dist: number; containers: number; open: number } | null> => {
+          const raw = (await js(GEOM(i)).catch(() => null)) as string | null
+          return raw ? (JSON.parse(raw) as { headerRow: number; scrollTop: number; dist: number; containers: number; open: number }) : null
+        }
+        const clickHeader = (i: number): string =>
+          `(() => { const h = document.querySelectorAll('.turn-container-header')[${i}]; if (!h) return false; h.click(); return true })()`
+
+        // The replay renders three collapsed containers (ticket 23 rule).
+        const settled94 = await waitForProbe(
+          win,
+          `document.querySelectorAll('.turn-container').length === 3 &&
+           document.querySelectorAll('.turn-container-open').length === 0`,
+          10_000
+        )
+        if (!settled94) {
+          const geom = await readGeom(0)
+          fail(`ticket-94 stage: the emitted replay never rendered three collapsed containers; DOM: ${JSON.stringify(geom)}`)
+        }
+
+        // ---- ① mid-transcript: the toggled header row never moves ----
+        // Scroll the middle container's header to ~40% of the viewport, a
+        // deterministic reading position far from both edges.
+        await js(
+          `(() => {
+            const el = document.querySelector('.chat-scroll')
+            const header = document.querySelectorAll('.turn-container-header')[1]
+            const row = header.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop
+            el.scrollTop = Math.round(row - el.clientHeight * 0.4)
+            return el.scrollTop
+          })()`
+        )
+        const mid = await readGeom(1)
+        if (!mid || mid.open !== 0) fail(`ticket-94 stage: the mid-transcript reading position never settled; DOM: ${JSON.stringify(mid)}`)
+        await js(clickHeader(1))
+        const midOpen = await waitForProbe(
+          win,
+          `document.querySelectorAll('.turn-container-open').length === 1 &&
+           document.querySelectorAll('.turn-container-open .turn-container-body .tool-card').length > 0`,
+          5_000
+        )
+        if (!midOpen) fail('ticket-94 stage: the mid-transcript expand never mounted the fold body')
+        const afterExpand = await readGeom(1)
+        if (!afterExpand) fail('ticket-94 stage: geometry probe vanished after the mid expand')
+        if (Math.abs(afterExpand.headerRow - mid.headerRow) >= 0.5 || afterExpand.scrollTop !== mid.scrollTop) {
+          fail(
+            `ticket-94 stage: the mid-transcript expand moved the header row ${mid.headerRow} → ${afterExpand.headerRow} (scrollTop ${mid.scrollTop} → ${afterExpand.scrollTop})`
+          )
+        }
+        log('fold_anchor_mid_expand_ok', `headerRow ${mid.headerRow} → ${afterExpand.headerRow}`)
+
+        // Collapse: the same row again — 内容向上收拢, the clicked row stays.
+        await js(clickHeader(1))
+        const midClosed = await waitForProbe(win, `document.querySelectorAll('.turn-container-open').length === 0`, 5_000)
+        if (!midClosed) fail('ticket-94 stage: the mid-transcript collapse never unmounted the fold body')
+        const afterCollapse = await readGeom(1)
+        if (!afterCollapse) fail('ticket-94 stage: geometry probe vanished after the mid collapse')
+        if (Math.abs(afterCollapse.headerRow - mid.headerRow) >= 0.5) {
+          fail(`ticket-94 stage: the mid-transcript collapse moved the header row ${mid.headerRow} → ${afterCollapse.headerRow}`)
+        }
+        log('fold_anchor_mid_collapse_ok')
+
+        // ---- ② 吸底态: the bottom stays pinned, the header rides up ----
+        await js(`(() => { const el = document.querySelector('.chat-scroll'); el.scrollTop = el.scrollHeight; return true })(); true`)
+        const bottom = await readGeom(2)
+        if (!bottom || bottom.dist >= 1) fail(`ticket-94 stage: never reached the pinned bottom before the toggle; DOM: ${JSON.stringify(bottom)}`)
+        await js(clickHeader(2))
+        const bottomOpen = await waitForProbe(win, `document.querySelectorAll('.turn-container-open').length === 1`, 5_000)
+        if (!bottomOpen) fail('ticket-94 stage: the bottom-pinned expand never mounted the fold body')
+        const afterBottomExpand = await readGeom(2)
+        if (!afterBottomExpand) fail('ticket-94 stage: geometry probe vanished after the pinned expand')
+        if (afterBottomExpand.dist >= 1) {
+          fail(`ticket-94 stage: the pinned expand left the bottom (dist ${bottom.dist} → ${afterBottomExpand.dist})`)
+        }
+        if (afterBottomExpand.headerRow >= bottom.headerRow - 10) {
+          fail(
+            `ticket-94 stage: the pinned expand did not ride the header up (${bottom.headerRow} → ${afterBottomExpand.headerRow})`
+          )
+        }
+        log('fold_anchor_pinned_expand_ok', `dist ${afterBottomExpand.dist}, headerRow ${bottom.headerRow} → ${afterBottomExpand.headerRow}`)
+
+        // Collapse while pinned: the clamp keeps the bottom, deterministically.
+        await js(clickHeader(2))
+        await waitForProbe(win, `document.querySelectorAll('.turn-container-open').length === 0`, 5_000)
+        const afterBottomCollapse = await readGeom(2)
+        if (!afterBottomCollapse || afterBottomCollapse.dist >= 1) {
+          fail(`ticket-94 stage: the pinned collapse did not keep the bottom; DOM: ${JSON.stringify(afterBottomCollapse)}`)
+        }
+        log('fold_anchor_pinned_collapse_ok')
+      })
+    }
+
+    // ---- ticket 94 (FollowView): the same rule in the read-only follow ----
+    // A hand-seeded live session file (the ticket-52 seeding shape) carrying
+    // the same three structured turns; opening it through the real sidebar
+    // row path lands the Live Follow view, where the same header-row rule
+    // must hold for the local fold toggles (follow-local state, ticket 24).
+    {
+      const store94 = process.env['PICODE_SESSION_DIR']
+      if (!store94) fail('ticket-94 stage: PICODE_SESSION_DIR is not set')
+      const followId94 = 'fold-anchor-follow-94'
+      const followFile94 = path.join(store94!, `${followId94}.jsonl`)
+      const stamp94 = new Date().toISOString()
+      const lines94: string[] = [JSON.stringify({ type: 'session', version: 3, id: followId94, timestamp: stamp94, cwd })]
+      // Same turn shape as the ChatView replay: thinking + tool INSIDE the
+      // fold (extractTranscriptItems maps an assistant message's toolCall to
+      // a tool item AFTER that message's parts — so the call rides its own
+      // message), the last text lifts as the answer.
+      let parent94: string | null = null
+      for (let n = 1; n <= 3; n++) {
+        const push94 = (id: string, message: unknown): void => {
+          lines94.push(JSON.stringify({ type: 'message', id, parentId: parent94, timestamp: stamp94, message }))
+          parent94 = id
+        }
+        push94(`f94f-u${n}`, {
+          role: 'user',
+          content: [{ type: 'text', text: `PICODE_FOLD_94_FOLLOW turn ${n} prompt\n${'\n'.repeat(30)}` }]
+        })
+        push94(`f94f-a${n}w`, {
+          role: 'assistant',
+          content: [{ type: 'thinking', thinking: `PICODE_FOLD_94_FOLLOW thinking for turn ${n}`, thinkingSignature: 'sim' }]
+        })
+        push94(`f94f-a${n}c`, {
+          role: 'assistant',
+          content: [{ type: 'toolCall', id: `f94f-call-${n}`, name: 'bash', arguments: { command: `echo follow-${n}` } }]
+        })
+        push94(`f94f-r${n}`, {
+          role: 'toolResult',
+          toolCallId: `f94f-call-${n}`,
+          toolName: 'bash',
+          content: [{ type: 'text', text: `follow-${n} ok` }],
+          isError: false,
+          timestamp: Date.now()
+        })
+        push94(`f94f-a${n}`, {
+          role: 'assistant',
+          content: [
+            {
+              type: 'text',
+              text: `PICODE_FOLD_94_FOLLOW body for turn ${n}\n${Array.from({ length: 18 }, (_, i) => `follow line ${i + 1}`).join('\n')}`
+            }
+          ]
+        })
+      }
+      writeFileSync(followFile94, lines94.join('\n') + '\n')
+      // Fresh mtime = live (the 120s window): the row click takes the Live
+      // Follow path (not resume).
+      utimesSync(followFile94, new Date(), new Date())
+      const row94 = `[data-file="${followFile94}"]`
+      await withWindow(getWindow, async (win) => {
+        const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+        const GEOM = (i: number): string => `(() => {
+          const el = document.querySelector('.chat-scroll')
+          const header = document.querySelectorAll('.turn-container-header')[${i}]
+          if (!el || !header) return null
+          return JSON.stringify({
+            headerRow: header.getBoundingClientRect().top - el.getBoundingClientRect().top,
+            scrollTop: el.scrollTop,
+            containers: document.querySelectorAll('.turn-container').length,
+            open: document.querySelectorAll('.turn-container-open').length,
+            follow: document.querySelector('.follow-badge') !== null
+          })
+        })()`
+        const readGeom = async (i: number): Promise<{ headerRow: number; scrollTop: number; containers: number; open: number; follow: boolean } | null> => {
+          const raw = (await js(GEOM(i)).catch(() => null)) as string | null
+          return raw ? (JSON.parse(raw) as { headerRow: number; scrollTop: number; containers: number; open: number; follow: boolean }) : null
+        }
+        const clickHeader = (i: number): string =>
+          `(() => { const h = document.querySelectorAll('.turn-container-header')[${i}]; if (!h) return false; h.click(); return true })()`
+
+        // The index scan (~2s tick) lists the seeded file; the row click
+        // opens the Live Follow view (fresh mtime, never hosted here).
+        const rowThere = await waitForProbe(win, `document.querySelector('${row94}') !== null`, 15_000)
+        if (!rowThere) fail(`ticket-94 stage: the seeded follow session never reached the sidebar`)
+        const clicked94 = await js(
+          `(() => { const row = document.querySelector('${row94}'); if (!row) return false; row.dispatchEvent(new MouseEvent('click', { bubbles: true })); return true })()`
+        )
+        if (!clicked94) fail('ticket-94 stage: the seeded follow row vanished before the click')
+        const followThere = await waitForProbe(
+          win,
+          `document.querySelector('.follow-badge') !== null &&
+           document.querySelectorAll('.turn-container').length === 3 &&
+           document.querySelectorAll('.turn-container-open').length === 0`,
+          10_000
+        )
+        if (!followThere) {
+          const geom = await readGeom(0)
+          fail(`ticket-94 stage: the follow view never rendered three collapsed containers; DOM: ${JSON.stringify(geom)}`)
+        }
+        log('fold_anchor_follow_open_ok')
+
+        // ① FollowView mid-transcript: same pixel rule, follow-local folds.
+        await js(
+          `(() => {
+            const el = document.querySelector('.chat-scroll')
+            const header = document.querySelectorAll('.turn-container-header')[1]
+            const row = header.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop
+            el.scrollTop = Math.round(row - el.clientHeight * 0.4)
+            return el.scrollTop
+          })()`
+        )
+        const midF = await readGeom(1)
+        if (!midF || midF.open !== 0) fail(`ticket-94 stage: the follow reading position never settled; DOM: ${JSON.stringify(midF)}`)
+        await js(clickHeader(1))
+        const midFOpen = await waitForProbe(win, `document.querySelectorAll('.turn-container-open').length === 1`, 5_000)
+        if (!midFOpen) fail('ticket-94 stage: the follow expand never mounted the fold body')
+        const afterFExpand = await readGeom(1)
+        if (!afterFExpand) fail('ticket-94 stage: follow geometry probe vanished after the expand')
+        if (Math.abs(afterFExpand.headerRow - midF.headerRow) >= 0.5 || afterFExpand.scrollTop !== midF.scrollTop) {
+          fail(
+            `ticket-94 stage: the follow expand moved the header row ${midF.headerRow} → ${afterFExpand.headerRow} (scrollTop ${midF.scrollTop} → ${afterFExpand.scrollTop})`
+          )
+        }
+        log('fold_anchor_follow_expand_ok')
+        await js(clickHeader(1))
+        const midFClosed = await waitForProbe(win, `document.querySelectorAll('.turn-container-open').length === 0`, 5_000)
+        if (!midFClosed) fail('ticket-94 stage: the follow collapse never unmounted the fold body')
+        const afterFCollapse = await readGeom(1)
+        if (!afterFCollapse) fail('ticket-94 stage: follow geometry probe vanished after the collapse')
+        if (Math.abs(afterFCollapse.headerRow - midF.headerRow) >= 0.5) {
+          fail(`ticket-94 stage: the follow collapse moved the header row ${midF.headerRow} → ${afterFCollapse.headerRow}`)
+        }
+        log('fold_anchor_follow_collapse_ok')
+
+        // Leave Follow mode deterministically — the next stage focuses its
+        // own session, but the view must not be mid-follow if it polls.
+        await js(
+          `(() => { const b = [...document.querySelectorAll('.chat-topbar .chat-topbar-btn')].find((x) => (x.textContent ?? '') === 'Stop following'); if (!b) return false; b.click(); return true })()`
+        )
+        await waitForProbe(win, `document.querySelector('.follow-badge') === null`, 5_000)
+      })
+    }
+    log('fold_anchor_done')
 
     // ---- ticket 46: the turn navigator rail ----
     // A FRESH session (createSession focuses it — in-app ChatView by

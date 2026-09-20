@@ -4177,6 +4177,12 @@ button.heat:hover {
   flex: 1;
   overflow-y: auto;
   padding: 10px 48px 18px;
+  /* Ticket 94: the browser's overflow-anchor heuristic is the source of the
+     fold-toggle nondeterminism (「有时顶端不动有时跳」) — the transcript's
+     scroll behavior around mutations is owned by the deterministic models:
+     the fold-anchor rule (shared/fold-anchor.ts) for container toggles and
+     the scroll-stay stick (shared/scroll-stay.ts) for streaming growth. */
+  overflow-anchor: none;
 }
 
 /* Ticket 46: the navigator rail lives inside the transcript's flex cell so
