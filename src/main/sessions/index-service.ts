@@ -21,7 +21,10 @@ import {
 } from '../../shared/sessions/parse.ts'
 import { withCwdMissing } from '../../shared/sessions/cwd-liveness.ts'
 import { buildTracePayload, type TracePayload } from '../../shared/sessions/trace.ts'
+import { parseTranscriptSourceEnvelope } from '../../shared/subagents/artifact.ts'
+import type { SubagentTranscriptPayload } from '../../shared/subagents/chat-model.ts'
 import type { FollowUpdate, SessionSummary, TranscriptItem } from '../../shared/sessions/types'
+import { readFileSync } from 'node:fs'
 
 export type { FollowUpdate }
 
@@ -32,6 +35,10 @@ export interface SessionIndexOptions {
   /** Live-follow push for call-trace tabs (ticket 37): the rebuilt payload
    * after the traced file changed size. */
   onTraceUpdate?: (payload: TracePayload) => void
+  /** Live-follow push for subagent conversation tabs (ticket 99): the
+   * rebuilt transcript snapshot after the run's artifact / child session
+   * file changed. */
+  onSubagentTranscriptUpdate?: (payload: SubagentTranscriptPayload) => void
   /** Poll interval; defaults to 2s. */
   pollMs?: number
 }
@@ -60,6 +67,12 @@ export class SessionIndexService {
    * the full payload on any change (growth OR shrink/rewrite). Several
    * trace tabs can tail at once — one slot each. */
   private readonly traceFollows = new Map<string, number>()
+  /** Live-follow tails of subagent conversation tabs (ticket 99), asyncDir
+   * → the last seen source (artifact resolution + child file size). The
+   * artifact is re-resolved on every tick: a run whose status.json appears
+   * late (or whose child file only materializes after the artifact) still
+   * lands — the follow never gives up while the tab is open. */
+  private readonly subagentFollows = new Map<string, { sessionFile: string | null; error: string | null; size: number }>
   private timer: NodeJS.Timeout | null = null
   private scanning = false
   /** Last scan's injected stat results (cwd → is a live directory) — part
@@ -189,6 +202,29 @@ export class SessionIndexService {
     this.traceFollows.delete(file)
   }
 
+  /**
+   * One subagent conversation tab's transcript snapshot (ticket 99):
+   * resolve the run's child session file from its status.json artifact and
+   * read the transcript through the same parser every session surface
+   * uses. Also registers the live tail (re-resolved every tick — a
+   * late-arriving artifact still lands). Error states are honest payload
+   * members, never thrown.
+   */
+  async startSubagentTranscriptFollowing(asyncDir: string): Promise<SubagentTranscriptPayload | null> {
+    this.subagentFollows.set(asyncDir, { sessionFile: null, error: null, size: 0 })
+    return this.readSubagentTranscript(asyncDir)
+  }
+
+  /** One-shot read for a settled run (follow: false) — no tail registered. */
+  async subagentTranscriptOnce(asyncDir: string): Promise<SubagentTranscriptPayload | null> {
+    return this.readSubagentTranscript(asyncDir)
+  }
+
+  /** End one conversation tab's tail. Tabs tail independently. */
+  stopSubagentTranscriptFollowing(asyncDir: string): void {
+    this.subagentFollows.delete(asyncDir)
+  }
+
   start(intervalMs?: number): void {
     this.stop()
     this.timer = setInterval(() => void this.tick(), intervalMs ?? this.opts.pollMs ?? 2_000)
@@ -209,6 +245,7 @@ export class SessionIndexService {
       if (this.cacheSignature() !== before) this.opts.onIndexChanged()
       await this.pollFollow()
       await this.pollTraceFollow()
+      await this.pollSubagentFollows()
     } finally {
       this.scanning = false
     }
@@ -278,6 +315,59 @@ export class SessionIndexService {
       const payload = buildTracePayload(text, file)
       if (payload !== null) this.opts.onTraceUpdate?.(payload)
     }
+  }
+
+  /**
+   * Re-resolve + push every tailed subagent run (ticket 99). Three change
+   * classes push: the artifact resolved differently (late artifact), the
+   * resolved error changed, or the child file grew. The read + parse is
+   * the same full-snapshot rebuild the trace tail uses.
+   */
+  private async pollSubagentFollows(): Promise<void> {
+    for (const asyncDir of [...this.subagentFollows.keys()]) {
+      const seen = this.subagentFollows.get(asyncDir)
+      if (seen === undefined) continue
+      const payload = await this.readSubagentTranscript(asyncDir)
+      if (payload === null) continue
+      const size =
+        payload.sessionFile !== null ? await stat(payload.sessionFile).then((s) => s.size).catch(() => 0) : 0
+      const changed =
+        payload.sessionFile !== seen.sessionFile || (payload.error ?? null) !== seen.error || size !== seen.size
+      if (!changed) continue
+      this.subagentFollows.set(asyncDir, { sessionFile: payload.sessionFile, error: payload.error, size })
+      this.opts.onSubagentTranscriptUpdate?.(payload)
+    }
+  }
+
+  /** One run's transcript source, read from disk: status.json → the
+   * shared envelope table. Null for absent/corrupt artifacts — the honest
+   * artifact-missing error, never a fabricated source. */
+  private readTranscriptSource(asyncDir: string): { sessionFile: string | null; state: string } | null {
+    let raw: unknown
+    try {
+      raw = JSON.parse(readFileSync(join(asyncDir, 'status.json'), 'utf8'))
+    } catch {
+      return null
+    }
+    return parseTranscriptSourceEnvelope(raw)
+  }
+
+  /** One run's transcript snapshot: artifact → child session file → parsed
+   * items. Every failure is an honest error payload, never a throw. */
+  private async readSubagentTranscript(asyncDir: string): Promise<SubagentTranscriptPayload | null> {
+    const source = this.readTranscriptSource(asyncDir)
+    if (source === null) {
+      return { asyncDir, sessionFile: null, items: [], error: 'artifact-missing' }
+    }
+    if (source.sessionFile === null) {
+      return { asyncDir, sessionFile: null, items: [], error: 'no-session-file' }
+    }
+    const text = await readFileText(source.sessionFile).catch(() => null)
+    if (text === null) {
+      return { asyncDir, sessionFile: source.sessionFile, items: [], error: 'unreadable' }
+    }
+    const { entries } = parseSessionLines(text)
+    return { asyncDir, sessionFile: source.sessionFile, items: extractTranscriptItems(entries), error: null }
   }
 
   private async listSessionFiles(): Promise<string[]> {

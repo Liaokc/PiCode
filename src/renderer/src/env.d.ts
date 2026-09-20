@@ -2,6 +2,7 @@
 import type { HostToParent, ImageAttachment, ParentToHost } from '../shared/contract'
 import type { FollowUpdate, SessionSummary, TranscriptItem } from '../../shared/sessions/types'
 import type { TracePayload } from '../../shared/sessions/trace'
+import type { SubagentTranscriptPayload } from '../../shared/subagents/chat-model'
 import type { SessionContextAction } from '../shared/sessions/context-actions'
 import type { ReviewResult } from '../shared/review/types'
 import type { PreviewResult } from '../shared/preview/types'
@@ -64,6 +65,17 @@ interface PicodeSessionsBridge {
   /** Trace-tab live-follow push (ticket 37): the rebuilt payload after the
    * traced file changed size. */
   onTraceUpdate(listener: (payload: TracePayload) => void): () => void
+  /** Subagent conversation-tab transcript (ticket 99): one run's child
+   * session transcript resolved through its status.json artifact.
+   * `follow: true` registers the live tail (running subagents) and
+   * resolves the initial snapshot; `follow: false` is a one-shot read
+   * (settled runs). Error states ride the payload; null = invalid input. */
+  subagentTranscript(asyncDir: string, follow: boolean): Promise<SubagentTranscriptPayload | null>
+  /** End one conversation tab's live tail. */
+  unsubagentTranscriptFollow(asyncDir: string): void
+  /** Conversation-tab live-follow push (ticket 99): the rebuilt child
+   * transcript after the run's artifact / child session file changed. */
+  onSubagentTranscriptUpdate(listener: (payload: SubagentTranscriptPayload) => void): () => void
   /** Read-only context-menu actions (ticket 35): reveal the session file
    * in Finder or copy task path / session file path / session id; main
    * validates the payload before touching shell/clipboard. */

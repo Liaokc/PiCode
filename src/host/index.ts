@@ -832,6 +832,14 @@ async function handleSubagentStatus(requestId: string): Promise<void> {
   await subagentBridge.handleStatusRequest(requestId, () => collectSessionAsyncDirs(entries))
 }
 
+/** Ticket 99: steer one running async subagent run — pi-subagents' RPC
+ * `steer` (acknowledged delivery, nonRecoveringSteer semantics) with the
+ * receipt answered in every path. The receipt is the truth the conversation
+ * tab renders: delivered / queued / failed, verbatim. */
+async function handleSubagentSteer(requestId: string, asyncId: string, text: string): Promise<void> {
+  await subagentBridge.handleSteerRequest(requestId, asyncId, text)
+}
+
 function handleRename(name: string): void {
   if (!requireSettledSession()) return
   try {
@@ -932,6 +940,15 @@ process.on('message', (message: unknown) => {
     case 'subagent_status':
       if (typeof message.requestId === 'string') {
         void handleSubagentStatus(message.requestId)
+      }
+      break
+    case 'subagent_steer':
+      if (
+        typeof message.requestId === 'string' &&
+        typeof message.asyncId === 'string' &&
+        typeof message.text === 'string'
+      ) {
+        void handleSubagentSteer(message.requestId, message.asyncId, message.text)
       }
       break
     case 'abort_turn':

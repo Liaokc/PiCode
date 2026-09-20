@@ -37,6 +37,26 @@ function liveRun(patch: Partial<SubagentRunState> & { runId: string }): Subagent
   return { state: 'running', ...patch }
 }
 
+// ---- ticket 99: the row's artifact-dir field (the conversation tab's key) ----
+
+describe('row asyncDir', () => {
+  it('surfaces the recorded asyncDir on async rows', () => {
+    const model = subagentDirectoryFromEntries(
+      [
+        toolEntry({
+          id: 't-async',
+          state: 'done',
+          args: { agent: 'scout', task: 'PICODE_99 scout the answer', async: true },
+          subagent: callInfo({ runId: 'run-99', asyncId: 'run-99', asyncDir: '/tmp/run-99' })
+        })
+      ],
+      {}
+    )
+    expect(model.rows[0]?.asyncDir).toBe('/tmp/run-99')
+    expect(model.rows[0]?.asyncId).toBe('run-99')
+  })
+})
+
 // ---- child status derivation (pi's resolveSubagentResultStatus, mirrored) ----
 
 describe('mapChildStatus', () => {
@@ -213,6 +233,9 @@ describe('subagentDirectoryFromEntries', () => {
     expect(model.rows).toHaveLength(2)
     expect(model.rows.map((r) => r.id)).toEqual(['t1', 't3'])
     expect(model.rows[0]).toMatchObject({ agent: 'scout', title: 'Find the answer', state: 'completed' })
+    // Ticket 99 (additive): the row carries the artifact dir the conversation
+    // tab follows — null for foreground calls that recorded none.
+    expect(model.rows[0]?.asyncDir).toBeNull()
     expect(model.rows[1]).toMatchObject({ agent: 'worker', state: 'running' })
   })
 

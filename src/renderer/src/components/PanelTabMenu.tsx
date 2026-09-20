@@ -11,7 +11,7 @@ import {
 import { relativeTime } from '../../../shared/sessions/group'
 import Tooltip from './Tooltip'
 import { useNowTick } from './use-now'
-import { CloseIcon, CodeIcon, FileTextIcon, HistoryIcon, SearchIcon } from './icons'
+import { CloseIcon, CodeIcon, FileTextIcon, HistoryIcon, PulseIcon, SearchIcon } from './icons'
 
 /**
  * Tab management dropdown (ticket 31, against z-tab-dropdown.png): a search
@@ -34,6 +34,7 @@ interface PanelTabMenuProps {
 export function panelTabGlyph(tab: PanelTabId): JSX.Element {
   if (tab.kind === 'review') return <FileTextIcon size={12} />
   if (tab.kind === 'trace') return <HistoryIcon size={12} />
+  if (tab.kind === 'subagent-chat') return <PulseIcon size={12} />
   return <CodeIcon size={12} />
 }
 

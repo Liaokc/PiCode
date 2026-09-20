@@ -22,8 +22,9 @@ export const PANEL_DEFAULT_WIDTH_PX = SIDE_PANEL_WIDTH_PX
 /**
  * Side panel tab identity (ticket 31): the fixed Review tab, one tab per
  * deep-linked file (cwd anchors relative navigation), one per session call
- * trace, one per reviewed turn (ticket 78), and — ticket 90 — the fixed
- * Subagents directory tab (the focused session's subagent runs). Equality
+ * trace, one per reviewed turn (ticket 78), the fixed Subagents directory
+ * tab (ticket 90), and — ticket 99 — one conversation tab per subagent run
+ * (the parent tool call id anchors it; the task text names the tab). Equality
  * is structural — same kind and coordinates = same tab.
  */
 export type PanelTabId =
@@ -32,6 +33,7 @@ export type PanelTabId =
   | { kind: 'trace'; sessionFile: string }
   | { kind: 'turn-diff'; turnId: string }
   | { kind: 'subagents' }
+  | { kind: 'subagent-chat'; sessionId: string; callId: string; title: string }
 
 /** One entry of the recently closed history: what was closed, and when. */
 export interface RecentlyClosedTab {
@@ -77,6 +79,7 @@ export function samePanelTab(a: PanelTabId, b: PanelTabId): boolean {
   if (a.kind === 'file' && b.kind === 'file') return a.cwd === b.cwd && a.path === b.path
   if (a.kind === 'trace' && b.kind === 'trace') return a.sessionFile === b.sessionFile
   if (a.kind === 'turn-diff' && b.kind === 'turn-diff') return a.turnId === b.turnId
+  if (a.kind === 'subagent-chat' && b.kind === 'subagent-chat') return a.sessionId === b.sessionId && a.callId === b.callId
   return true
 }
 
@@ -93,6 +96,8 @@ export function panelTabKey(tab: PanelTabId): string {
       return JSON.stringify(['turn-diff', tab.turnId])
     case 'subagents':
       return 'subagents'
+    case 'subagent-chat':
+      return JSON.stringify(['subagent-chat', tab.sessionId, tab.callId])
   }
 }
 
@@ -112,6 +117,8 @@ export function panelTabLabel(tab: PanelTabId): string {
       return 'Turn diff'
     case 'subagents':
       return 'Subagents'
+    case 'subagent-chat':
+      return tab.title
   }
 }
 
@@ -125,9 +132,11 @@ function leafOf(path: string): string {
  * turn-diff tabs are ephemeral like Review — the turn they render lives in
  * the active view's state, so a closed-history entry could not restore it.
  * Ticket 90: the Subagents tab is a fixed identity like Review (the picker
- * card reopens it; it always shows the focused session). */
+ * card reopens it; it always shows the focused session). Ticket 99:
+ * subagent-chat tabs are ephemeral too — the row context (session entries +
+ * live run states) belongs to the open view, not to a history entry. */
 function isTrackable(tab: PanelTabId): boolean {
-  return tab.kind !== 'review' && tab.kind !== 'turn-diff' && tab.kind !== 'subagents'
+  return tab.kind !== 'review' && tab.kind !== 'turn-diff' && tab.kind !== 'subagents' && tab.kind !== 'subagent-chat'
 }
 
 /**
@@ -165,6 +174,7 @@ function normalizeEntry(raw: unknown): RecentlyClosedTab | null {
   if (typeof tab !== 'object' || tab === null) return null
   if (tab.kind === 'review') return null
   if (tab.kind === 'subagents') return null
+  if (tab.kind === 'subagent-chat') return null
   if (tab.kind === 'file') {
     if (typeof tab.cwd !== 'string' || typeof tab.path !== 'string') return null
     return { tab: { kind: 'file', cwd: tab.cwd, path: tab.path }, closedAt }

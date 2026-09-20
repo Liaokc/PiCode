@@ -33,8 +33,23 @@ import type { InlineExtension } from '@earendil-works/pi-coding-agent'
 import type { SessionScopedEvent, SubagentFleetDTO, SubagentRunState } from '../shared/contract'
 import { subagentInfoOfDetails } from '../shared/sessions/parse'
 import { clampInlineText } from '../shared/subagents/format'
+import { parseRunStateEnvelope } from '../shared/subagents/artifact'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+
+/** The artifact reader (ticket 90, moved to parse-in-shared in ticket 99 so
+ * the main process's sessions service reuses the same envelope table): one
+ * run's status.json from disk, parsed by the shared pure parser. Null for
+ * absent/corrupt artifacts — no live evidence, no invention. */
+export function readRunStateFromArtifact(asyncDir: string): SubagentRunState | null {
+  let raw: unknown
+  try {
+    raw = JSON.parse(readFileSync(join(asyncDir, 'status.json'), 'utf8'))
+  } catch {
+    return null
+  }
+  return parseRunStateEnvelope(raw)
+}
 
 /** What the extension may send: one session's scoped events (the supervisor
  * tags and relays; `host_exit` is supervisor-only). */
@@ -52,6 +67,12 @@ const CHILD_STATUS_EVENT = 'subagent:child-status'
  * `available: false` (an in-process event-bus roundtrip is fast; the
  * timeout only ever fires when the package is absent or wedged). */
 const RPC_TIMEOUT_MS = 3_000
+
+/** How long a steer request may take (ticket 99): the acknowledged-delivery
+ * reply lands once the message reached the child's control inbox — a busy
+ * child can take a moment, so this is deliberately more generous than the
+ * status roundtrip. A timeout is a FAILED receipt, never a hang. */
+const STEER_RPC_TIMEOUT_MS = 10_000
 
 /** Copy clamps for the forwarded lifecycle payloads (bounded IPC). */
 const SUMMARY_CHARS = 240
@@ -82,8 +103,18 @@ export class SubagentBridge {
     on(channel: string, handler: (data: unknown) => void): () => void
   } | null = null
   private rpcSeq = 0
+  /** Test seam: the status roundtrip's timeout (the steer timeout scales
+   * from the same knob — both are in-process roundtrips). */
+  private readonly statusTimeoutMs: number
+  private readonly steerTimeoutMs: number
 
-  constructor(private readonly send: (event: HostEvent) => void) {}
+  constructor(
+    private readonly send: (event: HostEvent) => void,
+    rpcTimeoutMs = RPC_TIMEOUT_MS
+  ) {
+    this.statusTimeoutMs = rpcTimeoutMs
+    this.steerTimeoutMs = Math.max(rpcTimeoutMs, Math.round((rpcTimeoutMs / RPC_TIMEOUT_MS) * STEER_RPC_TIMEOUT_MS))
+  }
 
   /** The inline extension (registered beside the approval gate). */
   readonly extension: InlineExtension = {
@@ -117,24 +148,123 @@ export class SubagentBridge {
   /** The bounded fleet DTO via the in-process RPC; null when the package is
    * absent or the roundtrip fails/times out. */
   private async requestFleet(): Promise<SubagentFleetDTO | null> {
+    const reply = await this.requestRpc('status', {}, this.statusTimeoutMs)
+    if (reply === null || reply.kind !== 'reply' || reply.success !== true) return null
+    return fleetFromRpcData(reply.data)
+  }
+
+  /** One versioned RPC roundtrip on the session's event bus. Resolves null
+   * when the bus never wired (package absent / boot failed); 'timeout' when
+   * the package never answered; otherwise the normalized reply envelope
+   * with success/data or the error code/message verbatim. */
+  private requestRpc(
+    method: string,
+    params: Record<string, unknown>,
+    timeoutMs: number
+  ): Promise<
+    | { kind: 'reply'; success: true; data: unknown }
+    | { kind: 'reply'; success: false; error: { code?: string; message?: string } }
+    | { kind: 'timeout' }
+    | null
+  > {
     const events = this.events
-    if (events === null) return null
+    if (events === null) return Promise.resolve(null)
     const requestId = `picode-${++this.rpcSeq}-${Date.now().toString(36)}`
-    const reply = await new Promise<unknown>((resolve) => {
+    return new Promise((resolve) => {
       let settled = false
-      const done = (value: unknown): void => {
+      const done = (
+        value:
+          | { kind: 'reply'; success: true; data: unknown }
+          | { kind: 'reply'; success: false; error: { code?: string; message?: string } }
+          | { kind: 'timeout' }
+          | null
+      ): void => {
         if (settled) return
         settled = true
         clearTimeout(timer)
         unsubscribe()
         resolve(value)
       }
-      const timer = setTimeout(() => done(undefined), RPC_TIMEOUT_MS)
-      const unsubscribe = events.on(`${RPC_REPLY_PREFIX}${requestId}`, (data) => done(data))
-      events.emit(RPC_REQUEST_EVENT, { version: 1, requestId, method: 'status', params: {}, source: { extension: 'picode-subagent-bridge' } })
+      const timer = setTimeout(() => done({ kind: 'timeout' }), timeoutMs)
+      const unsubscribe = events.on(`${RPC_REPLY_PREFIX}${requestId}`, (data) => {
+        if (!isRecord(data)) return done(null)
+        if (data['success'] === true) {
+          done({ kind: 'reply', success: true, data: data['data'] })
+          return
+        }
+        const error = isRecord(data['error']) ? (data['error'] as Record<string, unknown>) : {}
+        done({
+          kind: 'reply',
+          success: false,
+          error: {
+            ...(typeof error['code'] === 'string' ? { code: error['code'] } : {}),
+            ...(typeof error['message'] === 'string' ? { message: error['message'] } : {})
+          }
+        })
+      })
+      events.emit(RPC_REQUEST_EVENT, { version: 1, requestId, method, params, source: { extension: 'picode-subagent-bridge' } })
     })
-    if (!isRecord(reply) || reply['success'] !== true) return null
-    return fleetFromRpcData(reply['data'])
+  }
+
+  /**
+   * Steer ONE running async subagent run (ticket 99): pi-subagents' RPC
+   * `steer` with nonRecoveringSteer semantics — the extension keeps
+   * authority over the exact child, and the tool's pause-and-revive
+   * recovery is disabled for RPC steering. The receipt is answered in
+   * EVERY path: delivered/queued carry the RPC's acknowledged-delivery
+   * status verbatim; errors (unknown run, ended run, foreign-session
+   * ownership, no bridge, timeout, empty message) carry ok:false. The
+   * conversation tab never hangs and never invents a delivery claim.
+   */
+  async handleSteerRequest(requestId: string, asyncId: string, text: string): Promise<void> {
+    const message = text.trim()
+    if (message === '') {
+      this.send({ type: 'subagent_steer_receipt', requestId, asyncId, ok: false, error: 'the steer message is empty' })
+      return
+    }
+    const reply = await this.requestRpc('steer', { id: asyncId, message }, this.steerTimeoutMs)
+    if (reply === null) {
+      this.send({
+        type: 'subagent_steer_receipt',
+        requestId,
+        asyncId,
+        ok: false,
+        error: 'the subagent bridge is unavailable (no session bus)'
+      })
+      return
+    }
+    if (reply.kind === 'timeout') {
+      this.send({
+        type: 'subagent_steer_receipt',
+        requestId,
+        asyncId,
+        ok: false,
+        error: 'the steer request timed out (pi-subagents did not answer)'
+      })
+      return
+    }
+    if (reply.success === false) {
+      const code = reply.error.code
+      const failure = reply.error.message
+      const errorText =
+        failure !== undefined && failure !== '' ? failure : code !== undefined ? `RPC error: ${code}` : 'the steer request failed'
+      this.send({ type: 'subagent_steer_receipt', requestId, asyncId, ok: false, error: errorText })
+      return
+    }
+    const deliveryStatus = isRecord(reply.data) ? reply.data['deliveryStatus'] : undefined
+    if (deliveryStatus === 'delivered' || deliveryStatus === 'queued') {
+      this.send({ type: 'subagent_steer_receipt', requestId, asyncId, ok: true, deliveryStatus })
+      return
+    }
+    // The acknowledged-delivery contract guarantees the field on steer
+    // replies — its absence is a broken reply, never a claim we invent.
+    this.send({
+      type: 'subagent_steer_receipt',
+      requestId,
+      asyncId,
+      ok: false,
+      error: 'the steer reply carried no delivery status'
+    })
   }
 
   private forwardAsyncStarted(payload: unknown): void {
@@ -198,42 +328,6 @@ export class SubagentBridge {
       ...(typeof payload['stepIndex'] === 'number' ? { stepIndex: payload['stepIndex'] } : {}),
       ...(optString(payload['label']) !== undefined ? { label: optString(payload['label']) } : {})
     })
-  }
-}
-
-/**
- * Read ONE async run's live state from its status.json artifact (the
- * envelope fields pi-subagents' runner writes; unknown fields ignored).
- * Returns null for absent/corrupt artifacts — no live evidence, no
- * invention.
- */
-export function readRunStateFromArtifact(asyncDir: string): SubagentRunState | null {
-  let raw: unknown
-  try {
-    raw = JSON.parse(readFileSync(join(asyncDir, 'status.json'), 'utf8'))
-  } catch {
-    return null
-  }
-  if (!isRecord(raw)) return null
-  const runId = optString(raw['runId']) ?? optString(raw['id'])
-  const state = raw['state']
-  if (runId === undefined) return null
-  const validStates = ['queued', 'running', 'complete', 'failed', 'partial', 'paused', 'stopped', 'rejected']
-  if (typeof state !== 'string' || !validStates.includes(state)) return null
-  const agents = Array.isArray(raw['agents']) ? raw['agents'].filter((a): a is string => typeof a === 'string') : undefined
-  const nestedChildren = Array.isArray(raw['nestedChildren'])
-    ? raw['nestedChildren'].filter(isRecord).length
-    : 0
-  return {
-    runId,
-    state: state as SubagentRunState['state'],
-    ...(finiteMs(raw['startedAt']) !== undefined ? { startedAt: finiteMs(raw['startedAt']) } : {}),
-    ...(finiteMs(raw['endedAt']) !== undefined ? { endedAt: finiteMs(raw['endedAt']) } : {}),
-    ...(optString(raw['mode']) !== undefined ? { mode: optString(raw['mode']) } : {}),
-    ...(agents !== undefined && agents.length > 0 ? { agents } : {}),
-    ...(optString(raw['currentTool']) !== undefined ? { currentTool: optString(raw['currentTool']) } : {}),
-    ...(optString(raw['activityState']) !== undefined ? { activityState: optString(raw['activityState']) } : {}),
-    ...(nestedChildren > 0 ? { nestedCount: nestedChildren } : {})
   }
 }
 
