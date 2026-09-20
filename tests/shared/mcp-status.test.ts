@@ -14,6 +14,7 @@ import {
   mcpStatusToolCountLabel,
   parseMcpStatusSnapshot,
   shouldShowRuntimeBadge,
+  shouldShowToolCount,
   statusForServer,
   type McpServerStatusData,
   type McpStatusSnapshotData
@@ -143,6 +144,16 @@ describe('shouldShowRuntimeBadge', () => {
   it('shows the runtime badge for every live state', () => {
     for (const status of ['connected', 'cached', 'failed', 'needs-auth', 'not-connected'] as const) {
       expect(shouldShowRuntimeBadge(status)).toBe(true)
+    }
+  })
+})
+
+describe('shouldShowToolCount', () => {
+  it('the count chip rides only where a live catalog exists', () => {
+    expect(shouldShowToolCount('connected')).toBe(true)
+    expect(shouldShowToolCount('cached')).toBe(true)
+    for (const status of ['failed', 'needs-auth', 'not-connected', 'disabled'] as const) {
+      expect(shouldShowToolCount(status)).toBe(false)
     }
   })
 })

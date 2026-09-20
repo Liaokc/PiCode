@@ -81,4 +81,26 @@ describe('mcpStatusStore', () => {
     expect(mcpStatusStore.snapshotFor('s1')).toBeNull()
     expect(listener).toHaveBeenCalled()
   })
+
+  it('dropSession drops only the dead session and notifies (the honest no-data state)', () => {
+    mcpStatusStore.reset()
+    mcpStatusStore.dispatch(event(SNAP_A), 'dead')
+    mcpStatusStore.dispatch(event(SNAP_A), 'alive')
+    const listener = vi.fn()
+    mcpStatusStore.subscribe(listener)
+    mcpStatusStore.dropSession('dead')
+    expect(mcpStatusStore.snapshotFor('dead')).toBeNull()
+    expect(mcpStatusStore.snapshotFor('alive')).toEqual(SNAP_A)
+    expect(listener).toHaveBeenCalledTimes(1)
+  })
+
+  it('dropSession on an unknown session is a silent no-op', () => {
+    mcpStatusStore.reset()
+    mcpStatusStore.dispatch(event(SNAP_A), 's1')
+    const listener = vi.fn()
+    mcpStatusStore.subscribe(listener)
+    mcpStatusStore.dropSession('ghost')
+    expect(mcpStatusStore.snapshotFor('s1')).toEqual(SNAP_A)
+    expect(listener).not.toHaveBeenCalled()
+  })
 })

@@ -359,6 +359,14 @@ export default function App(): JSX.Element {
         mcpStatusStore.dispatch(event.event, event.sessionId)
         return
       }
+      // The session's runtime is gone (crash / detached after in-host fork)
+      // — its snapshot is stale; the honest no-data state takes over.
+      if (
+        event.type === 'session_event' &&
+        (event.event.type === 'host_exit' || event.event.type === 'session_detached')
+      ) {
+        mcpStatusStore.dropSession(event.sessionId)
+      }
       // Ticket 74: an announcement switches the view (create/resume/fork/
       // takeover all re-announce and auto-focus) — park the mounted
       // composer's draft FIRST, so the switch cannot lose it.

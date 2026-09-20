@@ -48,6 +48,15 @@ class McpStatusStore {
     for (const listener of this.listeners) listener()
   }
 
+  /** The session's host is gone (host_exit / session_detached): its last
+   * snapshot is stale — the adapter is dead and graceful shutdown's EMPTY
+   * snapshot never arrived (crash path). Drop it so the section shows the
+   * honest no-data state instead of badges for a dead runtime. */
+  dropSession(sessionId: string): void {
+    if (!this.snapshots.delete(sessionId)) return
+    for (const listener of this.listeners) listener()
+  }
+
   /** Testing seam: reset all state. */
   reset(): void {
     this.snapshots.clear()

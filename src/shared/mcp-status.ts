@@ -130,14 +130,13 @@ export function parseMcpStatusSnapshot(raw: unknown): McpStatusSnapshotData | nu
 // ---- projection (the renderer-side read) ----
 
 /**
- * One server's live state from the focused session's snapshot. null = no
+ * One server's live status from the focused session's snapshot. null = no
  * data for this server (no session, the adapter has not reported, or the
  * server is not in this session's runtime at all) — the row renders
  * WITHOUT a status badge instead of inventing one.
  */
 export function statusForServer(name: string, snapshot: McpStatusSnapshotData | null): McpRuntimeStatus | null {
-  if (snapshot === null) return null
-  return snapshot.servers.find((server) => server.name === name)?.status ?? null
+  return serverStatusEntry(name, snapshot)?.status ?? null
 }
 
 /** The live status of one server, or undefined when it carries no live data. */
@@ -154,6 +153,14 @@ export function serverStatusEntry(name: string, snapshot: McpStatusSnapshotData 
  */
 export function shouldShowRuntimeBadge(status: McpRuntimeStatus): boolean {
   return status !== 'disabled'
+}
+
+/** Whether the tool-count chip is the server's truth for this status: a
+ * live catalog exists for connected/cached; every other state's count is
+ * not the server's contribution (needs-auth/failed/not-connected report
+ * zeros, disabled contributes nothing). */
+export function shouldShowToolCount(status: McpRuntimeStatus): boolean {
+  return status === 'connected' || status === 'cached'
 }
 
 /** The tool-count chip: shown only where the count is the server's truth. */

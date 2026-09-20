@@ -20,6 +20,7 @@ import {
   mcpStatusToolCountLabel,
   serverStatusEntry,
   shouldShowRuntimeBadge,
+  shouldShowToolCount,
   type McpServerStatusData,
   type McpStatusSnapshotData
 } from '../../../../shared/mcp-status'
@@ -419,7 +420,7 @@ function McpRow({ row, statusEntry, busy, onToggle, onEdit, onDelete, onAuthenti
   // Disabled badge below already says it) + the tool chip where the count
   // is the server's truth (connected / cached).
   const status = statusEntry?.status ?? null
-  const showToolCount = status === 'connected' || status === 'cached'
+  const showToolCount = status !== null && shouldShowToolCount(status)
   return (
     <div className={row.disabled ? 'skill-row skill-row-broken' : 'skill-row'} data-mcp-server={row.name}>
       <div className="skill-row-main">
