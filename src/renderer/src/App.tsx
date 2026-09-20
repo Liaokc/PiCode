@@ -42,6 +42,7 @@ import {
 } from '../../shared/new-task-models'
 import { toastReducer, type ToastLevel, type ToastList } from '../../shared/toast'
 import { EDIT_RESEND_TOAST, editResendPrefill } from '../../shared/edit-resend'
+import type { QueueKind } from '../../shared/queue-mirror'
 import type { AccessMode, ImageAttachment, ThinkingLevel } from '../../shared/contract'
 import { parkedDraft, type ComposerDraft, type ComposerDraftEntry } from '../../shared/composer/drafts'
 import type { AuthProbeReport } from '../../shared/auth-status'
@@ -195,6 +196,13 @@ export default function App(): JSX.Element {
    * forked session's announcement (session_created) arrives — never
    * optimistically; failures clear it and surface session_command_error. */
   const forkAckRef = useRef<string | null>(null)
+  /** Ticket 100: the inline queue-Edit correlation — the requestId the
+   * in-flight edit_queue_entry command was sent with. The queue_entry_edited
+   * reply (a request/response pair, the file_list precedent) only prefills
+   * when it names THIS request; a stale reply (a newer click superseded it)
+   * is ignored. Last write wins — only one edit is meaningfully in flight. */
+  const queueEditSeq = useRef(0)
+  const queueEditPending = useRef<string | null>(null)
   /** 编辑重发 (ticket 79): the session id whose view has an edit in flight —
    * armed at the Edit click, consumed by that session's NEXT send (the light
    * resend toast), disarmed by command errors. Session-scoped so switching
@@ -379,10 +387,26 @@ export default function App(): JSX.Element {
       // The Bridge feed folds the SAME stream read-only (ticket 18) — all
       // sessions' bash commands stream to the observation panel.
       bridgeFeedDispatch(event)
+      // Ticket 100: the queue inline-Edit reply — request/response by
+      // requestId (the file_list precedent). found=false means the entry
+      // raced into delivery before the host's dance: the composer stays
+      // untouched, the survivors re-feed either way (the queue_update
+      // stream carries the new state).
       // App-level side effects key off the event's SESSION SCOPE (ticket 20:
       // wrapped `session_event` from the supervisor, or the legacy unwrapped
-      // shape the visual harnesses inject).
-      const scopeType = event.type === 'session_event' ? event.event.type : event.type
+      // shape the visual harnesses inject). The same unwrap serves the
+      // ticket-100 reply correlation above.
+      const scopeEvent = event.type === 'session_event' ? event.event : event
+      const editedEvent = scopeEvent
+      if (editedEvent.type === 'queue_entry_edited' && editedEvent.requestId === queueEditPending.current) {
+        queueEditPending.current = null
+        if (editedEvent.found) {
+          window.dispatchEvent(
+            new CustomEvent(PREFILL_EVENT, { detail: { text: editedEvent.text, images: editedEvent.images } })
+          )
+        }
+      }
+      const scopeType = scopeEvent.type
       const scopeId = event.type === 'session_event' ? event.sessionId : event.type === 'session_created' ? event.sessionId : null
       switch (scopeType) {
         case 'session_created': {
@@ -718,6 +742,21 @@ export default function App(): JSX.Element {
     sendFocused({ type: 'clear_queue' })
   }
 
+  /** Ticket 100: inline Edit on one queue row — the host's dance removes the
+   * entry; the `queue_entry_edited` reply (requestId-correlated below)
+   * dispatches the composer prefill with the entry's raw text + images. */
+  function handleEditQueueEntry(kind: QueueKind, index: number): void {
+    const requestId = `qedit-${queueEditSeq.current++}`
+    queueEditPending.current = requestId
+    sendFocused({ type: 'edit_queue_entry', kind, index, requestId })
+  }
+
+  /** Ticket 100: per-row × removal — the same dance, no prefill; the
+   * re-feed's queue_update events are the ack. */
+  function handleRemoveQueueEntry(kind: QueueKind, index: number): void {
+    sendFocused({ type: 'remove_queue_entry', kind, index })
+  }
+
   function handleSetAccessMode(mode: AccessMode): void {
     sendFocused({ type: 'set_access_mode', mode })
   }
@@ -798,6 +837,8 @@ export default function App(): JSX.Element {
     onSetModel: handleSetModel,
     onSetThinkingLevel: handleSetThinkingLevel,
     onClearQueue: handleClearQueue,
+    onEditQueueEntry: handleEditQueueEntry,
+    onRemoveQueueEntry: handleRemoveQueueEntry,
     onListFiles: handleListFiles,
     onPickImages: () => handlePickImages(),
     onBuiltinCommand: handleBuiltinCommand,

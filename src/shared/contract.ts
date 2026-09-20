@@ -16,12 +16,14 @@
  * Every member must stay JSON-serializable (it crosses process IPC).
  */
 import type { SessionDefaults } from './preferences.ts'
+import type { QueueKind } from './queue-mirror.ts'
 import type { McpRuntimeStatus, McpServerStatusData, McpStatusSnapshotData } from './mcp-status.ts'
 import type { SessionTreePayload, TranscriptImagePart, TranscriptItem } from './sessions/types.ts'
 import type { SubagentCallInfo, SubagentFleetDTO, SubagentRunState } from './subagents/types.ts'
 import type { UsageTokens } from './usage/types.ts'
 
 export type { SubagentCallInfo, SubagentFleetDTO, SubagentRunState }
+export type { QueueKind }
 export type { McpRuntimeStatus, McpServerStatusData, McpStatusSnapshotData }
 
 // ---- ticket 05: composer + approval gate shared vocabulary ----
@@ -100,7 +102,7 @@ export interface SlashCommandItem {
  * most recently announced session). */
 export type SessionCommand = Extract<
   ParentToHost,
-  { type: 'prompt' | 'abort_turn' | 'steer_prompt' | 'follow_up_prompt' | 'clear_queue' | 'set_model' | 'set_thinking_level' | 'set_access_mode' | 'approve_tool' | 'deny_tool' | 'compact_session' | 'list_files' | 'navigate_tree' | 'fork_session' | 'set_session_label' | 'request_tree' | 'get_branch' | 'mcp_auth_start' | 'mcp_auth_input_resolve' | 'subagent_status' }
+  { type: 'prompt' | 'abort_turn' | 'steer_prompt' | 'follow_up_prompt' | 'clear_queue' | 'edit_queue_entry' | 'remove_queue_entry' | 'set_model' | 'set_thinking_level' | 'set_access_mode' | 'approve_tool' | 'deny_tool' | 'compact_session' | 'list_files' | 'navigate_tree' | 'fork_session' | 'set_session_label' | 'request_tree' | 'get_branch' | 'mcp_auth_start' | 'mcp_auth_input_resolve' | 'subagent_status' }
 >
 
 /** Renderer → agent host system. */
@@ -133,6 +135,17 @@ export type ParentToHost =
   | { type: 'follow_up_prompt'; text: string; images?: ImageAttachment[] }
   /** Empty the steering + follow-up queue. */
   | { type: 'clear_queue' }
+  /** Inline Edit one queued entry (ticket 100, additive): the host runs the
+   * clearQueue → reconcile → drop-target → re-feed dance (the SDK 0.85.1
+   * queue face is text-only, no single-entry removal) and answers
+   * `queue_entry_edited` with the entry's raw text + images for the composer
+   * prefill. `index` is the row's ordinal in the LAST queue_update arrays.
+   * Answered even when a race delivery emptied the slot (found: false) —
+   * the survivors re-feed regardless. */
+  | { type: 'edit_queue_entry'; kind: QueueKind; index: number; requestId: string }
+  /** Per-row × removal (ticket 100, additive): the same dance minus the
+   * prefill reply — the re-feed's queue_update events are the ack. */
+  | { type: 'remove_queue_entry'; kind: QueueKind; index: number }
   /** Switch the session model (provider→model cascade menu). */
   | { type: 'set_model'; providerId: string; modelId: string }
   /** Switch the session thinking level (composer dropdown). */
@@ -291,8 +304,16 @@ export type SessionScopedEvent =
    * workspace, read-only. `null` = not a git repo / git unavailable — the
    * UI hides the badge instead of erroring. */
   | { type: 'branch_info'; branch: string | null }
-  /** Live steering/follow-up queue contents (SDK queue state). */
+  /** Live steering/follow-up queue contents (SDK queue state). The shape is
+   * FROZEN at ticket 05 (text arrays only) — ticket 100's mirror lives
+   * host-side, so old payloads keep validating unchanged. */
   | { type: 'queue_update'; steering: string[]; followUp: string[] }
+  /** Reply to `edit_queue_entry` (ticket 100, additive): the removed
+   * entry's raw text + attachments for the composer prefill.
+   * `found: false` (the entry raced into delivery before the dance) →
+   * text/images are empty and the renderer must NOT touch the composer —
+   * the survivors re-feed either way. */
+  | { type: 'queue_entry_edited'; requestId: string; found: boolean; text: string; images: TranscriptImagePart[] }
   /** Non-transcript notice (compaction progress etc.) for the toast area. */
   | { type: 'host_notice'; level: 'info' | 'error'; message: string }
   // ---- ticket 89: MCP OAuth bridge (additive; the flow rides the adapter's

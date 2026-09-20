@@ -17,8 +17,12 @@
  *   → set_access_mode read-only → prompt → NO approval_required (auto-deny)
  *   → agent_end → set_access_mode standard → prompt → approval_required
  *   → deny-with-reason → agent_end (terminate)
- *   → prompt → steer → queue_update×2 → follow-up → queue_update
- *   → clear_queue → queue_update → agent_end
+ *   → prompt → steer (img) → queue_update → delivery → follow-up B → D
+ *   (img) → C (img) → queue_update (order B,D,C) → remove B (ticket 100报备:
+ *   the edit_queue_entry/remove_queue_entry dance — order preserved,
+ *   queue_update shape frozen, malformed ops ignored) → edit C (reply
+ *   carries the raw text + image from the mirror) → re-fed D delivers
+ *   (echo keeps the mirror image) → clear_queue → queue_update → agent_end
  *   → set_thinking_level → thinking_level_changed; set_model → model_changed
  *   → list_files → file_list (ticket 71 repo state: git ls-files candidates,
  *   pi16-at-no-match hit, gitignored excluded, zero-write proven)
@@ -217,6 +221,10 @@ const gNotices = []
 let currentModel = null
 let thinkingLevelsCache = []
 let currentThinkingLevel = null
+// Ticket 100报备: the queue-round dance texts (B/D steer, C follow-up) and
+// the edit reply capture — the reply must carry the entry's RAW text (the
+// composer prefill) and the queue_update shape must stay frozen at the
+// ticket-05 text arrays (old-payload compatibility).
 // Ticket 78: the edit round's diff-bearing tool_end (Round B re-asserts the
 // replayed projection) and the tool-name map for tool_end correlation (the
 // tool_end event names only its call id).
@@ -311,6 +319,10 @@ const seen = {
   denyAck: false,
   queue_update: 0
 }
+const T100_B = 'PICODE_100 beta steer'
+const T100_D = 'PICODE_100 delta steer'
+const T100_C = 'PICODE_100 gamma follow'
+let edit100Reply = null
 let toolRoundSucceeded = false
 
 function armTimeout() {
@@ -324,6 +336,19 @@ function armTimeout() {
 function bumpTimeout() {
   clearTimeout(timeout)
   timeout = armTimeout()
+}
+
+/** Ticket 100报备: the queue_update event shape is FROZEN at ticket 05 —
+ * {steering: string[], followUp: string[]} and NOTHING else (the mirror
+ * lives host-side; old payloads keep validating). */
+function assertQueueShape(event) {
+  const keys = Object.keys(event).filter((key) => key !== 'type').sort().join(',')
+  if (keys !== 'followUp,steering') fail(`ticket-100: queue_update grew fields (old-payload compat broken): ${keys}`)
+  for (const key of ['steering', 'followUp']) {
+    if (!Array.isArray(event[key]) || event[key].some((t) => typeof t !== 'string')) {
+      fail(`ticket-100: queue_update.${key} must be a string array, got ${JSON.stringify(event[key])}`)
+    }
+  }
 }
 
 function forkHost(args, handler, opts = {}) {
@@ -961,13 +986,22 @@ function onEvent(event) {
         step = 'A queue steer'
         // Ticket 97报备: the steer carries an image — its DELIVERY echo (the
         // persistence monitor's relay) must project the parts too (steer
-        // echo 同修). Asserted at 'A queue settle'.
-        child.send({ type: 'steer_prompt', text: 'Skip ahead — jump straight to fifty.', images: [{ mimeType: 'image/png', data: T97_PNG }] })
+        // echo 同修). Asserted at 'A queue settle'. The text is a COUNTING
+        // instruction so A's own turn streams long enough to host the whole
+        // ticket-100 dance choreography below (the follow-ups deliver only
+        // when a turn ends with the queue non-empty — a short turn would
+        // race the choreography).
+        child.send({
+          type: 'steer_prompt',
+          text: 'Skip ahead — count slowly from sixty to eighty, one number per sentence.',
+          images: [{ mimeType: 'image/png', data: T97_PNG }]
+        })
       }
       return
     }
     case 'A queue steer': {
       if (event.type === 'queue_update') {
+        assertQueueShape(event)
         if (event.steering.length === 1) {
           console.log('SMOKE queue_update ok (steering=1)')
           step = 'A queue steer delivered'
@@ -979,15 +1013,94 @@ function onEvent(event) {
     }
     case 'A queue steer delivered': {
       if (event.type === 'queue_update' && event.steering.length === 0) {
+        assertQueueShape(event)
         console.log('SMOKE steer delivered ok (steering=0)')
+        step = 'A queue steer b'
+        child.send({ type: 'follow_up_prompt', text: T100_B })
+      }
+      return
+    }
+    case 'A queue steer b': {
+      // Ticket 100报备: B/D/C queue as FOLLOW-UPS — they deliver only at the
+      // run's end, so the dance choreography below has the whole A-turn as
+      // its margin (steering would race the next turn boundary). D carries
+      // an image: the mirror must return it to the SDK through the remove-
+      // dance's re-feed, proven by D's DELIVERY echo (a lost image = a lost
+      // part in the persisted delivery echo, asserted below).
+      if (event.type === 'queue_update' && event.steering.length === 0 && event.followUp.length === 1 && event.followUp[0] === T100_B) {
+        assertQueueShape(event)
+        console.log('SMOKE queue_update ok (followUp=[B])')
+        step = 'A queue steer d'
+        child.send({ type: 'follow_up_prompt', text: T100_D, images: [{ mimeType: 'image/png', data: T97_PNG }] })
+      }
+      return
+    }
+    case 'A queue steer d': {
+      if (event.type === 'queue_update' && event.followUp.length === 2 && event.followUp[0] === T100_B && event.followUp[1] === T100_D) {
+        assertQueueShape(event)
+        console.log('SMOKE queue_update ok (followUp=[B, D] — enqueue order)')
         step = 'A queue followup'
-        child.send({ type: 'follow_up_prompt', text: 'After this turn, summarize what you did.' })
+        // C (the edit target) also carries an image: the queue_entry_edited
+        // reply must return it from the mirror (the composer-prefill leg).
+        child.send({ type: 'follow_up_prompt', text: T100_C, images: [{ mimeType: 'image/png', data: T97_PNG }] })
       }
       return
     }
     case 'A queue followup': {
-      if (event.type === 'queue_update' && event.followUp.length === 1) {
-        console.log('SMOKE queue_update ok (followUp=1)')
+      if (event.type === 'queue_update' && event.followUp.length === 3 && event.steering.length === 0) {
+        assertQueueShape(event)
+        console.log('SMOKE queue_update ok (followUp=[B, D, C])')
+        // Ticket 100报备 (old-payload compatibility): malformed ops are
+        // ignored — no crash, no state change, no reply. The valid remove
+        // below then moves the queue EXACTLY one entry.
+        child.send({ type: 'remove_queue_entry' })
+        child.send({ type: 'edit_queue_entry', kind: 'steering' })
+        child.send({ type: 'edit_queue_entry', kind: 'bogus', index: 0, requestId: 'smoke-qedit-bogus' })
+        child.send({ type: 'edit_queue_entry', kind: 'followUp', index: 'zero', requestId: 'smoke-qedit-bogus' })
+        step = 'A queue removed'
+        child.send({ type: 'remove_queue_entry', kind: 'followUp', index: 0 })
+      }
+      return
+    }
+    case 'A queue removed': {
+      // The dance: B out, D and C keep their positions — 保序证据.
+      if (event.type === 'queue_update' && event.steering.length === 0 && event.followUp.length === 2 && event.followUp[0] === T100_D && event.followUp[1] === T100_C) {
+        assertQueueShape(event)
+        console.log('SMOKE remove_queue_entry ok (B out, D/C in place — order preserved)')
+        step = 'A queue edited'
+        edit100Reply = null
+        child.send({ type: 'edit_queue_entry', kind: 'followUp', index: 1, requestId: 'smoke-qedit-1' })
+      }
+      return
+    }
+    case 'A queue edited': {
+      if (event.type === 'queue_update') {
+        assertQueueShape(event)
+        return
+      }
+      if (event.type !== 'queue_entry_edited') return
+      edit100Reply = event
+      if (event.requestId !== 'smoke-qedit-1') fail(`queue_entry_edited for the wrong request: ${event.requestId}`)
+      if (event.found !== true) fail('queue_entry_edited must report found=true for a live entry')
+      if (event.text !== T100_C) fail(`queue_entry_edited must carry the entry's raw text, got ${JSON.stringify(event.text)}`)
+      if (!Array.isArray(event.images) || event.images.length !== 1 || event.images[0]?.data !== T97_PNG) {
+        fail(`queue_entry_edited must carry the entry's image from the mirror, got ${JSON.stringify(event.images)}`)
+      }
+      console.log('SMOKE edit_queue_entry ok (reply carries the raw text + image for the composer prefill)')
+      step = 'A queue d delivered'
+      return
+    }
+    case 'A queue d delivered': {
+      // The re-fed D (the remove dance's survivor) DELIVERS at the run's
+      // end: its echo must still carry the image the mirror preserved
+      // through the re-feed. Anchored on the echo itself (the dance's own
+      // clear emits also produce empty queues — the echo is the unambiguous
+      // delivery evidence).
+      if (event.type === 'user_message' && typeof event.text === 'string' && event.text.includes('PICODE_100 delta steer')) {
+        if (!Array.isArray(event.images) || event.images.length !== 1 || event.images[0]?.data !== T97_PNG) {
+          fail(`ticket-100: the re-fed followUp echo lost its mirror image (re-feed 图片不丢 broken), got ${JSON.stringify(event.images)}`)
+        }
+        console.log('SMOKE re-fed followUp delivery echo images ok (mirror → re-feed → persisted parts)')
         step = 'A queue cleared'
         child.send({ type: 'clear_queue' })
       }
@@ -995,7 +1108,8 @@ function onEvent(event) {
     }
     case 'A queue cleared': {
       if (event.type === 'queue_update' && event.steering.length === 0 && event.followUp.length === 0) {
-        console.log('SMOKE clear_queue ok (queue empty)')
+        assertQueueShape(event)
+        console.log('SMOKE clear_queue ok (queue empty — global Clear 照旧)')
         step = 'A queue settle'
       }
       return
@@ -1006,10 +1120,14 @@ function onEvent(event) {
         seen.agent_end++
         // Ticket 97报备: the delivered steer's echo projected its image
         // parts (the delivery relay reads the persisted content).
-        if (!echo97.withImages.some((text) => text.includes('jump straight to fifty'))) {
+        if (!echo97.withImages.some((text) => text.includes('count slowly from sixty to eighty'))) {
           fail('ticket-97: the delivered steer echo never carried its images (steer 同修 broken)')
         }
         console.log('SMOKE ticket-97 steer delivery echo images ok (persisted delivery → parts)')
+        // Ticket 100报备 complete: the reply landed during the round (the
+        // assert lives in 'A queue edited').
+        if (edit100Reply === null) fail('ticket-100: the edit_queue_entry reply never arrived')
+        console.log('SMOKE ticket-100 queue dance ok (remove/edit/re-feed through the host mirror)')
         console.log('SMOKE queue round ok')
         console.log('SMOKE composer controls: thinking level, model, file list')
         step = 'A thinking set'

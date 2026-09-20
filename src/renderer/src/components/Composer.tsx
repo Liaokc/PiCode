@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type JSX, type KeyboardEvent } from 'react'
 import type { AccessMode, ImageAttachment, ModelRef, ProviderModels, SlashCommandItem, ThinkingLevel } from '../../../shared/contract'
 import type { ChatQueue } from '../../../shared/chat-reducer'
+import type { QueueKind } from '../../../shared/queue-mirror'
 import type { ContextRingInput } from '../../../shared/context-ring'
 import { composerDraft, type ComposerDraft, type ComposerDraftEntry, type ComposerDraftOwner } from '../../../shared/composer/drafts'
 import type { EditResendPrefill } from '../../../shared/edit-resend'
@@ -62,6 +63,11 @@ export interface ComposerApi {
   onSetModel: (providerId: string, modelId: string) => void
   onSetThinkingLevel: (level: ThinkingLevel) => void
   onClearQueue: () => void
+  /** Ticket 100: inline Edit on one queue row — the host's dance removes the
+   * entry and answers with its raw text + images for the composer prefill. */
+  onEditQueueEntry: (kind: QueueKind, index: number) => void
+  /** Ticket 100: per-row × removal — the same dance, no prefill. */
+  onRemoveQueueEntry: (kind: QueueKind, index: number) => void
   onListFiles: (requestId: string, query: string) => void
   onPickImages: () => Promise<ImageAttachment[]>
   onBuiltinCommand: (name: string) => void
@@ -158,6 +164,8 @@ export default function Composer({
   onSetModel,
   onSetThinkingLevel,
   onClearQueue,
+  onEditQueueEntry,
+  onRemoveQueueEntry,
   onListFiles,
   onPickImages,
   onBuiltinCommand,
@@ -780,7 +788,9 @@ export default function Composer({
         </div>
       )}
 
-      {busy && <QueuePanel queue={queue} onClear={onClearQueue} />}
+      {busy && (
+        <QueuePanel queue={queue} onClear={onClearQueue} onEdit={onEditQueueEntry} onRemove={onRemoveQueueEntry} />
+      )}
 
       <footer className="composer-footer">
         <Tooltip label="Attach images">

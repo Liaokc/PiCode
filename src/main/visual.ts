@@ -1187,7 +1187,10 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
         })()`
       )
       emit({ type: 'agent_start' })
-      emit({ type: 'queue_update', steering: [], followUp: ['Summarize the changes when done'] })
+      // Ticket 100: one row of EACH kind — the capture shows the inline
+      // Edit / × actions on both row shapes (and the ticket-100 inset: the
+      // row borders separated from the composer card's edge).
+      emit({ type: 'queue_update', steering: ['Steer the plan toward the cache-first variant'], followUp: ['Summarize the changes when done'] })
       emit({
         type: 'approval_required',
         toolCallId: 'tc-visual-pill',
