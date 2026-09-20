@@ -83,6 +83,32 @@ button {
   color: inherit;
 }
 
+/* ---------- ticket 98 (spec R16): button focus discipline ----------
+   Focus rings are the app's, never the UA's. The orange ring appears ONLY
+   under :focus-visible — pure keyboard navigation (Tab; Q19 keeps it) —
+   and every pointer flow stays ringless twice over: a pointer-activated
+   button never matches :focus-visible, and the R16 discipline blurs it
+   back to the composer input anyway (composer-focus.ts). Specialized
+   controls keep their own narrower rules (nav-tick, md-block-btn, the
+   attachment thumbs); menu rows suppress the ring entirely — their
+   keyboard indicator is the gray selection highlight (1.6 tickets 68/69). */
+button:focus-visible,
+[role='button']:focus-visible,
+[role='option']:focus-visible,
+[role='menuitem']:focus-visible,
+[role='menuitemradio']:focus-visible,
+[role='tab']:focus-visible {
+  outline: 2px solid var(--accent-orange);
+  outline-offset: 1px;
+}
+
+/* The captureKeys popover container is script-focused when no row exists
+   to carry the capture (the model menu's empty catalog) — it is a surface,
+   not a control: no ring. */
+.cmp-popover:focus-visible {
+  outline: none;
+}
+
 textarea {
   font-family: inherit;
 }
@@ -6019,6 +6045,10 @@ button.heat:hover {
   align-items: flex-end;
   gap: 8px;
   max-width: min(480px, calc(100% - 36px));
+  /* Ticket 98: the stack anchors over the composer footer — an empty
+     container (and the gaps between toasts) must never swallow clicks
+     meant for the chips underneath; each toast CARD stays interactive. */
+  pointer-events: none;
 }
 
 .toast {
@@ -6031,6 +6061,9 @@ button.heat:hover {
   color: #ffffff;
   font-size: 12.5px;
   box-shadow: 0 8px 24px rgba(30, 30, 25, 0.18);
+  /* The card itself stays interactive (the ✕ dismiss) — see the stack's
+     ticket-98 pointer-events note. */
+  pointer-events: auto;
 }
 
 .toast-message {

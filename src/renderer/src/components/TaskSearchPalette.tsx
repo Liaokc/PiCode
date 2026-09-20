@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent } fr
 import { nextSelectionIndex, searchTasks } from '../../../shared/task-search'
 import { projectLabel, relativeTime } from '../../../shared/sessions/group'
 import type { SessionSummary } from '../../../shared/sessions/types'
+import { reclaimComposerFocus } from '../composer-focus'
 import { FolderIcon, SearchIcon } from './icons'
 
 interface TaskSearchPaletteProps {
@@ -35,6 +36,12 @@ export default function TaskSearchPalette({ sessions, onOpenSession, onClose }: 
   function pick(session: SessionSummary): void {
     onOpenSession(session)
     onClose()
+    // Ticket 98 (R16): the keyboard pick carries no click event, so the
+    // document-level discipline never fires — the palette unmounts and
+    // focus would die on <body>. Same rule as every other menu: the caret
+    // goes back to the composer (the picked session's view mounts one;
+    // a FollowView pick finds none and the probe is a no-op).
+    reclaimComposerFocus()
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>): void {

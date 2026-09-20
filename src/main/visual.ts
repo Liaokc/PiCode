@@ -64,6 +64,7 @@ import { mermaidVisualEnabled } from './visual-mermaid'
 import { expandVisualEnabled } from './visual-expand'
 import { composerLayoutVisualEnabled } from './visual-composer-layout'
 import { imagePreviewVisualEnabled } from './visual-image-preview'
+import { focusVisualEnabled } from './visual-focus'
 import { skillCardVisualEnabled } from './visual-skill-card'
 import { answerVisualEnabled } from './visual-answer'
 import { workedVisualEnabled } from './visual-worked-container'
@@ -225,6 +226,8 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
   if (composerLayoutVisualEnabled()) return
   // And for the image-preview harness (ticket 91).
   if (imagePreviewVisualEnabled()) return
+  // And for the focus-discipline harness (ticket 98).
+  if (focusVisualEnabled()) return
   // And for the command-card harness (ticket 72).
   if (skillCardVisualEnabled()) return
   // And for the answer-split harness (ticket 53).

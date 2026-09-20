@@ -55,6 +55,7 @@ import { startThinkingVisualIfEnabled, isolateThinkingUserData } from './visual-
 import { startExpandVisualIfEnabled, isolateExpandUserData } from './visual-expand'
 import { startComposerLayoutVisualIfEnabled, isolateComposerLayoutUserData } from './visual-composer-layout'
 import { startImagePreviewVisualIfEnabled, isolateImagePreviewUserData } from './visual-image-preview'
+import { startFocusVisualIfEnabled, isolateFocusUserData, focusVisualEnabled } from './visual-focus'
 import { startBubbleVisualIfEnabled, isolateBubbleUserData } from './visual-bubble'
 import { startPreviewVisualIfEnabled, isolatePreviewUserData } from './visual-preview'
 import { startSkillCardVisualIfEnabled, isolateSkillCardUserData } from './visual-skill-card'
@@ -119,6 +120,9 @@ isolateComposerLayoutUserData()
 // Ticket-91 image-preview harness — same throwaway-userData rule (no-op
 // unless PICODE_VISUAL_IMAGE_PREVIEW=1).
 isolateImagePreviewUserData()
+// Ticket-98 focus-discipline harness — same throwaway-userData rule (no-op
+// unless PICODE_VISUAL_FOCUS=1).
+isolateFocusUserData()
 // Ticket-97 composite-bubble harness — same throwaway-userData rule (no-op
 // unless PICODE_VISUAL_BUBBLE=1).
 isolateBubbleUserData()
@@ -515,6 +519,8 @@ app.whenReady().then(() => {
   startComposerLayoutVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-91 image-preview harness — same seeding constraint.
   startImagePreviewVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  // Ticket-98 focus-discipline harness — same seeding constraint.
+  startFocusVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-97 composite-bubble harness — settled-replay injection, same pattern.
   startBubbleVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-88 preview dual-view harness — same seeding constraint (the fake
@@ -578,6 +584,11 @@ app.whenReady().then(() => {
   // Composer image attachments (ticket 05): picked images are read in the
   // main process and delivered to the renderer as base64 contract payloads.
   ipcMain.handle('chat:pick-images', async (event): Promise<ImageAttachment[]> => {
+    // Ticket 98 stage: the focus-discipline leg presses the attach button
+    // for real (a trusted click is the only way to move focus like a human
+    // does) — no human is present for the native picker, so smoke answers
+    // an empty pick and the assertions ride the renderer's focus instead.
+    if (smokeEnabled() || focusVisualEnabled()) return []
     const win = BrowserWindow.fromWebContents(event.sender)
     const result = await dialog.showOpenDialog(win as BrowserWindow, {
       title: 'Attach images',

@@ -45,6 +45,7 @@ import { EDIT_RESEND_TOAST, editResendPrefill } from '../../shared/edit-resend'
 import type { QueueKind } from '../../shared/queue-mirror'
 import type { AccessMode, ImageAttachment, ThinkingLevel } from '../../shared/contract'
 import { parkedDraft, type ComposerDraft, type ComposerDraftEntry } from '../../shared/composer/drafts'
+import { installComposerFocusDiscipline } from './composer-focus'
 import type { AuthProbeReport } from '../../shared/auth-status'
 import { configuredProviderIds, sortProvidersConfiguredFirst } from '../../shared/provider-sort'
 import { selectCommandCatalog, type NewTaskCommandCatalog } from '../../shared/new-task-commands'
@@ -264,6 +265,15 @@ export default function App(): JSX.Element {
   const dismissToastById = useCallback((id: number): void => {
     dispatchToast({ type: 'dismiss', id })
   }, [])
+
+  // Ticket 98 (spec R16): the button focus discipline — ONE document-level
+  // click listener for the workspace window's whole lifetime. After any
+  // completed click on a disciplined control, a rAF-deferred seam probe
+  // hands focus back to the composer input (caret owners and
+  // data-focus-keep surfaces keep theirs) — Enter always goes back to send.
+  // Runs for the settings window-in-window too; its shell opts out via
+  // data-focus-keep, so its own controls are never robbed.
+  useEffect(() => installComposerFocusDiscipline(), [])
 
   // Settings load once at boot; the snapshot drives both the settings window
   // and the new-task flow (defaults + "reuse last folder"). The snapshot's

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type JSX, type KeyboardEvent, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type JSX, type KeyboardEvent, type RefObject } from 'react'
 import type { AccessMode, ThinkingLevel } from '../../../../shared/contract'
 import { ACCESS_MODES, accessModeHint, accessModeLabel } from '../../../../shared/composer/access'
 import { clampIndex, flatMenuKey } from '../../../../shared/composer/menu-keys'
@@ -46,6 +46,22 @@ export function ComposerPopover({
 }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
 
+  // Ticket 98: a captureKeys popover owns the keyboard — but the keyboard
+  // model (flatMenuKey) listens on the list container, and a plain autoFocus
+  // on THIS root div puts focus where keydowns never pass through a child
+  // (real ↑↓/Enter died on the container; only the synthetic dispatches
+  // reached the list). Put the captured focus ON the selected row instead,
+  // inside the list: real keydowns bubble into flatMenuKey exactly like the
+  // synthetic ones, Enter picks, Escape closes, and after the close the
+  // composer's menu-close path hands the caret back to the input (R16).
+  // Rows suppress the focus ring — their keyboard indicator is the gray
+  // selection highlight (the 1.6 tickets 68/69 model, untouched). The
+  // empty-catalog popover renders no rows and keeps the container focus.
+  useLayoutEffect(() => {
+    if (!captureKeys) return
+    ref.current?.querySelector<HTMLElement>('[aria-selected="true"]')?.focus()
+  }, [captureKeys])
+
   useEffect(() => {
     function onDown(event: MouseEvent): void {
       // Ticket 70: the decision is the ONE shared rule (Seam-1,
@@ -76,6 +92,12 @@ export function ComposerPopover({
       aria-label={label}
       tabIndex={captureKeys ? -1 : undefined}
       autoFocus={captureKeys || undefined}
+      // Ticket 98: a captureKeys popover owns its focus lifecycle (the
+      // capture sits on the selected row until the close path hands it
+      // back) — the document-level click discipline must not reclaim the
+      // caret while it is open. The text menus (captureKeys=false) never
+      // hold focus, so they need no marker.
+      data-focus-keep={captureKeys || undefined}
     >
       {children}
     </div>

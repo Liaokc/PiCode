@@ -130,6 +130,17 @@
  * inside the popover still picks while a real outside press still closes
  * for good.
  *
+ * Ticket 98 adds the focus-discipline stage right after the image-preview
+ * stage: every leg presses controls with TRUSTED input events
+ * (sendInputEvent — synthetic MouseEvents never move focus, and focus is
+ * what R16 decides about). A real click on + / the model chip + checked
+ * row / History must land the caret back on the composer input, a real
+ * Enter there must run the send path (proven by the retired-command gate
+ * toasts, zero host traffic), the chip menus' keyboard capture must sit
+ * ON the selected row so real keys reach flatMenuKey, keyboard picks must
+ * return the caret, a real Tab must match :focus-visible (the Q19 ring)
+ * and mouse flows must never rest on a control.
+ *
  * Any missed step times out and exits non-zero. Progress logs as
  * `SMOKE <step>` lines on stdout. Not part of `npm test`.
  */
@@ -6591,6 +6602,270 @@ export function startSmokeIfEnabled(
       }
     })
     log('image_preview_91_done')
+
+    // ---- ticket 98: the button focus discipline (spec R16). Every leg
+    // presses controls with TRUSTED input events (sendInputEvent) — the
+    // synthetic MouseEvents the earlier stages use never move focus, and
+    // focus is the exact thing this ticket decides about. Asserted:
+    // ① a real click on the + attach button hands the caret straight back
+    //   to the composer input (the chat:pick-images smoke stub answers an
+    //   empty pick — no native dialog), and a real Enter on the refocused
+    //   input runs the SEND path, proven by the retired-command gate toast
+    //   ('/tree' → the History hint; zero host traffic);
+    // ② a real click on the model chip lands the keyboard capture ON the
+    //   selected row (real ↑↓/Enter can reach flatMenuKey through it — the
+    //   pre-98 capture died on the popover container), and a real click on
+    //   the CHECKED model row (idempotent pick) closes the menu and lands
+    //   the caret on the input; a bare real Enter afterwards never reopens
+    //   the menu;
+    // ③ the access menu's keyboard pick (real Enter on the captured row —
+    //   the 1.6 tickets 68/69 model, now really reachable) closes the menu
+    //   and returns the caret to the input, tier unchanged;
+    // ④ a real click on the History button opens the tree panel with the
+    //   caret on the input; a gated Enter ('/copy') never re-toggles the
+    //   panel and still runs the send path; Escape closes the panel;
+    // ⑤ a real Tab matches :focus-visible (the Q19 keyboard ring) and a
+    //   real click rests on the ringless input — mouse flows never show
+    //   rings and never keep focus.
+    log('focus_discipline_98_start')
+    await withWindow(getWindow, async (win) => {
+      const js = (code: string): Promise<unknown> => win.webContents.executeJavaScript(code)
+      const ta98 = `document.querySelector('.chat-dock textarea.composer-input')`
+      const focusTa98 = `document.activeElement === ${ta98}`
+      if (!(await waitForProbe(win, `${ta98} !== null`, 10_000))) {
+        fail('ticket-98 stage: the in-session composer never appeared')
+      }
+      // The trusted legs below are only honest when the window HOLDS focus
+      // (the ticket-44 harness-robustness class: macOS denies a focus steal
+      // while the operator is typing elsewhere — re-request every poll
+      // tick so the steal lands the moment that interaction pauses).
+      win.show()
+      win.focus()
+      app.focus({ steal: true })
+      let windowFocused98 = false
+      for (let waited = 0; waited < 10_000 && !windowFocused98; waited += 100) {
+        windowFocused98 = (await js('document.hasFocus()').catch(() => false)) === true
+        if (!windowFocused98) {
+          if (!win.isFocused()) app.focus({ steal: true })
+          await new Promise((r) => setTimeout(r, 100))
+        }
+      }
+      if (!windowFocused98) fail('ticket-98 stage: the smoke window never took focus for the trusted-event legs')
+
+      /** A REAL (trusted) click at the center of the element the snippet
+       * returns — trusted events are what move focus, the exact thing R16
+       * decides about; the synthetic dispatches above cannot. The window
+       * must HOLD focus or the events land nowhere (the ticket-44 class:
+       * macOS deactivates the app mid-suite — re-steal before every leg).
+       * Returns false when the element is missing or focus never returned. */
+      const ensureFocus98 = async (): Promise<boolean> => {
+        for (let waited = 0; waited < 5_000; waited += 100) {
+          if ((await js('document.hasFocus()').catch(() => false)) === true) return true
+          if (!win.isFocused()) app.focus({ steal: true })
+          await new Promise((r) => setTimeout(r, 100))
+        }
+        return false
+      }
+      const realClick98 = async (elJs: string): Promise<boolean> => {
+        if (!(await ensureFocus98())) return false
+        const point = (await js(`(() => {
+          const el = ${elJs}
+          if (!(el instanceof HTMLElement)) return null
+          const r = el.getBoundingClientRect()
+          return JSON.stringify({ x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) })
+        })()`).catch(() => null)) as string | null
+        if (!point) return false
+        const p = JSON.parse(point) as { x: number; y: number }
+        win.webContents.sendInputEvent({ type: 'mouseDown', x: p.x, y: p.y, button: 'left', clickCount: 1 })
+        await new Promise((r) => setTimeout(r, 60))
+        win.webContents.sendInputEvent({ type: 'mouseUp', x: p.x, y: p.y, button: 'left', clickCount: 1 })
+        return true
+      }
+      /** A REAL (trusted) key press on whatever holds focus. */
+      const realKey98 = async (keyCode: string): Promise<void> => {
+        if (!(await ensureFocus98())) return
+        win.webContents.sendInputEvent({ type: 'keyDown', keyCode })
+        await new Promise((r) => setTimeout(r, 40))
+        win.webContents.sendInputEvent({ type: 'keyUp', keyCode })
+      }
+      /** The trustedUntil shape: every leg is (idempotent action + strict
+       * probe + re-steal retries). The operator's machine steals activation
+       * at any moment (the ticket-44 environmental class) and a stolen
+       * trusted event lands nowhere — the retry re-drives it; the
+       * ASSERTION itself stays the strict probe. */
+      const trustedUntil98 = async (action: () => Promise<boolean>, probe: string, attempts = 3): Promise<boolean> => {
+        for (let attempt = 0; attempt < attempts; attempt++) {
+          if (!(await action())) return false
+          const deadline = Date.now() + 1_200
+          while (Date.now() < deadline) {
+            if ((await js(probe).catch(() => false)) === true) return true
+            await new Promise((r) => setTimeout(r, 100))
+          }
+        }
+        return (await js(probe).catch(() => false)) === true
+      }
+      const clickUntil98 = (elJs: string, probe: string): Promise<boolean> =>
+        trustedUntil98(async () => realClick98(elJs), probe)
+      const keyUntil98 = async (keyCode: string, probe: string): Promise<boolean> =>
+        trustedUntil98(async () => {
+          await realKey98(keyCode)
+          return true
+        }, probe)
+      /** The R16 end state: the caret rests on the composer input. */
+      const expectFocusTa = async (leg: string): Promise<void> => {
+        if (!(await waitForProbe(win, focusTa98, 5_000))) {
+          const diag = (await js(
+            `String(document.activeElement?.tagName ?? 'none') + '#' + String(document.activeElement?.className ?? '')`
+          ).catch(() => 'diag-failed')) as string
+          fail(`ticket-98 stage: after ${leg} the caret never returned to the composer input (active: ${diag})`)
+        }
+      }
+      /** Type a retired command through the native setter and prove a real
+       * Enter ran the composer's SEND path with zero host traffic: the
+       * slash gate toast fires and names the owning control. The trailing
+       * space is LOAD-BEARING: it moves the caret out of the leading token,
+       * so the ticket-68 trigger surface closes the / menu (a bare '/tree'
+       * fuzzily matches other commands and the Enter would pick a row
+       * instead of reaching the gate) — the keystroke lands on the bare
+       * dispatch, exactly the path a real send takes. A retry just
+       * re-presses Enter on the same gated text. */
+      const enterSendPath98 = async (command: string, leg: string): Promise<void> => {
+        const gated98 = `${command} `
+        await js(`(() => {
+          const ta = ${ta98}
+          if (!(ta instanceof HTMLTextAreaElement)) return false
+          const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+          setter.call(ta, ${JSON.stringify(gated98)})
+          ta.dispatchEvent(new Event('input', { bubbles: true }))
+          return true
+        })()`)
+        // The typed value must be committed before the keystroke — and the
+        // caret must still be on the input (the R16 end state is what makes
+        // the Enter land on the composer at all).
+        const typed = (await waitForProbe(win, `${ta98}?.value === ${JSON.stringify(gated98)} && ${focusTa98}`, 5_000)) as boolean
+        if (!typed) {
+          const diag = (await js(
+            `JSON.stringify({ value: ${ta98}?.value ?? null, active: String(document.activeElement?.tagName ?? 'none') + '#' + String(document.activeElement?.className ?? '') })`
+          ).catch(() => 'diag-failed')) as string
+          fail(`ticket-98 stage: before the ${leg} gated Enter the composer never held ${gated98} with the caret — ${diag}`)
+        }
+        const toasted = await keyUntil98(
+          'Enter',
+          `[...document.querySelectorAll('.toast-message')].some((el) => el.textContent?.includes(${JSON.stringify(command)}))`
+        )
+        if (!toasted) {
+          const diag = (await js(
+            `JSON.stringify({ value: ${ta98}?.value ?? null, active: String(document.activeElement?.tagName ?? 'none') + '#' + String(document.activeElement?.className ?? ''), toasts: [...document.querySelectorAll('.toast-message')].map((n) => n.textContent ?? '') })`
+          ).catch(() => 'diag-failed')) as string
+          fail(`ticket-98 stage: after ${leg} the gated Enter never ran the send path (no ${command} gate toast) — ${diag}`)
+        }
+        // The gate keeps the text in place (dispatch returns early) — clear
+        // it so the next leg starts from the resting composer, and wait for
+        // the toast to expire: the toast stack anchors over the footer's
+        // right side, and a live toast would swallow the next leg's trusted
+        // clicks on the chips underneath (the ticket-98 pointer-events fix
+        // only clears the container — the card itself stays interactive).
+        await js(`(() => {
+          const ta = ${ta98}
+          if (!(ta instanceof HTMLTextAreaElement)) return false
+          const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+          setter.call(ta, '')
+          ta.dispatchEvent(new Event('input', { bubbles: true }))
+          return true
+        })()`)
+        await waitForProbe(win, `document.querySelectorAll('.toast-message').length === 0`, 10_000)
+      }
+
+      // ① The + attach button: real click → caret back on the input; the
+      // picker stub answered an empty pick (no native dialog, no crash),
+      // and the gated Enter proves the send path is live again.
+      const plus98 = `document.querySelector('.chat-dock .cmp-icon-btn[aria-label="Attach images"]')`
+      const plusClicked = await clickUntil98(plus98, focusTa98)
+      if (!plusClicked) fail('ticket-98 stage: the attach button is missing or its click never reclaimed the caret')
+      await enterSendPath98('/tree', 'the attach-button click')
+      log('focus_discipline_98_plus_ok')
+
+      // ② The model menu: the capture lands ON the selected row (real keys
+      // reach flatMenuKey through it); a real click on the CHECKED row
+      // picks idempotently (zero state change) and the caret returns; a
+      // bare Enter never reopens the menu.
+      const modelLabel98 = `document.querySelector('.cmp-chip[aria-label^="Model:"]')?.getAttribute('aria-label') ?? ''`
+      const modelBefore = (await js(modelLabel98).catch(() => '')) as string
+      const cascadeOpen98 = `document.querySelector('.cmp-popover .cmp-cascade') !== null && document.activeElement?.closest?.('.cmp-popover') !== null && document.activeElement.getAttribute('aria-selected') === 'true'`
+      const modelOpened = await clickUntil98(`document.querySelector('.cmp-chip[aria-label^="Model:"]')`, cascadeOpen98)
+      if (!modelOpened) {
+        const diag = (await js(
+          `JSON.stringify({ popover: document.querySelector('.cmp-popover') !== null, active: String(document.activeElement?.tagName ?? 'none') + '#' + String(document.activeElement?.className ?? '') })`
+        ).catch(() => 'diag-failed')) as string
+        fail(`ticket-98 stage: the model menu never opened with the capture on the selected row — ${diag}`)
+      }
+      const checkedRow98 = `(() => {
+        const col = document.querySelectorAll('.cmp-popover .cmp-cascade-col')[1]
+        if (!col) return null
+        return [...col.querySelectorAll('.cmp-menu-row')].find((r) => r.querySelector('.cmp-menu-check') !== null) ?? null
+      })()`
+      const modelPicked = await clickUntil98(
+        checkedRow98,
+        `document.querySelector('.cmp-popover') === null && ${focusTa98}`
+      )
+      if (!modelPicked) fail('ticket-98 stage: the checked-row pick never closed the menu with the caret back on the input')
+      const modelAfter = (await js(modelLabel98).catch(() => '')) as string
+      if (modelAfter !== modelBefore) fail(`ticket-98 stage: the idempotent model pick moved the model (${modelBefore} → ${modelAfter})`)
+      await realKey98('Enter')
+      if (!(await js(`document.querySelector('.cmp-popover') === null`).catch(() => false))) {
+        fail('ticket-98 stage: a bare Enter after the model pick reopened the model menu')
+      }
+      await expectFocusTa('the post-pick bare Enter')
+      log('focus_discipline_98_model_ok')
+
+      // ③ The access menu's KEYBOARD pick: the capture sits on the selected
+      // row, a real Enter picks through flatMenuKey (the 1.6 tickets 68/69
+      // model — now really reachable), tier unchanged, caret back home.
+      const accessLabel98 = `document.querySelector('.cmp-chip[aria-label^="Access mode:"]')?.getAttribute('aria-label') ?? ''`
+      const accessBefore = (await js(accessLabel98).catch(() => '')) as string
+      const accessOpen98 = `document.querySelector('.cmp-popover .cmp-menu-list') !== null && document.activeElement?.closest?.('.cmp-popover') !== null && document.activeElement.getAttribute('aria-selected') === 'true'`
+      const accessOpened = await clickUntil98(`document.querySelector('.cmp-chip[aria-label^="Access mode:"]')`, accessOpen98)
+      if (!accessOpened) fail('ticket-98 stage: the access menu never opened with the capture on the selected row')
+      const accessPicked = await keyUntil98(
+        'Enter',
+        `document.querySelector('.cmp-popover') === null && ${focusTa98}`
+      )
+      if (!accessPicked) fail('ticket-98 stage: the access keyboard pick never closed the menu with the caret back on the input')
+      const accessAfter = (await js(accessLabel98).catch(() => '')) as string
+      if (accessAfter !== accessBefore) fail(`ticket-98 stage: the idempotent access keyboard pick moved the tier (${accessBefore} → ${accessAfter})`)
+      log('focus_discipline_98_keyboard_pick_ok')
+
+      // ④ The History button: real click opens the tree panel with the
+      // caret on the input; a gated Enter runs the send path and never
+      // re-toggles the panel; Escape closes it.
+      const history98 = `[...document.querySelectorAll('.chat-topbar-btn')].find((el) => el.textContent?.includes('History'))`
+      const historyOpened = await clickUntil98(history98, `document.querySelector('.tree-panel') !== null && ${focusTa98}`)
+      if (!historyOpened) fail('ticket-98 stage: the History click never opened the tree panel with the caret on the input')
+      await enterSendPath98('/copy', 'the History toggle')
+      if (!(await js(`document.querySelector('.tree-panel') !== null`).catch(() => false))) {
+        fail('ticket-98 stage: the gated Enter re-toggled the History panel (focus was still on the button)')
+      }
+      const panelClosed = await keyUntil98('Escape', `document.querySelector('.tree-panel') === null`)
+      if (!panelClosed) fail('ticket-98 stage: Escape never closed the tree panel')
+      await expectFocusTa('the tree panel Escape')
+      log('focus_discipline_98_history_ok')
+
+      // ⑤ The ring discipline: a real Tab matches :focus-visible (the Q19
+      // keyboard ring); a real click rests on the ringless input.
+      const tabRing = await trustedUntil98(
+        async () => {
+          await js(`${ta98}.focus()`)
+          await realKey98('Tab')
+          return true
+        },
+        `document.activeElement !== ${ta98} && document.activeElement?.matches?.(':focus-visible') === true`
+      )
+      if (!tabRing) fail('ticket-98 stage: a real Tab never matched :focus-visible (the Q19 keyboard ring is gone)')
+      const ringCaret = await clickUntil98(plus98, focusTa98)
+      if (!ringCaret) fail('ticket-98 stage: the ring-probe attach click never reclaimed the caret')
+      log('focus_discipline_98_ring_ok')
+      log('focus_discipline_98_done')
+    })
 
     // ---- ticket 53: turn answer split — a settled long turn shows its LAST
     // text block as the answer; earlier narration folds into the Worked
