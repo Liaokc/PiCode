@@ -34,9 +34,14 @@ function readFoldSnapshot(scroll: HTMLElement, header: Element): FoldAnchorSnaps
  *
  * - CLICK TOGGLES → `capture()` (returned; the header's onClick runs it
  *   before scheduling the toggle) reads the viewport state SYNCHRONOUSLY at
- *   click time. This is exact — scrollTop reads back already-clamped, and
- *   no async scroll event has to have delivered — so a reader who scrolls
- *   to the bottom and clicks within the same frames still reads as pinned.
+ *   click time, with the STRICT isAtBottom 吸底 verdict. This is exact —
+ *   scrollTop reads back already-clamped, and no async scroll event has to
+ *   have delivered — so a reader who scrolls to the bottom and clicks
+ *   within the same frames still reads as pinned. The capture is consumed
+ *   by the flip commit itself: React flushes discrete-event updates
+ *   synchronously at the end of the handler, so no other commit (a timer
+ *   tick, a streaming delta) can interleave between the capture and its
+ *   consumer.
  * - PROGRAMMATIC FLIPS (settle auto-fold, ticket-56 pending-approval
  *   force-open) → the last commit's cached snapshot, kept fresh on the
  *   scroll stream by the passive listener below (scrolling never renders,
@@ -54,7 +59,7 @@ function readFoldSnapshot(scroll: HTMLElement, header: Element): FoldAnchorSnaps
  * upward gesture.
  */
 export function useFoldAnchor(
-  scrollRef: RefObject<HTMLDivElement | null> | undefined,
+  scrollRef: RefObject<HTMLDivElement | null>,
   headerRef: RefObject<HTMLButtonElement | null>,
   open: boolean
 ): () => void {
@@ -65,11 +70,16 @@ export function useFoldAnchor(
   // A click-time capture (set by capture(), consumed by the flip commit).
   const clickCapture = useRef<FoldAnchorSnapshot | null>(null)
 
-  useLayoutEffect(() => {
-    const scroll = scrollRef?.current ?? null
+  /** The one guarded geometry read — the scroller plus this header, or nulls. */
+  const measure = useCallback((): { scroll: HTMLDivElement | null; snapshot: FoldAnchorSnapshot | null } => {
+    const scroll = scrollRef.current
     const header = headerRef.current
+    return { scroll, snapshot: scroll !== null && header !== null ? readFoldSnapshot(scroll, header) : null }
+  }, [scrollRef])
+
+  useLayoutEffect(() => {
+    const { scroll, snapshot } = measure()
     const prev = last.current
-    const snapshot = scroll !== null && header !== null ? readFoldSnapshot(scroll, header) : null
     const clicked = clickCapture.current
     clickCapture.current = null
     last.current = { open, snapshot }
@@ -88,28 +98,24 @@ export function useFoldAnchor(
   // scroll event like any other), keeping the pair consistent for the next
   // flip.
   useEffect(() => {
-    const scroll = scrollRef?.current ?? null
-    const header = headerRef.current
-    if (scroll === null || header === null) return
+    const { scroll } = measure()
+    if (scroll === null) return
     const refresh = (): void => {
-      const snapshot = readFoldSnapshot(scroll, header)
+      const { snapshot } = measure()
       if (snapshot !== null && last.current !== null) {
         last.current = { open: last.current.open, snapshot }
       }
     }
     scroll.addEventListener('scroll', refresh, { passive: true })
     return () => scroll.removeEventListener('scroll', refresh)
-  }, [scrollRef])
+  }, [measure])
 
   // The click-time half: read at onClick, before the toggle's state change
   // flushes — the DOM is exactly what the user saw when they clicked.
   const capture = useCallback((): void => {
-    const scroll = scrollRef?.current ?? null
-    const header = headerRef.current
-    if (scroll === null || header === null) return
-    const snapshot = readFoldSnapshot(scroll, header)
+    const { snapshot } = measure()
     if (snapshot !== null) clickCapture.current = snapshot
-  }, [scrollRef])
+  }, [measure])
 
   return capture
 }

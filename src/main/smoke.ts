@@ -5485,14 +5485,15 @@ export function startSmokeIfEnabled(
           return JSON.stringify({
             headerRow: header.getBoundingClientRect().top - el.getBoundingClientRect().top,
             scrollTop: el.scrollTop,
+            dist: el.scrollHeight - el.scrollTop - el.clientHeight,
             containers: document.querySelectorAll('.turn-container').length,
             open: document.querySelectorAll('.turn-container-open').length,
             follow: document.querySelector('.follow-badge') !== null
           })
         })()`
-        const readGeom = async (i: number): Promise<{ headerRow: number; scrollTop: number; containers: number; open: number; follow: boolean } | null> => {
+        const readGeom = async (i: number): Promise<{ headerRow: number; scrollTop: number; dist: number; containers: number; open: number; follow: boolean } | null> => {
           const raw = (await js(GEOM(i)).catch(() => null)) as string | null
-          return raw ? (JSON.parse(raw) as { headerRow: number; scrollTop: number; containers: number; open: number; follow: boolean }) : null
+          return raw ? (JSON.parse(raw) as { headerRow: number; scrollTop: number; dist: number; containers: number; open: number; follow: boolean }) : null
         }
         const clickHeader = (i: number): string =>
           `(() => { const h = document.querySelectorAll('.turn-container-header')[${i}]; if (!h) return false; h.click(); return true })()`
@@ -5550,6 +5551,32 @@ export function startSmokeIfEnabled(
           fail(`ticket-94 stage: the follow collapse moved the header row ${midF.headerRow} → ${afterFCollapse.headerRow}`)
         }
         log('fold_anchor_follow_collapse_ok')
+
+        // ② FollowView 吸底态: same pinned rule in the read-only view — the
+        // bottom stays pinned and the header rides up (the follow-local pin
+        // effect only runs on items changes, so the toggle owns the scroll).
+        await js(`(() => { const el = document.querySelector('.chat-scroll'); el.scrollTop = el.scrollHeight; return true })(); true`)
+        const bottomF = await readGeom(2)
+        if (!bottomF || bottomF.dist >= 1) fail(`ticket-94 stage: follow never reached the pinned bottom before the toggle; DOM: ${JSON.stringify(bottomF)}`)
+        await js(clickHeader(2))
+        const bottomFOpen = await waitForProbe(win, `document.querySelectorAll('.turn-container-open').length === 1`, 5_000)
+        if (!bottomFOpen) fail('ticket-94 stage: the follow pinned expand never mounted the fold body')
+        const afterFBottom = await readGeom(2)
+        if (!afterFBottom) fail('ticket-94 stage: follow pinned geometry probe vanished')
+        if (afterFBottom.dist >= 1) {
+          fail(`ticket-94 stage: the follow pinned expand left the bottom (dist ${afterFBottom.dist})`)
+        }
+        if (afterFBottom.headerRow >= bottomF.headerRow - 10) {
+          fail(`ticket-94 stage: the follow pinned expand did not ride the header up (${bottomF.headerRow} → ${afterFBottom.headerRow})`)
+        }
+        log('fold_anchor_follow_pinned_expand_ok', `dist ${afterFBottom.dist}, headerRow ${bottomF.headerRow} → ${afterFBottom.headerRow}`)
+        await js(clickHeader(2))
+        await waitForProbe(win, `document.querySelectorAll('.turn-container-open').length === 0`, 5_000)
+        const afterFBottomCollapse = await readGeom(2)
+        if (!afterFBottomCollapse || afterFBottomCollapse.dist >= 1) {
+          fail(`ticket-94 stage: the follow pinned collapse did not keep the bottom; DOM: ${JSON.stringify(afterFBottomCollapse)}`)
+        }
+        log('fold_anchor_follow_pinned_collapse_ok')
 
         // Leave Follow mode deterministically — the next stage focuses its
         // own session, but the view must not be mid-follow if it polls.

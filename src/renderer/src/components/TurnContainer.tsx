@@ -89,11 +89,12 @@ interface TurnContainerProps {
   onApprove?: (toolCallId: string, remember: boolean) => void
   onDeny?: (toolCallId: string, reason: string) => void
   /** Ticket 94: the transcript scroll container this render lives in —
-   * provided by every view (ChatView, FollowView) so the fold-anchor hook
-   * can hold the deterministic rule across folds: the header row stays put
-   * off the bottom, the bottom stays pinned (fold-anchor.ts). Absent in
-   * detached renders (none today) — anchoring simply doesn't apply. */
-  scrollRef?: RefObject<HTMLDivElement | null>
+   * every view (ChatView, FollowView) passes its scroller so the fold-anchor
+   * hook can hold the deterministic rule across folds: the header row stays
+   * put off the bottom, the bottom stays pinned (fold-anchor.ts). The rule
+   * is core to the container now — renders without a scroller have no
+   * anchor to honor and don't exist. */
+  scrollRef: RefObject<HTMLDivElement | null>
 }
 
 /**
