@@ -31,6 +31,17 @@ const RECEIPTS_CAPACITY = 50
 export class SubagentChatStore {
   private receipts: StoredReceipt[] = []
   private listeners = new Set<() => void>()
+  /** Monotonic request-id source: the receipt list is capacity-pruned, so a
+   * length-derived sequence would collide with a held terminal receipt
+   * (the fold ignores terminal records — the new receipt would stick at
+   * pending forever). The counter never resets or reuses. */
+  private seq = 0
+
+  /** The next deterministic, collision-free requestId for one steer. */
+  nextRequestId(sessionId: string, asyncId: string): string {
+    this.seq += 1
+    return `steer-${sessionId}-${asyncId}-${this.seq}`
+  }
 
   /** The receipts for ONE run (the tab selects its own). */
   receiptsFor(sessionId: string, asyncId: string): StoredReceipt[] {
@@ -59,14 +70,16 @@ export class SubagentChatStore {
       .filter((receipt) => receipt.sessionId === sessionId)
       .map(({ sessionId: _scope, ...receipt }) => receipt)
     const folded = foldSteerReceipts(sessionReceipts, event)
-    if (folded === sessionReceipts) return
     const byId = new Map(folded.map((receipt) => [receipt.requestId, receipt]))
+    let changed = false
     this.receipts = this.receipts.map((receipt) => {
       if (receipt.sessionId !== sessionId) return receipt
       const next = byId.get(receipt.requestId)
-      return next !== undefined ? { ...next, sessionId } : receipt
+      if (next === undefined || (next.status === receipt.status && next.error === receipt.error)) return receipt
+      changed = true
+      return { ...next, sessionId }
     })
-    this.emit()
+    if (changed) this.emit()
   }
 
   private emit(): void {

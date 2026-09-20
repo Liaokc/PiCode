@@ -10331,21 +10331,9 @@ export function startSmokeIfEnabled(
           if (!cleared99) fail('ticket-99 stage: the steer send never emptied the composer')
           log('subagent99_receipt_ok', receipt99.error ?? '')
 
-          // ⑤ The run settles: the tab flips read-only (no composer).
-          writeArtifact99('complete')
-          const statusRt99b = waitFor((e) => e.type === 'subagent_status' && e.sessionId === created99.sessionId && e.runs.some((r) => r.runId === 'sub99-live-1' && r.state === 'complete'), 'subagent99 status roundtrip 2')
-          supervisor.handleParentCommand({ type: 'session_command', sessionId: created99.sessionId, command: { type: 'subagent_status', requestId: 'stage-99-2' } })
-          await statusRt99b
-          if (!(await waitForProbe(win, `(() => {
-            const view = document.querySelector('[data-testid="subagent-chat-tab"]')
-            return view !== null && view.querySelector('.subchat-composer') === null && view.querySelector('[data-subchat-readonly]') !== null
-          })()`, 10_000))) {
-            fail('ticket-99 stage: the settled run never flipped the tab to read-only')
-          }
-          log('subagent99_readonly_ok')
-
-          // ⑥ The × closes the VIEW: the conversation tab goes away and the
-          // row click re-opens it (the run state was never touched).
+          // ⑤ The × closes the VIEW while the run is LIVE: the tab goes
+          // away, the row click re-opens it, and a fresh bridge pull still
+          // reports the run running — the × never kills the child.
           const chatTabIndex99 = await js(`(() => {
             const labels = [...document.querySelectorAll('.panel-tab .panel-tab-label span')]
             const index = labels.findIndex((s) => s.textContent === 'PICODE_SUB99 live scout task')
@@ -10357,11 +10345,43 @@ export function startSmokeIfEnabled(
           if (!(await waitForProbe(win, `document.querySelector('[data-testid="subagent-chat-tab"]') === null`, 10_000))) {
             fail('ticket-99 stage: the × never closed the conversation tab')
           }
+          // THE assertion: after the close, the run is STILL running (a
+          // fresh artifact pull — the same evidence the directory renders).
+          const stillRunning99 = waitFor((e) => e.type === 'subagent_status' && e.sessionId === created99.sessionId && e.runs.some((r) => r.runId === 'sub99-live-1' && r.state === 'running'), 'subagent99 still-running pull')
+          supervisor.handleParentCommand({ type: 'session_command', sessionId: created99.sessionId, command: { type: 'subagent_status', requestId: 'stage-99-3' } })
+          await stillRunning99
+          await js(`(() => {
+            const tab = [...document.querySelectorAll('.panel-tab-label')].find((el) => el.textContent?.includes('Subagents'))
+            if (tab instanceof HTMLElement) tab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+            return true
+          })()`)
+          if (!(await waitForProbe(win, `document.querySelector('[data-subagent-row="s99-call-live"] .subagents-badge-running') !== null`, 10_000))) {
+            fail('ticket-99 stage: the live row lost its Running badge after the chat tab closed')
+          }
+          log('subagent99_close_alive_ok')
+
+          // The row click re-opens the conversation tab (still live).
           await js(`document.querySelector('[data-subagent-row="s99-call-live"]')?.click(); true`)
-          if (!(await waitForProbe(win, `document.querySelector('[data-testid="subagent-chat-tab"]') !== null`, 10_000))) {
-            fail('ticket-99 stage: the closed tab never reopened from its row')
+          if (!(await waitForProbe(win, `(() => {
+            const view = document.querySelector('[data-testid="subagent-chat-tab"]')
+            return view !== null && view.querySelector('.subchat-composer') !== null
+          })()`, 10_000))) {
+            fail('ticket-99 stage: the closed tab never reopened from its row (live composer missing)')
           }
           log('subagent99_close_reopen_ok')
+
+          // ⑥ The run settles: the tab flips read-only (no composer).
+          writeArtifact99('complete')
+          const statusRt99b = waitFor((e) => e.type === 'subagent_status' && e.sessionId === created99.sessionId && e.runs.some((r) => r.runId === 'sub99-live-1' && r.state === 'complete'), 'subagent99 status roundtrip 2')
+          supervisor.handleParentCommand({ type: 'session_command', sessionId: created99.sessionId, command: { type: 'subagent_status', requestId: 'stage-99-2' } })
+          await statusRt99b
+          if (!(await waitForProbe(win, `(() => {
+            const view = document.querySelector('[data-testid="subagent-chat-tab"]')
+            return view !== null && view.querySelector('.subchat-composer') === null && view.querySelector('[data-subchat-readonly]') !== null
+          })()`, 10_000))) {
+            fail('ticket-99 stage: the settled run never flipped the tab to read-only')
+          }
+          log('subagent99_readonly_ok')
 
           // ⑦ The lost run's tab: the honest error state (artifact gone).
           await js(`(() => {

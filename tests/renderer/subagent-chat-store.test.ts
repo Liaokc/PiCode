@@ -58,4 +58,29 @@ describe('subagentChatStore', () => {
     expect(store.receiptsFor('s1', 'run-1').length).toBe(50)
     expect(store.receiptsFor('s1', 'run-1')[0]?.requestId).toBe('req-10') // oldest dropped
   })
+
+  it('request ids never collide after the list prunes (monotonic, not length-derived)', () => {
+    const store = new SubagentChatStore()
+    const ids = new Set<string>()
+    for (let i = 0; i < 60; i++) {
+      const id = store.nextRequestId('s1', 'run-1')
+      expect(ids.has(id)).toBe(false)
+      ids.add(id)
+      store.steerSent('s1', 'run-1', id)
+    }
+    // With the list capped at 50, a length-derived scheme would reuse id
+    // #51's shape; the counter keeps every id unique.
+    expect(store.receiptsFor('s1', 'run-1').length).toBe(50)
+    expect(ids.size).toBe(60)
+    const first = store.nextRequestId('s1', 'run-1')
+    expect(ids.has(first)).toBe(false)
+  })
+
+  it('a terminal receipt is never overwritten by a late duplicate event', () => {
+    const store = new SubagentChatStore()
+    store.steerSent('s1', 'run-1', 'req-1')
+    store.dispatch({ type: 'subagent_steer_receipt', requestId: 'req-1', asyncId: 'run-1', ok: false, error: 'boom' }, 's1')
+    store.dispatch({ type: 'subagent_steer_receipt', requestId: 'req-1', asyncId: 'run-1', ok: true, deliveryStatus: 'delivered' }, 's1')
+    expect(store.receiptsFor('s1', 'run-1')[0]).toMatchObject({ status: 'failed', error: 'boom' })
+  })
 })

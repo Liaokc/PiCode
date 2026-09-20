@@ -69,6 +69,10 @@ export default function SubagentChatTab({ sessionId, row, onSteer }: SubagentCha
     })
     return () => {
       cancelled = true
+      // The tail ALWAYS stops when this effect tears down — a tab closed
+      // while its run is live must not leave the host re-reading and
+      // re-pushing a snapshot nobody renders (stop is idempotent).
+      window.picode.sessions.unsubagentTranscriptFollow(asyncDir)
     }
   }, [asyncDir, live])
 
@@ -80,13 +84,6 @@ export default function SubagentChatTab({ sessionId, row, onSteer }: SubagentCha
       if (normalized !== null) setPayload(normalized)
     })
   }, [asyncDir])
-
-  // Settled runs stop the tail (the last push covered the final entries; a
-  // one-shot re-read happens through the `live` flip above).
-  useEffect(() => {
-    if (asyncDir === null || live) return
-    window.picode.sessions.unsubagentTranscriptFollow(asyncDir)
-  }, [asyncDir, live])
 
   // ---- the steer receipts (this run's slice of the store) -----------------
   const receiptKey = row !== null ? (row.asyncId ?? row.id) : null
@@ -186,10 +183,10 @@ export default function SubagentChatTab({ sessionId, row, onSteer }: SubagentCha
     const text = draft.trim()
     if (text === '' || !live || row === null) return
     const asyncId = row.asyncId ?? row.id
-    // Deterministic per tab: steer-<session>-<run>-<n> — the visual-QA
-    // harnesses can predict it, and receipts sort by their own sequence.
-    const sequence = subagentChatStore.receiptsFor(sessionId, asyncId).length + 1
-    const requestId = `steer-${sessionId}-${asyncId}-${sequence}`
+    // The store's monotonic counter: collision-free even after the receipt
+    // list prunes (a length-derived sequence would reuse a held id and the
+    // fold would ignore it).
+    const requestId = subagentChatStore.nextRequestId(sessionId, asyncId)
     subagentChatStore.steerSent(sessionId, asyncId, requestId)
     onSteer(sessionId, asyncId, requestId, text)
     // The send empties the composer (the main composer's rule) and the
