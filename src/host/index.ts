@@ -53,6 +53,16 @@ import {
 import { listMentionCandidates } from './files'
 import { readGitBranch } from './git-branch'
 import { createApprovalGateExtension, toImageContents } from './gate-extension'
+import {
+  emptyQueueMirror,
+  enqueueQueueEntry,
+  isQueueKind,
+  planQueueRefeed,
+  reconcileQueueMirror,
+  removeQueueEntryAt,
+  type QueueKind,
+  type QueueMirror
+} from '../shared/queue-mirror'
 import { HeldMessageEnd, monitorSessionManager } from './live-entry-ids'
 import { McpAuthBridge } from './mcp-auth-bridge'
 import { McpStatusBridge } from './mcp-status-bridge'
@@ -92,6 +102,19 @@ let settled = true // true = no agent run in flight
 /** Error from the latest failed assistant message, surfaced only if the run
  * actually ends in failure (auto-retry may still recover). */
 let pendingTurnError: string | null = null
+
+/** Ticket 100: the host-side queue mirror (shared/queue-mirror) — raw text +
+ * images per queued Steer/Follow-up entry, aligned with the SDK's text-only
+ * queue face by occurrence matching. Re-armed per session wiring (a fresh
+ * session, a resume and an in-host fork all start with an empty queue). */
+let queueMirror: QueueMirror = emptyQueueMirror()
+/** True while the queue dance owns the mirror: the dance's own clearQueue()
+ * and re-feed calls emit queue_update snapshots whose naive reconcile would
+ * wipe the mirror mid-dance (the clear's empty snapshot would drop every
+ * entry before the dance's return-value reconciliation runs). Suppressed —
+ * the dance reconciles EXPLICITLY against the clearQueue return value; a
+ * delivery that races the dance self-heals at the next post-dance sighting. */
+let queueDanceActive = false
 
 /** The approval gate (one per host process = per Session) + its extension. */
 const gate = new ApprovalGate()
@@ -178,6 +201,9 @@ function sendHistory(): void {
 function wireSessionEvents(agentSession: AgentSession): void {
   unwireSession?.()
   heldMessageEnd = new HeldMessageEnd()
+  // Ticket 100: the queue mirror belongs to ONE session's wiring — a fork
+  // replacement starts with the SDK's own (empty) queues.
+  queueMirror = emptyQueueMirror()
   /** Wall-clock start of the currently open thinking block (host-measured). */
   let thinkingStartedAt: number | null = null
   const unsubscribe = agentSession.subscribe((event: AgentSessionEvent) => {
@@ -287,6 +313,10 @@ function wireSessionEvents(agentSession: AgentSession): void {
       }
       // ---- ticket 05: queue, delivery echoes, thinking tier, compaction ----
       case 'queue_update':
+        // Ticket 100: the event shape stays FROZEN (text arrays only) — the
+        // mirror reconciles host-side before the unchanged relay, EXCEPT
+        // while the dance owns the mirror (see queueDanceActive).
+        if (!queueDanceActive) queueMirror = reconcileQueueMirror(queueMirror, event)
         send({ type: 'queue_update', steering: [...event.steering], followUp: [...event.followUp] })
         break
       case 'thinking_level_changed':
@@ -557,7 +587,12 @@ function flushPendingEcho(text: string): void {
 
 /** Explicit Steer: inject into the RUNNING turn (renderer chose the mode).
  * If the run already ended (render/Enter race), deliver as a normal prompt
- * so the text can never silently rot in an invisible queue. */
+ * so the text can never silently rot in an invisible queue.
+ * Ticket 100: the queued path also records the entry (raw text + images)
+ * into the host-side mirror — the inline Edit / per-row × dance's only
+ * source for both. The mirror enqueue happens AFTER the SDK accepted the
+ * entry: the enqueue's own queue_update sighting fired inside steer() (the
+ * reconcile no-ops on it), the NEXT sighting binds the fresh entry. */
 async function handleQueued(kind: 'steer_prompt' | 'follow_up_prompt', text: string, images?: ImageAttachment[]): Promise<void> {
   const agentSession = runtime?.session
   if (!agentSession) {
@@ -569,12 +604,76 @@ async function handleQueued(kind: 'steer_prompt' | 'follow_up_prompt', text: str
     return
   }
   try {
-    const content = toImageContents(images)
-    if (kind === 'steer_prompt') await agentSession.steer(text, content)
-    else await agentSession.followUp(text, content)
+    await queueToSdk(agentSession, kind === 'steer_prompt' ? 'steering' : 'followUp', text, images)
+    queueMirror = enqueueQueueEntry(
+      queueMirror,
+      kind === 'steer_prompt' ? 'steering' : 'followUp',
+      text,
+      imagePartsOf(images ?? [])
+    )
   } catch (err) {
     send({ type: 'session_command_error', message: errorText(err) })
   }
+}
+
+/** One queue entry → the SDK's own queue primitive (ticket 100): the SINGLE
+ * dispatch both the enqueue path and the dance's re-feed loop use, so the
+ * steer/followUp split can never drift between them. */
+function queueToSdk(agentSession: AgentSession, kind: QueueKind, text: string, images?: ImageAttachment[]): Promise<void> {
+  const content = toImageContents(images)
+  return kind === 'steering' ? agentSession.steer(text, content) : agentSession.followUp(text, content)
+}
+
+/** The queue dance (ticket 100): remove ONE entry (kind + row ordinal) from
+ * the live queue. The SDK 0.85.1 queue face has no single-entry removal, so
+ * the dance runs clearQueue → reconcile the mirror against the RETURN value
+ * → drop the target → re-feed the survivors in queue order through the
+ * SDK's own steer/followUp with the mirror's images (the text-only face
+ * cannot return them).
+ *
+ * The clear-returns reconciliation IS the delivery-race strategy: an entry
+ * the return no longer names was delivered inside the millisecond window
+ * between the click and the dance — it drops instead of re-feeding (no
+ * double delivery). The row index is an ordinal into the post-
+ * reconciliation survivors; a race-emptied slot removes nothing. If the
+ * run settles during the dance window, the re-fed entries ride the SDK's
+ * own queues exactly like freshly queued ones (same delivery semantics —
+ * never a new rot class). Returns the removed entry for the edit prefill,
+ * or found=false when the slot was already gone. */
+async function runQueueDance(kind: QueueKind, index: number): Promise<{ found: boolean; text: string; images: TranscriptImagePart[] }> {
+  const agentSession = runtime?.session
+  if (!agentSession) return { found: false, text: '', images: [] }
+  queueDanceActive = true
+  try {
+    const cleared = agentSession.clearQueue() // emits queue_update itself
+    const survivors = reconcileQueueMirror(queueMirror, cleared)
+    const { mirror: remaining, removed } = removeQueueEntryAt(survivors, kind, index)
+    queueMirror = remaining
+    for (const feed of planQueueRefeed(remaining)) {
+      try {
+        await queueToSdk(agentSession, feed.kind, feed.text, feed.images)
+      } catch (err) {
+        // One bad survivor must not strand the rest of the queue.
+        send({ type: 'session_command_error', message: `Queue re-feed failed: ${errorText(err)}` })
+      }
+    }
+    if (removed === null) return { found: false, text: '', images: [] }
+    return { found: true, text: removed.rawText, images: removed.images }
+  } catch (err) {
+    send({ type: 'session_command_error', message: errorText(err) })
+    return { found: false, text: '', images: [] }
+  } finally {
+    queueDanceActive = false
+  }
+}
+
+/** `edit_queue_entry` (ticket 100, additive): the dance plus the prefill
+ * reply — the renderer restores the entry's raw text + images into the
+ * composer (the Edit-resend prefill path, ticket 79's PREFILL_EVENT). */
+function handleEditQueueEntry(requestId: string, kind: QueueKind, index: number): void {
+  void runQueueDance(kind, index).then((result) => {
+    send({ type: 'queue_entry_edited', requestId, found: result.found, text: result.text, images: result.images })
+  })
 }
 
 async function handleSetModel(providerId: string, modelId: string): Promise<void> {
@@ -761,6 +860,19 @@ process.on('message', (message: unknown) => {
       break
     case 'clear_queue':
       runtime?.session.clearQueue() // emits queue_update itself
+      break
+    case 'edit_queue_entry':
+      // Ticket 100 (additive): malformed payloads are ignored (the ops are
+      // fire-and-forget from the renderer; the dance answers edit ops with
+      // queue_entry_edited and remove ops with the re-feed's queue_updates).
+      if (typeof message.requestId === 'string' && isQueueKind(message.kind) && typeof message.index === 'number') {
+        handleEditQueueEntry(message.requestId, message.kind, message.index)
+      }
+      break
+    case 'remove_queue_entry':
+      if (isQueueKind(message.kind) && typeof message.index === 'number') {
+        void runQueueDance(message.kind, message.index)
+      }
       break
     case 'set_model':
       if (typeof message.providerId === 'string' && typeof message.modelId === 'string') {

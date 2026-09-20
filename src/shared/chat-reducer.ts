@@ -721,6 +721,12 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case 'mcp_status':
       return state
 
+    // The queue edit reply (ticket 100) is a request/response ack (requestId
+    // correlation in App), not transcript state — the composer prefill rides
+    // the PREFILL_EVENT dispatch, the queue itself moves via queue_update.
+    case 'queue_entry_edited':
+      return state
+
     case 'host_exit': {
       const cwd = state.session?.cwd ?? null
       // A dead host settles like any run end: the turn folds away and the

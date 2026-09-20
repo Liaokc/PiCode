@@ -7073,13 +7073,19 @@ button.preview-crumb:hover {
   border-color: #e0b4b4;
 }
 
-/* ---------- queue panel (ticket 05) ---------- */
+/* ---------- queue panel (ticket 05; ticket 100: 行与卡边分离) ---------- */
 
 .queue-panel {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  margin: 0 0 6px;
+  /* Ticket 100: the row borders used to sit flush against the composer
+     card's edge — the row radius coincided with the card's. The horizontal
+     padding insets every row from the card edge (aligned with the input
+     text and the attachment strip), the vertical margins separate the rows
+     from the textarea above and the footer below. */
+  padding: 0 18px;
+  margin: 8px 0 2px;
 }
 
 .queue-panel-items {
@@ -7122,9 +7128,35 @@ button.preview-crumb:hover {
 }
 
 .queue-item-text {
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--text-primary);
+}
+
+/* Ticket 100: the inline row actions — Edit (back into the composer with
+   the original text + images) and × (remove this row only). Ghost buttons,
+   flex-none so the text's ellipsis never squeezes them. */
+.queue-item-actions {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.queue-item-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  color: var(--text-secondary);
+}
+
+.queue-item-action:hover {
+  background: var(--bg-inset);
   color: var(--text-primary);
 }
 

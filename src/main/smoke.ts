@@ -11468,6 +11468,194 @@ export function startSmokeIfEnabled(
     }
     log('bubble_trio_done')
 
+    // ---- ticket 100: the queue panel repair — ① the row borders sit INSIDE
+    // the composer card (row/card edge separation: horizontal inset + gaps
+    // to the textarea and the footer), ② inline Edit (the host's
+    // edit_queue_entry dance removes the entry; the composer prefills the
+    // raw text and — via the host mirror — the PASTED IMAGE; the remaining
+    // rows keep their order), ③ resend works (the prefilled text re-queues),
+    // ④ per-row × removes only that row, ⑤ the global Clear stays. A FRESH
+    // session drives a real long count turn; the three queued follow-ups
+    // ride the dance. ----
+    log('queue_repair_start')
+    const queue100Created = waitFor(
+      (e) => e.type === 'session_created',
+      'ticket-100 session_created'
+    ) as Promise<Extract<Scoped, { type: 'session_created' }>>
+    supervisor.createSession(cwd)
+    const queue100Session = await queue100Created
+    const queue100Id = queue100Session.sessionId
+    // Long enough to outlive the whole choreography (the ticket-93 width
+    // precedent: the follow-ups deliver only when the run ends NATURALLY).
+    const COUNT_PROMPT_100 =
+      'PICODE_SCROLL_100_HOST: Count from 1 to 800. Output each number on its own line, one number per line. Do not summarize and do not stop early. Do not use any tools — write the numbers directly in your reply text.\n' +
+      '\n'.repeat(100)
+    const Q1_100 = 'PICODE_100_Q1 edit me with the shot'
+    const Q2_100 = 'PICODE_100_Q2 middle row'
+    const Q3_100 = 'PICODE_100_Q3 last row'
+    const PNG_100 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+    await withWindow(getWindow, async (win) => {
+      const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+      const rows100 = (): string =>
+        `[...document.querySelectorAll('.queue-item .queue-item-text')].map((el) => el.textContent).join('|')`
+      const rowCount100 = (): string => `document.querySelectorAll('.queue-item').length`
+      const clickRowAction100 = (index: number, aria: string): string => `(() => {
+        const rows = [...document.querySelectorAll('.queue-item')]
+        const row = rows[${index}]
+        if (!(row instanceof HTMLElement)) return false
+        const btn = row.querySelector('button[aria-label="${aria}"]')
+        if (!(btn instanceof HTMLElement)) return false
+        btn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        return true
+      })()`
+
+      if (!(await waitForProbe(win, `document.querySelector('.chat-view') !== null`, 10_000))) {
+        fail('ticket-100 stage: the fresh session never reached the chat view')
+      }
+      supervisor.handleParentCommand({
+        type: 'session_command',
+        sessionId: queue100Id,
+        command: { type: 'prompt', text: COUNT_PROMPT_100 }
+      })
+      await waitFor((e) => e.type === 'agent_start' && e.sessionId === queue100Id, 'ticket-100 agent_start')
+      await waitFor((e) => e.type === 'text_delta' && e.sessionId === queue100Id, 'ticket-100 first text_delta')
+
+      // Queue Q1 WITH a pasted image (the host mirror's image leg), then Q2
+      // and Q3 — three follow-up rows in order.
+      const pasted100 = (await js(`(() => {
+        const ta = document.querySelector('.composer-input')
+        if (!(ta instanceof HTMLTextAreaElement)) return false
+        const bytes = Uint8Array.from(atob(${JSON.stringify(PNG_100)}), (c) => c.charCodeAt(0))
+        const dt = new DataTransfer()
+        dt.items.add(new File([bytes], 'picode100-queue.png', { type: 'image/png' }))
+        ta.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+        return true
+      })()`)) as boolean
+      if (!pasted100) fail('ticket-100 stage: the composer textarea is missing for the queue paste')
+      if (!(await waitForProbe(win, `document.querySelectorAll('.composer-attachments figure').length === 1`, 10_000))) {
+        fail('ticket-100 stage: the pasted image never rendered an attachment card')
+      }
+      if (!(await js(composerTypeJs(Q1_100)).catch(() => false))) fail('ticket-100 stage: composer missing for Q1')
+      await js(composerKeyJs('Enter'))
+      if (!(await waitForProbe(win, `${rowCount100()} === 1`, 10_000))) {
+        fail('ticket-100 stage: Q1 never showed in the queue panel')
+      }
+      for (const text of [Q2_100, Q3_100]) {
+        if (!(await js(composerTypeJs(text)).catch(() => false))) fail(`ticket-100 stage: composer missing for ${text}`)
+        await js(composerKeyJs('Enter'))
+      }
+      if (!(await waitForProbe(win, `${rowCount100()} === 3`, 10_000))) {
+        fail('ticket-100 stage: the three queued rows never rendered')
+      }
+      const order100 = (await js(rows100())) as string
+      if (order100 !== [Q1_100, Q2_100, Q3_100].join('|')) {
+        fail(`ticket-100 stage: the queued rows lost their order, got ${JSON.stringify(order100)}`)
+      }
+
+      // ① Row/card edge separation (visual assertion, real geometry): every
+      // row's border box sits INSIDE the composer card with a real inset,
+      // and the panel keeps gaps to the textarea above and footer below.
+      const rect100 = JSON.parse((await js(`JSON.stringify((() => {
+        const card = document.querySelector('.composer')?.getBoundingClientRect()
+        const item = document.querySelector('.queue-item')?.getBoundingClientRect()
+        const ta = document.querySelector('.composer-input')?.getBoundingClientRect()
+        const panel = document.querySelector('.queue-panel')?.getBoundingClientRect()
+        const footer = document.querySelector('.composer-footer')?.getBoundingClientRect()
+        if (!card || !item || !ta || !panel || !footer) return null
+        return { cardL: card.left, cardR: card.right, itemL: item.left, itemR: item.right, taB: ta.bottom, panelT: panel.top, panelB: panel.bottom, footerT: footer.top }
+      })())`).catch(() => 'null')) as string)
+      if (rect100 === null) fail('ticket-100 stage: the queue geometry probe found no elements')
+      if (rect100.itemL < rect100.cardL + 8 || rect100.itemR > rect100.cardR - 8) {
+        fail(`ticket-100 stage: the queue rows still touch the card edge (left ${rect100.itemL} vs ${rect100.cardL}, right ${rect100.itemR} vs ${rect100.cardR})`)
+      }
+      if (rect100.panelT < rect100.taB || rect100.panelB > rect100.footerT) {
+        fail(`ticket-100 stage: the queue panel has no separation from the textarea/footer (top ${rect100.panelT} vs textarea bottom ${rect100.taB}, bottom ${rect100.panelB} vs footer top ${rect100.footerT})`)
+      }
+      log('queue100_layout_separated_ok')
+
+      // ② Every row carries the inline actions (Edit + ×).
+      const actions100 = (await js(
+        `[...document.querySelectorAll('.queue-item')].map((r) => r.querySelectorAll('.queue-item-action').length).join(',')`
+      )) as string
+      if (actions100 !== '2,2,2') fail(`ticket-100 stage: the rows must carry Edit + ×, got ${actions100}`)
+
+      // ③ Inline Edit on the MIDDLE row: the composer prefills its raw text,
+      // the row leaves, the other two keep their order (保序 through the
+      // host's clearQueue → re-feed dance).
+      if (!((await js(clickRowAction100(1, 'Edit queued message'))) as boolean)) {
+        fail('ticket-100 stage: the middle row never rendered its Edit button')
+      }
+      const edited100 = await waitForProbe(
+        win,
+        `(() => { const ta = document.querySelector('.composer-input'); return ta instanceof HTMLTextAreaElement && ta.value === ${JSON.stringify(Q2_100)} })()`,
+        10_000
+      )
+      if (!edited100) fail('ticket-100 stage: the inline Edit never prefilled the composer with the raw text')
+      if (!(await waitForProbe(win, `${rowCount100()} === 2 && (${rows100()}) === ${JSON.stringify([Q1_100, Q3_100].join('|'))}`, 10_000))) {
+        fail(`ticket-100 stage: the edited row never left / the order broke — rows: ${(await js(rows100()).catch(() => 'n/a')) as string}`)
+      }
+      log('queue100_edit_middle_ok')
+
+      // ④ Resend: the prefilled text re-queues at the tail (重发正常).
+      await js(composerKeyJs('Enter'))
+      if (
+        !(await waitForProbe(
+          win,
+          `${rowCount100()} === 3 && (${rows100()}) === ${JSON.stringify([Q1_100, Q3_100, Q2_100].join('|'))}`,
+          10_000
+        ))
+      ) {
+        fail('ticket-100 stage: the resent entry never re-queued at the tail')
+      }
+      log('queue100_resend_ok')
+
+      // ⑤ Inline Edit on the IMAGE row: the composer restores the original
+      // text AND the pasted image (the host mirror's image leg, live).
+      if (!((await js(clickRowAction100(0, 'Edit queued message'))) as boolean)) {
+        fail('ticket-100 stage: the image row never rendered its Edit button')
+      }
+      if (
+        !(await waitForProbe(
+          win,
+          `(() => { const ta = document.querySelector('.composer-input'); return ta instanceof HTMLTextAreaElement && ta.value === ${JSON.stringify(Q1_100)} && document.querySelectorAll('.composer-attachments figure').length === 1 })()`,
+          10_000
+        ))
+      ) {
+        fail('ticket-100 stage: the image row Edit never restored the original text + image')
+      }
+      if (!(await waitForProbe(win, `${rowCount100()} === 2 && (${rows100()}) === ${JSON.stringify([Q3_100, Q2_100].join('|'))}`, 10_000))) {
+        fail('ticket-100 stage: the image row never left / the order broke after its edit')
+      }
+      log('queue100_edit_with_image_ok')
+
+      // Clean the composer so the restored draft cannot leak into later
+      // steps, then ⑥ per-row × removes ONLY that row (Q3, now first).
+      await js(composerClearJs)
+      if (!((await js(clickRowAction100(0, 'Remove queued message'))) as boolean)) {
+        fail('ticket-100 stage: the row never rendered its × button')
+      }
+      if (!(await waitForProbe(win, `${rowCount100()} === 1 && (${rows100()}) === ${JSON.stringify(Q2_100)}`, 10_000))) {
+        fail('ticket-100 stage: the × removal did not remove exactly its own row')
+      }
+      log('queue100_row_remove_ok')
+
+      // ⑦ The global Clear stays: one click empties the panel.
+      await js(`document.querySelector('.queue-panel-clear')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
+      if (!(await waitForProbe(win, `${rowCount100()} === 0`, 10_000))) {
+        fail('ticket-100 stage: the global Clear never emptied the panel')
+      }
+      log('queue100_global_clear_ok')
+
+      // The run is no longer needed — stop it and let the turn settle.
+      await js(`document.querySelector('.cmp-stop')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
+      await waitFor((e) => e.type === 'agent_end' && e.sessionId === queue100Id, 'ticket-100 stop agent_end')
+      if (!(await waitForProbe(win, `document.querySelector('.cmp-send') !== null`, 15_000))) {
+        fail('ticket-100 stage: the composer never left the busy state after the Stop')
+      }
+      await js(composerClearJs)
+    })
+    log('queue_repair_done')
+
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
     const livePids = supervisor.hostPids
     if (livePids.length < 2) fail(`expected at least 2 live hosts before quit, saw ${livePids.length}`)
