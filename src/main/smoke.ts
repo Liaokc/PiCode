@@ -9038,7 +9038,8 @@ export function startSmokeIfEnabled(
       // (written under a per-run key it can no longer decrypt) would fail
       // the flow's read — remove the mock-oauth account if this stage
       // created it. The account name is sha256(serverName).
-      const mockAccount = 'sha256-' + createHash('sha256').update('mock-oauth', 'utf8').digest('hex')
+      const sha256OfServer = (name: string): string => 'sha256-' + createHash('sha256').update(name, 'utf8').digest('hex')
+      const mockAccount = sha256OfServer('mock-oauth')
       const staleEncrypted = path.join(homedir(), '.pi', 'agent', 'mcp-oauth-encrypted', mockAccount)
       if (existsSync(staleEncrypted)) rmSync(staleEncrypted, { recursive: true, force: true })
 
@@ -9433,8 +9434,14 @@ export function startSmokeIfEnabled(
           rmSync(autocompleteFlag, { force: true })
           rmSync(oauthDir, { recursive: true, force: true })
           rmSync(openLog, { force: true })
+          // Account-targeted: the adapter may split an entry into multiple
+          // keychain items (chunked token storage) — an unconstrained
+          // `-s`-only delete fails with "multiple items match" and the
+          // stale mock-oauth tokens short-circuit the leg into the silent
+          // refresh path (2026-09-20 取证: keychainAfterDelete=true +
+          // grant=refresh_token, no paste dialog).
           try {
-            execFileSync('security', ['delete-generic-password', '-s', 'pi-mcp-adapter.oauth'], { stdio: 'pipe' })
+            execFileSync('security', ['delete-generic-password', '-s', 'pi-mcp-adapter.oauth', '-a', mockAccount], { stdio: 'pipe' })
           } catch {
             // nothing to clear
           }
@@ -9446,7 +9453,7 @@ export function startSmokeIfEnabled(
           })()`)
           if (!(await waitForProbe(win, `document.querySelector('[data-mcp-paste]') !== null`, 30_000))) {
             const diag = (await js(`document.querySelector('[data-mcp-auth-status]')?.textContent ?? '(no status)'`).catch(() => '(none)')) as string
-            fail(`ticket-89 stage: the manual paste dialog never appeared (diag=${diag})`)
+            fail(`ticket-89 stage: the manual paste dialog never appeared (diag=${diag}; flagExists=${existsSync(autocompleteFlag)}; openLog=${existsSync(openLog) ? readFileSync(openLog, 'utf-8') : '(empty)'})`)
           }
           log('mcp_paste_dialog_ok')
           // Complete the authorize handshake like a browser would (redirect
@@ -9547,10 +9554,16 @@ export function startSmokeIfEnabled(
         // stage's own artifact — remove them (only when the stage CREATED
         // the entry; a pre-existing operator entry is never touched).
         if (!keychainBefore && keychainHasEntry()) {
-          try {
-            execFileSync('security', ['delete-generic-password', '-s', 'pi-mcp-adapter.oauth'], { stdio: 'pipe' })
-          } catch {
-            // best-effort cleanup
+          // Account-targeted: multiple adapter entries can coexist (chunked
+          // token storage, the ticket-96 stage's own servers) — an
+          // unconstrained `-s`-only delete fails with "multiple items
+          // match" and leaves the stage's token artifact behind.
+          for (const account of [mockAccount, sha256OfServer('eager-cms'), sha256OfServer('bearer-api')]) {
+            try {
+              execFileSync('security', ['delete-generic-password', '-s', 'pi-mcp-adapter.oauth', '-a', account], { stdio: 'pipe' })
+            } catch {
+              // best-effort cleanup
+            }
           }
         }
         // Same for an encrypted-store account dir the stage may have
