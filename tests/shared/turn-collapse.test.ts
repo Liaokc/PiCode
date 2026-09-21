@@ -7,6 +7,7 @@ import {
   type ChatState
 } from '../../src/shared/chat-reducer'
 import { groupTurns, HEAD_TURN_ID, stripSkillPrologue } from '../../src/shared/turn-collapse'
+import { deriveWorkedSeconds } from '../../src/shared/turn-duration'
 import type { HostToParent } from '../../src/shared/contract'
 import type { TranscriptItem } from '../../src/shared/sessions/types'
 
@@ -1018,5 +1019,65 @@ describe('groupTurns — turn file changes (ticket 78)', () => {
     // renders exactly where the chat view's settled turns render theirs.
     const [turn] = groupTurns(items.map(replayEntry), false)
     expect(turn.fileChanges).toEqual([{ path: 'src/a.ts', added: 1, removed: 0, diff: EDIT_DIFF_A, calls: 1 }])
+  })
+})
+
+describe('turn wall-clock stamps (groupTurns) — ticket 108 R29+R30', () => {
+  it('table · a stamped live turn carries the user echo\u0027s anchor and the last message_end stamp', () => {
+    const state = fold(
+      initialChatState(),
+      SESSION_CREATED,
+      { type: 'user_message', text: 'count', receivedAtMs: 1_000 },
+      { type: 'agent_start' },
+      { type: 'message_start' },
+      { type: 'text_delta', delta: 'working…', receivedAtMs: 1_500 },
+      { type: 'message_end', receivedAtMs: 9_400 }
+    )
+    const [turn] = groupTurns(state.entries, state.agentRunning)
+    expect(turn.startedAtMs).toBe(1_000)
+    expect(turn.endedAtMs).toBe(9_400)
+    expect(turn.live).toBe(true)
+  })
+
+  it('table · a settled in-view turn keeps the same stamps at settle (the span is state, not a clock)', () => {
+    const state = fold(
+      initialChatState(),
+      SESSION_CREATED,
+      { type: 'user_message', text: 'count', receivedAtMs: 1_000 },
+      { type: 'agent_start' },
+      { type: 'message_start' },
+      { type: 'text_delta', delta: 'All green.', receivedAtMs: 1_500 },
+      { type: 'message_end', receivedAtMs: 9_400 },
+      { type: 'agent_end', receivedAtMs: 9_500 }
+    )
+    const [turn] = groupTurns(state.entries, state.agentRunning)
+    expect(turn.startedAtMs).toBe(1_000)
+    expect(turn.endedAtMs).toBe(9_400)
+  })
+
+  it('table · unstamped harness shapes derive no stamps (the defensive no-anchor shape)', () => {
+    const state = fold(initialChatState(), SESSION_CREATED, USER('plain'), ...streamedWorkTurn())
+    const [turn] = groupTurns(state.entries, false)
+    expect(turn.startedAtMs).toBeNull()
+    expect(turn.endedAtMs).toBeNull()
+  })
+
+  it('replay · FollowView projection: recorded entry timestamps anchor the replayed turn (含重放回合)', () => {
+    const items: TranscriptItem[] = [
+      { role: 'user', id: 'fv-u1', text: 'replay me', timestamp: '2026-09-10T09:00:00.000Z', skillName: null },
+      { role: 'tool', id: 'fv-t1', timestamp: '2026-09-10T09:00:02.000Z', name: 'bash', args: {}, output: 'ok', isError: false },
+      {
+        role: 'assistant',
+        id: 'fv-a1',
+        timestamp: '2026-09-10T09:00:05.000Z',
+        text: 'Done.',
+        parts: [{ kind: 'text', text: 'Done.' }]
+      }
+    ]
+    const [turn] = groupTurns(items.map(replayEntry), false)
+    expect(turn.startedAtMs).toBe(Date.parse('2026-09-10T09:00:00.000Z'))
+    expect(turn.endedAtMs).toBe(Date.parse('2026-09-10T09:00:05.000Z'))
+    // The R30 settled seconds derive purely from the span — 5s, replayed.
+    expect(deriveWorkedSeconds(turn.startedAtMs, turn.endedAtMs, 0)).toBe(5)
   })
 })

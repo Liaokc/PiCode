@@ -28,8 +28,10 @@
  *     the answer, in transcript order (ticket 56 revises ticket 53's
  *     tools-only Q11a cut to the ZCode `assistantFollowingRows` shape);
  *   - EVERY turn with a user bubble owns its container row — live
- *     "Working · Ns" from the silent period on, settled "Worked · Ns",
- *     replayed "Worked" (ticket 14 rule). ZCode drops the row for zero-work
+ *     "Working · Ns" from the silent period on (anchor-derived, ticket 108),
+ *     settled "Worked · Ns" — including replayed turns, whose entry
+ *     timestamps always exist (ticket 108 retires the ticket-14
+ *     no-duration premise). ZCode drops the row for zero-work
  *     turns (bundle `u ? … : null`); the operator ruled the row permanent —
  *     the answer text itself counts as the work phase. A zero-work turn's
  *     container body is EMPTY and NOT expandable (可展开 ⇔ 体非空, Q12 = A);
@@ -47,6 +49,7 @@
  */
 
 import type { ApprovalEntry, ChatEntry, ThinkingPart, ToolEntry, UserEntry } from './chat-reducer'
+import { turnStamps } from './turn-duration'
 import { aggregateTurnFiles, type TurnFileChange } from './turn-files'
 
 /** Turn id for entries that arrive before any user message (defensive — the
@@ -135,6 +138,16 @@ export interface TurnGroup {
    * unrelated to how the turn ended. Pure projection of `work` +
    * `afterAnswer`'s tool entries. */
   fileChanges: TurnFileChange[]
+  /** The turn's wall-clock span (ticket 108, R29+R30), derived from the
+   * entries' stamps (ADR-0002; pure fold in shared/turn-duration.ts):
+   * startedAtMs = the FIRST stamped entry — the boundary user message when
+   * stamped (the R29 anchor the live timer derives now − startedAt from),
+   * else the first stamped work entry; endedAtMs = the LAST stamped entry
+   * (the R30 span end). Both null when the turn recorded no stamps (the
+   * defensive no-anchor shape — the view falls back to its local tick).
+   * The view derives seconds; the model stays clock-free. */
+  startedAtMs: number | null
+  endedAtMs: number | null
   /** The turn currently streaming: container renders expanded and ticking. */
   live: boolean
   /** A pending approval inside the container keeps it open (auto-open). A
@@ -175,6 +188,9 @@ interface TurnDraft {
   user: UserEntry | null
   userText: string
   raw: RawItem[]
+  /** Every entry that joined the turn, in transcript order — the turn-
+   * stamps fold (ticket 108) reads their wall-clock stamps off this list. */
+  entries: ChatEntry[]
   /** Ordinal for the next assistant part inside this turn. Part keys are
    * POSITIONAL (turn id + ordinal), never the owning entry's id: the
    * ticket-51 real-id backfill rewrites an assistant entry's id at
@@ -257,6 +273,7 @@ export function groupTurns(entries: ChatEntry[], agentRunning: boolean): TurnGro
         user: entry,
         userText: stripSkillPrologue(entry.text, entry.skillName),
         raw: [],
+        entries: [entry],
         nextPartIndex: 0
       }
       drafts.push(current)
@@ -268,11 +285,13 @@ export function groupTurns(entries: ChatEntry[], agentRunning: boolean): TurnGro
         user: null,
         userText: '',
         raw: [],
+        entries: [],
         nextPartIndex: 0
       }
       drafts.push(current)
     }
     const draft: TurnDraft = current
+    draft.entries.push(entry)
     switch (entry.role) {
       case 'assistant':
         entry.parts.forEach((part) => {
@@ -324,6 +343,10 @@ export function groupTurns(entries: ChatEntry[], agentRunning: boolean): TurnGro
       answer,
       afterAnswer,
       fileChanges,
+      // Ticket 108: the turn's wall-clock span (first→last entry stamp) —
+      // the anchor the live timer derives from and the settled duration's
+      // endpoints; both null on the defensive no-stamp shape.
+      ...turnStamps(draft.entries),
       live,
       // Ticket 56/82: only a pill inside the fold keeps it open. While live
       // every pill IS inside the fold (the whole stream is), so a gate ask

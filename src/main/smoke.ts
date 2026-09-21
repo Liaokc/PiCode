@@ -165,6 +165,18 @@
  * refocusing, the bridge sibling never steals the shell's focus, and ⌘J
  * switching back from the bridge refocuses it.
  *
+ * Ticket 108 adds the timer-continuity stage right before the quit (zero
+ * model calls): the Working · Ns header is ANCHOR-DERIVED from the turn's
+ * entry stamps, so switching away and back — across all FOUR
+ * pinned↔unpinned sidebar combos, via real sidebar-row clicks — continues
+ * from the original value (≥ the switch-away moment) instead of resetting
+ * to 1s (the pi17-working-7s defect; ADR-0006 unmounts the background
+ * view, so a tick counter resets), with the background stream still
+ * folding while hidden and an absolute wall-clock check on the first leg.
+ * The settled turn shows its first→last entry-stamp span at the chevron's
+ * RIGHT, and a replayed history_loaded (real ISO timestamps) shows the
+ * same shape — the ticket-14 no-duration premise retired.
+ *
  * Any missed step times out and exits non-zero. Progress logs as
  * `SMOKE <step>` lines on stdout. Not part of `npm test`.
  */
@@ -1722,18 +1734,22 @@ export function startSmokeIfEnabled(
     }
     log('replay_payload_ok', `${replayItems.length} structured items`)
     await withWindow(getWindow, async (win) => {
-      // Ticket 23: replayed turns render as FOLDED "Worked · Ns ›" containers
-      // — pre-answer work stays hidden until a container is opened. Ticket
-      // 56: post-answer rows (the settled tool, the trailing thinking, the
-      // failed tool) render in the after-answer segment below the answer
-      // even while the fold is closed.
+      // Ticket 23: replayed turns render as FOLDED "Worked · Ns ›"-shaped
+      // containers — pre-answer work stays hidden until a container is
+      // opened. Ticket 56: post-answer rows (the settled tool, the trailing
+      // thinking, the failed tool) render in the after-answer segment below
+      // the answer even while the fold is closed. Ticket 108: the replayed
+      // rows carry their recorded entry-stamp durations at the chevron's
+      // right (≥1 present, at least one directly after a chevron).
       const folded = await waitForProbe(
         win,
         `document.querySelectorAll('.turn-container').length >= 1 &&
          document.querySelectorAll('.turn-container-open').length === 0 &&
          document.querySelectorAll('.turn-container .thinking-row').length === 0 &&
          document.querySelectorAll('.turn-after-answer .tool-card').length === 2 &&
-         document.querySelectorAll('.turn-after-answer .thinking-row').length === 1`,
+         document.querySelectorAll('.turn-after-answer .thinking-row').length === 1 &&
+         document.querySelectorAll('.turn-container-duration').length >= 1 &&
+         [...document.querySelectorAll('.turn-container-duration')].some((d) => d.previousElementSibling !== null && d.previousElementSibling.classList.contains('turn-container-chevron'))`,
         10_000
       )
       if (!folded) fail('replayed turns did not render collapsed (ticket 23 memory rule)')
@@ -7144,10 +7160,12 @@ export function startSmokeIfEnabled(
     // bubble owns its container row (operator-approved ZCode deviation). A
     // zero-work turn (pure-text answer) shows the row through the WHOLE
     // lifecycle — live "Working · Ns" from the silent period on, settled
-    // "Worked · Ns", replayed "Worked" (ticket 14 rule) — and an empty body
-    // is NOT expandable: no chevron, click no-op, aria-disabled. Runs as a
-    // structured replay + a contract-stream live turn (no model call), right
-    // after the answer-split stage for the same reasons.
+    // "Worked · Ns" — and an empty body is NOT expandable: no chevron,
+    // click no-op, aria-disabled. Ticket 108 revises the replayed rule: the
+    // row shows the recorded entry-stamp duration too (the ticket-14
+    // no-duration premise is retired — timestamps always exist). Runs as a
+    // structured replay + a contract-stream live turn (no model call),
+    // right after the answer-split stage for the same reasons.
     log('worked_container_start')
     {
       emitContractEvent({
@@ -7160,11 +7178,11 @@ export function startSmokeIfEnabled(
       emitContractEvent({
         type: 'history_loaded',
         items: [
-          { role: 'user', id: 'wc-u1', text: 'Say hi.', timestamp: 't1', skillName: null },
+          { role: 'user', id: 'wc-u1', text: 'Say hi.', timestamp: '2026-09-10T09:00:00.000Z', skillName: null },
           {
             role: 'assistant',
             id: 'wc-a1',
-            timestamp: 't2',
+            timestamp: '2026-09-10T09:00:05.000Z',
             text: 'Hello!',
             parts: [{ kind: 'text', text: 'Hello!' }]
           }
@@ -7176,6 +7194,7 @@ export function startSmokeIfEnabled(
           open: document.querySelectorAll('.turn-container-open').length,
           chevrons: document.querySelectorAll('.turn-container-chevron').length,
           durations: document.querySelectorAll('.turn-container-duration').length,
+          durationTexts: [...document.querySelectorAll('.turn-container-duration')].map((el) => el.textContent ?? ''),
           labels: [...document.querySelectorAll('.turn-container-label')].map((el) => el.textContent ?? ''),
           inert: [...document.querySelectorAll('.turn-container-header')].map((el) => el.getAttribute('aria-disabled') === 'true'),
           users: document.querySelectorAll('.msg-user').length,
@@ -7183,12 +7202,14 @@ export function startSmokeIfEnabled(
           spinners: document.querySelectorAll('.turn-container-icon.spin').length,
           footSpinners: document.querySelectorAll('.turn-container-live-foot .spin').length
         }))()`
-        // Replayed zero-work turn: the row exists, bare and inert — "Worked"
-        // with no duration (the ticket-14 rule), no chevron, no way to open.
+        // Replayed zero-work turn: the row exists, bare and inert — "Worked ›
+        // 5s" from the recorded entry stamps (ticket 108 revises the old
+        // ticket-14 no-duration rule), no chevron, no way to open.
         const replayed = (await waitForProbe(
           win,
-          `${sig}.turns === 1 && ${sig}.open === 0 && ${sig}.chevrons === 0 && ${sig}.durations === 0 &&
-           ${sig}.labels.join() === 'Worked' && ${sig}.inert.join() === 'true' && ${sig}.answers === 1`,
+          `${sig}.turns === 1 && ${sig}.open === 0 && ${sig}.chevrons === 0 && ${sig}.durations === 1 &&
+           ${sig}.durationTexts.join() === '5s' && ${sig}.labels.join() === 'Worked' &&
+           ${sig}.inert.join() === 'true' && ${sig}.answers === 1`,
           10_000
         )) as boolean
         if (!replayed) {
@@ -7235,7 +7256,7 @@ export function startSmokeIfEnabled(
         emitContractEvent({ type: 'agent_end' })
         const settled = (await waitForProbe(
           win,
-          `${sig}.turns === 2 && ${sig}.labels.join() === 'Worked,Worked' && ${sig}.durations === 1 &&
+          `${sig}.turns === 2 && ${sig}.labels.join() === 'Worked,Worked' && ${sig}.durations === 2 &&
            ${sig}.open === 0 && ${sig}.chevrons === 0 && ${sig}.answers === 2 && ${sig}.inert.join() === 'true,true' &&
            ${sig}.spinners === 0 && ${sig}.footSpinners === 0`,
           10_000
@@ -7270,8 +7291,10 @@ export function startSmokeIfEnabled(
         // (the head-and-tail mirror), exactly one of each in this stage.
         log('worked_container_spinners_live_expanded_ok')
         await new Promise((r) => setTimeout(r, 1200))
+        // The LIVE turn's duration is the LAST row's (replayed + settled
+        // zero-work rows precede it — all three carry durations now).
         const beforeFold = (await win.webContents
-          .executeJavaScript(`parseInt(document.querySelectorAll('.turn-container-duration')[1]?.textContent ?? '0', 10)`)
+          .executeJavaScript(`parseInt(document.querySelectorAll('.turn-container-duration')[2]?.textContent ?? '0', 10)`)
           .catch(() => 0)) as number
         if (beforeFold < 1) fail(`ticket-55 stage: the live container timer never ticked (saw ${beforeFold}s)`)
         // Fold the live turn (manual mid-stream collapse — the reducer path).
@@ -7298,7 +7321,7 @@ export function startSmokeIfEnabled(
         )) as boolean
         if (!reopened) fail('ticket-55 stage: the folded live turn did not reopen on click')
         const afterReopen = (await win.webContents
-          .executeJavaScript(`parseInt(document.querySelectorAll('.turn-container-duration')[1]?.textContent ?? '0', 10)`)
+          .executeJavaScript(`parseInt(document.querySelectorAll('.turn-container-duration')[2]?.textContent ?? '0', 10)`)
           .catch(() => 0)) as number
         // ≥ beforeFold + 1: the count kept running across the fold. A reset
         // (container remounted on fold) would land at 0–1s — far below.
@@ -13477,6 +13500,244 @@ export function startSmokeIfEnabled(
       rmSync(fb107Dir, { recursive: true, force: true })
     }
     log('fb107_done')
+
+    // ---- ticket 108: timer continuity — anchor-derived Working · Ns +
+    // settled chevron-right Worked · Ns (replay included). Zero model
+    // calls. The switchable sessions are seeded through the session dir +
+    // announced through the contract stream (the fold-stage precedent):
+    // announced ids are in-app, so real sidebar-row clicks are PURE focus
+    // switches (no host spawn, no replay). The live run is wrapped contract
+    // events folding into A — including while A is in the BACKGROUND, the
+    // exact fold path ADR-0006 guarantees. Four pinned↔unpinned combos each
+    // round-trip A→B→A and assert the timer CONTINUED (≥ switch-away + 1s);
+    // the first leg also checks absolute wall-clock honesty. Settle: the
+    // span lands at the chevron's right. Replay: a wrapped history_loaded
+    // with real ISO timestamps shows the same shape.
+    log('timer_continuity_start')
+    {
+      const tc108Store = process.env['PICODE_SESSION_DIR']
+      if (!tc108Store) fail('ticket-108 stage: PICODE_SESSION_DIR is not set')
+      const tc108Dir = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-tc108-'))
+      // Throwaway project dir: the two sessions form their OWN project group
+      // (newest mtimes), so neither group pagination nor unrelated rows can
+      // hide them from the click legs.
+      const tcA = 'smoke-108-a'
+      const tcB = 'smoke-108-b'
+      const rowSel = (id: string): string => `.sb-task[data-file$="${id}.jsonl"]`
+      const pinnedRowSel = (id: string): string => `.sb-scroll > .sb-task[data-file$="${id}.jsonl"]`
+      const activeRowProbe = (id: string): string => `document.querySelector('.sb-task-active[data-file$="${id}.jsonl"]') !== null`
+      const scoped = (sessionId: string, event: SessionScopedEvent): HostToParent => ({ type: 'session_event', sessionId, event })
+      try {
+        for (const seed of [
+          { id: tcA, title: 'PICODE_108_SESSION_A' },
+          { id: tcB, title: 'PICODE_108_SESSION_B' }
+        ]) {
+          const stamp = new Date().toISOString()
+          const lines = [
+            JSON.stringify({ type: 'session', version: 3, id: seed.id, timestamp: stamp, cwd: tc108Dir }),
+            JSON.stringify({
+              type: 'message',
+              id: `${seed.id}-u1`,
+              parentId: null,
+              timestamp: stamp,
+              message: { role: 'user', content: [{ type: 'text', text: seed.title }] }
+            })
+          ]
+          writeFileSync(path.join(tc108Store, `${seed.id}.jsonl`), lines.join('\n') + '\n')
+        }
+
+        await withWindow(getWindow, async (win) => {
+          const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+          // The keymap stage may have left the sidebar closed — open with
+          // ⌘B (press-until-present, the panel-stage pattern).
+          if (!((await js(`document.querySelector('.sidebar') !== null`)) as boolean)) {
+            await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', metaKey: true, bubbles: true })); true`)
+            await waitForProbe(win, `document.querySelector('.sidebar') !== null`, 5_000)
+          }
+          if (!(await waitForProbe(win, `${rowSel(tcA)} !== null && ${rowSel(tcB)} !== null`, 30_000))) {
+            fail('ticket-108 stage: the seeded session rows never reached the sidebar')
+          }
+          log('timer_continuity_rows_ok')
+
+          // Announce A (registry session — the announcement auto-focuses it),
+          // then run A's live turn through wrapped contract events. The
+          // dispatch boundary stamps the echo — the anchor the timer derives
+          // from; nothing about the count is component-local anymore.
+          emitContractEvent(scoped(tcA, { type: 'session_created', sessionId: tcA, cwd: tc108Dir, model: 'claude-opus-4-5' }))
+          await waitForProbe(win, activeRowProbe(tcA), 10_000)
+          const injectedAt = Date.now()
+          emitContractEvent(scoped(tcA, { type: 'user_message', text: 'PICODE_108_A_LIVE: watch the timer' }))
+          emitContractEvent(scoped(tcA, { type: 'agent_start' }))
+          emitContractEvent(scoped(tcA, { type: 'message_start' }))
+          emitContractEvent(scoped(tcA, { type: 'thinking_delta', delta: 'plan the count' }))
+          emitContractEvent(scoped(tcA, { type: 'thinking_end', durationMs: 1200 }))
+          emitContractEvent(scoped(tcA, { type: 'text_delta', delta: 'alpha-108 stream block one' }))
+          const liveStarted = await waitForProbe(
+            win,
+            `document.querySelectorAll('.turn-container').length === 1 &&
+             document.querySelector('.turn-container-label')?.textContent === 'Working' &&
+             document.querySelector('.turn-container-duration') !== null &&
+             document.querySelector('.turn-container-icon.spin') !== null`,
+            10_000
+          )
+          if (!liveStarted) fail('ticket-108 stage: the live turn never rendered its Working · Ns row')
+          log('timer_continuity_live_run_ok')
+
+          const readSeconds = `parseInt(document.querySelector('.turn-container-duration')?.textContent ?? '0', 10) || 0`
+          let lastReading = (await js(readSeconds)) as number
+          if (lastReading < 1) fail('ticket-108 stage: the live timer never showed its first second')
+          let leg = 0
+
+          // Move a row in/out of the pinned section (the row's own pin
+          // button — the fb107 precedent) and wait for the section flip.
+          const setPinned = async (id: string, pinned: boolean): Promise<void> => {
+            const clicked = await waitForProbe(
+              win,
+              `(() => { const row = document.querySelector('${rowSel(id)}'); if (!(row instanceof Element)) return false; const b = row.querySelector('.sb-pin-btn'); if (!(b instanceof HTMLElement)) return false; b.dispatchEvent(new MouseEvent('click', { bubbles: true })); return true })()`,
+              5_000
+            )
+            if (!clicked) fail(`ticket-108 stage: the pin button of ${id} never appeared to click`)
+            const moved = await waitForProbe(
+              win,
+              pinned ? `${pinnedRowSel(id)} !== null` : `${pinnedRowSel(id)} === null && ${rowSel(id)} !== null`,
+              5_000
+            )
+            if (!moved) fail(`ticket-108 stage: ${id} never ${pinned ? 'moved into' : 'left'} the pinned section`)
+          }
+
+          // One round trip: switch away (real row click), let the run
+          // continue unseen, switch back — the timer must have CONTINUED
+          // past the switch-away moment (≥ before + 1s; a reset would land
+          // at 1s — the pi17-working-7s defect this ticket kills).
+          const switchAwayAndBack = async (awayId: string, awayMarker: string | null): Promise<void> => {
+            const before = lastReading
+            const clickedAway = await clickSelector(win, rowSel(awayId))
+            if (!clickedAway) fail(`ticket-108 stage: leg ${leg} — the away row never appeared to click`)
+            await waitForProbe(win, activeRowProbe(awayId), 5_000)
+            // Hold the view on the other session so the switch-away moment
+            // is real; keep A's stream folding in the background.
+            await new Promise((r) => setTimeout(r, 1300))
+            if (awayMarker !== null) emitContractEvent(scoped(tcA, { type: 'text_delta', delta: awayMarker }))
+            const back = await clickSelector(win, rowSel(tcA))
+            if (!back) fail(`ticket-108 stage: leg ${leg} — the return row never appeared to click`)
+            await waitForProbe(win, activeRowProbe(tcA), 5_000)
+            if (awayMarker !== null) {
+              const caught = await waitForProbe(win, `document.body.textContent.includes('${awayMarker}')`, 5_000)
+              if (!caught) fail(`ticket-108 stage: leg ${leg} — the background stream never caught up on return`)
+            }
+            const after = (await js(readSeconds)) as number
+            if (after < before + 1) {
+              fail(`ticket-108 stage: leg ${leg} timer reset across the switch (${before}s → ${after}s)`)
+            }
+            lastReading = after
+            log(`timer_continuity_leg${leg}_ok`, `${before}s → ${after}s`)
+            leg++
+          }
+
+          // ---- Leg 1 — unpinned ↔ unpinned. The announcement of B IS the
+          // switch-away (the same auto-focus switch a real resume drives);
+          // the return read also checks ABSOLUTE wall-clock honesty: the
+          // derived count must match now − injectedAt, not a local tick.
+          emitContractEvent(scoped(tcB, { type: 'session_created', sessionId: tcB, cwd: tc108Dir, model: 'claude-opus-4-5' }))
+          await waitForProbe(win, activeRowProbe(tcB), 10_000)
+          await new Promise((r) => setTimeout(r, 1300))
+          emitContractEvent(scoped(tcA, { type: 'text_delta', delta: 'alpha-108 stream block two' }))
+          const back1 = await clickSelector(win, rowSel(tcA))
+          if (!back1) fail('ticket-108 stage: leg 0 — the return row never appeared to click')
+          await waitForProbe(win, activeRowProbe(tcA), 5_000)
+          const caught1 = await waitForProbe(win, `document.body.textContent.includes('alpha-108 stream block two')`, 5_000)
+          if (!caught1) fail('ticket-108 stage: leg 0 — the background stream never caught up on return')
+          const after1 = (await js(readSeconds)) as number
+          if (after1 < lastReading + 1) {
+            fail(`ticket-108 stage: leg 0 timer reset across the switch (${lastReading}s → ${after1}s)`)
+          }
+          const expected1 = Math.floor((Date.now() - injectedAt) / 1000)
+          if (Math.abs(after1 - expected1) > 2) {
+            fail(`ticket-108 stage: the derived timer drifted from wall clock (${after1}s vs ${expected1}s)`)
+          }
+          lastReading = after1
+          log('timer_continuity_leg0_ok', `${lastReading}s (wall ${expected1}s)`)
+          leg = 1
+
+          // ---- Legs 1–3: pinned↔unpinned, pinned↔pinned, then B unpinned
+          // again (the four combos from the acceptance, minus leg 0 above).
+          await setPinned(tcB, true)
+          await switchAwayAndBack(tcB, 'alpha-108 stream block three')
+          await setPinned(tcA, true)
+          await switchAwayAndBack(tcB, 'alpha-108 stream block four')
+          await setPinned(tcB, false)
+          await switchAwayAndBack(tcB, 'alpha-108 stream block five')
+
+          // ---- Settle A: the span (first→last entry stamps) lands at the
+          // chevron's right — the R30 shape on an in-view streamed turn.
+          emitContractEvent(scoped(tcA, { type: 'message_end' }))
+          emitContractEvent(scoped(tcA, { type: 'agent_end' }))
+          const settledOk = await waitForProbe(
+            win,
+            `document.querySelectorAll('.turn-container').length === 1 &&
+             document.querySelector('.turn-container-label')?.textContent === 'Worked' &&
+             document.querySelectorAll('.turn-container-duration').length === 1 &&
+             document.querySelector('.turn-container-icon.spin') === null &&
+             (() => { const d = document.querySelector('.turn-container-duration'); return d !== null && parseInt(d.textContent ?? '0', 10) >= ${lastReading} && d.previousElementSibling !== null && d.previousElementSibling.classList.contains('turn-container-chevron') })()`,
+            10_000
+          )
+          if (!settledOk) fail('ticket-108 stage: the settled turn never showed its span at the chevron right')
+          log('timer_continuity_settled_ok', `span ≥ ${lastReading}s`)
+
+          // ---- Replay leg: B gets a wrapped history_loaded with REAL ISO
+          // timestamps (the same fold a full resume drives) — the replayed
+          // turn must show "Worked › 5s" at the chevron's right too (the
+          // ticket-14 no-duration premise retired).
+          const replayBack = await clickSelector(win, rowSel(tcB))
+          if (!replayBack) fail('ticket-108 stage: the replay row never appeared to click')
+          await waitForProbe(win, activeRowProbe(tcB), 5_000)
+          emitContractEvent(
+            scoped(tcB, {
+              type: 'history_loaded',
+              items: [
+                { role: 'user', id: 'tc108-r-u1', text: 'PICODE_108_REPLAY', timestamp: '2026-09-10T09:00:00.000Z', skillName: null },
+                {
+                  role: 'tool',
+                  id: 'tc108-r-t1',
+                  timestamp: '2026-09-10T09:00:02.000Z',
+                  name: 'bash',
+                  args: { command: 'echo replay' },
+                  output: 'replay',
+                  isError: false
+                },
+                {
+                  role: 'assistant',
+                  id: 'tc108-r-a1',
+                  timestamp: '2026-09-10T09:00:05.000Z',
+                  text: 'Replay answer.',
+                  parts: [{ kind: 'text', text: 'Replay answer.' }]
+                }
+              ]
+            })
+          )
+          const replayOk = await waitForProbe(
+            win,
+            `document.querySelectorAll('.turn-container').length === 1 &&
+             document.querySelector('.turn-container-label')?.textContent === 'Worked' &&
+             document.querySelectorAll('.turn-container-duration').length === 1 &&
+             document.querySelector('.turn-container-duration')?.textContent === '5s' &&
+             document.querySelectorAll('.turn-container-chevron').length === 1 &&
+             (() => { const d = document.querySelector('.turn-container-duration'); return d !== null && d.previousElementSibling !== null && d.previousElementSibling.classList.contains('turn-container-chevron') })()`,
+            10_000
+          )
+          if (!replayOk) fail('ticket-108 stage: the replayed turn never showed its 5s span at the chevron right')
+          log('timer_continuity_replay_ok')
+
+          // Cleanup: unpin A (the ticket-84 courtesy — later runs and
+          // stages meet an unpinned sidebar).
+          await setPinned(tcA, false)
+          log('timer_continuity_unpin_ok')
+        })
+      } finally {
+        rmSync(tc108Dir, { recursive: true, force: true })
+      }
+      log('timer_continuity_done')
+    }
 
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
     const livePids = supervisor.hostPids

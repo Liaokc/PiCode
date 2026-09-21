@@ -105,24 +105,30 @@ function loadPinnedIds(): Set<string> {
 }
 
 /**
- * Ticket 61: a thinking part anchors its entry-level timer at the renderer
- * receipt of the delta that starts it — the wall-clock stamp rides the
- * ACTION (the Seam-1 reducer stays time-free), and the view derives
- * (now − startedAt) so fold/reopen continues instead of resetting. Wrapped
+ * Receipt stamps for the entry-level wall-clock anchors (tickets 61+108):
+ * a thinking part's start (61), the turn's opening user message (108) and
+ * an assistant message's completion (108) anchor the durations the views
+ * derive — the wall-clock stamps ride the ACTIONS (the Seam-1 reducer
+ * stays time-free), so every unmount/remount (folds, session switches,
+ * ADR-0006) continues from the same anchor instead of resetting. Wrapped
  * session events stamp their inner event; everything else passes through.
  */
 function withReceipt<T extends { type: string }>(event: T, receivedAtMs: number): T & { receivedAtMs: number } {
   return { ...event, receivedAtMs }
 }
 
-function stampThinkingStart(event: HostToParent): ChatAction {
-  if (event.type === 'session_event') return { ...event, event: stampScopedThinkingStart(event.event) }
-  if (event.type === 'thinking_delta') return withReceipt(event, Date.now())
+function stampReceiptAnchors(event: HostToParent): ChatAction {
+  if (event.type === 'session_event') return { ...event, event: stampScopedReceiptAnchors(event.event) }
+  if (event.type === 'thinking_delta' || event.type === 'user_message' || event.type === 'message_end') {
+    return withReceipt(event, Date.now())
+  }
   return event
 }
 
-function stampScopedThinkingStart(event: SessionScopedEvent): SessionScopedEvent {
-  return event.type === 'thinking_delta' ? withReceipt(event, Date.now()) : event
+function stampScopedReceiptAnchors(event: SessionScopedEvent): SessionScopedEvent {
+  return event.type === 'thinking_delta' || event.type === 'user_message' || event.type === 'message_end'
+    ? withReceipt(event, Date.now())
+    : event
 }
 
 /** Ticket 106: the boot-failure toast copy — the event's own words where it
@@ -442,8 +448,9 @@ export default function App(): JSX.Element {
         parkMountedComposerDraft()
       }
       // Every event (focused or not) folds into its session's view state —
-      // thinking deltas stamped with their receipt time first (ticket 61).
-      registryDispatch(stampThinkingStart(event))
+      // receipt-stamped first so the entry-level anchors land (ticket 61
+      // thinking starts; ticket 108 turn anchors and end stamps).
+      registryDispatch(stampReceiptAnchors(event))
       // The Bridge feed folds the SAME stream read-only (ticket 18) — all
       // sessions' bash commands stream to the observation panel.
       bridgeFeedDispatch(event)
