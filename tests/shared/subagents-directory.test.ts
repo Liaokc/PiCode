@@ -388,3 +388,62 @@ describe('row shape', () => {
     expect(row.title).toBe('Explore')
   })
 })
+
+// ---- ticket 101: the stop flow's Stopping overlay ---------------------------
+
+describe('the Stopping overlay (ticket 101)', () => {
+  const runningAsyncEntry = toolEntry({
+    id: 't-stop',
+    state: 'done',
+    args: { agent: 'scout', task: 'PICODE_101 stop me', async: true },
+    subagent: callInfo({ runId: 'run-stop', asyncId: 'run-stop', asyncDir: '/tmp/run-stop' })
+  })
+
+  it('overlays Stopping on a live row the stopping set names', () => {
+    const model = subagentDirectoryFromEntries([runningAsyncEntry], { 'run-stop': liveRun({ runId: 'run-stop' }) }, ENDED_VISIBLE_INITIAL, new Set(['run-stop']))
+    expect(model.rows[0]?.stopping).toBe(true)
+    expect(model.rows[0]?.state).toBe('running')
+  })
+
+  it('keeps terminal rows free of the overlay even when named', () => {
+    const model = subagentDirectoryFromEntries(
+      [runningAsyncEntry],
+      { 'run-stop': liveRun({ runId: 'run-stop', state: 'stopped' }) },
+      ENDED_VISIBLE_INITIAL,
+      new Set(['run-stop'])
+    )
+    expect(model.rows[0]?.state).toBe('cancelled')
+    expect(model.rows[0]?.stopping).toBe(false)
+  })
+
+  it('a foreground row (never stopped through the receipt path) shows no overlay', () => {
+    const foreground = toolEntry({
+      id: 't-fg',
+      state: 'running',
+      args: { agent: 'scout', task: 'PICODE_101 foreground' },
+      subagent: callInfo({ runId: 'fg-1' })
+    })
+    const model = subagentDirectoryFromEntries([foreground], {}, ENDED_VISIBLE_INITIAL, new Set(['run-stop']))
+    expect(model.rows[0]?.asyncId).toBeNull()
+    expect(model.rows[0]?.stopping).toBe(false)
+    expect(model.rows[0]?.state).toBe('running')
+  })
+
+  it('the overlay keys on the run correlation id (asyncId ?? runId)', () => {
+    // The receipt set holds asyncIds only (the stop RPC's target namespace);
+    // the projection matches whatever identity the row carries.
+    const model = subagentDirectoryFromEntries([runningAsyncEntry], { 'run-stop': liveRun({ runId: 'run-stop' }) }, ENDED_VISIBLE_INITIAL, new Set(['other-run']))
+    expect(model.rows[0]?.stopping).toBe(false)
+  })
+
+  it('an absent/empty stopping set leaves every row untouched', () => {
+    const model = subagentDirectoryFromEntries([runningAsyncEntry], { 'run-stop': liveRun({ runId: 'run-stop' }) })
+    expect(model.rows[0]?.stopping).toBe(false)
+  })
+
+  it('a stopping row still counts into the Running section (it is live)', () => {
+    const model = subagentDirectoryFromEntries([runningAsyncEntry], { 'run-stop': liveRun({ runId: 'run-stop' }) }, ENDED_VISIBLE_INITIAL, new Set(['run-stop']))
+    expect(model.running).toHaveLength(1)
+    expect(model.endedTotal).toBe(0)
+  })
+})

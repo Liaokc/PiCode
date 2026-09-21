@@ -87,6 +87,16 @@
  *   verbatim — an unknown run fails honestly against the REAL pi-subagents
  *   RPC; a missing package answers 'unavailable') → shutdown → exit 0.
  *
+ *   Round K (ticket 101报备: the subagent stop contract) — a SEEDED session
+ *   file + a LIVE status.json artifact (sessionId = the seed file, so the
+ *   real RPC stop passes the session-ownership check), zero model calls:
+ *   resume → session_created(resumed) → history_loaded → subagent_stop
+ *   (unknown run) → subagent_stop_receipt(ok=false, requestId + asyncId
+ *   echo, the error verbatim) → subagent_stop (the seeded live run) →
+ *   subagent_stop_receipt(ok=true, state:'stopping' — the REAL pi-subagents
+ *   stop control channel accepted) + the control/stop-requests request file
+ *   asserted on disk → shutdown → exit 0.
+ *
  * Usage: npm run build && node scripts/smoke/host-contract-smoke.mjs
  * Expects working model auth in ~/.pi/agent (same as the pi TUI). Session
  * files land in an isolated throwaway store (PICODE_SESSION_DIR, ticket 13)
@@ -128,6 +138,9 @@ let subagent90File = ''
 let subagent90RunDir = ''
 let subagent90TempRoot = ''
 let subagent99File = ''
+let subagent101File = ''
+let subagent101RunDir = ''
+const subagent101TempRoot = path.join(tmpdir(), 'picode-smoke-subagent101-root')
 
 // Ticket 96 round I: a workspace whose seeded .mcp.json drives the ADAPTER
 // (loaded from the real agent dir's packages — round G already requires it)
@@ -152,7 +165,7 @@ subagent90File = path.join(process.env.PICODE_SESSION_DIR, 'subagent90-seeded.js
 
 const cwd = await mkdtemp(path.join(tmpdir(), 'picode-smoke-'))
 // A real file so the @-mention candidate listing has something to return.
-const { mkdirSync, writeFileSync, readFileSync } = await import('node:fs')
+const { mkdirSync, writeFileSync, readFileSync, readdirSync } = await import('node:fs')
 writeFileSync(path.join(cwd, 'alpha.txt'), 'mention me')
 
 // Ticket 96 round I seed: a lazy stdio server whose binary does not exist
@@ -643,6 +656,70 @@ async function onHostExit(exited, code) {
   }
   if (step === 'J shutdown') {
     if (code !== 0) fail(`round J exit should be clean 0, got ${code}`)
+    // Ticket 101报备: round K — the subagent stop contract (additive host
+    // messages), zero model calls. Two legs against the REAL pi-subagents
+    // RPC: an unknown run answers ok:false verbatim (honest failure), and a
+    // SEEDED LIVE run (its artifact names the seed file as the owning
+    // session) answers ok:true state:'stopping' — the stop control channel
+    // accepted, the request file lands in the run's control inbox.
+    const seedDir101 = path.join(tmpdir(), 'picode-smoke-seed101-workspace')
+    mkdirSync(seedDir101, { recursive: true })
+    // The stop RPC resolves its target under pi-subagents' OWN async root —
+    // point PI_SUBAGENTS_TEMP_ROOT at a smoke-local root BEFORE forking the
+    // host (the constant resolves at the child's module load), so the seeded
+    // live artifact at <root>/async-subagent-runs/sub101-run-1 is exactly
+    // where the RPC looks. The seed dir rides inside the same root.
+    process.env.PI_SUBAGENTS_TEMP_ROOT = subagent101TempRoot
+    subagent101File = path.join(process.env.PICODE_SESSION_DIR, 'subagent101-seeded.jsonl')
+    subagent101RunDir = path.join(subagent101TempRoot, 'async-subagent-runs', 'sub101-run-1')
+    const stamp101 = new Date().toISOString()
+    mkdirSync(subagent101RunDir, { recursive: true })
+    writeFileSync(
+      path.join(subagent101RunDir, 'status.json'),
+      JSON.stringify({
+        lifecycleArtifactVersion: 1,
+        runId: 'sub101-run-1',
+        mode: 'single',
+        state: 'running',
+        startedAt: Date.now() - 60_000,
+        lastUpdate: Date.now(),
+        sessionId: subagent101File,
+        agents: ['scout']
+      })
+    )
+    writeFileSync(
+      subagent101File,
+      [
+        JSON.stringify({ type: 'session', version: 3, id: 'sub101-seeded-id', timestamp: stamp101, cwd: seedDir101 }),
+        JSON.stringify({
+          type: 'message', id: 's101-u1', parentId: null, timestamp: stamp101,
+          message: { role: 'user', content: [{ type: 'text', text: 'PICODE_SUB101 fan out the work' }] }
+        }),
+        JSON.stringify({
+          type: 'message', id: 's101-a1', parentId: 's101-u1', timestamp: stamp101,
+          message: { role: 'assistant', content: [{ type: 'toolCall', id: 's101-c-async', name: 'subagent', arguments: { agent: 'scout', task: 'PICODE_SUB101 scout the answer', async: true } }] }
+        }),
+        JSON.stringify({
+          type: 'message', id: 's101-r1', parentId: 's101-a1', timestamp: stamp101,
+          message: {
+            role: 'toolResult', toolCallId: 's101-c-async', toolName: 'subagent',
+            content: [{ type: 'text', text: 'Async: scout [sub101-run-1]' }],
+            isError: false,
+            details: { mode: 'single', runId: 'sub101-run-1', asyncId: 'sub101-run-1', asyncDir: subagent101RunDir, results: [] }
+          }
+        })
+      ].join('\n') + '\n'
+    )
+    console.log('SMOKE round J shutdown ok — starting round K (ticket-101 subagent stop contract)')
+    step = 'K session_created'
+    bumpTimeout()
+    child = forkHost([seedDir101, subagent101File], onEvent)
+    return
+  }
+  if (step === 'K shutdown') {
+    if (code !== 0) fail(`round K exit should be clean 0, got ${code}`)
+    rmSync(subagent101TempRoot, { recursive: true, force: true })
+    delete process.env.PI_SUBAGENTS_TEMP_ROOT
     await finishClean(code)
     return
   }
@@ -1635,6 +1712,60 @@ function onEvent(event) {
       }
       console.log(`SMOKE ticket-99 subagent_steer ok (ok=false, error="${event.error}")`)
       step = 'J shutdown'
+      child.send({ type: 'shutdown' })
+      return
+    }
+
+    // ---------- Round K: ticket 101报备 — the subagent stop contract ----------
+    case 'K session_created': {
+      if (event.type !== 'session_created') return
+      if (!event.resumed) fail('round K must open the seeded file as a resume')
+      if (event.sessionFile !== subagent101File) fail(`round K resumed the wrong file: ${event.sessionFile}`)
+      console.log('SMOKE round K session ok (seeded ticket-101 live-run fixture)')
+      step = 'K replay'
+      return
+    }
+    case 'K replay': {
+      if (event.type !== 'history_loaded') return
+      console.log('SMOKE round K replay ok — sending subagent_stop for the unknown run')
+      step = 'K receipt-unknown'
+      child.send({ type: 'subagent_stop', requestId: 'sub101-stop-1', asyncId: 'sub101-run-gone' })
+      return
+    }
+    case 'K receipt-unknown': {
+      if (event.type !== 'subagent_stop_receipt') return
+      if (event.requestId !== 'sub101-stop-1') fail(`the stop receipt must echo its requestId, got ${event.requestId}`)
+      if (event.asyncId !== 'sub101-run-gone') fail(`the stop receipt must echo its asyncId, got ${event.asyncId}`)
+      if (event.ok !== false) fail(`the stop receipt must answer ok:false for an unknown run, got ${JSON.stringify(event)}`)
+      if (typeof event.error !== 'string' || event.error.length === 0) {
+        fail('the stop receipt must carry the failure verbatim (non-empty error)')
+      }
+      console.log(`SMOKE round K unknown-run stop ok (ok=false, error="${event.error}")`)
+      step = 'K receipt-live'
+      child.send({ type: 'subagent_stop', requestId: 'sub101-stop-2', asyncId: 'sub101-run-1' })
+      return
+    }
+    case 'K receipt-live': {
+      if (event.type !== 'subagent_stop_receipt') return
+      if (event.requestId !== 'sub101-stop-2') fail(`the live stop receipt must echo its requestId, got ${event.requestId}`)
+      if (event.asyncId !== 'sub101-run-1') fail(`the live stop receipt must echo its asyncId, got ${event.asyncId}`)
+      if (event.ok !== true || event.state !== 'stopping') {
+        fail(`the live stop must be accepted with state stopping, got ${JSON.stringify(event)}`)
+      }
+      // The REAL stop control channel: the accepted stop wrote its request
+      // file into the run's control inbox (control/stop-requests/*.json).
+      const inbox = path.join(subagent101RunDir, 'control', 'stop-requests')
+      let stopFiles = []
+      try {
+        stopFiles = readdirSync(inbox)
+      } catch {
+        fail(`the stop control inbox was never created at ${inbox}`)
+      }
+      if (stopFiles.length === 0) fail(`the stop control channel wrote no request file into ${inbox}`)
+      const request = JSON.parse(readFileSync(path.join(inbox, stopFiles[0]), 'utf8'))
+      if (request.type !== 'stop') fail(`the control-channel request must be a stop, got ${JSON.stringify(request)}`)
+      console.log('SMOKE ticket-101 subagent_stop ok (ok=true state=stopping; stop request file in the control inbox)')
+      step = 'K shutdown'
       child.send({ type: 'shutdown' })
       return
     }

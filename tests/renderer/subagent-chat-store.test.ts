@@ -83,4 +83,13 @@ describe('subagentChatStore', () => {
     store.dispatch({ type: 'subagent_steer_receipt', requestId: 'req-1', asyncId: 'run-1', ok: true, deliveryStatus: 'delivered' }, 's1')
     expect(store.receiptsFor('s1', 'run-1')[0]).toMatchObject({ status: 'failed', error: 'boom' })
   })
+
+  it('stop request ids share the monotonic counter and carry the stop kind (ticket 101)', () => {
+    const store = new SubagentChatStore()
+    const steer = store.nextRequestId('s1', 'run-1')
+    const stop = store.nextRequestId('s1', 'run-1', 'stop')
+    expect(stop).not.toBe(steer)
+    expect(stop.startsWith('stop-')).toBe(true)
+    expect(steer.startsWith('steer-')).toBe(true)
+  })
 })

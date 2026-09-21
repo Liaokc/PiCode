@@ -163,6 +163,11 @@ export interface SubagentDirectoryRow {
   asyncId: string | null
   /** Number of recorded children (parallel/chain fan-out size). */
   childCount: number
+  /** Ticket 101: an accepted stop request whose terminal evidence hasn't
+   * landed yet — the row shows the honest Stopping overlay (badge swaps,
+   * stop button hides: stopping twice is not a thing). Only live rows can
+   * carry it; terminal rows are already past the transition. */
+  stopping: boolean
 }
 
 /** The projected directory: two fixed sections + the paging state. */
@@ -217,7 +222,7 @@ function correlationId(info: SubagentCallInfo | undefined): string | null {
   return info?.asyncId ?? info?.runId ?? null
 }
 
-function projectRow(entry: ToolEntry, runs: Readonly<Record<string, SubagentRunState>> | undefined): SubagentDirectoryRow {
+function projectRow(entry: ToolEntry, runs: Readonly<Record<string, SubagentRunState>> | undefined, stoppingRuns: ReadonlySet<string> | undefined): SubagentDirectoryRow {
   const info = entry.subagent
   const state = projectDirectoryRowState(info ?? {}, entry.state, entry.state === 'error', runs)
   const { title, agent } = rowTitle(entry.args, info)
@@ -243,7 +248,8 @@ function projectRow(entry: ToolEntry, runs: Readonly<Record<string, SubagentRunS
     nestedCount: live?.nestedCount ?? 0,
     asyncId: info?.asyncId ?? null,
     asyncDir: info?.asyncDir ?? null,
-    childCount: info?.children?.length ?? 0
+    childCount: info?.children?.length ?? 0,
+    stopping: !isTerminalBadge(state) && runId !== null && stoppingRuns?.has(runId) === true
   }
 }
 
@@ -265,17 +271,20 @@ const BADGE_ORDER: Record<SubagentRowState, number> = {
  * Project the directory from the session view's chat entries (the replayed
  * transcript IS the live transcript — the same entry stream) plus the live
  * run states the bridge forwards. `visibleEnded` carries the Show-20-more
- * step (component state; starts at ENDED_VISIBLE_INITIAL).
+ * step (component state; starts at ENDED_VISIBLE_INITIAL). `stoppingRuns`
+ * (ticket 101) is the registry's accepted-stop set — live rows it names
+ * project the Stopping overlay until terminal evidence lands.
  */
 export function subagentDirectoryFromEntries(
   entries: readonly ChatEntry[],
   runs: Readonly<Record<string, SubagentRunState>> | undefined,
-  visibleEnded: number = ENDED_VISIBLE_INITIAL
+  visibleEnded: number = ENDED_VISIBLE_INITIAL,
+  stoppingRuns?: ReadonlySet<string>
 ): SubagentDirectoryModel {
   const rows: SubagentDirectoryRow[] = []
   for (const entry of entries) {
     if (entry.role !== 'tool' || !isSubagentCall(entry)) continue
-    rows.push(projectRow(entry, runs))
+    rows.push(projectRow(entry, runs, stoppingRuns))
   }
   const running = rows
     .filter((row) => !isTerminalBadge(row.state))

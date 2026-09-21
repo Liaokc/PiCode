@@ -102,7 +102,7 @@ export interface SlashCommandItem {
  * most recently announced session). */
 export type SessionCommand = Extract<
   ParentToHost,
-  { type: 'prompt' | 'abort_turn' | 'steer_prompt' | 'follow_up_prompt' | 'clear_queue' | 'edit_queue_entry' | 'remove_queue_entry' | 'set_model' | 'set_thinking_level' | 'set_access_mode' | 'approve_tool' | 'deny_tool' | 'compact_session' | 'list_files' | 'navigate_tree' | 'fork_session' | 'set_session_label' | 'request_tree' | 'get_branch' | 'mcp_auth_start' | 'mcp_auth_input_resolve' | 'subagent_status' | 'subagent_steer' }
+  { type: 'prompt' | 'abort_turn' | 'steer_prompt' | 'follow_up_prompt' | 'clear_queue' | 'edit_queue_entry' | 'remove_queue_entry' | 'set_model' | 'set_thinking_level' | 'set_access_mode' | 'approve_tool' | 'deny_tool' | 'compact_session' | 'list_files' | 'navigate_tree' | 'fork_session' | 'set_session_label' | 'request_tree' | 'get_branch' | 'mcp_auth_start' | 'mcp_auth_input_resolve' | 'subagent_status' | 'subagent_steer' | 'subagent_stop' }
 >
 
 /** Renderer → agent host system. */
@@ -192,6 +192,16 @@ export type ParentToHost =
    * verbatim: delivered / queued / failed. Answered even when the bridge or
    * the run is unavailable (ok:false) so the conversation tab never hangs. */
   | { type: 'subagent_steer'; requestId: string; asyncId: string; text: string }
+  /** Stop ONE running async subagent run (ticket 101, additive): the bridge
+   * sends pi-subagents' in-process RPC `stop` (top-level async runs ride the
+   * stop control channel and record a stopped lifecycle) and answers with
+   * `subagent_stop_receipt` — ok:true means the stop was accepted (the run
+   * is stopping; the terminal state arrives via the lifecycle/artifact
+   * stream). Answered in every path (ok:false carries the failure verbatim)
+   * so the stop UI never hangs. Foreground subagent runs have no RPC stop —
+   * the renderer aborts the owning session's turn instead (abort/dispose
+   * semantics, observability.md) and no receipt exists for that path. */
+  | { type: 'subagent_stop'; requestId: string; asyncId: string }
 
 /** Supervisor → host process lifecycle control (never sent by the renderer). */
 export type HostControlCommand = { type: 'shutdown' }
@@ -371,6 +381,14 @@ export type SessionScopedEvent =
    * steered text itself appears in the child transcript only once the child
    * session records it. */
   | { type: 'subagent_steer_receipt'; requestId: string; asyncId: string; ok: boolean; deliveryStatus?: 'delivered' | 'queued'; error?: string }
+  /** Receipt for one `subagent_stop` (ticket 101, additive): ok:true carries
+   * pi-subagents' `stopping` state — the stop was accepted through the stop
+   * control channel; the terminal evidence lands afterwards via the normal
+   * lifecycle/status stream (the run's badge flips Cancelled then). ok:false
+   * carries the failure verbatim (unknown run, ended run, foreign-session
+   * ownership, no bridge, timeout) — the row keeps its live state and the
+   * App surfaces the error. */
+  | { type: 'subagent_stop_receipt'; requestId: string; asyncId: string; ok: boolean; state?: 'stopping'; error?: string }
   // ---- ticket 96: the MCP status bridge (additive, reported into the
   // host-contract smoke). The host's inline extension subscribes to the
   // adapter's versioned status channel (pi.events in-process bus) and

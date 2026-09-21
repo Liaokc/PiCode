@@ -8,6 +8,8 @@
  *
  * Surface (all additive, reported into the host-contract smoke):
  *   subagent_status command            → subagent_status reply event
+ *   subagent_steer command             → subagent_steer_receipt event
+ *   subagent_stop command              → subagent_stop_receipt event
  *   pi `subagent:async-started`        → subagent_async_started
  *   pi `subagent:async-complete`       → subagent_async_completed
  *   pi `subagent:foreground-complete`  → subagent_foreground_completed
@@ -264,6 +266,60 @@ export class SubagentBridge {
       asyncId,
       ok: false,
       error: 'the steer reply carried no delivery status'
+    })
+  }
+
+  /** Stop ONE running async subagent run (ticket 101): pi-subagents' RPC
+   * `stop` — top-level async runs ride the stop control channel and record
+   * a stopped lifecycle instead of reporting a timeout. The receipt is
+   * answered in EVERY path (the steer precedent): ok:true carries the RPC's
+   * `stopping` state (terminal evidence lands afterwards via the normal
+   * lifecycle/status stream); errors (unknown run, ended run, foreign-session
+   * ownership, no bridge, timeout) carry ok:false verbatim. The stop UI
+   * never hangs and never claims a stop the RPC did not accept. */
+  async handleStopRequest(requestId: string, asyncId: string): Promise<void> {
+    const reply = await this.requestRpc('stop', { id: asyncId }, this.steerTimeoutMs)
+    if (reply === null) {
+      this.send({
+        type: 'subagent_stop_receipt',
+        requestId,
+        asyncId,
+        ok: false,
+        error: 'the subagent bridge is unavailable (no session bus)'
+      })
+      return
+    }
+    if (reply.kind === 'timeout') {
+      this.send({
+        type: 'subagent_stop_receipt',
+        requestId,
+        asyncId,
+        ok: false,
+        error: 'the stop request timed out (pi-subagents did not answer)'
+      })
+      return
+    }
+    if (reply.success === false) {
+      const code = reply.error.code
+      const failure = reply.error.message
+      const errorText =
+        failure !== undefined && failure !== '' ? failure : code !== undefined ? `RPC error: ${code}` : 'the stop request failed'
+      this.send({ type: 'subagent_stop_receipt', requestId, asyncId, ok: false, error: errorText })
+      return
+    }
+    // The stop contract guarantees `state: "stopping"` on an accepted stop —
+    // its absence is a broken reply, never a claim we invent.
+    const state = isRecord(reply.data) ? reply.data['state'] : undefined
+    if (state === 'stopping') {
+      this.send({ type: 'subagent_stop_receipt', requestId, asyncId, ok: true, state })
+      return
+    }
+    this.send({
+      type: 'subagent_stop_receipt',
+      requestId,
+      asyncId,
+      ok: false,
+      error: 'the stop reply carried no stopping state'
     })
   }
 

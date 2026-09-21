@@ -511,3 +511,118 @@ describe('contract shapes', () => {
     expect(event.type).toBe('session_event')
   })
 })
+
+// ---- ticket 101: the stop receipt (the stop control channel's UI seam) ------
+
+describe('subagent_stop handling', () => {
+  /** A bus whose RPC `stop` answers with `reply` (a function of requestId so
+   * tests can vary per-call). */
+  function stopBus(sent: HostEvent[], reply: (requestId: string) => unknown): SubagentBridge {
+    const bridge = new SubagentBridge((event) => sent.push(event), 100)
+    const { factory } = bridge.extension as unknown as FactoryExtension
+    const handlers = new Map<string, Array<(data: unknown) => void>>()
+    factory({
+      events: {
+        emit: (channel: string, data: unknown) => {
+          if (channel === 'subagents:rpc:v1:request') {
+            const req = data as { requestId: string }
+            queueMicrotask(() => {
+              for (const handler of handlers.get(`subagents:rpc:v1:reply:${req.requestId}`) ?? []) handler(reply(req.requestId))
+            })
+          }
+          for (const handler of handlers.get(channel) ?? []) handler(data)
+        },
+        on: (channel: string, handler: (data: unknown) => void) => {
+          handlers.set(channel, [...(handlers.get(channel) ?? []), handler])
+          return () => {}
+        }
+      }
+    } as never)
+    return bridge
+  }
+
+  it('an accepted stop lands as ok:true state stopping (the receipt is the assertion)', async () => {
+    const sent: HostEvent[] = []
+    const bridge = stopBus(sent, () => ({ version: 1, requestId: 'pi-r-1', success: true, data: { runId: 'run-1', asyncDir: '/tmp/run-1', previousState: 'running', state: 'stopping', message: 'Stop requested for async run run-1.' } }))
+    await bridge.handleStopRequest('req-stop-1', 'run-1')
+    expect(sent).toEqual([{ type: 'subagent_stop_receipt', requestId: 'req-stop-1', asyncId: 'run-1', ok: true, state: 'stopping' }])
+  })
+
+  it('the RPC request carries method stop with the async id as the target', async () => {
+    let captured: { method: string; params: Record<string, unknown> } | null = null
+    const sent: HostEvent[] = []
+    const bridge = new SubagentBridge((event) => sent.push(event), 100)
+    const { factory } = bridge.extension as unknown as FactoryExtension
+    const handlers = new Map<string, Array<(data: unknown) => void>>()
+    factory({
+      events: {
+        emit: (channel: string, data: unknown) => {
+          if (channel === 'subagents:rpc:v1:request') {
+            const req = data as { requestId: string; method: string; params: Record<string, unknown> }
+            captured = { method: req.method, params: req.params }
+            queueMicrotask(() => {
+              for (const handler of handlers.get(`subagents:rpc:v1:reply:${req.requestId}`) ?? []) {
+                handler({ version: 1, requestId: req.requestId, success: true, data: { state: 'stopping' } })
+              }
+            })
+          }
+          for (const handler of handlers.get(channel) ?? []) handler(data)
+        },
+        on: (channel: string, handler: (data: unknown) => void) => {
+          handlers.set(channel, [...(handlers.get(channel) ?? []), handler])
+          return () => {}
+        }
+      }
+    } as never)
+    await bridge.handleStopRequest('req-stop-1', 'run-1')
+    expect(captured).toEqual({ method: 'stop', params: { id: 'run-1' } })
+    expect(sent).toEqual([{ type: 'subagent_stop_receipt', requestId: 'req-stop-1', asyncId: 'run-1', ok: true, state: 'stopping' }])
+  })
+
+  it('an RPC error reply rides the receipt verbatim (unknown run / ended run / foreign session)', async () => {
+    const sent: HostEvent[] = []
+    const bridge = stopBus(sent, () => ({ version: 1, requestId: 'pi-r-1', success: false, error: { code: 'invalid_state', message: 'Async run run-1 is complete; stop only supports running async runs.' } }))
+    await bridge.handleStopRequest('req-stop-2', 'run-1')
+    expect(sent).toEqual([
+      { type: 'subagent_stop_receipt', requestId: 'req-stop-2', asyncId: 'run-1', ok: false, error: 'Async run run-1 is complete; stop only supports running async runs.' }
+    ])
+  })
+
+  it('an unanswered RPC times out into a failed receipt (the stop UI never hangs)', async () => {
+    const sent: HostEvent[] = []
+    const bridge = new SubagentBridge((event) => sent.push(event), 50)
+    const { factory } = bridge.extension as unknown as FactoryExtension
+    const handlers = new Map<string, Array<(data: unknown) => void>>()
+    factory({
+      events: {
+        emit: (channel: string, data: unknown) => {
+          if (channel === 'subagents:rpc:v1:request') {
+            const req = data as { requestId: string }
+            handlers.set(`subagents:rpc:v1:reply:${req.requestId}`, [])
+          }
+          for (const handler of handlers.get(channel) ?? []) handler(data)
+        },
+        on: (channel: string, handler: (data: unknown) => void) => {
+          handlers.set(channel, [...(handlers.get(channel) ?? []), handler])
+          return () => {}
+        }
+      }
+    } as never)
+    await bridge.handleStopRequest('req-stop-3', 'run-1')
+    expect(sent).toEqual([{ type: 'subagent_stop_receipt', requestId: 'req-stop-3', asyncId: 'run-1', ok: false, error: 'the stop request timed out (pi-subagents did not answer)' }])
+  })
+
+  it('an unwired bus answers a failed receipt immediately', async () => {
+    const sent: HostEvent[] = []
+    const bridge = new SubagentBridge((event) => sent.push(event), 100)
+    await bridge.handleStopRequest('req-stop-4', 'run-1')
+    expect(sent).toEqual([{ type: 'subagent_stop_receipt', requestId: 'req-stop-4', asyncId: 'run-1', ok: false, error: 'the subagent bridge is unavailable (no session bus)' }])
+  })
+
+  it('a success reply without a stopping state lands as an honest failure (no invented claim)', async () => {
+    const sent: HostEvent[] = []
+    const bridge = stopBus(sent, () => ({ version: 1, requestId: 'pi-r-1', success: true, data: { runId: 'run-1' } }))
+    await bridge.handleStopRequest('req-stop-5', 'run-1')
+    expect(sent).toEqual([{ type: 'subagent_stop_receipt', requestId: 'req-stop-5', asyncId: 'run-1', ok: false, error: 'the stop reply carried no stopping state' }])
+  })
+})

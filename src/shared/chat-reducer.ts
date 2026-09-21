@@ -728,6 +728,9 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     // Steer receipts (ticket 99) belong to the subagent conversation tab's
     // receipt store, not the transcript — the chat reducer no-ops them.
     case 'subagent_steer_receipt':
+    // Stop receipts (ticket 101) fold into the registry's subagent live
+    // state (the Stopping badge) — not transcript state either.
+    case 'subagent_stop_receipt':
       return state
 
     case 'host_exit': {
