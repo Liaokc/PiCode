@@ -4344,8 +4344,10 @@ button.heat:hover {
 }
 
 /* Ticket 103: the live ring is a status signal — brand accent, not faint
-   chrome; diameter 13 → 16 (the TSX size), here just the color. */
-.turn-container-icon {
+   chrome; diameter 13 → 16 (the TSX size), here just the color. Both ring
+   sites share one rule. */
+.turn-container-icon,
+.turn-container-foot-icon {
   color: var(--accent-orange);
 }
 
@@ -4374,15 +4376,11 @@ button.heat:hover {
 
 /* Ticket 103: the expanded live body's foot ring — the header spinner's
    mirror on the body's bottom edge (left-aligned at the container's left
-   edge, where the header icon sits too). Same accent as the header ring;
-   the body's 6px column gap spaces it off the last work row. */
+   edge, where the header icon sits too). The body's 6px column gap spaces
+   it off the last work row. */
 .turn-container-live-foot {
   display: flex;
   align-items: center;
-}
-
-.turn-container-foot-icon {
-  color: var(--accent-orange);
 }
 
 /* ---------- composite user bubble (ticket 97, spec R19) ----------

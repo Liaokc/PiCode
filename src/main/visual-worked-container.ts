@@ -87,7 +87,19 @@ const SIG = `(() => ({
   spinnerColor: getComputedStyle(document.querySelector('.turn-container-icon') ?? document.body).color,
   /* Layout width, NOT getBoundingClientRect: the spin rotation inflates a
      rotated square's axis-aligned bounding box (16 → ~22.6px at 45°). */
-  spinnerPx: parseFloat(getComputedStyle(document.querySelector('.turn-container-icon') ?? document.body).width) || 0
+  spinnerPx: parseFloat(getComputedStyle(document.querySelector('.turn-container-icon') ?? document.body).width) || 0,
+  /* The brand accent resolved by the BROWSER (code-review: no hardcoded rgb
+     literal duplicating app.css's --accent-orange — a token change keeps the
+     assertion true). A probe span carries the var; computed color compares
+     equal to the ring's. */
+  accentColor: (() => {
+    const probe = document.createElement('span')
+    probe.style.color = 'var(--accent-orange)'
+    document.body.appendChild(probe)
+    const c = getComputedStyle(probe).color
+    probe.remove()
+    return c
+  })()
 }))()`
 
 interface WorkedSig {
@@ -102,6 +114,7 @@ interface WorkedSig {
   footSpinners: number
   spinnerColor: string
   spinnerPx: number
+  accentColor: string
 }
 
 async function waitFor(win: BrowserWindow, probe: string, budgetMs: number): Promise<boolean> {
@@ -261,9 +274,12 @@ export function startWorkedVisualIfEnabled(getWindow: () => BrowserWindow | null
         throw new Error(`worked visual wc4: the live expanded turn lacks its head+foot rings (state: ${state})`)
       }
       const expanded = (await win.webContents.executeJavaScript(SIG)) as WorkedSig
-      // The enhancement must be ON SCREEN: accent-colored, 16px diameter.
-      if (!expanded.spinnerColor.includes('236, 121, 49')) {
-        throw new Error(`worked visual wc4: the spinner is not the brand accent (color: ${expanded.spinnerColor})`)
+      // The enhancement must be ON SCREEN: the brand accent (compared
+      // against the browser-resolved var, not a hardcoded rgb), 16px.
+      if (expanded.spinnerColor !== expanded.accentColor) {
+        throw new Error(
+          `worked visual wc4: the spinner is not the brand accent (spinner: ${expanded.spinnerColor}, accent: ${expanded.accentColor})`
+        )
       }
       if (expanded.spinnerPx < 15 || expanded.spinnerPx > 17) {
         throw new Error(`worked visual wc4: the spinner diameter is not the enhanced 16px (${expanded.spinnerPx}px)`)

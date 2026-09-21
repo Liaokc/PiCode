@@ -203,7 +203,7 @@ export default function TurnContainer({
               zero-work live turn renders the header ring alone (the body
               is not mounted there). */}
           {turn.live && (
-            <div className="turn-container-live-foot" role="status">
+            <div className="turn-container-live-foot">
               <LoaderIcon size={16} className="turn-container-foot-icon spin" />
             </div>
           )}

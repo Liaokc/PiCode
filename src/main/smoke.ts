@@ -7166,7 +7166,7 @@ export function startSmokeIfEnabled(
         )) as boolean
         if (!settledSpinners) {
           const diag = (await win.webContents.executeJavaScript(sig).catch(() => 'unavailable')) as string
-          fail(`ticket-103 stage: a settled turn kept a live spinner; DOM: ${diag}`)
+          fail(`ticket-55 stage: a settled turn kept a live spinner; DOM: ${diag}`)
         }
         log('worked_container_spinners_settled_ok')
       })
