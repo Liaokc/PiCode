@@ -574,6 +574,11 @@ cd .worktrees/wt-134-spawn-path && npm install
 机器相关）。插桩定位精确断点 = 第一验收项（Finder 启动 spawn 失败的具体
 环节，不臆测）；PATH 探测不阻塞窗口就绪。注意：修复对新启动实例生效。
 
+复现纪律：你所在的实例大概率是 workaround 启动（spawn 可用是预期现象，
+不是「无法复现」的证据）。复现与验收必须用净化环境启动 app 实例
+（env -i 最小 PATH 直启二进制，等效 launchd 条件），与 workaround 启动
+构成 A/B 对照。
+
 流程：Status→claimed → 实现全验收项 → 全英文文案 → code-review → 提交当前
 分支（不自行 merge，提示操作者 bash scripts/merge-ticket.sh 134）→
 Status 改 ready-for-human + Comments 记 sha。跑应用通道前 ps 自查（票内验收项）。
