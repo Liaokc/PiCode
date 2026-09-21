@@ -7021,9 +7021,20 @@ button.preview-crumb:hover {
   color: var(--text-primary);
 }
 
-/* cascade model menu (screenshot 07): providers | models */
+/* cascade model menu (screenshot 07): providers | models.
+   Ticket 122 (spec R4): the card's height belongs to the PROVIDER column
+   alone. The old flex stretch let the model column's content drive the
+   popover height — hovering a provider with a different model count
+   grew/shrank the bottom-anchored card under the cursor (the hover-drift
+   oscillation: stretch × bottom anchoring). The model column is now
+   absolutely positioned INSIDE the card: it fills whatever height the
+   provider list gives and scrolls its overflow internally — hover changes
+   model lists, never geometry. The 200px floor keeps thin catalogs
+   roomy (form discretion per the ticket), the 320px cap is the old hat. */
 .cmp-cascade {
+  position: relative;
   display: flex;
+  min-height: 200px;
   max-height: 320px;
 }
 
@@ -7037,6 +7048,12 @@ button.preview-crumb:hover {
 }
 
 .cmp-cascade-col + .cmp-cascade-col {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 190px;
+  right: 0;
+  width: auto;
   border-left: 1px solid var(--border);
   background: #fbfbfa;
 }

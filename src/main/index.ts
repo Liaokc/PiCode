@@ -57,6 +57,7 @@ import { startFilebarVisualIfEnabled, isolateFilebarUserData } from './visual-fi
 import { startRailStackVisualIfEnabled, isolateRailStackUserData } from './visual-rail-stack'
 import { startRailAnchorVisualIfEnabled, isolateRailAnchorUserData } from './visual-rail-anchor'
 import { startThinkingVisualIfEnabled, isolateThinkingUserData } from './visual-thinking'
+import { startMenuGeometryVisualIfEnabled, isolateMenuGeometryUserData } from './visual-menu-geometry'
 import { startExpandVisualIfEnabled, isolateExpandUserData } from './visual-expand'
 import { startComposerLayoutVisualIfEnabled, isolateComposerLayoutUserData } from './visual-composer-layout'
 import { startImagePreviewVisualIfEnabled, isolateImagePreviewUserData } from './visual-image-preview'
@@ -197,6 +198,10 @@ isolateRailAnchorUserData()
 // Ticket-61 thinking-row harness — same throwaway-userData rule (no-op
 // unless PICODE_VISUAL_THINKING=1).
 isolateThinkingUserData()
+
+// Ticket-122 menu-geometry harness — same throwaway-userData rule (no-op
+// unless PICODE_VISUAL_MENU_GEOMETRY=1).
+isolateMenuGeometryUserData()
 
 // Ticket-13 hygiene, extended by ticket 31: the smoke drives the REAL
 // settings service too (panel recently closed round-trip), so it gets the
@@ -592,6 +597,9 @@ app.whenReady().then(() => {
   startRailAnchorVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-61 thinking-row harness — live streaming + fold/reopen continuity.
   startThinkingVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  // Ticket-122 menu-geometry harness — cascade stability + chip anchor +
+  // clamp + brain icon frames (asserted, boot empty state, zero model calls).
+  startMenuGeometryVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
 
   // Renderer → host relay (Seam-1: the only chat channel the renderer has).
   ipcMain.on('chat:to-host', (_event, message: ParentToHost) => {

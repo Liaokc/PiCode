@@ -194,11 +194,20 @@ export function ShieldCheckIcon({ size, className }: IconProps): JSX.Element {
   )
 }
 
-export function GaugeIcon({ size, className }: IconProps): JSX.Element {
+/** Ticket 122 (spec R5): the thinking-level brain. Self-drawn geometry —
+ * two hemispheres (a 12-segment closed blob symmetric about x=12) around a
+ * central fissure, with two fold squiggles per hemisphere. Pure geometric
+ * paths: no font, no copied ZCode asset (the red line). Retires the gauge
+ * (thinking chip is the only consumer). */
+export function BrainIcon({ size, className }: IconProps): JSX.Element {
   return (
     <svg {...svgProps(size, className)}>
-      <circle cx="12" cy="13.5" r="7.5" />
-      <path d="M12 10v3.8M10 2.5h4M17.8 8.2l1.4-1.4" />
+      <path d="M12 19.6c1.8 0 3.4-1.2 3.7-2.9 1.6-.1 2.9-1.4 2.9-3 1.4-.7 2-2.5 1.3-4 .4-1.7-.7-3.3-2.4-3.5-.4-1.6-2.1-2.5-3.6-2-.6-.3-1.3-.3-1.9-.2-.6-.1-1.3-.1-1.9.2-1.5-.5-3.2.4-3.6 2-1.7.2-2.8 1.8-2.4 3.5-.7 1.5-.1 3.3 1.3 4 0 1.6 1.3 2.9 2.9 3 .3 1.7 1.9 2.9 3.7 2.9Z" />
+      <path d="M12 4.8v14" />
+      <path d="M8.2 8.5c.2 1.2 1.2 2.1 2.4 2.2" />
+      <path d="M15.8 8.5c-.2 1.2-1.2 2.1-2.4 2.2" />
+      <path d="M7.4 12.9c.6.9 1.7 1.4 2.8 1.2" />
+      <path d="M16.6 12.9c-.6.9-1.7 1.4-2.8 1.2" />
     </svg>
   )
 }

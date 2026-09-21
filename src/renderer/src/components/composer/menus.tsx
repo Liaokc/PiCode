@@ -31,7 +31,12 @@ export function ComposerPopover({
   anchorRef
 }: {
   children: JSX.Element
-  align?: 'left' | 'right'
+  /** 'left'/'right' dock the card to the composer's edges; 'chip' (ticket
+   * 122, spec R5) left-aligns the card with the OPENING CHIP's viewport
+   * left edge — the ZCode composition (the card points at what opened it,
+   * floating above the input area) — clamped so a narrow window never
+   * pushes it out. */
+  align?: 'left' | 'right' | 'chip'
   onClose: () => void
   label: string
   /** Steal focus so chip-opened menus own the keyboard directly. */
@@ -41,10 +46,59 @@ export function ComposerPopover({
   /** Ticket 70: the element that opened this popover (the owning chip).
    * A mousedown on it is NOT an outside click — the chip's own click
    * toggle owns the close (otherwise mousedown closes, click reopens,
-   * and the chip can never close its own menu). */
+   * and the chip can never close its own menu). Also the 'chip' align
+   * anchor (ticket 122): the measured left edge comes from this element. */
   anchorRef?: RefObject<HTMLElement | null>
 }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
+
+  // Ticket 122 (spec R5): chip-anchored x. The card is steered onto the
+  // chip's viewport-left edge by measuring its OWN rendered position and
+  // applying the delta (clamped so a narrow window never pushes it out).
+  // This self-correcting shape is immune to which ancestor ends up the
+  // containing block — composer borders, padding or transforms cannot
+  // skew it. The y anchor stays the CSS bottom: calc(100% + 8px) — the
+  // card floats above the input area, never on it.
+  //
+  // The anchor is TRACKED, not snapshotted: the chip's own box moves while
+  // the menu is open (its label settles as the auth-probe report joins,
+  // window resizes reflow the footer). Three re-steer triggers, all
+  // delta-gated (a settled card makes each a no-op): a re-run after EVERY
+  // render of this popover (chip moves ride React state changes — label
+  // text is state), a ResizeObserver on the chip (box changes with no
+  // render), and the window resize listener (viewport clamp). The effect
+  // is intentionally dep-less: the popover re-renders on every hover/
+  // pick/state tick, and each run re-measures.
+  const [chipLeft, setChipLeft] = useState<number | null>(null)
+  useLayoutEffect(() => {
+    if (align !== 'chip') return
+    function measure(): void {
+      const chip = anchorRef?.current
+      const card = ref.current
+      if (!chip || !card) return
+      const rect = card.getBoundingClientRect()
+      if (rect.width === 0) return
+      const min = 8
+      const max = Math.max(min, window.innerWidth - 8 - rect.width)
+      const target = Math.min(Math.max(chip.getBoundingClientRect().left, min), max)
+      const delta = target - rect.left
+      if (Math.abs(delta) < 0.5) return
+      // The current applied `left` (the base rule's 0 or a previous
+      // inline value); 'auto' means there is nothing to steer.
+      const current = Number.parseFloat(getComputedStyle(card).left)
+      if (!Number.isFinite(current)) return
+      setChipLeft(current + delta)
+    }
+    measure()
+    const chip = anchorRef?.current
+    const observer = chip instanceof HTMLElement ? new ResizeObserver(measure) : null
+    if (observer && chip instanceof HTMLElement) observer.observe(chip)
+    window.addEventListener('resize', measure)
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', measure)
+    }
+  })
 
   // Ticket 98: a captureKeys popover owns the keyboard — but the keyboard
   // model (flatMenuKey) listens on the list container, and a plain autoFocus
@@ -92,6 +146,7 @@ export function ComposerPopover({
       aria-label={label}
       tabIndex={captureKeys ? -1 : undefined}
       autoFocus={captureKeys || undefined}
+      style={chipLeft !== null ? { left: chipLeft, right: 'auto' } : undefined}
       // Ticket 98: a captureKeys popover owns its focus lifecycle (the
       // capture sits on the selected row until the close path hands it
       // back) — the document-level click discipline must not reclaim the
@@ -235,7 +290,7 @@ export function ThinkingMenu({
   }
 
   return (
-    <ComposerPopover label="Thinking Level" align="right" onClose={onClose} captureKeys className="cmp-popover-thinking" anchorRef={chipRef}>
+    <ComposerPopover label="Thinking Level" align="chip" onClose={onClose} captureKeys className="cmp-popover-thinking" anchorRef={chipRef}>
       <div
         className="cmp-menu-list"
         role="listbox"
@@ -308,7 +363,7 @@ export function ModelMenu({
 
   if (providers.length === 0) {
     return (
-      <ComposerPopover label="Select model" align="right" onClose={onClose} captureKeys anchorRef={chipRef}>
+      <ComposerPopover label="Select model" align="chip" onClose={onClose} captureKeys anchorRef={chipRef}>
         <div className="cmp-menu-empty" role="status">
           {emptyHint ?? 'No models available'}
         </div>
@@ -317,7 +372,7 @@ export function ModelMenu({
   }
 
   return (
-    <ComposerPopover label="Select model" align="right" onClose={onClose} captureKeys anchorRef={chipRef}>
+    <ComposerPopover label="Select model" align="chip" onClose={onClose} captureKeys anchorRef={chipRef}>
       <div className="cmp-cascade" role="listbox" aria-label="Select model" onKeyDown={onKey}>
         <div className="cmp-cascade-col">
           {providers.map((provider, i) => (
