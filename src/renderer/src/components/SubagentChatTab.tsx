@@ -11,7 +11,7 @@ import {
 } from '../../../shared/subagents/chat-model'
 import type { SubagentDirectoryRow } from '../../../shared/subagents/directory'
 import { subagentChatStore } from './subagent-chat-store'
-import { StopButton, StopConfirmPopover, stopConfirmLabels } from './StopConfirm'
+import { StopFlow, stopConfirmLabels } from './StopConfirm'
 import TurnContainer from './TurnContainer'
 import AnswerBlock from './AnswerBlock'
 import UserBubble from './UserBubble'
@@ -63,7 +63,6 @@ export default function SubagentChatTab({ sessionId, row, onSteer, onStop }: Sub
   const [payload, setPayload] = useState<SubagentTranscriptPayload | null>(null)
   const [draft, setDraft] = useState('')
   const [receipts, setReceipts] = useState<SteerReceipt[]>([])
-  const [confirmStop, setConfirmStop] = useState(false)
   const [openTurns, setOpenTurns] = useState<ReadonlySet<string>>(new Set())
   const [collapsedLive, setCollapsedLive] = useState<ReadonlySet<string>>(new Set())
 
@@ -238,21 +237,16 @@ export default function SubagentChatTab({ sessionId, row, onSteer, onStop }: Sub
         <span className="subchat-head-agent">{row.agent}</span>
         {row.childCount > 1 && <span className="subchat-head-note">first of {row.childCount} children</span>}
         {/* Running rows only (ticket 101) — the stop RPC rejects
-            queued/paused runs, and a stopping run hides the button. */}
+            queued/paused runs, and a stopping run hides the button. The
+            StopFlow owns its confirm state. */}
         {live && !stopping && row.state === 'running' && (
           <span className="subchat-head-stop">
-            <StopButton label={`Stop ${row.title}`} active={confirmStop} onBegin={() => setConfirmStop(true)} />
+            <StopFlow
+              label={`Stop ${row.title}`}
+              labels={stopConfirmLabels(row.title, row.asyncId === null)}
+              onConfirm={() => onStop(sessionId, row)}
+            />
           </span>
-        )}
-        {confirmStop && (
-          <StopConfirmPopover
-            labels={stopConfirmLabels(row.title, row.asyncId === null)}
-            onConfirm={() => {
-              setConfirmStop(false)
-              onStop(sessionId, row)
-            }}
-            onCancel={() => setConfirmStop(false)}
-          />
         )}
       </div>
       {error !== null ? (

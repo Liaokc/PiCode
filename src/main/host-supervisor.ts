@@ -100,31 +100,13 @@ export class HostSupervisor {
             })
             break
           }
-          // Ticket 99: `subagent_steer` against a hostless session degrades
-          // to an honest FAILED receipt (never a toast, never a hang) — the
-          // conversation tab renders the truth: this run cannot be steered
-          // because its session has no live host.
-          if (message.command.type === 'subagent_steer') {
-            this.emitScoped(message.sessionId, {
-              type: 'subagent_steer_receipt',
-              requestId: message.command.requestId,
-              asyncId: message.command.asyncId,
-              ok: false,
-              error: 'This session has no live host — reopen it from the sidebar.'
-            })
-            break
-          }
-          // Ticket 101: `subagent_stop` degrades the same way — an honest
-          // FAILED receipt (the row keeps its live state; the App surfaces
-          // the error) instead of a silent nothing.
-          if (message.command.type === 'subagent_stop') {
-            this.emitScoped(message.sessionId, {
-              type: 'subagent_stop_receipt',
-              requestId: message.command.requestId,
-              asyncId: message.command.asyncId,
-              ok: false,
-              error: 'This session has no live host — reopen it from the sidebar.'
-            })
+          // Tickets 99+101: `subagent_steer` / `subagent_stop` against a
+          // hostless session degrade to honest FAILED receipts (never a
+          // toast, never a hang) — the subagent surfaces render the truth:
+          // this run cannot be steered/stopped because its session has no
+          // live host.
+          if (message.command.type === 'subagent_steer' || message.command.type === 'subagent_stop') {
+            this.failSubagentReceipt(message.sessionId, message.command.type === 'subagent_stop' ? 'subagent_stop_receipt' : 'subagent_steer_receipt', message.command.requestId, message.command.asyncId)
             break
           }
           // The session has no live host (crashed, detached, or never
@@ -238,6 +220,12 @@ export class HostSupervisor {
 
   private emitScoped(sessionId: string, event: SessionScopedEvent): void {
     this.options.onHostEvent({ type: 'session_event', sessionId, event })
+  }
+
+  /** The hostless degradation for the subagent receipt commands (steer
+   * ticket 99, stop ticket 101): one honest FAILED receipt, shared shape. */
+  private failSubagentReceipt(sessionId: string, type: 'subagent_steer_receipt' | 'subagent_stop_receipt', requestId: string, asyncId: string): void {
+    this.emitScoped(sessionId, { type, requestId, asyncId, ok: false, error: 'This session has no live host — reopen it from the sidebar.' })
   }
 
   private removeBinding(binding: HostBinding): void {

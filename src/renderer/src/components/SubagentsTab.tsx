@@ -4,7 +4,7 @@ import type { SubagentRowState } from '../../../shared/subagents/types'
 import type { ChatEntry } from '../../../shared/chat-reducer'
 import { relativeTime } from '../../../shared/sessions/group'
 import { useNowTick } from './use-now'
-import { StopButton, StopConfirmPopover, stopConfirmLabels } from './StopConfirm'
+import { StopFlow, stopConfirmLabels } from './StopConfirm'
 
 /**
  * The side panel's Subagents directory tab (ticket 90, ZCode
@@ -59,9 +59,6 @@ export default function SubagentsTab({ entries, runs, stopping, onOpenChat, onSt
   // A focus switch remounts this tab (the App keys by session id), so the
   // paging resets with the session; within one session's view the step
   // persists (memory-level view state, the group-fold precedent).
-  // confirmRow: the id of the row whose stop confirm popover is open — one
-  // at a time (the popover anchors inside its row).
-  const [confirmRow, setConfirmRow] = useState<string | null>(null)
 
   const model = subagentDirectoryFromEntries(entries, runs, visibleEnded, stopping)
   const noRuns = model.running.length === 0 && model.endedTotal === 0
@@ -83,8 +80,6 @@ export default function SubagentsTab({ entries, runs, stopping, onOpenChat, onSt
                 now={now}
                 onOpenChat={onOpenChat}
                 onStop={onStop}
-                confirmOpen={confirmRow === row.id}
-                onConfirmOpen={(open) => setConfirmRow(open ? row.id : null)}
               />
             ))}
           </div>
@@ -130,18 +125,12 @@ function DirectoryRow({
   row,
   now,
   onOpenChat,
-  onStop,
-  confirmOpen = false,
-  onConfirmOpen
+  onStop
 }: {
   row: SubagentDirectoryRow
   now: number
   onOpenChat?: (row: SubagentDirectoryRow) => void
   onStop?: (row: SubagentDirectoryRow) => void
-  /** The confirm machinery is only wired for Running rows (the ended rows
-   * render without it). */
-  confirmOpen?: boolean
-  onConfirmOpen?: (open: boolean) => void
 }): JSX.Element {
   const timeMs = row.state === 'running' || row.state === 'waiting' || row.state === 'blocked' ? row.startedAtMs : row.endedAtMs ?? row.startedAtMs
   // The stop affordance (ticket 101): running rows only — the RPC stop
@@ -183,21 +172,11 @@ function DirectoryRow({
       </div>
       <span className="subagents-row-agent">{row.agent}</span>
       <span className="subagents-row-time">{timeMs > 0 ? relativeTime(timeMs, now) : ''}</span>
-      {stoppable && onConfirmOpen !== undefined && (
-        <StopButton
+      {stoppable && onStop !== undefined && (
+        <StopFlow
           label={`Stop ${row.title}`}
-          active={confirmOpen}
-          onBegin={() => onConfirmOpen(true)}
-        />
-      )}
-      {confirmOpen && onConfirmOpen !== undefined && (
-        <StopConfirmPopover
           labels={stopConfirmLabels(row.title, row.asyncId === null)}
-          onConfirm={() => {
-            onConfirmOpen(false)
-            onStop?.(row)
-          }}
-          onCancel={() => onConfirmOpen(false)}
+          onConfirm={() => onStop(row)}
         />
       )}
     </div>

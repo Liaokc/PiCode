@@ -1,4 +1,4 @@
-import { useRef, type JSX } from 'react'
+import { useRef, useState, type JSX } from 'react'
 import { useConfirmDismiss } from './use-confirm-dismiss'
 import { StopIcon } from './icons'
 
@@ -32,6 +32,38 @@ export function stopConfirmLabels(title: string, foreground: boolean): StopConfi
         question: `Stop "${title}"?`,
         consequence: 'The subagent stops where it is and its run is recorded as stopped. This cannot be undone.'
       }
+}
+
+/** The stop flow's wired pair: the square stop button + its confirm popover
+ * with the open state INSIDE (both surfaces — the directory row and the
+ * conversation tab's head — used to re-wire the same boolean). `onConfirm`
+ * fires only from the Stop button; Esc and outside-pointerdown close it.
+ * `disabled` keeps the button resting while its run is stopping. */
+export function StopFlow({
+  label,
+  labels,
+  onConfirm
+}: {
+  label: string
+  labels: StopConfirmLabels
+  onConfirm: () => void
+}): JSX.Element {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <StopButton label={label} active={open} onBegin={() => setOpen(true)} />
+      {open && (
+        <StopConfirmPopover
+          labels={labels}
+          onConfirm={() => {
+            setOpen(false)
+            onConfirm()
+          }}
+          onCancel={() => setOpen(false)}
+        />
+      )}
+    </>
+  )
 }
 
 /** The square stop button (ZCode's directory-card stop affordance): a compact
