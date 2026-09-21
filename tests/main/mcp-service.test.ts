@@ -247,6 +247,19 @@ describe('writer fidelity — the adapter 2.35 writeConfigText contract', () => 
     expect(readDoc(flagFile)).toEqual({ mcpServers: { search: { command: 's', disabled: true } } })
     expect(statSync(flagFile).mode & 0o777).toBe(0o600)
   })
+
+  it('group/other bits survive too — the umask must not mask the kept mode (2.35 writeConfigText)', async () => {
+    // 0o664 under the default umask 0o022 loses the group-write bit when
+    // the mode rides only on open() — the adapter chmods the temp file
+    // after writing (writeConfigText), and so must the mirror.
+    const flagFile = path.join(project, '.pi', 'mcp.json')
+    mkdirSync(path.dirname(flagFile), { recursive: true })
+    writeFileSync(flagFile, JSON.stringify({ mcpServers: { search: { command: 's' } } }))
+    chmodSync(flagFile, 0o664)
+
+    await service().toggleServer('search', true, project)
+    expect(statSync(flagFile).mode & 0o777).toBe(0o664)
+  })
 })
 
 describe('red lines — external host-tool configs are never written', () => {
