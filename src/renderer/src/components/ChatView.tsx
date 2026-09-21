@@ -44,6 +44,10 @@ interface ChatViewProps {
   onShowInBridge?: (toolCallId: string) => void
   /** Fold/unfold one turn's work container (ticket 23). */
   onToggleTurn: (turnId: string) => void
+  /** Ticket 129: toggle one thinking row's expansion (routed to the focused
+   * session's registry state; the row's open state reads back from
+   * `chat.expandedThinking` — remembered across every remount). */
+  onToggleThinking: (key: string) => void
   /** Open one turn's file changes in the side panel's turn-diff tab (ticket 78). */
   onReviewTurn?: (turnId: string) => void
   /** Composer commands + the chat slices the composer menus render. */
@@ -82,6 +86,7 @@ export default function ChatView({
   onOpenFile,
   onShowInBridge,
   onToggleTurn,
+  onToggleThinking,
   onReviewTurn,
   composerApi,
   initialDraft = null,
@@ -368,6 +373,11 @@ export default function ChatView({
                        the fold shut on decision, jumping the two-state slot). */
                     open={chat.expandedTurns.has(turn.id) || turn.pendingApproval}
                     onToggle={() => onToggleTurn(turn.id)}
+                    /* Ticket 129: the thinking rows' expansion state rides
+                       the registry set — survives this view's every
+                       remount. */
+                    expandedThinking={chat.expandedThinking}
+                    onToggleThinking={onToggleThinking}
                     /* Ticket 94: the transcript scroller — the deterministic
                        fold-anchor rule holds the header row / bottom pin
                        across this container's open flips. */
@@ -384,6 +394,8 @@ export default function ChatView({
                     container); at agent_end the last text part lifts here. */
                   <AnswerBlock
                     turn={turn}
+                    expandedThinking={chat.expandedThinking}
+                    onToggleThinking={onToggleThinking}
                     onFork={onFork}
                     onOpenFile={onOpenFile}
                     onShowInBridge={onShowInBridge}

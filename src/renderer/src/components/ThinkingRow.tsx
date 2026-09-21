@@ -1,8 +1,21 @@
-import { useState, type JSX } from 'react'
+import type { JSX } from 'react'
 import type { ThinkingPart } from '../../../shared/chat-reducer'
 import { deriveThinkingDuration } from '../../../shared/thinking-duration'
 import { useElapsedClock } from './use-elapsed-seconds'
 import { ChevronDownIcon, ChevronRightIcon, SparklesIcon } from './icons'
+
+interface ThinkingRowProps {
+  /** The thinking part this row renders (duration derivation input). */
+  part: ThinkingPart
+  /** Ticket 129: the row is CONTROLLED — `open` comes from the owning
+   * view's expansion state (the registry's per-session `expandedThinking`
+   * in ChatView, a view-local set in FollowView), never from component
+   * state: a settings round-trip, session switch or container fold
+   * unmounts this row, and the reading state must survive all of them. */
+  open: boolean
+  /** Toggle the row's expansion (lands in the same state `open` reads). */
+  onToggle: () => void
+}
 
 /**
  * Collapsed thinking row (screenshot 01: "思考过程 · 持续了 29 秒"): one muted
@@ -19,8 +32,7 @@ import { ChevronDownIcon, ChevronRightIcon, SparklesIcon } from './icons'
  * when collapsed, down when expanded — same swap as TurnContainer, live
  * Thinking and settled Thought alike.
  */
-export default function ThinkingRow({ part }: { part: ThinkingPart }): JSX.Element {
-  const [open, setOpen] = useState(false)
+export default function ThinkingRow({ part, open, onToggle }: ThinkingRowProps): JSX.Element {
   const clock = useElapsedClock(part.streaming)
   const { timed, seconds } = deriveThinkingDuration(part, clock.nowMs, clock.tickSeconds)
   // Duration degrades gracefully (ticket 14): a block that never closed
@@ -33,7 +45,7 @@ export default function ThinkingRow({ part }: { part: ThinkingPart }): JSX.Eleme
       <button
         type="button"
         className="thinking-row-header"
-        onClick={() => setOpen((v) => !v)}
+        onClick={onToggle}
         aria-expanded={open}
         aria-label={empty ? 'Thinking (no reasoning text)' : undefined}
         disabled={empty}

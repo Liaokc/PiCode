@@ -11,6 +11,12 @@ interface AnswerBlockProps {
    * which a read-only follow has none of. The anchor is the ANSWER's entry —
    * the turn's last text-bearing entry (ticket 53 kept the semantics). */
   onFork?: (entryId: string) => void
+  /** Ticket 129: the after-answer thinking rows' expansion set + toggle
+   * (the view owns the state source — registry in ChatView, local in
+   * FollowView); the segment's thinking rows are the same controlled
+   * component the fold body uses. */
+  expandedThinking: ReadonlySet<string>
+  onToggleThinking: (key: string) => void
   /** Deep-link handlers for the after-answer tool cards (ticket 53) — the
    * same surfaces the container rows get; gate-less surfaces omit them. */
   onOpenFile?: (path: string) => void
@@ -39,6 +45,8 @@ interface AnswerBlockProps {
 export default function AnswerBlock({
   turn,
   onFork,
+  expandedThinking,
+  onToggleThinking,
   onOpenFile,
   onShowInBridge,
   onApprove,
@@ -55,6 +63,8 @@ export default function AnswerBlock({
         <div className="turn-after-answer">
           <TurnWorkRows
             items={turn.afterAnswer}
+            expandedThinking={expandedThinking}
+            onToggleThinking={onToggleThinking}
             onOpenFile={onOpenFile}
             onShowInBridge={onShowInBridge}
             onApprove={onApprove}

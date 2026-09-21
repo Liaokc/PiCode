@@ -65,6 +65,10 @@ export default function SubagentChatTab({ sessionId, row, onSteer, onStop }: Sub
   const [receipts, setReceipts] = useState<SteerReceipt[]>([])
   const [openTurns, setOpenTurns] = useState<ReadonlySet<string>>(new Set())
   const [collapsedLive, setCollapsedLive] = useState<ReadonlySet<string>>(new Set())
+  /** Ticket 129: the thinking rows' expansion set — tab-local (the child
+   * transcript is a projection, not a registry session), same pattern as
+   * the fold sets above. */
+  const [openThinking, setOpenThinking] = useState<ReadonlySet<string>>(new Set())
 
   // ---- the transcript follow (the sessions family's per-file tail) --------
   useEffect(() => {
@@ -155,6 +159,15 @@ export default function SubagentChatTab({ sessionId, row, onSteer, onStop }: Sub
     }
     lastScrollTop.current = top
     setJumpVisible(!isNearBottom(el))
+  }
+
+  function toggleThinking(key: string): void {
+    setOpenThinking((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
   }
 
   function jumpToLatest(): void {
@@ -289,9 +302,22 @@ export default function SubagentChatTab({ sessionId, row, onSteer, onStop }: Sub
                         </div>
                       )}
                       {turn.hasContainer && (
-                        <TurnContainer turn={turn} open={open} onToggle={() => toggleTurn(turn.id, turn.live)} scrollRef={scrollRef} />
+                        <TurnContainer
+                          turn={turn}
+                          open={open}
+                          onToggle={() => toggleTurn(turn.id, turn.live)}
+                          expandedThinking={openThinking}
+                          onToggleThinking={toggleThinking}
+                          scrollRef={scrollRef}
+                        />
                       )}
-                      {turn.answer !== null && <AnswerBlock turn={turn} />}
+                      {turn.answer !== null && (
+                        <AnswerBlock
+                          turn={turn}
+                          expandedThinking={openThinking}
+                          onToggleThinking={toggleThinking}
+                        />
+                      )}
                     </Fragment>
                   )
                 })}

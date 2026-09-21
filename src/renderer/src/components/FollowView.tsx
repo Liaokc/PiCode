@@ -42,6 +42,10 @@ export default function FollowView({ title, items, live, onStop, onOpen }: Follo
   const turns = useMemo(() => groupTurns(entries, false), [entries])
   /** Follow-local fold state (UI-only; the chat reducer owns the live view's). */
   const [openTurns, setOpenTurns] = useState<ReadonlySet<string>>(new Set())
+  /** Follow-local thinking-row expansion (ticket 129: the row is controlled;
+   * a read-only follow has no registry session, so the set lives here —
+   * view-scoped, like the fold state above). */
+  const [openThinking, setOpenThinking] = useState<ReadonlySet<string>>(new Set())
 
   // Keep the newest content in view as the other side streams.
   useEffect(() => {
@@ -55,6 +59,15 @@ export default function FollowView({ title, items, live, onStop, onOpen }: Follo
       const next = new Set(prev)
       if (next.has(turnId)) next.delete(turnId)
       else next.add(turnId)
+      return next
+    })
+  }
+
+  function toggleThinking(key: string): void {
+    setOpenThinking((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
       return next
     })
   }
@@ -96,12 +109,20 @@ export default function FollowView({ title, items, live, onStop, onOpen }: Follo
                   turn={turn}
                   open={openTurns.has(turn.id)}
                   onToggle={() => toggleTurn(turn.id)}
+                  expandedThinking={openThinking}
+                  onToggleThinking={toggleThinking}
                   /* Ticket 94: same deterministic fold-anchor rule as the
                      chat view — the follow scroller feeds the same hook. */
                   scrollRef={scrollRef}
                 />
               )}
-              {turn.answer !== null && <AnswerBlock turn={turn} />}
+              {turn.answer !== null && (
+                <AnswerBlock
+                  turn={turn}
+                  expandedThinking={openThinking}
+                  onToggleThinking={toggleThinking}
+                />
+              )}
               {turn.fileChanges.length > 0 && (
                 /* Ticket 78: the same bar projection as the chat view, counts
                    only — a read-only follow has neither the turn-diff panel

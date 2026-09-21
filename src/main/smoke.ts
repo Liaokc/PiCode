@@ -14440,6 +14440,259 @@ export function startSmokeIfEnabled(
       log('timer_continuity_done')
     }
 
+    // ---- ticket 129: thinking-row expansion survives every remount --------
+    // Q5=B: a thinking row the operator opened stays open across a settings
+    // round-trip, a session switch A→B→A and Worked-container folds; a fresh
+    // session starts collapsed (the restart default, verified on new-session
+    // state). The Worked container's own behavior (tickets 56/82) must not
+    // move: settle still folds it, manual opens persist across focus
+    // switches exactly as before.
+    log('thinking_memory_start')
+    {
+      const store129 = process.env['PICODE_SESSION_DIR']
+      if (!store129) fail('ticket-129 stage: PICODE_SESSION_DIR is not set')
+      const dir129 = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-t129-'))
+      const scoped129 = (sessionId: string, event: SessionScopedEvent): HostToParent => ({ type: 'session_event', sessionId, event })
+      const rowSel129 = (id: string): string => `.sb-task[data-file$="${id}.jsonl"]`
+      const activeRow129 = (id: string): string => `document.querySelector('.sb-task-active[data-file$="${id}.jsonl"]') !== null`
+      /** One settled thinking turn — the thinking part sits inside the fold,
+       * the text is the answer below (the shape the row this ticket
+       * remembers renders in). */
+      const thinkingTurn129 = (marker: string): SessionScopedEvent[] => [
+        { type: 'user_message', text: `PICODE_129_${marker}: remember my reading` },
+        { type: 'agent_start' },
+        { type: 'message_start' },
+        { type: 'thinking_delta', delta: `PICODE_129_${marker}_THINKING plan the answer first` },
+        { type: 'thinking_end', durationMs: 1200 },
+        { type: 'text_delta', delta: `PICODE_129_${marker}_ANSWER` },
+        { type: 'message_end' },
+        { type: 'agent_end' }
+      ]
+      try {
+        // Seed the session files (header + first user message) so the index
+        // lists rows the announcements below then own — the ticket-108
+        // pattern: the registry transcript comes from the contract events.
+        for (const id of ['smoke-129-a', 'smoke-129-b', 'smoke-129-c']) {
+          const stamp = new Date().toISOString()
+          const lines = [
+            JSON.stringify({ type: 'session', version: 3, id, timestamp: stamp, cwd: dir129 }),
+            JSON.stringify({
+              type: 'message',
+              id: `${id}-u1`,
+              parentId: null,
+              timestamp: stamp,
+              message: { role: 'user', content: [{ type: 'text', text: `PICODE_129_SEED_${id}` }] }
+            })
+          ]
+          writeFileSync(path.join(store129, `${id}.jsonl`), lines.join('\n') + '\n')
+        }
+        await withWindow(getWindow, async (win) => {
+          const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+          // The sidebar may be closed (earlier stages) — open with ⌘B, the
+          // ticket-108 pattern.
+          if (!((await js(`document.querySelector('.sidebar') !== null`)) as boolean)) {
+            await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', metaKey: true, bubbles: true })); true`)
+            await waitForProbe(win, `document.querySelector('.sidebar') !== null`, 5_000)
+          }
+          // Settings must be closed — the workspace is this stage's stage.
+          if ((await js(`document.querySelector('.settings-shell') !== null`)) as boolean) {
+            await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Comma', key: ',', metaKey: true, cancelable: true })); true`)
+            await waitForProbe(win, `document.querySelector('.settings-shell') === null`, 5_000)
+          }
+          for (const id of ['smoke-129-a', 'smoke-129-b', 'smoke-129-c']) {
+            if (!(await waitForProbe(win, `document.querySelector('${rowSel129(id)}') !== null`, 30_000))) {
+              fail(`ticket-129 stage: the seeded row of ${id} never reached the sidebar`)
+            }
+          }
+          log('thinking_memory_rows_ok')
+
+          // ---- A: settle a thinking turn, open its container, expand the
+          // thinking row inside it. ----
+          emitContractEvent(scoped129('smoke-129-a', { type: 'session_created', sessionId: 'smoke-129-a', cwd: dir129, model: 'claude-opus-4-5' }))
+          if (!(await waitForProbe(win, activeRow129('smoke-129-a'), 10_000))) {
+            fail('ticket-129 stage: session A never took focus')
+          }
+          for (const event of thinkingTurn129('A')) emitContractEvent(scoped129('smoke-129-a', event))
+          // Settle folds the container (ticket 56/82 semantics — the
+          // zero-regression baseline this stage keeps asserting).
+          if (
+            !(await waitForProbe(
+              win,
+              `document.querySelectorAll('.turn-container').length === 1 &&
+               document.querySelectorAll('.turn-container-open').length === 0 &&
+               document.body.textContent.includes('PICODE_129_A_ANSWER')`,
+              10_000
+            ))
+          ) {
+            fail('ticket-129 stage: session A\'s turn never settled into a folded container')
+          }
+          if (!(await clickSelector(win, '.turn-container:not(.turn-container-open) > .turn-container-header'))) {
+            fail('ticket-129 stage: session A\'s container header never appeared to click')
+          }
+          if (!(await waitForProbe(win, `document.querySelectorAll('.turn-container-open').length === 1`, 5_000))) {
+            fail('ticket-129 stage: session A\'s container never opened')
+          }
+          if (!(await clickSelector(win, '.turn-container .thinking-row:not(.thinking-row-open) > .thinking-row-header'))) {
+            fail('ticket-129 stage: session A\'s thinking row header never appeared to click')
+          }
+          if (
+            !(await waitForProbe(
+              win,
+              `document.querySelectorAll('.thinking-row').length === 1 &&
+               document.querySelectorAll('.thinking-row-open').length === 1 &&
+               (document.querySelector('.thinking-row-body')?.textContent ?? '').includes('PICODE_129_A_THINKING')`,
+              5_000
+            ))
+          ) {
+            fail('ticket-129 stage: session A\'s thinking row never expanded')
+          }
+          log('thinking_memory_expand_ok')
+
+          // ---- Settings round-trip: the workspace (and the ChatView with
+          // it) unmounts — the remount this ticket fixes. ----
+          await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Comma', key: ',', metaKey: true, cancelable: true })); true`)
+          if (!(await waitForProbe(win, `document.querySelector('.settings-shell') !== null`, 5_000))) {
+            fail('ticket-129 stage: ⌘, never opened the settings window')
+          }
+          await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Comma', key: ',', metaKey: true, cancelable: true })); true`)
+          if (!(await waitForProbe(win, `document.querySelector('.settings-shell') === null`, 5_000))) {
+            fail('ticket-129 stage: ⌘, never closed the settings window')
+          }
+          // Back in the workspace: the SAME thinking row is still expanded
+          // (and the container kept its open state — the pre-existing
+          // expandedTurns behavior across settings round-trips).
+          if (
+            !(await waitForProbe(
+              win,
+              `document.querySelectorAll('.thinking-row-open').length === 1 &&
+               document.querySelectorAll('.turn-container-open').length === 1`,
+              10_000
+            ))
+          ) {
+            fail('ticket-129 stage: the thinking row did not survive the settings round-trip')
+          }
+          log('thinking_memory_settings_roundtrip_ok')
+
+          // ---- Session switch A→B→A: B never expands (per-session
+          // isolation + default), A's reading state survives every leg. ----
+          emitContractEvent(scoped129('smoke-129-b', { type: 'session_created', sessionId: 'smoke-129-b', cwd: dir129, model: 'claude-opus-4-5' }))
+          if (!(await waitForProbe(win, activeRow129('smoke-129-b'), 10_000))) {
+            fail('ticket-129 stage: session B never took focus')
+          }
+          for (const event of thinkingTurn129('B')) emitContractEvent(scoped129('smoke-129-b', event))
+          if (
+            !(await waitForProbe(
+              win,
+              `document.querySelectorAll('.turn-container').length === 1 &&
+               document.querySelectorAll('.turn-container-open').length === 0 &&
+               document.body.textContent.includes('PICODE_129_B_ANSWER')`,
+              10_000
+            ))
+          ) {
+            fail('ticket-129 stage: session B\'s turn never settled into a folded container')
+          }
+          if (!(await clickSelector(win, '.turn-container:not(.turn-container-open) > .turn-container-header'))) {
+            fail('ticket-129 stage: session B\'s container header never appeared to click')
+          }
+          // B's thinking row is there — and collapsed: B's view never
+          // touched it (per-session isolation; the session default).
+          if (
+            !(await waitForProbe(
+              win,
+              `document.querySelectorAll('.thinking-row').length === 1 &&
+               document.querySelectorAll('.thinking-row-open').length === 0`,
+              5_000
+            ))
+          ) {
+            fail('ticket-129 stage: session B\'s thinking row is not collapsed by default')
+          }
+          // A→ leg: click back to A — the expanded thinking row must still
+          // be open, and A's container keeps its open state (the existing
+          // cross-switch container behavior, unchanged).
+          if (!(await clickSelector(win, rowSel129('smoke-129-a')))) {
+            fail('ticket-129 stage: session A\'s row never appeared to click')
+          }
+          if (!(await waitForProbe(win, activeRow129('smoke-129-a'), 10_000))) {
+            fail('ticket-129 stage: clicking A\'s row never refocused A')
+          }
+          if (
+            !(await waitForProbe(
+              win,
+              `document.querySelectorAll('.thinking-row-open').length === 1 &&
+               document.querySelectorAll('.turn-container-open').length === 1`,
+              5_000
+            ))
+          ) {
+            fail('ticket-129 stage: A\'s thinking row did not survive the switch to B and back')
+          }
+          // B again (A→B): B stays collapsed, its container keeps its open
+          // state across switches (existing behavior).
+          if (!(await clickSelector(win, rowSel129('smoke-129-b')))) {
+            fail('ticket-129 stage: session B\'s row never appeared to click')
+          }
+          if (!(await waitForProbe(win, activeRow129('smoke-129-b'), 10_000))) {
+            fail('ticket-129 stage: clicking B\'s row never refocused B')
+          }
+          if (
+            !(await waitForProbe(
+              win,
+              `document.querySelectorAll('.thinking-row-open').length === 0 &&
+               document.querySelectorAll('.turn-container-open').length === 1`,
+              5_000
+            ))
+          ) {
+            fail('ticket-129 stage: B\'s thinking row leaked A\'s expansion or its container lost its open state')
+          }
+          // A again (A→B→A): the reading state holds.
+          if (!(await clickSelector(win, rowSel129('smoke-129-a')))) {
+            fail('ticket-129 stage: session A\'s row never appeared to click for the final leg')
+          }
+          if (!(await waitForProbe(win, activeRow129('smoke-129-a'), 10_000))) {
+            fail('ticket-129 stage: the final click never refocused A')
+          }
+          if (!(await waitForProbe(win, `document.querySelectorAll('.thinking-row-open').length === 1`, 5_000))) {
+            fail('ticket-129 stage: A\'s thinking row did not survive the A→B→A round trip')
+          }
+          log('thinking_memory_switch_ok')
+
+          // ---- Fresh session C: its thinking rows start collapsed — the
+          // new-session state (the restart default's verification shape). ----
+          emitContractEvent(scoped129('smoke-129-c', { type: 'session_created', sessionId: 'smoke-129-c', cwd: dir129, model: 'claude-opus-4-5' }))
+          if (!(await waitForProbe(win, activeRow129('smoke-129-c'), 10_000))) {
+            fail('ticket-129 stage: session C never took focus')
+          }
+          for (const event of thinkingTurn129('C')) emitContractEvent(scoped129('smoke-129-c', event))
+          if (
+            !(await waitForProbe(
+              win,
+              `document.querySelectorAll('.turn-container').length === 1 &&
+               document.body.textContent.includes('PICODE_129_C_ANSWER')`,
+              10_000
+            ))
+          ) {
+            fail('ticket-129 stage: session C\'s turn never settled')
+          }
+          if (!(await clickSelector(win, '.turn-container:not(.turn-container-open) > .turn-container-header'))) {
+            fail('ticket-129 stage: session C\'s container header never appeared to click')
+          }
+          if (
+            !(await waitForProbe(
+              win,
+              `document.querySelectorAll('.thinking-row').length === 1 &&
+               document.querySelectorAll('.thinking-row-open').length === 0`,
+              5_000
+            ))
+          ) {
+            fail('ticket-129 stage: a fresh session\'s thinking rows do not start collapsed')
+          }
+          log('thinking_memory_fresh_default_ok')
+        })
+      } finally {
+        rmSync(dir129, { recursive: true, force: true })
+      }
+      log('thinking_memory_done')
+    }
+
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
     const livePids = supervisor.hostPids
     if (livePids.length < 2) fail(`expected at least 2 live hosts before quit, saw ${livePids.length}`)
