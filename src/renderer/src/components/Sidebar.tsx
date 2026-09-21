@@ -599,8 +599,12 @@ export default function Sidebar({
   /** Fixed-slot dot state for one row (ticket 20 + 25 + 28): orange = parked
    * at the approval gate, animated = running in this app, green = written by
    * another end (120s rule), indigo = unread, empty = idle. An in-app
-   * session never shows the TUI dot — its mtime is ours. */
+   * session never shows the TUI dot — its mtime is ours. Ticket 106: a
+   * pending placeholder shows the EMPTY slot — its dispatch-clock mtime
+   * would otherwise read as the green live-elsewhere dot, a liveness claim
+   * the not-yet-born session cannot make. */
   function dotFor(s: SessionSummary): SidebarDotState {
+    if (pendingIds.has(s.id)) return 'idle'
     return sidebarDotState(
       awaitingIds.has(s.id),
       runningIds.has(s.id),

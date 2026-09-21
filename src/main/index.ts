@@ -44,6 +44,7 @@ import { startTraceVisualIfEnabled, isolateTraceUserData } from './visual-trace'
 import { startSubagentsVisualIfEnabled, isolateSubagentsUserData } from './visual-subagents'
 import { startSubagentChatVisualIfEnabled, isolateSubagentChatUserData } from './visual-subagents-chat'
 import { startFoldVisualIfEnabled, isolateFoldUserData } from './visual-fold'
+import { startPendingVisualIfEnabled, isolatePendingUserData } from './visual-pending'
 import { startCodeblockVisualIfEnabled, isolateCodeblockUserData } from './visual-codeblock'
 import { startAnswerVisualIfEnabled, isolateAnswerUserData } from './visual-answer'
 import { startMermaidVisualIfEnabled, isolateMermaidUserData } from './visual-mermaid'
@@ -116,6 +117,9 @@ isolateSubagentChatUserData()
 // Ticket-39 group-fold harness reads the default 'projects' view from a
 // throwaway userData (no-op unless PICODE_VISUAL_FOLD=1).
 isolateFoldUserData()
+// Ticket-106 pending-create harness — same throwaway-userData rule (no-op
+// unless PICODE_VISUAL_PENDING=1).
+isolatePendingUserData()
 // Ticket-49 composer-expand harness — same throwaway-userData rule (no-op
 // unless PICODE_VISUAL_EXPAND=1).
 isolateExpandUserData()
@@ -521,6 +525,10 @@ app.whenReady().then(() => {
   // Ticket-39 group-fold harness — same seeding constraint (12 fake
   // sessions land in the isolated store before the index reads it).
   startFoldVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  // Ticket-106 pending-create harness — same seeding constraint (the seeded
+  // group must exist before the index reads the store; the placeholder then
+  // rides the REAL empty-state send path).
+  startPendingVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-49 composer-expand harness — same seeding constraint.
   startExpandVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-81 composer-layout harness — same seeding constraint.

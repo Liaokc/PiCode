@@ -12860,6 +12860,7 @@ export function startSmokeIfEnabled(
         total: rows.length,
         pendingRows: pending.length,
         anyPendingMarked: pending.every((r) => r.hasAttribute('data-pending')),
+        pendingDotEmpty: pending.length === 0 ? null : pending.every((r) => (r.querySelector('.sb-dot-slot')?.children.length ?? 1) === 0),
         real: real.length,
         time: real[0]?.querySelector('.sb-task-time')?.textContent ?? null,
         title: real[0]?.querySelector('.sb-task-title')?.textContent ?? null
@@ -12870,6 +12871,7 @@ export function startSmokeIfEnabled(
       total?: number
       pendingRows?: number
       anyPendingMarked?: boolean
+      pendingDotEmpty?: boolean | null
       real?: number
       time?: string | null
       title?: string | null
@@ -12935,6 +12937,7 @@ export function startSmokeIfEnabled(
           if (state.group === true && (state.pendingRows ?? 0) >= 1) {
             pending1At = Date.now()
             if (state.anyPendingMarked !== true) fail('ticket-106 stage: the placeholder row lost its data-pending marker')
+            if (state.pendingDotEmpty !== true) fail('ticket-106 stage: the placeholder dot slot must be empty (no liveness claim)')
             const slotJs = `document.querySelector('.sb-group[data-cwd="${instantDir}"] [data-file^="pending:"] .sb-task-time')?.textContent`
             const slot = String(await js(slotJs))
             if (slot !== 'starting…') fail(`ticket-106 stage: the placeholder time slot must read the honest starting label, got ${JSON.stringify(slot)}`)
