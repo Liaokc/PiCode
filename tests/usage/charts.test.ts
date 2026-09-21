@@ -113,6 +113,22 @@ describe('heatmapGrid', () => {
     expect(grid.columns[1].slots.find((s) => s.date === '2026-09-02')?.value).toBe(50)
   })
 
+  it('fills gap days with zero slots — a day without usage still gets its box', () => {
+    // 2026-08-26 has no cell at all: it must still render as a level-0 slot.
+    const grid = heatmapGrid(
+      [
+        { date: '2026-08-25', tokens: 100 },
+        { date: '2026-08-27', tokens: 40 }
+      ],
+      'daily'
+    )
+    expect(grid.columns[0].slots.find((s) => s.date === '2026-08-26')).toEqual({
+      date: '2026-08-26',
+      value: 0,
+      level: 0
+    })
+  })
+
 // --- heatmap weekly: the current week reads as seven days (ticket 125) ---------
 
 describe('heatmapGrid weekly — seven day cells for the current week', () => {
@@ -199,21 +215,6 @@ describe('heatmapGrid weekly — seven day cells for the current week', () => {
     expect(grid.columns.map((c) => c.monthLabel)).toEqual(['Dec', null, null, 'Jan', null, null, null])
   })
 })
-  it('fills gap days with zero slots — a day without usage still gets its box', () => {
-    // 2026-08-26 has no cell at all: it must still render as a level-0 slot.
-    const grid = heatmapGrid(
-      [
-        { date: '2026-08-25', tokens: 100 },
-        { date: '2026-08-27', tokens: 40 }
-      ],
-      'daily'
-    )
-    expect(grid.columns[0].slots.find((s) => s.date === '2026-08-26')).toEqual({
-      date: '2026-08-26',
-      value: 0,
-      level: 0
-    })
-  })
 
   it('colors cumulative mode by the running total', () => {
     const grid = heatmapGrid(cells, 'cumulative')

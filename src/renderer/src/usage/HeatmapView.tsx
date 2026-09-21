@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { JSX, MouseEvent } from 'react'
 import { heatmapGrid, type HeatCell, type HeatSlot, type HeatmapMode } from '../../../shared/usage/charts'
 import { formatShortDate, formatTokenCount } from '../../../shared/usage/format'
@@ -14,6 +14,11 @@ interface HeatmapViewProps {
 /** Hovered-cell white card: the day's tokens + date (trend/donut family). */
 interface HeatHover {
   slot: HeatSlot
+  /** The mode and cells the card was captured under. A mode or data switch
+   * reshapes the grid under a stationary pointer, so a mismatch voids the
+   * card at render time — no effect, no cascading render. */
+  mode: HeatmapMode
+  cells: HeatCell[]
   /** Hovered cell's center x and top y, relative to the positioned wrap. */
   x: number
   y: number
@@ -35,11 +40,10 @@ export default function HeatmapView({ cells, mode, onPick }: HeatmapViewProps): 
   const grid = heatmapGrid(cells, mode)
   const [hover, setHover] = useState<HeatHover | null>(null)
 
-  // A mode or data switch reshapes the grid under a stationary pointer —
-  // drop the stale card until the next real hover.
-  useEffect(() => {
-    setHover(null)
-  }, [mode, cells])
+  // A card captured under a different mode or data snapshot is stale — the
+  // grid reshaped under a stationary pointer — so it voids at render time
+  // and waits for the next real hover.
+  const card = hover !== null && hover.mode === mode && hover.cells === cells ? hover : null
 
   if (grid.columns.length === 0) {
     return <div className="usage-empty">No activity recorded yet.</div>
@@ -53,6 +57,8 @@ export default function HeatmapView({ cells, mode, onPick }: HeatmapViewProps): 
     const x = cellRect.left + cellRect.width / 2 - wrapRect.left
     setHover({
       slot,
+      mode,
+      cells,
       x,
       y: cellRect.top - wrapRect.top,
       flipLeft: x > wrapRect.width / 2
@@ -96,18 +102,18 @@ export default function HeatmapView({ cells, mode, onPick }: HeatmapViewProps): 
           ))}
         </div>
       </div>
-      {hover && (
+      {card && (
         <div
           className="heat-tooltip"
           style={{
-            left: hover.x,
-            top: hover.y,
-            transform: hover.flipLeft
+            left: card.x,
+            top: card.y,
+            transform: card.flipLeft
               ? 'translate(calc(-100% - 12px), calc(-100% - 8px))'
               : 'translate(12px, calc(-100% - 8px))'
           }}
         >
-          {labelFor(hover.slot)}
+          {labelFor(card.slot)}
         </div>
       )}
     </div>
