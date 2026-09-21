@@ -1501,6 +1501,13 @@ export default function App(): JSX.Element {
     registryDispatch({ type: 'toggle_turn_expanded', turnId })
   }, [])
 
+  /** Ticket 129: expand/collapse one thinking row — routed to the focused
+   * session's registry chat state, so the reading state survives every
+   * remount (settings round-trips, session switches, container folds). */
+  const handleToggleThinking = useCallback((key: string): void => {
+    registryDispatch({ type: 'toggle_thinking_expanded', key })
+  }, [])
+
   // ---- Turn file bar deep links (ticket 78) ----
 
   /** Review: open the turn's file changes in the side panel's turn-diff tab
@@ -1931,6 +1938,7 @@ export default function App(): JSX.Element {
                 onOpenFile={handleOpenFileFromTranscript}
                 onShowInBridge={handleShowInBridge}
                 onToggleTurn={handleToggleTurn}
+                onToggleThinking={handleToggleThinking}
                 onReviewTurn={handleReviewTurn}
                 composerApi={composerApi}
                 onApprove={handleApprove}

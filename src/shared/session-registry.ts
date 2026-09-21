@@ -88,6 +88,7 @@ export function initialRegistryState(): SessionRegistryState {
 export type RegistryAction =
   | HostToParent
   | { type: 'toggle_turn_expanded'; turnId: string }
+  | { type: 'toggle_thinking_expanded'; key: string }
   | { type: 'focus_session'; sessionId: string }
   | { type: 'dismiss_error' }
   | { type: 'set_session_draft'; sessionId: string; draft: ComposerDraft | null }
@@ -437,6 +438,14 @@ function foldEvent(state: SessionRegistryState, event: HostToParent): SessionReg
 export function registryReducer(state: SessionRegistryState, action: RegistryAction): SessionRegistryState {
   switch (action.type) {
     case 'toggle_turn_expanded': {
+      const focused = state.focusedId
+      if (focused === null) return state
+      return foldInto(state, focused, action)
+    }
+    // Ticket 129: the thinking-row toggle rides the same focused-session
+    // routing — the fold lands in the VIEWED session's chat state, so a
+    // background session's thinking rows never move.
+    case 'toggle_thinking_expanded': {
       const focused = state.focusedId
       if (focused === null) return state
       return foldInto(state, focused, action)

@@ -54,6 +54,7 @@ describe('chatReducer — session lifecycle', () => {
       agentRunning: false,
       error: null,
       expandedTurns: new Set(),
+      expandedThinking: new Set(),
       erroredTurns: new Set(),
       model: null,
       thinkingLevel: null,
@@ -1313,5 +1314,106 @@ describe('chatReducer — turn wall-clock stamps (ticket 108)', () => {
     // The pre-108 harness shape ('t') is not a timestamp — no invented stamp.
     const legacy = replayEntry({ role: 'user', id: 'r-u2', text: 'q', timestamp: 't', skillName: null })
     expect((legacy as { startedAtMs?: number }).startedAtMs).toBeUndefined()
+  })
+})
+
+describe('chatReducer — thinking-row expansion memory (ticket 129)', () => {
+  /** One settled turn carrying a thinking part (the row this ticket
+   * remembers), ending folded like every settled turn. The echo carries the
+   * real entry id (the production shape — persistence reads it back at the
+   * echo), so the turn id matches what a replay of the same path produces. */
+  function settledThinkingTurn(): ChatState {
+    return run(
+      initialChatState(),
+      { type: 'user_message', text: 'think it through', entryId: 'u-r1' },
+      { type: 'agent_start' },
+      { type: 'message_start' },
+      { type: 'thinking_delta', delta: 'reasoning first' },
+      { type: 'thinking_end', durationMs: 900 },
+      { type: 'text_delta', delta: 'answer' },
+      { type: 'message_end' },
+      { type: 'agent_end' }
+    )
+  }
+
+  /** The thinking row's stable identity: the positional part key from
+   * groupTurns (`${turnId}-p${ordinal}`) — the same id React mounts the row
+   * under, never the owning entry id (the ticket-51 backfill rewrites that
+   * at message_end). */
+  function thinkingKeys(state: ChatState, agentRunning: boolean): string[] {
+    return groupTurns(state.entries, agentRunning).flatMap((t) =>
+      t.work.filter((i): i is Extract<typeof i, { kind: 'thinking' }> => i.kind === 'thinking').map((i) => i.key)
+    )
+  }
+
+  it('toggle_thinking_expanded adds and deletes in expandedThinking, never touching the transcript', () => {
+    const base = settledThinkingTurn()
+    const key = thinkingKeys(base, false)[0]
+    const opened = chatReducer(base, { type: 'toggle_thinking_expanded', key })
+    expect([...opened.expandedThinking]).toEqual([key])
+    expect(opened.entries).toEqual(base.entries)
+    const closed = chatReducer(opened, { type: 'toggle_thinking_expanded', key })
+    expect(closed.expandedThinking.size).toBe(0)
+  })
+
+  it('the row key is POSITIONAL — a mid-run expansion survives the ticket-51 entry-id backfill at message_end', () => {
+    // The operator's exact case: expand the thinking row while the turn
+    // streams, then the assistant entry id backfills at message_end — the
+    // row's identity (and thus its expansion) must not move.
+    const live = run(
+      initialChatState(),
+      { type: 'user_message', text: 'mid-run' },
+      { type: 'agent_start' },
+      { type: 'message_start' },
+      { type: 'thinking_delta', delta: 'reasoning' }
+    )
+    const liveKeys = thinkingKeys(live, true)
+    expect(liveKeys).toEqual(['m0-p0'])
+    const opened = chatReducer(live, { type: 'toggle_thinking_expanded', key: liveKeys[0] })
+    const settled = run(opened, { type: 'message_end', entryId: 'a-real-1' }, { type: 'agent_end' })
+    const settledKeys = thinkingKeys(settled, false)
+    expect(settledKeys).toEqual(liveKeys) // positional: the backfill never moves the key
+    expect(settled.expandedThinking.has(settledKeys[0])).toBe(true)
+  })
+
+  it('history_loaded (replay) KEEPS thinking expansion while the container reset stays (the 1.6 ruling is container-only)', () => {
+    const base = settledThinkingTurn()
+    const key = thinkingKeys(base, false)[0]
+    const opened = run(
+      base,
+      { type: 'toggle_turn_expanded', turnId: 'u-r1' },
+      { type: 'toggle_thinking_expanded', key }
+    )
+    // Tree-navigation shape: the same leaf path replayed under the same
+    // real entry ids — the positional keys address the same parts.
+    const replayed = run(opened, {
+      type: 'history_loaded',
+      items: [
+        { role: 'user', id: 'u-r1', text: 'think it through', timestamp: '2026-09-22T00:00:00.000Z', skillName: null },
+        {
+          role: 'assistant',
+          id: 'a-r1',
+          timestamp: '2026-09-22T00:00:01.000Z',
+          text: 'answer',
+          parts: [
+            { kind: 'thinking', text: 'reasoning first', durationMs: 900 },
+            { kind: 'text', text: 'answer' }
+          ]
+        }
+      ]
+    })
+    expect(replayed.expandedTurns.size).toBe(0) // container reset (ticket 23 memory rule, untouched)
+    expect(replayed.expandedThinking.has(key)).toBe(true) // thinking row remembers (Q5=B)
+    // The replayed row carries the SAME key — the memory is not just kept,
+    // it addresses the row now on screen.
+    expect(thinkingKeys(replayed, false)).toEqual([key])
+  })
+
+  it('session_created resets thinking expansion — a fresh session starts collapsed', () => {
+    const base = settledThinkingTurn()
+    const key = thinkingKeys(base, false)[0]
+    const opened = chatReducer(base, { type: 'toggle_thinking_expanded', key })
+    const fresh = run(opened, SESSION_CREATED)
+    expect(fresh.expandedThinking.size).toBe(0)
   })
 })

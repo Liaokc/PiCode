@@ -799,3 +799,137 @@ describe('registryReducer — the stop receipt fold (ticket 101)', () => {
     expect(b?.subagents.stopping.size).toBe(0)
   })
 })
+
+// ---- ticket 129: thinking-row expansion memory (Q5=B — all remounts) ------
+
+describe('registryReducer — thinking-row expansion memory (ticket 129)', () => {
+  /** One settled thinking turn, streamed live into a session. The echo
+   * carries the real entry id (the production shape), so the turn id matches
+   * what a replay of the same path produces. */
+  const THINKING_TURN: SessionScopedEvent[] = [
+    { type: 'user_message', text: 'think it through', entryId: 'u-r1' },
+    { type: 'agent_start' },
+    { type: 'message_start' },
+    { type: 'thinking_delta', delta: 'reasoning first' },
+    { type: 'thinking_end', durationMs: 900 },
+    { type: 'text_delta', delta: 'answer' },
+    { type: 'message_end' },
+    { type: 'agent_end' }
+  ]
+
+  /** Two sessions, each with the same thinking turn (same positional key —
+   * isolation must be by SESSION, never by key); A focused. */
+  function twoThinkingSessions(): SessionRegistryState {
+    return run(
+      initialRegistryState(),
+      CREATED_A,
+      ...THINKING_TURN.map((event) => scoped('s-a', event)),
+      CREATED_B,
+      ...THINKING_TURN.map((event) => scoped('s-b', event)),
+      { type: 'focus_session', sessionId: 's-a' }
+    )
+  }
+
+  const KEY = 'u-r1-p0'
+
+  it.each([
+    // scenario | interleaved actions (between A's toggle and the read-back) | A keeps | B has
+    [
+      'settings round-trip (the unmount is rendering-only — no registry action)',
+      [] as RegistryAction[],
+      true,
+      false
+    ],
+    [
+      'session switch A→B→A',
+      [
+        { type: 'focus_session', sessionId: 's-b' },
+        { type: 'focus_session', sessionId: 's-a' }
+      ] as RegistryAction[],
+      true,
+      false
+    ],
+    [
+      'Worked-container fold round-trip (container toggles never touch the thinking set)',
+      [
+        { type: 'toggle_turn_expanded', turnId: 'u-r1' },
+        { type: 'toggle_turn_expanded', turnId: 'u-r1' }
+      ] as RegistryAction[],
+      true,
+      false
+    ],
+    [
+      'a thinking toggle issued while B is focused lands in B only (isolation)',
+      [
+        { type: 'focus_session', sessionId: 's-b' },
+        { type: 'toggle_thinking_expanded', key: KEY },
+        { type: 'focus_session', sessionId: 's-a' }
+      ] as RegistryAction[],
+      true,
+      true
+    ]
+  ])('%s', (_name, actions, expectAKeeps, expectBHas) => {
+    const opened = run(twoThinkingSessions(), { type: 'toggle_thinking_expanded', key: KEY })
+    const after = run(opened, ...actions)
+    const a = after.sessions.find((s) => s.id === 's-a')
+    const b = after.sessions.find((s) => s.id === 's-b')
+    expect(a?.chat.expandedThinking.has(KEY)).toBe(expectAKeeps)
+    expect(b?.chat.expandedThinking.has(KEY)).toBe(expectBHas)
+    // The container sets stay untouched by every thinking toggle above.
+    expect(a?.chat.expandedTurns.size).toBe(0)
+    expect(b?.chat.expandedTurns.size).toBe(0)
+  })
+
+  it('toggle with nothing focused is a no-op', () => {
+    const empty = run(initialRegistryState(), { type: 'toggle_thinking_expanded', key: KEY })
+    expect(empty).toEqual(initialRegistryState())
+  })
+
+  it('a wrapped history_loaded (tree navigation) keeps the thinking row while the container resets', () => {
+    const opened = run(
+      twoThinkingSessions(),
+      { type: 'toggle_turn_expanded', turnId: 'u-r1' },
+      { type: 'toggle_thinking_expanded', key: KEY }
+    )
+    const replayed = run(opened, {
+      type: 'session_event',
+      sessionId: 's-a',
+      event: {
+        type: 'history_loaded',
+        items: [
+          { role: 'user', id: 'u-r1', text: 'think it through', timestamp: '2026-09-22T00:00:00.000Z', skillName: null },
+          {
+            role: 'assistant',
+            id: 'a-r1',
+            timestamp: '2026-09-22T00:00:01.000Z',
+            text: 'answer',
+            parts: [
+              { kind: 'thinking', text: 'reasoning first', durationMs: 900 },
+              { kind: 'text', text: 'answer' }
+            ]
+          }
+        ]
+      }
+    })
+    const a = replayed.sessions.find((s) => s.id === 's-a')
+    expect(a?.chat.expandedTurns.size).toBe(0) // the 1.6 container reset stays (ticket 129 keeps it container-only)
+    expect(a?.chat.expandedThinking.has(KEY)).toBe(true) // the thinking row remembers
+    // The replayed row carries the same positional key — the memory addresses
+    // the row now on screen.
+    const b = replayed.sessions.find((s) => s.id === 's-b')
+    expect(b?.chat.expandedThinking.size).toBe(0)
+  })
+
+  it('a re-announcement (resume) resets that session to the collapsed default', () => {
+    const opened = run(twoThinkingSessions(), { type: 'toggle_thinking_expanded', key: KEY })
+    const reannounced = run(opened, scoped('s-a', { type: 'session_created', sessionId: 's-a', cwd: '/tmp/a', model: 'm1', resumed: true }))
+    expect(reannounced.sessions.find((s) => s.id === 's-a')?.chat.expandedThinking.size).toBe(0)
+    // The other session's reading state is untouched.
+    expect(reannounced.sessions.find((s) => s.id === 's-b')?.chat.expandedThinking.has(KEY)).toBe(false)
+  })
+
+  it('every fresh session starts with an empty thinking set (restart default)', () => {
+    const state = run(initialRegistryState(), CREATED_A, ...THINKING_TURN.map((event) => scoped('s-a', event)))
+    expect(state.sessions.find((s) => s.id === 's-a')?.chat.expandedThinking.size).toBe(0)
+  })
+})

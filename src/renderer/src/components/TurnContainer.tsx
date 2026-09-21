@@ -30,6 +30,13 @@ interface TurnWorkRowsProps {
   /** The items in transcript order — the container's fold body or the
    * after-answer segment (ticket 53). */
   items: readonly TurnWorkItem[]
+  /** Ticket 129: the thinking rows' expansion set (the view's source of
+   * truth — registry `expandedThinking` in ChatView, a local set in
+   * FollowView), keyed by the row's positional part key. */
+  expandedThinking: ReadonlySet<string>
+  /** Ticket 129: toggle one thinking row's expansion (lands in the same
+   * state `expandedThinking` reads). */
+  onToggleThinking: (key: string) => void
   /** Deep-link a file-arg tool call into the Preview tab (ticket 07). */
   onOpenFile?: (path: string) => void
   /** Deep-link a bash tool call into the Bridge panel (ticket 18 feedback). */
@@ -51,13 +58,23 @@ interface TurnWorkRowsProps {
  * ThinkingRow the fold uses; a pending pill in the settled segment shows the
  * same controls a fold pill always had.
  */
-export function TurnWorkRows({ items, onOpenFile, onShowInBridge, onApprove, onDeny }: TurnWorkRowsProps): JSX.Element {
+export function TurnWorkRows({ items, expandedThinking, onToggleThinking, onOpenFile, onShowInBridge, onApprove, onDeny }: TurnWorkRowsProps): JSX.Element {
   return (
     <>
       {items.map((item) => {
         switch (item.kind) {
           case 'thinking':
-            return <ThinkingRow key={item.key} part={item.part} />
+            // Ticket 129: controlled — the row's open state lives in the
+            // view's expansion set, so it survives every remount (settings
+            // round-trips, session switches, container folds).
+            return (
+              <ThinkingRow
+                key={item.key}
+                part={item.part}
+                open={expandedThinking.has(item.key)}
+                onToggle={() => onToggleThinking(item.key)}
+              />
+            )
           case 'text':
             return <StreamTextRow key={item.key} text={item.text} streaming={item.streaming} />
           case 'narration':
@@ -80,6 +97,10 @@ interface TurnContainerProps {
   /** Rendered open (live auto-expand, manual open, errored or pending-gate). */
   open: boolean
   onToggle: () => void
+  /** Ticket 129: the thinking rows' expansion set + toggle, passed through
+   * to the fold body's rows (the view owns the state source). */
+  expandedThinking: ReadonlySet<string>
+  onToggleThinking: (key: string) => void
   /** Deep-link a file-arg tool call into the Preview tab (ticket 07). */
   onOpenFile?: (path: string) => void
   /** Deep-link a bash tool call into the Bridge panel (ticket 18 feedback). */
@@ -131,6 +152,8 @@ export default function TurnContainer({
   turn,
   open,
   onToggle,
+  expandedThinking,
+  onToggleThinking,
   onOpenFile,
   onShowInBridge,
   onApprove,
@@ -213,6 +236,8 @@ export default function TurnContainer({
               container is a bare inert row (hasWork rule). */}
           <TurnWorkRows
             items={turn.work}
+            expandedThinking={expandedThinking}
+            onToggleThinking={onToggleThinking}
             onOpenFile={onOpenFile}
             onShowInBridge={onShowInBridge}
             onApprove={onApprove}

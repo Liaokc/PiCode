@@ -171,11 +171,15 @@ interface ReceivedAtStamp {
 type StampedHostToParent = HostToParent extends infer T ? (T extends unknown ? T & ReceivedAtStamp : never) : never
 
 /** Everything that folds chat state: contract events (optionally receipt-
- * stamped at the dispatch boundary, ticket 61) AND the one UI action the
- * turn-collapse machine needs (ticket 23). Keeping the manual toggle in
- * the same reducer keeps the collapse/exception/memory rules table-testable
- * at Seam-1 alongside the event-driven ones. */
-export type ChatAction = StampedHostToParent | { type: 'toggle_turn_expanded'; turnId: string }
+ * stamped at the dispatch boundary, ticket 61) AND the manual UI actions
+ * the turn-collapse machine needs (ticket 23 turn folds, ticket 129 thinking
+ * rows). Keeping the manual toggles in the same reducer keeps the
+ * collapse/exception/memory rules table-testable at Seam-1 alongside the
+ * event-driven ones. */
+export type ChatAction =
+  | StampedHostToParent
+  | { type: 'toggle_turn_expanded'; turnId: string }
+  | { type: 'toggle_thinking_expanded'; key: string }
 
 export interface ChatState {
   session: ChatSessionInfo | null
@@ -189,6 +193,18 @@ export interface ChatState {
    * turns). Cleared on any replay — expansion is never remembered across
    * session switches. */
   expandedTurns: ReadonlySet<string>
+  /** Thinking-row keys rendered expanded (ticket 129, Q5=B): unlike the
+   * Worked container above, a thinking row's expansion is remembered across
+   * EVERY remount — settings round-trips, session switches, container
+   * folds — for the session's lifetime (memory-level: a restart, or a fresh
+   * `session_created`, starts collapsed; a `history_loaded` replay KEEPS it
+   * — the 1.6 reset ruling stays container-only). Keys are the row's stable
+   * POSITIONAL part key (`${turnId}-p${ordinal}`, the same id React mounts
+   * the row under), deliberately NOT the owning assistant entry id: the
+   * ticket-51 backfill rewrites that id at message_end, which would drop a
+   * mid-run expansion — the very case this ticket fixes. Tree paths are
+   * prefix-stable, so a key always addresses the same part. */
+  expandedThinking: ReadonlySet<string>
   /** Turns that ended in `turn_error`: settle never auto-collapses them. */
   erroredTurns: ReadonlySet<string>
   // ---- composer state (ticket 05), all pushed over the contract ----
@@ -219,6 +235,7 @@ export function initialChatState(): ChatState {
     agentRunning: false,
     error: null,
     expandedTurns: new Set(),
+    expandedThinking: new Set(),
     erroredTurns: new Set(),
     model: null,
     thinkingLevel: null,
@@ -446,6 +463,12 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     if (!expanded.delete(action.turnId)) expanded.add(action.turnId)
     return { ...state, expandedTurns: expanded }
   }
+  // Ticket 129: the thinking-row toggle — same add/delete fold, its own set.
+  if (action.type === 'toggle_thinking_expanded') {
+    const expanded = new Set(state.expandedThinking)
+    if (!expanded.delete(action.key)) expanded.add(action.key)
+    return { ...state, expandedThinking: expanded }
+  }
   const event = action
   switch (event.type) {
     case 'session_created':
@@ -498,6 +521,9 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       // ids are kept so ids stay stable across re-replays (and never collide
       // with live `mN` ids). Ticket 23 memory rule: replay resets the collapse
       // machine — re-entering a session always starts fully collapsed.
+      // Ticket 129 (Q5=B): that reset is CONTAINER-ONLY — the spread below
+      // deliberately keeps `expandedThinking` (thinking rows remember across
+      // replays; the positional keys are stable for the same path).
       return {
         ...state,
         entries: event.items.map(replayEntry),
