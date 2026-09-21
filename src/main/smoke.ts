@@ -12287,13 +12287,17 @@ export function startSmokeIfEnabled(
         input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
         return true
       })()`
-      const noErrorToast104 = `![...document.querySelectorAll('.toast-error')].some((n) => (n.textContent ?? '').includes('Cannot restructure'))`
+      // Review adoption (spec axis): the spec says 成功（无错误 toast） — ANY
+      // new error toast fails, whatever its message (a setSessionName throw
+      // would ride session_command_error with a different text than the old
+      // guard's). Counted RELATIVE to the stage-start baseline so an
+      // unrelated leftover toast cannot make the assert vacuous.
+      const errorToastCount104 = `document.querySelectorAll('.toast-error').length`
+      const baselineErrorToasts104 = Number(await js(errorToastCount104))
+      const noNewErrorToast104 = `document.querySelectorAll('.toast-error').length <= ${baselineErrorToasts104}`
 
       if (!(await waitForProbe(win, `document.querySelector('.chat-view') !== null`, 10_000))) {
         fail('ticket-104 stage: the fresh session never reached the chat view')
-      }
-      if (!(await waitForProbe(win, noErrorToast104, 2_000))) {
-        fail('ticket-104 stage: a pre-existing error toast would make the no-error assertion vacuous')
       }
       supervisor.handleParentCommand({
         type: 'session_command',
@@ -12420,7 +12424,7 @@ export function startSmokeIfEnabled(
       if (!(await waitForProbe(win, `document.querySelector('.sb-task-active') === ${row104} && ${sidebarTitle104} === ${JSON.stringify(NAME_RUNNING_104)}`, 10_000))) {
         fail(`ticket-104 stage: the sidebar row title never showed the mid-run rename — got ${String(await js(`${sidebarTitle104} ?? 'none'`).catch(() => 'n/a'))}`)
       }
-      if (!(await js(noErrorToast104))) {
+      if (!(await js(noNewErrorToast104))) {
         fail('ticket-104 stage: the mid-run rename raised an error toast (the settled guard must NOT apply)')
       }
       log('rename104_midrun_ui_ok')
@@ -12458,7 +12462,7 @@ export function startSmokeIfEnabled(
       if (!(await waitForProbe(win, `document.querySelector('.sb-task-active') === ${row104} && ${sidebarTitle104} === ${JSON.stringify(NAME_SETTLED_104)}`, 10_000))) {
         fail(`ticket-104 stage: the sidebar row title never showed the settled rename — got ${String(await js(`${sidebarTitle104} ?? 'none'`).catch(() => 'n/a'))}`)
       }
-      if (!(await js(noErrorToast104))) {
+      if (!(await js(noNewErrorToast104))) {
         fail('ticket-104 stage: the settled rename raised an error toast (regression)')
       }
       log('rename104_settled_ok')
