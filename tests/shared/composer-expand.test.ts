@@ -5,6 +5,7 @@ import {
   COMPOSER_INPUT_MAX_PX,
   COMPOSER_INPUT_MIN_PX,
   composerAutoGrowHeight,
+  composerCaretLineTop,
   composerCaretReveal,
   composerExpandHeight,
   composerTypingHeight,
@@ -256,5 +257,75 @@ describe('composerCaretReveal — ticket 81 R7: the caret line stays visible acr
     const first = view(247, 0)
     expect(first).not.toBeNull()
     expect(view(247, first as number)).toBeNull()
+  })
+})
+
+describe('composerCaretLineTop — ticket 117 (spec R12): the caret line is the VISUAL line, measured not counted', () => {
+  // The measured reading comes from the input's mirror (the component's
+  // measureCaretLineTopPx); this seam turns it into the exact flow-
+  // coordinate lineTop composerCaretReveal consumes. The grid is the real
+  // composer's: padding-top 16, line-height 21 (the ticket-81 fixtures).
+  const measure = (caretTop: number, padTop = 16, lineHeight = 21): number | null =>
+    composerCaretLineTop({ caretTopPx: caretTop, padTopPx: padTop, lineHeightPx: lineHeight })
+
+  it('on-grid readings pass through exactly (line k = padTop + k × lineHeight)', () => {
+    expect(measure(16)).toBe(16) // line 0 — the empty/one-line draft
+    expect(measure(37)).toBe(37) // line 1 — caret after a trailing newline
+    expect(measure(100)).toBe(100) // line 4 — a mid-draft CJK caret (probe-validated)
+    expect(measure(205)).toBe(205) // line 9 — the caret at a soft-wrapped draft's end
+  })
+
+  it('sub-line noise snaps to the line grid (the reading lands inside the line box)', () => {
+    // +3px and −10px around line 1 (top 37, half-grid tolerance 10.5):
+    expect(measure(40)).toBe(37)
+    expect(measure(27)).toBe(37)
+    // Just past the half-grid crosses to the neighboring line — the caret
+    // measured at the boundary IS on that line.
+    expect(measure(48)).toBe(58)
+    expect(measure(26)).toBe(16)
+  })
+
+  it('a caret measured above line 0 clamps to line 0 (never a negative line)', () => {
+    expect(measure(0)).toBe(16)
+    expect(measure(-50)).toBe(16)
+  })
+
+  it('junk measurements never move the view (null — the ticket-81 defense, unchanged)', () => {
+    expect(measure(Number.NaN)).toBeNull()
+    expect(measure(Number.POSITIVE_INFINITY)).toBeNull()
+    expect(measure(Number.NEGATIVE_INFINITY)).toBeNull()
+    expect(measure(205, Number.NaN)).toBeNull()
+    expect(measure(205, 16, Number.NaN)).toBeNull()
+    expect(measure(205, Number.POSITIVE_INFINITY)).toBeNull()
+  })
+
+  it('a broken grid (non-positive line height) never moves the view (null)', () => {
+    expect(measure(205, 16, 0)).toBeNull()
+    expect(measure(205, 16, -21)).toBeNull()
+  })
+
+  it('the ghost-line fix: a deep soft-wrapped caret stays deep (the hard-line count said line 0)', () => {
+    // The operator's CJK scene: a single-paragraph draft soft-wrapped over
+    // ~10 visual lines, the caret at its end. The ticket-81 math computed
+    // padTop + 0×21 = 16 (hard-line count 1) and the reveal scrolled the
+    // view to the top on every keystroke; the measured line is 205.
+    expect(measure(205)).not.toBe(16)
+    expect(measure(205)).toBe(16 + 9 * 21)
+  })
+
+  it('feeds composerCaretReveal: the measured line converges with the native caret scroll', () => {
+    // The probe-validated bottom-typing scene: caret at line 9 (top 205),
+    // view scrolled to the bottom (scrollTop 70, clientHeight 160). The
+    // caret's line is already in view where the browser's own caret scroll
+    // put it — the reveal must NOT write (the two writers agree; the
+    // per-keystroke oscillation is gone).
+    const lineTop = measure(205) as number
+    expect(composerCaretReveal({ lineTopPx: lineTop, lineHeightPx: 21, scrollTopPx: 70, clientHeightPx: 160 })).toBeNull()
+    // From the ghost position the old math pinned (scrollTop 16 — the top),
+    // the measured line recovers the view to the caret: its bottom aligns
+    // to the viewport bottom (226 − 160 = 66), and once landed the next
+    // pass is a no-op (stability).
+    expect(composerCaretReveal({ lineTopPx: lineTop, lineHeightPx: 21, scrollTopPx: 16, clientHeightPx: 160 })).toBe(66)
+    expect(composerCaretReveal({ lineTopPx: lineTop, lineHeightPx: 21, scrollTopPx: 66, clientHeightPx: 160 })).toBeNull()
   })
 })

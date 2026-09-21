@@ -177,6 +177,20 @@
  * RIGHT, and a replayed history_loaded (real ISO timestamps) shows the
  * same shape — the ticket-14 no-duration premise retired.
  *
+ * Ticket 117 adds the composer IME scroll stage right after the ticket-116
+ * stage (spec R12, zero model calls): the reveal's caret line is now the
+ * MEASURED visual line (a hidden mirror re-wraps the draft and marks the
+ * caret's line top — the hard-line count could not see soft wrap and
+ * scrolled the view to a ghost line on every keystroke, fighting the
+ * browser's native caret scroll through each IME composition update).
+ * Real CDP text input — Input.imeSetComposition for the composition legs,
+ * Input.insertText for the plain legs — runs the operator's three
+ * scenarios (bottom / second-to-last line / mid-lower) across CJK
+ * soft-wrap, Latin soft-wrap, and Latin hard-line drafts: typing must keep
+ * the caret's visual line on screen and never jump the view up. The shared
+ * prefill path (PREFILL_EVENT — queue Edit and edit-resend ride the same
+ * window event) must open a long draft showing its END.
+ *
  * Any missed step times out and exits non-zero. Progress logs as
  * `SMOKE <step>` lines on stdout. Not part of `npm test`.
  */
@@ -6617,9 +6631,21 @@ export function startSmokeIfEnabled(
         // ---- ① live × at-bottom: the newest (4th, live) tick reads focus.
         // The short stream keeps the newest bubble low — the exact
         // geometry where the pre-120 probe rule anchored the previous turn.
+        // The live turn is injected ONE EVENT PER PASS with a settle beat
+        // between — the small-step physics a real stream delivers and the
+        // stick model is built for. A back-to-back burst landed the whole
+        // turn in ONE growth pass (~222px), past the stick threshold
+        // (STICK_THRESHOLD_PX = 160), so the growth pass read the reader
+        // as scrolled-away and never followed to the bottom — ①'s
+        // at-bottom probe then failed deterministically (the burst's
+        // outgrowth can never be re-absorbed: growth alone never yanks).
+        // Same scene, same assertions — only the pacing changes.
         emitContractEvent({ type: 'user_message', text: 'PICODE_NAVLIVE_LIVE: keep working while I watch' })
+        await new Promise((r) => setTimeout(r, 150))
         emitContractEvent({ type: 'agent_start' })
+        await new Promise((r) => setTimeout(r, 150))
         emitContractEvent({ type: 'message_start' })
+        await new Promise((r) => setTimeout(r, 150))
         emitContractEvent({ type: 'text_delta', delta: 'A short streamed line so the live container has a body.' })
         const liveBottom = await waitForProbe(
           win,
@@ -7135,6 +7161,361 @@ export function startSmokeIfEnabled(
       await win.webContents.executeJavaScript(composerClearJs)
     })
     log('composer_typing_116_done')
+
+    // ---- ticket 117: composer IME scroll stability — the visual-line
+    // reveal, the composition × language matrix, and the prefill viewport
+    // (spec R12) ----
+    // The ticket-81 reveal derived the caret's line from the hard-line
+    // count, which cannot see soft wrap: every soft-wrapped draft (each CJK
+    // draft) computed a ghost line near the top, the reveal scrolled the
+    // view to it on every keystroke, and on IME composition updates that
+    // write fought the browser's own caret scroll (the operator's 舞步抖动
+    // — typing at the bottom jumped the view to the top). The line is now
+    // MEASURED (a hidden mirror of the input re-wraps the draft exactly and
+    // carries a line-top marker at the caret), so typing must keep the
+    // caret's visual line on screen and never jump the view up. This stage
+    // drives REAL text input through CDP — Input.imeSetComposition for the
+    // composition legs (real compositionstart/update/end + input events,
+    // the exact React onChange-per-composition-update path the defect rode)
+    // and Input.insertText for the plain legs — across the operator's three
+    // scenarios (bottom / second-to-last line / mid-lower) × three drafts
+    // (CJK soft-wrap / Latin soft-wrap / Latin hard lines), plus the shared
+    // prefill path (PREFILL_EVENT — queue Edit and edit-resend ride the same
+    // window event): a long prefilled draft must open showing its END. Zero
+    // model calls; the composer is left cleared for the ticket-81 stage.
+    log('composer_ime_117_start')
+    await withWindow(getWindow, async (win) => {
+      const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+      const ta117 = `document.querySelector('.chat-dock textarea.composer-input')`
+
+      // A fresh session keeps the stage self-contained (ticket-116 pattern:
+      // createSession focuses it — the ChatView composer by construction).
+      const created117 = waitFor(
+        (e) => e.type === 'session_created',
+        'ticket-117 session_created'
+      ) as Promise<Extract<Scoped, { type: 'session_created' }>>
+      supervisor.createSession(cwd)
+      await created117
+      if (!(await waitForProbe(win, `${ta117} !== null && ${ta117}.clientHeight === 74`, 10_000))) {
+        fail('ticket-117 stage: the fresh session never settled at the 74px floor')
+      }
+
+      /** The DOM-truth probe: geometry plus the caret's visual-line top.
+       *  The mirror is a TEXTAREA CLONE holding the text up to the caret —
+       *  only a textarea wraps exactly like the input (a styled div's wrap
+       *  can diverge by a word, at boundary widths a whole line, which once
+       *  measured the caret one line low and failed this stage on a healthy
+       *  app). The clone's scrollHeight gives the prefix's line count; the
+       *  caret sits on its last line. */
+      const SAMPLE_117 = `(() => {
+        const el = document.querySelector('.chat-dock textarea.composer-input')
+        if (!(el instanceof HTMLTextAreaElement) || !(el.parentNode instanceof Node)) return null
+        const cs = getComputedStyle(el)
+        const lh = parseFloat(cs.lineHeight)
+        const padT = parseFloat(cs.paddingTop), padB = parseFloat(cs.paddingBottom)
+        const mirror = el.cloneNode(false)
+        mirror.removeAttribute('data-expand-anim')
+        mirror.style.position = 'absolute'
+        mirror.style.visibility = 'hidden'
+        mirror.style.height = '0px'
+        mirror.style.minHeight = '0px'
+        mirror.style.transition = 'none'
+        mirror.value = el.value.slice(0, el.selectionEnd ?? el.value.length)
+        el.parentNode.insertBefore(mirror, el.nextSibling)
+        const lines = Math.max(1, Math.round((mirror.scrollHeight - padT - padB) / lh))
+        mirror.remove()
+        const caretTop = padT + (lines - 1) * lh
+        return JSON.stringify({
+          valueLen: el.value.length,
+          scrollTop: el.scrollTop, clientH: el.clientHeight, scrollH: el.scrollHeight,
+          taW: el.clientWidth,
+          lh, padT, padB, selEnd: el.selectionEnd,
+          hardLines: el.value.split('\\n').length,
+          visualLines: Math.round((el.scrollHeight - padT - padB) / lh),
+          caretTop: +caretTop.toFixed(2),
+          caretVisible: caretTop >= el.scrollTop - 1 && caretTop + lh <= el.scrollTop + el.clientHeight + 1
+        })
+      })()`
+      interface Sample117 {
+        valueLen: number
+        scrollTop: number
+        clientH: number
+        scrollH: number
+        taW: number
+        lh: number
+        padT: number
+        padB: number
+        selEnd: number
+        hardLines: number
+        visualLines: number
+        caretTop: number
+        caretVisible: boolean
+      }
+      const sample117 = async (): Promise<Sample117> => {
+        const raw = await js(SAMPLE_117)
+        if (typeof raw !== 'string') fail('ticket-117 stage: the geometry probe could not read the composer')
+        return JSON.parse(raw) as Sample117
+      }
+
+      /** Stage a draft (native setter + input event = the React onChange
+       *  path, the composerType precedent). */
+      const type117 = (text: string): string => `(() => {
+        const el = document.querySelector('.chat-dock textarea.composer-input')
+        if (!(el instanceof HTMLTextAreaElement)) return false
+        const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+        setter.call(el, ${JSON.stringify(text)})
+        el.dispatchEvent(new Event('input', { bubbles: true }))
+        el.focus()
+        return true
+      })()`
+
+      /** Place the caret at an offset and set the scenario's scroll; returns
+       *  the caret's clone-measured line top so the driver can sanity-check
+       *  the staging. */
+      const place117 = (offset: number, mode: string): string => `(() => {
+        const el = document.querySelector('.chat-dock textarea.composer-input')
+        if (!(el instanceof HTMLTextAreaElement) || !(el.parentNode instanceof Node)) return null
+        el.focus()
+        el.setSelectionRange(${offset}, ${offset})
+        const cs = getComputedStyle(el)
+        const lh = parseFloat(cs.lineHeight), padT = parseFloat(cs.paddingTop), padB = parseFloat(cs.paddingBottom)
+        const mirror = el.cloneNode(false)
+        mirror.removeAttribute('data-expand-anim')
+        mirror.style.position = 'absolute'
+        mirror.style.visibility = 'hidden'
+        mirror.style.height = '0px'
+        mirror.style.minHeight = '0px'
+        mirror.style.transition = 'none'
+        mirror.value = el.value.slice(0, el.selectionEnd)
+        el.parentNode.insertBefore(mirror, el.nextSibling)
+        const lines = Math.max(1, Math.round((mirror.scrollHeight - padT - padB) / lh))
+        mirror.remove()
+        const lineTop = padT + (lines - 1) * lh
+        let st
+        if (${JSON.stringify(mode)} === 'bottom') st = el.scrollHeight
+        else if (${JSON.stringify(mode)} === 'caretBottom') st = lineTop + lh - el.clientHeight
+        else st = lineTop + lh - el.clientHeight + 2 * lh
+        el.scrollTop = Math.max(0, Math.min(st, el.scrollHeight - el.clientHeight))
+        return JSON.stringify({ scrollTop: +el.scrollTop.toFixed(2), lineTop: +lineTop.toFixed(2), lh })
+      })()`
+
+      /** The first caret offset sitting on the target visual line (clone
+       *  mirror binary search — offset → line is monotonic). */
+      const findOffset117 = (targetLine: number): string => `(() => {
+        const el = document.querySelector('.chat-dock textarea.composer-input')
+        if (!(el instanceof HTMLTextAreaElement) || !(el.parentNode instanceof Node)) return -1
+        const cs = getComputedStyle(el)
+        const lh = parseFloat(cs.lineHeight), padT = parseFloat(cs.paddingTop), padB = parseFloat(cs.paddingBottom)
+        const measure = (offset) => {
+          const mirror = el.cloneNode(false)
+          mirror.removeAttribute('data-expand-anim')
+          mirror.style.position = 'absolute'
+          mirror.style.visibility = 'hidden'
+          mirror.style.height = '0px'
+          mirror.style.minHeight = '0px'
+          mirror.style.transition = 'none'
+          mirror.value = el.value.slice(0, offset)
+          el.parentNode.insertBefore(mirror, el.nextSibling)
+          const top = padT + (Math.max(1, Math.round((mirror.scrollHeight - padT - padB) / lh)) - 1) * lh
+          mirror.remove()
+          return top
+        }
+        let lo = 0, hi = el.value.length, best = 0
+        while (lo <= hi) {
+          const mid = (lo + hi) >> 1
+          const line = Math.round((measure(mid) - padT) / lh)
+          if (line < ${targetLine}) { best = mid; lo = mid + 1 } else hi = mid - 1
+        }
+        return Math.min(best + 1, el.value.length)
+      })()`
+
+      // The three drafts: CJK soft-wrap (the operator's scene — one hard
+      // line, many visual lines), Latin soft-wrap (word wrap — the smaller-
+      // error twin of the same defect), and Latin hard lines (the stable
+      // path the fix must not move: hard-line count ≈ visual line).
+      const CJK_117 = '今天我们要讨论一个很长的话题关于输入法编辑器在文本框里的滚动行为当内容超过可视区域的时候用户在底部继续输入中文每一个汉字都会触发一次组合输入事件而受控组件会同步执行高度重测与滚动恢复这一系列动作如果光标行定位算法只统计硬换行那么软换行的段落会被误判为第一行于是视口会被强行拉回顶部这就是操作者观察到的大幅上移现象我们需要用视觉行定位来修复这个问题使输入不再改变光标位置在软件工程实践中输入法的组合输入与文本框的受控更新之间存在一个微妙的竞争关系浏览器会尽力把光标行滚动到可视区域内而应用层的高度重测也会写入滚动位置两个写入者意见不一致的时候视口就会来回跳动修复的关键在于让应用层的写入与浏览器原生滚动收敛到同一个位置也就是光标真实所在的视觉行行顶'
+      const EN_117 = 'Today we are examining a long standing defect in the composer scroll behavior when a draft grows past the visible area and the operator keeps typing at the bottom every single keystroke triggers the full height remeasure dance and if the caret line positioning only counts hard line breaks then any soft wrapped paragraph is mistaken for the first line and the viewport snaps back to the top which is exactly the upward jump the operator reported The soft wrapped paragraph keeps flowing with many more words that wrap by whole words instead of single characters which means the under estimation of the caret line is smaller than the CJK case but the defect is exactly the same one and the fix must treat both languages identically by measuring the visual line where the caret actually sits rather than counting hard line breaks that were never typed by the operator'
+      const EN_HARD_117 = Array.from({ length: 16 }, (_, i) => `Hard line ${i + 1} of the draft with plain words that mostly fit.`).join('\n')
+
+      const IME_STEPS_117 = ['今', '今天', '今天天', '今天天气', '今天天气很', '今天天气很好']
+      const IME_COMMIT_117 = '今天天气很好'
+      const INSERT_STEPS_117 = ['more ', 'words ', 'here ', 'to ', 'type ', 'now ']
+      const LANGS_117: Array<{
+        name: string
+        text: string
+        mode: 'ime' | 'insert'
+        steps: string[]
+        commit: string | null
+      }> = [
+        { name: 'cjk', text: CJK_117, mode: 'ime', steps: IME_STEPS_117, commit: IME_COMMIT_117 },
+        { name: 'en', text: EN_117, mode: 'insert', steps: INSERT_STEPS_117, commit: null },
+        { name: 'en_hard', text: EN_HARD_117, mode: 'insert', steps: INSERT_STEPS_117, commit: null }
+      ]
+      const SCENARIOS_117: Array<{
+        name: string
+        line: 'end' | 'secondLast' | 'sixtyPercent'
+        scroll: 'bottom' | 'caretBottom' | 'caretLower'
+      }> = [
+        { name: 'bottom', line: 'end', scroll: 'bottom' },
+        { name: 'second_last', line: 'secondLast', scroll: 'caretBottom' },
+        { name: 'mid_lower', line: 'sixtyPercent', scroll: 'caretLower' }
+      ]
+
+      // ---- Leg 1: the shared prefill path (P21) — a long prefilled draft
+      // opens showing its END, not the top it happened to rest at. ----
+      {
+        const LONG_117 = Array.from(
+          { length: 16 },
+          (_, i) => `Prefilled line ${i + 1}: the queue-edit prefill draft continues with more words to push the content past the cap.`
+        ).join(' ')
+        await js(
+          `window.dispatchEvent(new CustomEvent('picode:composer-prefill', { detail: { text: ${JSON.stringify(LONG_117)}, images: [] } }))`
+        )
+        if (
+          !(await waitForProbe(
+            win,
+            `(() => { const el = document.querySelector('.chat-dock textarea.composer-input'); return el instanceof HTMLTextAreaElement && el.value === ${JSON.stringify(LONG_117)} })()`,
+            5_000
+          ))
+        ) {
+          fail('ticket-117 stage: the prefill event never landed its text in the composer')
+        }
+        const s = await sample117()
+        if (s.scrollH <= s.clientH) {
+          fail(`ticket-117 stage: the prefilled draft must overflow the input for the P21 scene (scrollH ${s.scrollH}, clientH ${s.clientH})`)
+        }
+        // The settle is a poll (the drive117 note): under suite load the
+        // prefill's rAF reveal can land past a single sample beat.
+        let prefilled: Sample117 | null = null
+        for (let waited = 0; waited < 2_000; waited += 60) {
+          await new Promise((r) => setTimeout(r, 60))
+          const p = await sample117()
+          if (p.caretVisible && p.scrollTop > 0) {
+            prefilled = p
+            break
+          }
+        }
+        if (prefilled === null) {
+          const p = await sample117()
+          fail(
+            `ticket-117 stage: the prefill left the viewport off the caret's line (scrollTop ${p.scrollTop}, caretTop ${p.caretTop}, clientH ${p.clientH}, scrollH ${p.scrollH}, taW ${p.taW}, valueLen ${p.valueLen}) — a long prefilled draft must open showing its end`
+          )
+        }
+        if (prefilled!.scrollTop <= 0) {
+          fail(`ticket-117 stage: the prefill left the viewport at the top (scrollTop ${prefilled!.scrollTop}) — the P21 defect is back`)
+        }
+        log('composer_ime_117_prefill_viewport_ok')
+        await js(composerClearJs)
+      }
+
+      // ---- Leg 2: the three-scenario × language matrix, driven with REAL
+      // CDP text input (composition for CJK, plain inserts for Latin). ----
+      const dbg117 = win.webContents.debugger
+      try {
+        await dbg117.attach()
+      } catch (err) {
+        fail(`ticket-117 stage: the CDP debugger could not attach for the input legs (${String(err)})`)
+      }
+      try {
+        for (const lang of LANGS_117) {
+          for (const scenario of SCENARIOS_117) {
+            if (!(await js(type117(lang.text)))) {
+              fail(`ticket-117 stage: could not stage the ${lang.name} draft`)
+            }
+            await new Promise((r) => setTimeout(r, 150))
+            const s0 = await sample117()
+            if (s0.scrollH <= s0.clientH) {
+              fail(
+                `ticket-117 stage: the ${lang.name} draft must overflow the input for an internal scroll (scrollH ${s0.scrollH}, clientH ${s0.clientH})`
+              )
+            }
+            const totalLines = s0.visualLines
+            let targetLine: number
+            let caretOffset: number
+            if (scenario.line === 'end') {
+              targetLine = totalLines - 1
+              caretOffset = lang.text.length
+            } else {
+              targetLine = scenario.line === 'secondLast' ? totalLines - 2 : Math.max(1, Math.round(totalLines * 0.6))
+              caretOffset = Number(await js(findOffset117(targetLine)))
+              if (!Number.isInteger(caretOffset) || caretOffset < 0) {
+                fail(`ticket-117 stage: the ${lang.name}/${scenario.name} caret placement never resolved a line-${targetLine} offset`)
+              }
+            }
+            const placed = await js(place117(caretOffset, scenario.scroll))
+            if (typeof placed !== 'string') {
+              fail(`ticket-117 stage: the ${lang.name}/${scenario.name} caret placement probe failed`)
+            }
+            const startSample = await sample117()
+            if (!startSample.caretVisible) {
+              fail(
+                `ticket-117 stage: the ${lang.name}/${scenario.name} staging left the caret out of view (scrollTop ${startSample.scrollTop}, caretTop ${startSample.caretTop}) — bad staging, not a fix assertion`
+              )
+            }
+            let before = startSample.scrollTop
+            /** Drive one REAL input (composition update / plain insert / the
+             *  composition commit), then assert the invariant once it has
+             *  SETTLED: the caret's visual line stays on screen and the view
+             *  never jumps up (the ghost-line signature). The settle is a
+             *  POLL, not a fixed beat: under suite load the native caret
+             *  scroll and the React commit (the dance + the reveal) can land
+             *  more than a fixed 140ms after the input — a single early
+             *  sample would read the mid-flight state (the pre-input
+             *  scrollTop against the post-input caret line) and cry wolf.
+             *  Polling until the geometry holds (or ~2s) asserts the
+             *  settled behavior the operator actually sees. */
+            const drive117 = async (
+              action: { kind: 'ime' | 'insert' | 'commit'; text: string },
+              label: string
+            ): Promise<void> => {
+              if (action.kind === 'ime') {
+                await dbg117.sendCommand('Input.imeSetComposition', {
+                  text: action.text,
+                  selectionStart: action.text.length,
+                  selectionEnd: action.text.length
+                })
+              } else {
+                // 'insert' and the composition 'commit' both land as plain
+                // text insertions (the commit replaces the composition).
+                await dbg117.sendCommand('Input.insertText', { text: action.text })
+              }
+              let settled: Sample117 | null = null
+              for (let waited = 0; waited < 2_000; waited += 60) {
+                await new Promise((r) => setTimeout(r, 60))
+                const s = await sample117()
+                if (s.caretVisible && s.scrollTop >= before - s.lh - 1) {
+                  settled = s
+                  break
+                }
+              }
+              if (settled === null) {
+                const s = await sample117()
+                fail(
+                  `ticket-117 stage: ${lang.name}/${scenario.name} ${label} — after the input settled, the caret's visual line is off screen or the view jumped up (scrollTop ${s.scrollTop} vs before ${before}, caretTop ${s.caretTop}, lh ${s.lh}, clientH ${s.clientH}, scrollH ${s.scrollH}, taW ${s.taW}, valueLen ${s.valueLen}, selEnd ${s.selEnd}); typing must never change the caret's position on screen`
+                )
+              }
+              before = settled!.scrollTop
+            }
+            for (let i = 0; i < lang.steps.length; i++) {
+              await drive117({ kind: lang.mode, text: lang.steps[i]! }, `step ${i}`)
+            }
+            if (lang.commit !== null) await drive117({ kind: 'commit', text: lang.commit }, 'commit')
+            await js(composerClearJs)
+            await new Promise((r) => setTimeout(r, 120))
+          }
+        }
+      } finally {
+        dbg117.detach()
+      }
+      log('composer_ime_117_matrix_ok')
+
+      // Leave the composer clean and resting for the ticket-81 stage below.
+      await js(composerClearJs)
+      if (!(await waitForProbe(win, `${ta117}.clientHeight === 74`, 5_000))) {
+        fail('ticket-117 stage: the cleanup never returned the composer to the resting 74px floor')
+      }
+    })
+    log('composer_ime_117_done')
 
     // ---- ticket 81: composer layout — the pi17 scene. Drives the shared
     // in-session composer with 4 pasted images + one input event per typed

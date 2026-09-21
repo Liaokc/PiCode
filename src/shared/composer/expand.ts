@@ -157,3 +157,47 @@ export function composerCaretReveal(input: {
   if (lineTopPx < scrollTopPx) return Math.round(lineTopPx)
   return Math.round(lineBottomPx - clientHeightPx)
 }
+
+/** Ticket 117 (spec R12): the measurement feeding composerCaretLineTop —
+ * the caret line's top as the component measured it (flow coordinates),
+ * plus the two computed metrics that define the visual-line grid. */
+export interface ComposerCaretLineMeasure {
+  /** The caret line's top in flow coordinates (scroll origin), as measured
+   * on the input's mirror — may carry sub-line noise; the grid snaps it. */
+  caretTopPx: number
+  /** Computed padding-top — the flow coordinate of visual line 0's top. */
+  padTopPx: number
+  /** Computed line-height — the uniform visual-line grid. */
+  lineHeightPx: number
+}
+
+/**
+ * Ticket 117 (spec R12): the caret's VISUAL line top from measured caret
+ * geometry. The ticket-81 reveal derived its line from the hard-line count
+ * (`value.split('\n')`), which cannot see soft wrap — every soft-wrapped
+ * draft (each CJK draft) computed a line the caret had long left, and the
+ * reveal scrolled the view to that ghost line: typing at the bottom jumped
+ * the view to the top, and on IME composition updates that write fought
+ * the browser's own caret scroll on every keystroke (the operator's 舞步
+ * 抖动). The component now MEASURES the caret's line top (a hidden clone
+ * of the input holds the text up to the caret and its scrollHeight gives
+ * the prefix's line count — the caret sits on its last line); this
+ * projection turns that reading into the exact flow-coordinate lineTop
+ * that composerCaretReveal consumes.
+ *
+ * The reading lands inside the line box, so it is snapped to the uniform
+ * grid (`padTopPx + k × lineHeightPx`): sub-line noise (measurement
+ * offsets, fractional line heights) cannot survive, and the line the caret
+ * actually sits on is what comes out.
+ *
+ * Junk defense (the ticket-81 semantics, unchanged): any non-finite input
+ * or a non-positive line height yields null — a broken reading never moves
+ * the view. A caret measured above line 0 clamps to line 0.
+ */
+export function composerCaretLineTop(measure: ComposerCaretLineMeasure): number | null {
+  const { caretTopPx, padTopPx, lineHeightPx } = measure
+  if (![caretTopPx, padTopPx, lineHeightPx].every((n) => Number.isFinite(n))) return null
+  if (lineHeightPx <= 0) return null
+  const lineIndex = Math.max(Math.round((caretTopPx - padTopPx) / lineHeightPx), 0)
+  return padTopPx + lineIndex * lineHeightPx
+}
