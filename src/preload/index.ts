@@ -6,7 +6,7 @@ import type { SubagentTranscriptPayload } from '../shared/subagents/chat-model'
 import type { SessionContextAction } from '../shared/sessions/context-actions'
 import type { UsageSnapshot } from '../shared/usage/aggregate'
 import type { ReviewResult } from '../shared/review/types'
-import type { PreviewResult } from '../shared/preview/types'
+import type { PreviewResult, PreviewWatchEvent } from '../shared/preview/types'
 import type { AuthProbeReport } from '../shared/auth-status'
 import type { AppPreferences } from '../shared/preferences'
 import type { NewTaskCommandCatalog } from '../shared/new-task-commands'
@@ -241,7 +241,25 @@ contextBridge.exposeInMainWorld('picode', {
   },
   preview: {
     /** Open a file (content) or directory (listing) for the Preview tab. */
-    load: (cwd: string, target: string): Promise<PreviewResult> => ipcRenderer.invoke('preview:load', cwd, target)
+    load: (cwd: string, target: string): Promise<PreviewResult> => ipcRenderer.invoke('preview:load', cwd, target),
+    /** Register the sidebar file browser's directory watcher (ticket 107,
+     * additive): main holds at most ONE recursive watcher for the browsed
+     * cwd — same-cwd starts are no-ops, a different cwd replaces it. */
+    watch: (cwd: string): Promise<boolean> => ipcRenderer.invoke('preview:watch', cwd),
+    /** Drop the browser's watcher (Back / unmount); zero handle leak by
+     * design — cancelled debounce windows never flush. */
+    unwatch: (): void => {
+      ipcRenderer.send('preview:unwatch')
+    },
+    /** Coalesced invalidation push for the open browser (ticket 107): the
+     * renderer re-reads the affected listings through preview.load. */
+    onWatchChanged: (listener: (event: PreviewWatchEvent) => void): (() => void) => {
+      const wrapped = (_event: IpcRendererEvent, payload: PreviewWatchEvent): void => listener(payload)
+      ipcRenderer.on('preview:watch-changed', wrapped)
+      return () => {
+        ipcRenderer.removeListener('preview:watch-changed', wrapped)
+      }
+    }
   },
   terminal: {
     /** Spawn the user's shell pty; resolves with its pid (null when taken). */

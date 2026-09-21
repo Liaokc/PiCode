@@ -188,6 +188,114 @@ describe('children-failed', () => {
   })
 })
 
+describe('watch-invalidated (ticket 107: real-time refresh)', () => {
+  /** Root loaded, then `src` expanded + loaded — loaded keys: '' and 'src'. */
+  function deep() {
+    let state = withRoot(opened())
+    state = step(state, { type: 'toggle', path: 'src' })
+    state = step(state, {
+      type: 'children-loaded',
+      path: 'src',
+      entries: [{ name: 'index.ts', type: 'file' }]
+    })
+    return state
+  }
+
+  /** The invalidation table (ticket 107 acceptance: 核心失效逻辑表驱动):
+   * each row is one watch event against the `deep()` tree — event payload in,
+   * exactly the set of listings that must re-read out. */
+  const TABLE: Array<{ name: string; dirs: string[]; overflow: boolean; expected: string[] }> = [
+    {
+      name: 'overflow event marks every loaded listing stale (cap-busting storm)',
+      dirs: [],
+      overflow: true,
+      expected: ['', 'src']
+    },
+    {
+      name: 'a changed subdirectory re-reads only its own listing',
+      dirs: ['src'],
+      overflow: false,
+      expected: ['src']
+    },
+    {
+      name: 'a top-level change re-reads the root listing',
+      dirs: [''],
+      overflow: false,
+      expected: ['']
+    },
+    {
+      name: 'several changed dirs invalidate exactly the loaded intersection',
+      dirs: ['', 'src', 'node_modules', 'src/host'],
+      overflow: false,
+      expected: ['', 'src']
+    },
+    {
+      name: 'dirs never loaded are ignored (lazy expand reads fresh anyway)',
+      dirs: ['node_modules', 'dist'],
+      overflow: false,
+      expected: []
+    }
+  ]
+
+  it.each(TABLE)('$name', ({ dirs, overflow, expected }) => {
+    const state = step(deep(), { type: 'watch-invalidated', dirs, overflow })
+    expect([...state.stale].sort()).toEqual([...expected].sort())
+  })
+
+  it('marks the loading root stale too — the in-flight fetch is guarded, not duplicated', () => {
+    // openBrowser has the root placeholder in children while the first
+    // listing is in flight; an event arriving then still records the intent.
+    const state = step(opened(), { type: 'watch-invalidated', dirs: [''], overflow: false })
+    expect(state.stale.has('')).toBe(true)
+  })
+
+  it('stale listings stay visible without a loading hint (silent refresh, no flicker)', () => {
+    const state = step(deep(), { type: 'watch-invalidated', dirs: ['src'], overflow: false })
+    const srcRow = browserRows(state).find((r) => r.node.path === 'src')
+    expect(srcRow?.loading).toBe(false)
+    expect(srcRow?.failed).toBe(false)
+    expect(browserRows(state).map((r) => r.node.path)).toContain('src/index.ts')
+  })
+
+  it('children-loaded clears the refreshed path from stale', () => {
+    let state = step(deep(), { type: 'watch-invalidated', dirs: ['src'], overflow: false })
+    expect(state.stale.has('src')).toBe(true)
+    state = step(state, {
+      type: 'children-loaded',
+      path: 'src',
+      entries: [{ name: 'index.ts', type: 'file' }, { name: 'extra.ts', type: 'file' }]
+    })
+    expect(state.stale.has('src')).toBe(false)
+    expect(browserRows(state).map((r) => r.node.path)).toContain('src/extra.ts')
+  })
+
+  it('children-failed clears stale so a vanished dir never re-fetch loops', () => {
+    let state = step(deep(), { type: 'watch-invalidated', dirs: ['src'], overflow: false })
+    state = step(state, { type: 'children-failed', path: 'src' })
+    expect(state.stale.has('src')).toBe(false)
+    expect(state.failed.has('src')).toBe(true)
+  })
+
+  it('re-expanding a stale cached directory still uses the cache (no loading round)', () => {
+    let state = step(deep(), { type: 'watch-invalidated', dirs: ['src'], overflow: false })
+    state = step(state, { type: 'toggle', path: 'src' }) // collapse
+    state = step(state, { type: 'toggle', path: 'src' }) // re-expand
+    expect(state.loading.has('src')).toBe(false)
+    expect(state.stale.has('src')).toBe(true)
+  })
+
+  it('an event for a failed directory does not auto-retry it (manual retry stays)', () => {
+    // A failed listing has no children entry — it is not "loaded", so the
+    // invalidation never re-arms it; the retry button keeps that job.
+    let state = withRoot(opened())
+    state = step(state, { type: 'toggle', path: 'src' })
+    state = step(state, { type: 'children-failed', path: 'src' })
+    state = step(state, { type: 'watch-invalidated', dirs: ['src'], overflow: false })
+    expect(state.stale.has('src')).toBe(false)
+    expect(state.loading.has('src')).toBe(false)
+  })
+})
+
 describe('close', () => {
   it('clears the whole browser state — nothing survives a back-to-tasks', () => {
     const state = fileBrowserReducer(withRoot(opened()), { type: 'close' })

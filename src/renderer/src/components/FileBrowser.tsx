@@ -29,6 +29,14 @@ import {
  * file deep-links the side panel's File Preview tab; "Back to tasks"
  * unmounts the browser, so no tree state survives the return.
  * File search is postponed (1.1, grilling R4-Q4).
+ *
+ * Ticket 107: the tree reflects disk changes in real time. While mounted,
+ * ONE recursive watcher over the cwd (main-side watch service) pushes
+ * coalesced invalidation events; the reducer marks the affected loaded
+ * listings stale and this component re-reads them through the SAME preview
+ * channel — silently, so rows never flash a loading hint. Unmount/Back
+ * drops the watcher (zero handle leak); a lazy directory's first expand
+ * still reads fresh on its own.
  */
 
 interface FileBrowserProps {
@@ -67,22 +75,53 @@ export default function FileBrowser({ cwd, project, onBack, onOpenFile }: FileBr
   const [state, dispatch] = useReducer(fileBrowserReducer, undefined, () => openBrowser(cwd, project))
   /** Paths already fetched or in flight — the effect re-runs on every state
    * change while a listing loads; this keeps it to ONE request per listing
-   * (cleared on failure so the retry action goes back to the network). */
+   * IN FLIGHT: the path is released as soon as its fetch settles (success
+   * included), so a later watch invalidation can re-read it (ticket 107).
+   * Cleared on failure so the retry action goes back to the network. */
   const requested = useRef(new Set<string>())
 
+  // Ticket 107: one watcher per open browser. Mount registers it for this
+  // cwd (main is idempotent on the same cwd); every invalidation push
+  // dispatches into the reducer — overflow events blank the dir list so the
+  // reducer marks EVERYTHING loaded stale. Unmount/Back drops the watcher.
+  // Events for another cwd (a push in flight across a project switch) are
+  // dropped here — the component is keyed by cwd, so the next browser
+  // subscribes fresh.
+  useEffect(() => {
+    let live = true
+    const unsubscribe = window.picode.preview.onWatchChanged((event) => {
+      if (!live || event.cwd !== cwd) return
+      dispatch({ type: 'watch-invalidated', dirs: event.dirs, overflow: event.overflow })
+    })
+    void window.picode.preview.watch(cwd)
+    return () => {
+      live = false
+      unsubscribe()
+      window.picode.preview.unwatch()
+    }
+  }, [cwd])
+
   // One loader for every in-flight listing (root on mount, a directory on
-  // first expand). Each fetch resolves by LEAVING the loading set, so the
-  // effect cannot loop; loaded children are cached for re-expansion.
+  // first expand) PLUS the watch-invalidated re-reads (ticket 107): each
+  // fetch resolves by LEAVING the loading set (and clearing its stale mark),
+  // so the effect cannot loop; loaded children are cached for re-expansion.
+  // Stale re-reads are silent — the reducer never puts them in `loading`, so
+  // rows keep their children with no loading hint until the fresh listing
+  // lands.
   useEffect(() => {
     if (state === null) return
-    for (const path of state.loading) {
-      if (requested.current.has(path)) continue
+    function fetchListing(path: string): void {
+      if (requested.current.has(path)) return
       requested.current.add(path)
       // The preview channel refuses empty targets — the root goes as '.'.
       void window.picode.preview
         .load(cwd, path === '' ? '.' : path)
         .then((result: PreviewResult) => {
           if (result.ok && result.kind === 'directory') {
+            // Release the path on success: the ref must only dedupe IN-FLIGHT
+            // fetches, never block the NEXT watch-invalidation from re-reading
+            // this listing (ticket 107 real-time refresh).
+            requested.current.delete(path)
             dispatch({
               type: 'children-loaded',
               path,
@@ -98,6 +137,14 @@ export default function FileBrowser({ cwd, project, onBack, onOpenFile }: FileBr
           dispatch({ type: 'children-failed', path })
         })
     }
+    for (const path of state.loading) {
+      fetchListing(path)
+    }
+    for (const path of state.stale) {
+      if (!state.loading.has(path)) fetchListing(path)
+    }
+    // The closure re-created per state change reads the CURRENT sets; the
+    // requested ref dedupes across runs.
   }, [state, cwd])
 
   const retry = useCallback((path: string) => dispatch({ type: 'retry', path }), [])

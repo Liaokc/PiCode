@@ -56,6 +56,7 @@
     "visual:terminal-focus": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_TERMINAL_FOCUS=1 electron .",
     "visual:bubble": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_BUBBLE=1 electron .",
     "visual:preview": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_PREVIEW=1 electron .",
+    "visual:fb107": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_FB107=1 electron .",
     "visual:skill-card": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_SKILL_CARD=1 electron .",
     "visual:context-ring": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_CONTEXT_RING=1 electron .",
     "visual:tree": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_TREE=1 electron .",

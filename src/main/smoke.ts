@@ -173,7 +173,7 @@ import os, { homedir } from 'node:os'
 import { randomUUID, createHash } from 'node:crypto'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { app, clipboard, type BrowserWindow } from 'electron'
 import type { HostSupervisor } from './host-supervisor'
 import { focusSessionFromNotification, type ApprovalNotice } from './notifications'
@@ -13206,6 +13206,205 @@ export function startSmokeIfEnabled(
       rmSync(instantDir, { recursive: true, force: true })
     }
     log('instant_card_done')
+    // ---- ticket 107: file-browser real-time refresh + pinned-row View files
+    // ---- entry. A seeded disposable project (two sessions, one PINNED via
+    // the row's own pin button) drives both features end to end — zero model
+    // calls, real disk events:
+    //   ② the pinned row's hover View files entry opens THIS project's
+    //      browser (the same setBrowserTarget path as the group header), the
+    //      group header keeps its three-button hover form (ticket 26 probe);
+    //   ① with the browser open, files created/deleted/renamed on disk and
+    //      inside an EXPANDED subdirectory appear/vanish in the tree WITHOUT
+    //      re-entering (the real recursive watcher → coalesced IPC push →
+    //      silent re-read path); Back and ten re-enter cycles leave the
+    //      watcher clean (the handle-leak accounting lives in vitest).
+    // The pinned session is unpinned at the end (the ticket-84 courtesy) and
+    // the project dir removed, so later runs and stages are untouched.
+    log('fb107_start')
+    const fb107Dir = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-fb107-'))
+    const fb107Store = process.env['PICODE_SESSION_DIR']
+    if (!fb107Store) fail('ticket-107 stage: PICODE_SESSION_DIR is not set')
+    try {
+      writeFileSync(path.join(fb107Dir, 'alpha.txt'), 'alpha 107')
+      writeFileSync(path.join(fb107Dir, 'beta.md'), 'beta 107')
+      mkdirSync(path.join(fb107Dir, 'sub'))
+      writeFileSync(path.join(fb107Dir, 'sub', 'inner.txt'), 'inner 107')
+      // Two sessions in the SAME project: one gets pinned (drives the row
+      // entry), one keeps the project group renderable (header probe).
+      for (const seed of [
+        { id: 'fb107-pinned', title: 'PICODE_FB107 PINNED TASK', ageMin: 5 },
+        { id: 'fb107-group', title: 'PICODE_FB107 GROUP TASK', ageMin: 6 }
+      ]) {
+        const stamp = new Date().toISOString()
+        const lines = [
+          JSON.stringify({ type: 'session', version: 3, id: seed.id, timestamp: stamp, cwd: fb107Dir }),
+          JSON.stringify({
+            type: 'message',
+            id: `${seed.id}-u1`,
+            parentId: null,
+            timestamp: stamp,
+            message: { role: 'user', content: [{ type: 'text', text: seed.title }] }
+          })
+        ]
+        const file = path.join(fb107Store, `${seed.id}.jsonl`)
+        writeFileSync(file, lines.join('\n') + '\n')
+        const mtime = new Date(Date.now() - seed.ageMin * 60_000)
+        utimesSync(file, mtime, mtime)
+      }
+
+      await withWindow(getWindow, async (win) => {
+        const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+        // The keymap stage may have left the sidebar closed — open with ⌘B
+        // (press-until-present, the panel-stage pattern).
+        const sidebarPresent = `(document.querySelector('.sidebar') !== null)`
+        if (!((await js(sidebarPresent)) as boolean)) {
+          await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', metaKey: true, bubbles: true })); true`)
+          await waitForProbe(win, sidebarPresent, 5_000)
+        }
+        // By-project view (the group header probe needs the header render).
+        await js(`(() => { const b = document.querySelector('button[aria-label="Filter tasks"]'); if (b instanceof HTMLElement) { b.dispatchEvent(new MouseEvent('click', { bubbles: true })); return true } return false })()`)
+        await js(`(() => { const item = [...document.querySelectorAll('.sb-filter-menu .sb-filter-menu-item')].find((n) => n.querySelector('span')?.textContent === 'By project'); if (item instanceof HTMLElement) { item.dispatchEvent(new MouseEvent('click', { bubbles: true })); return true } return false })()`)
+
+        const label107 = path.basename(fb107Dir)
+        const pinnedRow = `document.querySelector('.sb-task[data-file$="fb107-pinned.jsonl"]')`
+        // PARENTHESIZED: the inner `?? null` must never mix with an outer
+        // `&&` (a SyntaxError makes the probe fail forever, invisibly).
+        const fb107Group = `([...document.querySelectorAll('.sb-group')].find((g) => g.querySelector('.sb-group-header span')?.textContent === '${label107}') ?? null)`
+        const fbRowNames = `[...document.querySelectorAll('.fb-row .fb-row-name')].map((n) => n.textContent ?? '')`
+        const fbHasRow = (name: string): string => `${fbRowNames}.includes('${name}')`
+        const clickIn = (host: string, selector: string): string => `(() => { const el = ${host}?.querySelector('${selector}'); if (el instanceof HTMLElement) { el.dispatchEvent(new MouseEvent('click', { bubbles: true })); return true } return false })()`
+
+        // Seeded rows render (poll the index like every sidebar stage).
+        if (!(await waitForProbe(win, `${pinnedRow} !== null && ${fb107Group} !== null`, 30_000))) {
+          fail(`ticket-107 stage: the seeded fb107 rows never rendered (pinned row: ${String(await js(`${pinnedRow} !== null`))}, group: ${String(await js(`${fb107Group} !== null`))}, tasks: ${String(await js("document.querySelectorAll('.sb-task').length"))})`)
+        }
+
+        // Pin through the row's own pin button; the row moves to Pinned.
+        if (!((await js(clickIn(pinnedRow, '.sb-pin-btn'))) as boolean)) {
+          fail('ticket-107 stage: the pin button is missing on the fb107 row')
+        }
+        if (!(await waitForProbe(win, `document.querySelector('.sb-scroll > .sb-task[data-file$="fb107-pinned.jsonl"]') !== null`, 5_000))) {
+          fail('ticket-107 stage: the fb107 row never moved into the pinned section')
+        }
+        log('fb107_pin_seeded_ok')
+
+        // Ticket 26 probe: the group header keeps its three-button hover
+        // form (⋯ / View files / New task) — zero regression from the new
+        // pinned-row entry.
+        const headerActions = `(${fb107Group} !== null ? ${fb107Group}.querySelectorAll('.sb-group-action').length : -1)`
+        if (!(await waitForProbe(win, `${headerActions} === 3`, 5_000))) {
+          fail(`ticket-107 stage: the group header no longer carries the three-button form (saw ${String(await js(headerActions))})`)
+        }
+        log('fb107_header_form_ok')
+
+        // ② The pinned row's View files entry opens THIS project's browser.
+        if (!((await js(clickIn(pinnedRow, '.sb-files-btn'))) as boolean)) {
+          fail('ticket-107 stage: the pinned row has no View files entry')
+        }
+        const browserOpen = `document.querySelector('.fb-browser[data-browser-cwd="${fb107Dir}"]') !== null`
+        if (!(await waitForProbe(win, browserOpen, 10_000))) {
+          fail('ticket-107 stage: the pinned-row View files entry never opened the project browser')
+        }
+        log('fb107_row_entry_opens_ok')
+
+        // The root listing arrives through the preview channel (alpha/beta/sub).
+        if (!(await waitForProbe(win, `${fbHasRow('alpha.txt')} && ${fbHasRow('beta.md')} && ${fbHasRow('sub')}`, 15_000))) {
+          fail('ticket-107 stage: the browser root listing never rendered the seeded entries')
+        }
+
+        // Expand the subdirectory; its lazy listing reads fresh. The row's
+        // click handler owns the toggle — clicking the name span bubbles to
+        // the .fb-row button.
+        const subRow = `[...document.querySelectorAll('.fb-row')].find((r) => r.querySelector('.fb-row-name')?.textContent === 'sub') ?? null`
+        if (!((await js(clickIn(subRow, '.fb-row-name'))) as boolean)) {
+          fail('ticket-107 stage: the sub row is missing from the root listing')
+        }
+        if (!(await waitForProbe(win, fbHasRow('inner.txt'), 10_000))) {
+          fail('ticket-107 stage: the sub directory never expanded to show inner.txt')
+        }
+        log('fb107_sub_expanded_ok')
+
+        // ① Real-time, root level: a NEW file appears without re-entering.
+        writeFileSync(path.join(fb107Dir, 'gamma.txt'), 'gamma 107')
+        if (!(await waitForProbe(win, fbHasRow('gamma.txt'), 20_000))) {
+          fail(`ticket-107 stage: a created file never appeared in the open tree (rows: ${String(await js(fbRowNames))})`)
+        }
+        log('fb107_create_visible_ok')
+
+        // Real-time, EXPANDED subdirectory level.
+        writeFileSync(path.join(fb107Dir, 'sub', 'extra.txt'), 'extra 107')
+        if (!(await waitForProbe(win, fbHasRow('extra.txt'), 20_000))) {
+          fail(`ticket-107 stage: a file created in an expanded subdir never appeared (rows: ${String(await js(fbRowNames))})`)
+        }
+        log('fb107_deep_create_visible_ok')
+
+        // Real-time deletion: alpha.txt vanishes.
+        rmSync(path.join(fb107Dir, 'alpha.txt'))
+        if (!(await waitForProbe(win, `!${fbHasRow('alpha.txt')}`, 20_000))) {
+          fail(`ticket-107 stage: a deleted file never vanished from the open tree (rows: ${String(await js(fbRowNames))})`)
+        }
+        log('fb107_delete_visible_ok')
+
+        // Real-time rename: beta.md → beta-renamed.md (old row out, new in).
+        renameSync(path.join(fb107Dir, 'beta.md'), path.join(fb107Dir, 'beta-renamed.md'))
+        if (!(await waitForProbe(win, `${fbHasRow('beta-renamed.md')} && !${fbHasRow('beta.md')}`, 20_000))) {
+          fail(`ticket-107 stage: a renamed file never swapped rows in the open tree (rows: ${String(await js(fbRowNames))})`)
+        }
+        log('fb107_rename_visible_ok')
+
+        // Back to tasks; then TEN re-enter cycles — the watcher must survive
+        // repeated unmount/remount without degrading (vitest owns the exact
+        // handle accounting; this proves the renderer path stays functional).
+        await js(clickIn(`document.querySelector('.fb-browser')`, '.fb-back-btn'))
+        if (!(await waitForProbe(win, `!${browserOpen}`, 5_000))) {
+          fail('ticket-107 stage: Back never unmounted the browser')
+        }
+        for (let cycle = 0; cycle < 10; cycle++) {
+          if (!((await js(clickIn(pinnedRow, '.sb-files-btn'))) as boolean)) {
+            fail(`ticket-107 stage: cycle ${cycle + 1} — the View files entry went missing`)
+          }
+          if (!(await waitForProbe(win, browserOpen, 5_000))) {
+            fail(`ticket-107 stage: cycle ${cycle + 1} — the browser never re-opened`)
+          }
+          await js(clickIn(`document.querySelector('.fb-browser')`, '.fb-back-btn'))
+          if (!(await waitForProbe(win, `!${browserOpen}`, 5_000))) {
+            fail(`ticket-107 stage: cycle ${cycle + 1} — Back never unmounted the browser`)
+          }
+        }
+        log('fb107_cycles_clean_ok')
+
+        // One more live-refresh assertion AFTER the cycles: the watcher
+        // re-registered on the final mount is still the real thing.
+        if (!((await js(clickIn(pinnedRow, '.sb-files-btn'))) as boolean)) {
+          fail('ticket-107 stage: the View files entry went missing after the cycles')
+        }
+        if (!(await waitForProbe(win, browserOpen, 5_000))) {
+          fail('ticket-107 stage: the browser never re-opened after the cycles')
+        }
+        writeFileSync(path.join(fb107Dir, 'delta.txt'), 'delta 107')
+        if (!(await waitForProbe(win, fbHasRow('delta.txt'), 20_000))) {
+          fail(`ticket-107 stage: the watcher never recovered after the re-enter cycles (rows: ${String(await js(fbRowNames))})`)
+        }
+        await js(clickIn(`document.querySelector('.fb-browser')`, '.fb-back-btn'))
+        if (!(await waitForProbe(win, `!${browserOpen}`, 5_000))) {
+          fail('ticket-107 stage: Back never unmounted the browser after the delta probe')
+        }
+        log('fb107_refresh_after_cycles_ok')
+
+        // Unpin cleanup (the ticket-84 courtesy): the row returns to its group.
+        const pinnedRowNow = `document.querySelector('.sb-scroll > .sb-task[data-file$="fb107-pinned.jsonl"]')`
+        if (!((await js(clickIn(pinnedRowNow, '.sb-pin-btn'))) as boolean)) {
+          fail('ticket-107 stage: the pinned row lost its pin button for the unpin')
+        }
+        if (!(await waitForProbe(win, `document.querySelector('.sb-scroll > .sb-task[data-file$="fb107-pinned.jsonl"]') === null`, 5_000))) {
+          fail('ticket-107 stage: the unpin never returned the row to its group')
+        }
+        log('fb107_unpin_cleanup_ok')
+      })
+    } finally {
+      rmSync(fb107Dir, { recursive: true, force: true })
+    }
+    log('fb107_done')
 
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
     const livePids = supervisor.hostPids

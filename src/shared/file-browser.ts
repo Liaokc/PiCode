@@ -36,6 +36,11 @@ export interface FileBrowserState {
   loading: ReadonlySet<string>
   /** Directories whose listing failed (shown as an inline error + retry). */
   failed: ReadonlySet<string>
+  /** Ticket 107: loaded listings the file-watch channel reported dirty. They
+   * re-read SILENTLY in place (the component effect fetches them) — rows
+   * never flash a loading hint and keep the old children until the fresh
+   * listing arrives. Cleared by children-loaded / children-failed. */
+  stale: ReadonlySet<string>
 }
 
 export type FileBrowserAction =
@@ -44,10 +49,19 @@ export type FileBrowserAction =
   | { type: 'retry'; path: string }
   | { type: 'children-loaded'; path: string; entries: readonly FileBrowserListingEntry[] }
   | { type: 'children-failed'; path: string }
+  | { type: 'watch-invalidated'; dirs: readonly string[]; overflow: boolean }
 
 /** Open the browser for one project: root listing in flight, nothing cached. */
 export function openBrowser(cwd: string, project: string): FileBrowserState {
-  return { cwd, project, children: { '': [] }, expanded: new Set(), loading: new Set(['']), failed: new Set() }
+  return {
+    cwd,
+    project,
+    children: { '': [] },
+    expanded: new Set(),
+    loading: new Set(['']),
+    failed: new Set(),
+    stale: new Set()
+  }
 }
 
 function childPath(parent: string, name: string): string {
@@ -78,6 +92,25 @@ function retry(state: FileBrowserState, path: string): FileBrowserState {
   return { ...state, loading, failed }
 }
 
+/** Ticket 107: mark loaded listings stale from one coalesced watch event.
+ * Only LOADED listings re-read (children keys — the root placeholder counts,
+ * so a root event always re-reads); directories never loaded are ignored,
+ * their first expand reads fresh anyway, and failed listings have no
+ * children entry, so the watch channel never auto-retries them — the retry
+ * button keeps that job. An overflow event (cap-busting storm, or the
+ * platform delivering an unnamed change) invalidates everything loaded. */
+function invalidate(state: FileBrowserState, dirs: readonly string[], overflow: boolean): FileBrowserState {
+  const stale = new Set(state.stale)
+  if (overflow) {
+    for (const path of Object.keys(state.children)) stale.add(path)
+    return { ...state, stale }
+  }
+  for (const dir of dirs) {
+    if (Object.hasOwn(state.children, dir)) stale.add(dir)
+  }
+  return { ...state, stale }
+}
+
 export function fileBrowserReducer(
   state: FileBrowserState | null,
   action: FileBrowserAction
@@ -99,17 +132,26 @@ export function fileBrowserReducer(
       }))
       const loading = new Set(state.loading)
       const failed = new Set(state.failed)
+      const stale = new Set(state.stale)
       loading.delete(action.path)
       failed.delete(action.path)
-      return { ...state, children, loading, failed }
+      stale.delete(action.path)
+      return { ...state, children, loading, failed, stale }
     }
     case 'children-failed': {
       const loading = new Set(state.loading)
       const failed = new Set(state.failed)
+      const stale = new Set(state.stale)
       loading.delete(action.path)
       failed.add(action.path)
-      return { ...state, loading, failed }
+      // A failed re-read is removed from stale too — the path (typically a
+      // deleted directory) must not re-fetch on every state change; the
+      // next watch event re-invalidates it if it matters again.
+      stale.delete(action.path)
+      return { ...state, loading, failed, stale }
     }
+    case 'watch-invalidated':
+      return invalidate(state, action.dirs, action.overflow)
     default:
       return state
   }

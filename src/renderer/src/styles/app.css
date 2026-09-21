@@ -446,10 +446,45 @@ kbd {
 .sb-task {
   color: var(--text-primary);
   cursor: pointer;
+  /* Anchor for the pinned row's View files entry (ticket 107) — the only
+     absolutely positioned row child (over the time slot). */
+  position: relative;
 }
 
 .sb-task:hover {
   background: var(--bg-hover);
+}
+
+/* Pinned-row View files entry (ticket 107): fades in on hover over the
+   vacated time slot (right edge stops just short of the pin's slot), same
+   150ms fades and hover chip as the archive button (ticket 35). The row
+   grid never shifts — the button is out of flow. */
+.sb-files-btn {
+  position: absolute;
+  right: 30px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 150ms ease, visibility 150ms ease;
+  z-index: 1;
+}
+
+.sb-task:hover .sb-files-btn {
+  visibility: visible;
+  opacity: 1;
+}
+
+.sb-files-btn:hover {
+  background: var(--bg-active);
+  color: var(--text-primary);
 }
 
 .sb-task-active {
