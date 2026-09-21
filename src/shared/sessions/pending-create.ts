@@ -114,16 +114,23 @@ export function mergePendingCreates(
 
 /**
  * `session_created` bookkeeping: stamp the announced real session id on the
- * OLDEST unannounced pending whose cwd matches the announcement (announcements
- * also arrive for resumes and forks — a cwd mismatch is never consumed).
+ * OLDEST unannounced pending whose cwd matches the announcement AND whose
+ * announcement is a fresh create — `resumed: true` announcements (resumes)
+ * are another session's business and never consume a placeholder (a same-cwd
+ * resume click during boot must not eat the card). Forks announce as new
+ * sessions and can still consume a same-cwd pending in the rare double-boot
+ * window; the consequence is benign — the pending drops early and the real
+ * card still arrives through the index (对账 is id-based, not slot-based).
  * An already-announced pending is never re-announced. Returns the SAME
  * reference when nothing matched.
  */
 export function announcePending(
   pending: readonly PendingCreate[],
   sessionId: string,
-  cwd: string
+  cwd: string,
+  resumed = false
 ): readonly PendingCreate[] {
+  if (resumed) return pending
   const at = pending.findIndex((p) => p.announcedSessionId === null && p.cwd === cwd)
   if (at === -1) return pending
   const next = pending.slice()

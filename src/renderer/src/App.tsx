@@ -475,12 +475,15 @@ export default function App(): JSX.Element {
           setFollowedFile(null)
           window.picode.sessions.unfollow()
           // Ticket 106: record the announcement on the pending create it
-          // belongs to (oldest unannounced cwd match — resumes and forks
-          // announce too and must never consume a placeholder). Display is
-          // unchanged: the card keeps its known title and honest "starting…"
-          // slot until the index confirms the file (对账替换).
+          // belongs to (oldest unannounced cwd match that announced as a
+          // FRESH create — `resumed: true` announcements never consume a
+          // placeholder; same-cwd fork announcements can in the rare
+          // double-boot window, benign: the pending drops early and the real
+          // card still arrives through the index). Display is unchanged: the
+          // card keeps its known title and honest "starting…" slot until the
+          // index confirms the file (对账替换).
           if (scopeId !== null && scopeEvent.type === 'session_created') {
-            setPendingCreates((prev) => announcePending(prev, scopeId, scopeEvent.cwd))
+            setPendingCreates((prev) => announcePending(prev, scopeId, scopeEvent.cwd, scopeEvent.resumed === true))
           }
           // Focus is switching to the announced session — the branch-history
           // panel belongs to the view being left behind; close it.
@@ -593,8 +596,16 @@ export default function App(): JSX.Element {
           // Ticket 106: a boot failure removes the placeholder it killed —
           // no ghost entries — and the failure is toasted verbatim (the
           // empty state shows no error banner, so the toast is the honest
-          // surface). A failure scoped to an unrelated live session or a
-          // hostless resume consumes nothing.
+          // surface). Boundary (documented, proportionate): a provisional-id
+          // failure is correlated by SHAPE, not identity — the renderer
+          // never learns its create's provisional id, so the oldest
+          // still-booting pending is consumed. A same-moment failed RESUME
+          // boot (also provisional-scoped) can therefore consume the
+          // pending prematurely; the failure toast stays truthful (some
+          // session did fail to start) and the real card still lands
+          // through the index. A failure scoped to an unrelated LIVE
+          // session's real id, or to a real id matching no pending, consumes
+          // nothing.
           if (scopeId !== null) {
             const failed = dropFailedPending(pendingCreatesRef.current, scopeId)
             if (failed.dropped !== null) {
@@ -634,10 +645,14 @@ export default function App(): JSX.Element {
    * since ticket 41, any model/thinking choice made in the new-task empty
    * state — the choice wins where present (same precedence as switching after
    * send), preference fields ride untouched, zero new contract (the additive
-   * `defaults` field). */
-  const sendCreateSession = useCallback((cwd: string, choice?: NewTaskModelChoice): void => {
+   * `defaults` field). Ticket 106: this is the ONE create-dispatch entry —
+   * every dispatch pairs the command with its optimistic placeholder
+   * (firstMessageText = '' when no first message is known), so a future
+   * dispatch site cannot forget the instant card. */
+  const sendCreateSession = useCallback((cwd: string, choice?: NewTaskModelChoice, firstMessageText = ''): void => {
     const defaults = mergeNewTaskDefaults(sessionDefaultsFromPreferences(settings.preferences), choice ?? null) ?? undefined
     window.picode.chat.sendToHost({ type: 'create_session', cwd, defaults })
+    injectPendingCreate(cwd, firstMessageText)
   }, [settings.preferences])
 
   /** Ticket 17/19: ⌘N, the New Task row or a group's hover action opens the
@@ -806,18 +821,19 @@ export default function App(): JSX.Element {
       // as the first prompt once the session exists.
       pendingPromptRef.current = text
       pendingImagesRef.current = images.length > 0 ? images : null
-      sendCreateSession(project, choice)
-      // Ticket 106: the optimistic placeholder — the sidebar's project group
-      // and session card appear NOW with the knowns (cwd, typed text), long
-      // before the host finishes booting.
-      injectPendingCreate(project, text)
+      // Ticket 106: the dispatch pairs the command with its optimistic
+      // placeholder — the sidebar's project group and session card appear
+      // NOW with the knowns (cwd, typed text), long before the host finishes
+      // booting.
+      sendCreateSession(project, choice, text)
     })()
   }
 
   /** Ticket 106: push one optimistic placeholder for a dispatched
    * create_session. The id is a renderer-local marker (never a Pi session
    * id); `session_created` stamps the real id on it, the session index
-   * confirms it, and a boot failure removes it. */
+   * confirms it, and a boot failure removes it. Called only from
+   * sendCreateSession — the one create-dispatch entry. */
   function injectPendingCreate(cwd: string, text: string): void {
     pendingCreateSeq.current += 1
     const id = `pending-create-${pendingCreateSeq.current}`
@@ -956,11 +972,10 @@ export default function App(): JSX.Element {
     const cwd = chat.error?.kind === 'host' ? chat.error.cwd : null
     if (!cwd) return
     setCreating(true)
+    // Ticket 106: same instant-card treatment as the New Task dispatch (the
+    // dispatch pairs it) — no first message is known, so the placeholder
+    // carries the scanner's own `New Task` fallback title.
     sendCreateSession(cwd)
-    // Ticket 106: same instant-card treatment as the New Task dispatch — no
-    // first message is known, so the placeholder carries the scanner's own
-    // `New Task` fallback title.
-    injectPendingCreate(cwd, '')
   }
 
   async function handlePickAnotherFolder(): Promise<void> {
@@ -969,9 +984,8 @@ export default function App(): JSX.Element {
     const cwd = await window.picode.chat.pickWorkingDirectory()
     if (!cwd) return
     setCreating(true)
-    sendCreateSession(cwd)
     // Ticket 106: same instant-card treatment as the New Task dispatch.
-    injectPendingCreate(cwd, '')
+    sendCreateSession(cwd)
   }
 
   // ---- settings window callbacks (ticket 11) ----

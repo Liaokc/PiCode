@@ -131,6 +131,11 @@ describe('announcePending (ticket 106 — session_created reconciliation bookkee
     const pending: PendingCreate[] = [{ ...makePendingCreate('p1', '/proj', 'First', 1), announcedSessionId: 'pi-one' }]
     expect(announcePending(pending, 'pi-two', '/proj')).toBe(pending)
   })
+
+  it('never consumes a placeholder for a RESUMED announcement, even in the same cwd', () => {
+    const pending = [makePendingCreate('p1', '/proj', 'First', 1)]
+    expect(announcePending(pending, 'pi-resumed', '/proj', true)).toBe(pending)
+  })
 })
 
 describe('reconcilePending (ticket 106 — the index is the confirmation source)', () => {
