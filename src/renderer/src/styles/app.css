@@ -7219,12 +7219,12 @@ button.preview-crumb:hover {
   border-color: #e0b4b4;
 }
 
-/* ---------- queue panel (ticket 05; ticket 100: 行与卡边分离) ---------- */
+/* ---------- queue panel (ticket 05; ticket 100 row/card separation;
+   ticket 128: ZCode composition — grip + tag + text + Edit + trash,
+   segment-internal drag, global Clear retired) ---------- */
 
 .queue-panel {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
   /* Ticket 100: the row borders used to sit flush against the composer
      card's edge — the row radius coincided with the card's. The horizontal
      padding insets every row from the card edge (aligned with the input
@@ -7242,20 +7242,44 @@ button.preview-crumb:hover {
   min-width: 0;
 }
 
+/* Ticket 128 P20: the row is a fixed compact height and every child
+   stretches to the body's full height — the inline actions are the row's
+   height, no more half-height action strip vs taller row (the P20
+   misalignment the ZCode rebuild absorbs). */
 .queue-item {
   display: flex;
-  align-items: center;
+  align-items: stretch;
+  height: 28px;
   gap: 8px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--bg-card);
-  padding: 5px 10px;
+  padding: 0 10px;
   font-size: 12.5px;
   min-width: 0;
 }
 
+/* The drag handle (ticket 128): the ⋮⋮ grip at the row's left edge, the
+   REAL handle — dragging it reorders the row within its own segment
+   (ticket 84's manual-sort form). */
+.queue-item-grip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  margin-left: -4px;
+  color: var(--text-secondary);
+  cursor: grab;
+}
+
+.queue-item-grip:active {
+  cursor: grabbing;
+}
+
 .queue-item-tag {
   flex: none;
+  align-self: center;
   font-size: 10.5px;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -7275,19 +7299,21 @@ button.preview-crumb:hover {
 
 .queue-item-text {
   flex: 1;
+  align-self: center;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-primary);
 }
 
-/* Ticket 100: the inline row actions — Edit (back into the composer with
-   the original text + images) and × (remove this row only). Ghost buttons,
-   flex-none so the text's ellipsis never squeezes them. */
+/* Ticket 128: the inline row actions — Edit (back into the composer with
+   the original text + images) and the trash (discards this row only; the
+   global Clear is retired). Ghost buttons stretched to the row body's
+   height (P20), flex-none so the text's ellipsis never squeezes them. */
 .queue-item-actions {
   flex: none;
   display: inline-flex;
-  align-items: center;
+  align-items: stretch;
   gap: 1px;
 }
 
@@ -7295,8 +7321,7 @@ button.preview-crumb:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 24px;
   border-radius: 5px;
   color: var(--text-secondary);
 }
@@ -7306,22 +7331,16 @@ button.preview-crumb:hover {
   color: var(--text-primary);
 }
 
-.queue-panel-clear {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 26px;
-  padding: 0 9px;
-  border-radius: 8px;
-  border: 1px solid var(--border-strong);
-  font-size: 11.5px;
-  color: var(--text-secondary);
+/* Drop indicator (ticket 128, ticket 84's language): a 2px accent line
+   inside the landing edge of the row the drag hovers. box-shadow paints
+   without touching layout, so nothing shifts while the indicator walks
+   the segment. */
+.queue-item-drop-above {
+  box-shadow: inset 0 2px 0 0 var(--accent-indigo);
 }
 
-.queue-panel-clear:hover {
-  background: var(--bg-inset);
-  color: var(--text-primary);
+.queue-item-drop-below {
+  box-shadow: inset 0 -2px 0 0 var(--accent-indigo);
 }
 
 /* ---------- panel tab bodies (ticket 08: hidden tabs stay mounted) ---------- */

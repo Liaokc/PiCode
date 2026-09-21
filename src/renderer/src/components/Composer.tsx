@@ -64,12 +64,15 @@ export interface ComposerApi {
   onSetAccessMode: (mode: AccessMode) => void
   onSetModel: (providerId: string, modelId: string) => void
   onSetThinkingLevel: (level: ThinkingLevel) => void
-  onClearQueue: () => void
   /** Ticket 100: inline Edit on one queue row — the host's dance removes the
    * entry and answers with its raw text + images for the composer prefill. */
   onEditQueueEntry: (kind: QueueKind, index: number) => void
   /** Ticket 100: per-row × removal — the same dance, no prefill. */
   onRemoveQueueEntry: (kind: QueueKind, index: number) => void
+  /** Ticket 128: drag-reorder one queue row within its own segment — the
+   * same dance with a reorder mutation; the re-feed's queue_update events
+   * are the ack. */
+  onReorderQueueEntry: (kind: QueueKind, from: number, to: number) => void
   onListFiles: (requestId: string, query: string) => void
   onPickImages: () => Promise<ImageAttachment[]>
   onBuiltinCommand: (name: string) => void
@@ -165,9 +168,9 @@ export default function Composer({
   onSetAccessMode,
   onSetModel,
   onSetThinkingLevel,
-  onClearQueue,
   onEditQueueEntry,
   onRemoveQueueEntry,
+  onReorderQueueEntry,
   onListFiles,
   onPickImages,
   onBuiltinCommand,
@@ -839,7 +842,7 @@ export default function Composer({
       )}
 
       {busy && (
-        <QueuePanel queue={queue} onClear={onClearQueue} onEdit={onEditQueueEntry} onRemove={onRemoveQueueEntry} />
+        <QueuePanel queue={queue} onEdit={onEditQueueEntry} onRemove={onRemoveQueueEntry} onReorder={onReorderQueueEntry} />
       )}
 
       <footer className="composer-footer">

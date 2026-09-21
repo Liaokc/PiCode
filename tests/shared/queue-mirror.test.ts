@@ -3,8 +3,10 @@ import {
   emptyQueueMirror,
   enqueueQueueEntry,
   planQueueRefeed,
+  queueReorderTarget,
   reconcileQueueMirror,
   removeQueueEntryAt,
+  reorderQueueEntry,
   type QueueMirror,
   type QueueMirrorEntry
 } from '../../src/shared/queue-mirror'
@@ -151,6 +153,86 @@ describe('queue mirror (ticket 100 Seam-1)', () => {
 
     it('plans nothing for an empty mirror', () => {
       expect(planQueueRefeed(emptyQueueMirror())).toEqual([])
+    })
+  })
+
+  describe('reorderQueueEntry (ticket 128: the segment-internal drag, splice move)', () => {
+    it('moves the head below the tail: [s1, s2] → [s2, s1], images and rawText ride their entries', () => {
+      const state = mirror([entry('s1', [IMG_A], 'raw-s1'), entry('s2', [], 'raw-s2')])
+      const after = reorderQueueEntry(state, 'steering', 0, 1)
+      expect(after.steering.map((e) => e.rawText)).toEqual(['raw-s2', 'raw-s1'])
+      expect(after.steering[0]?.images).toEqual([])
+      expect(after.steering[1]?.images).toEqual([IMG_A])
+      // The input mirror is untouched (pure model — every function returns
+      // new state).
+      expect(state.steering.map((e) => e.rawText)).toEqual(['raw-s1', 'raw-s2'])
+    })
+
+    it('moves the tail above the head: the same swap from the other drag direction', () => {
+      const state = mirror([entry('s1'), entry('s2')])
+      const after = reorderQueueEntry(state, 'steering', 1, 0)
+      expect(after.steering.map((e) => e.text)).toEqual(['s2', 's1'])
+    })
+
+    it('shifts the entries between by exactly one (middle move, not a swap)', () => {
+      const state = mirror([entry('a'), entry('b'), entry('c')])
+      expect(reorderQueueEntry(state, 'steering', 0, 2).steering.map((e) => e.text)).toEqual(['b', 'c', 'a'])
+      expect(reorderQueueEntry(state, 'steering', 2, 0).steering.map((e) => e.text)).toEqual(['c', 'a', 'b'])
+      expect(reorderQueueEntry(state, 'steering', 1, 0).steering.map((e) => e.text)).toEqual(['b', 'a', 'c'])
+    })
+
+    it('reorders the followUp queue independently — steering untouched', () => {
+      const state = mirror([entry('s1'), entry('s2')], [entry('f1', [IMG_A]), entry('f2')])
+      const after = reorderQueueEntry(state, 'followUp', 0, 1)
+      expect(after.followUp.map((e) => e.text)).toEqual(['f2', 'f1'])
+      expect(after.followUp[1]?.images).toEqual([IMG_A])
+      expect(after.steering.map((e) => e.text)).toEqual(['s1', 's2'])
+    })
+
+    it('re-feeds the reordered queue in the new order (越上越先注入)', () => {
+      const state = reorderQueueEntry(mirror([entry('s1'), entry('s2', [IMG_A])]), 'steering', 0, 1)
+      expect(planQueueRefeed(state)).toEqual([
+        { kind: 'steering', text: 's2', images: [IMG_A] },
+        { kind: 'steering', text: 's1', images: [] }
+      ])
+    })
+
+    const noOps: Array<{ name: string; from: number; to: number }> = [
+      { name: 'from === to (the drop landed on the dragged row)', from: 1, to: 1 },
+      { name: 'from out of range (a race delivery emptied the slot)', from: 2, to: 0 },
+      { name: 'to out of range', from: 0, to: 5 },
+      { name: 'negative from', from: -1, to: 0 },
+      { name: 'negative to', from: 0, to: -1 }
+    ]
+    for (const t of noOps) {
+      it(`is the honest no-op: ${t.name}`, () => {
+        const state = mirror([entry('a'), entry('b')])
+        expect(reorderQueueEntry(state, 'steering', t.from, t.to)).toBe(state)
+      })
+    }
+  })
+
+  describe('queueReorderTarget (ticket 128: the half-row drop geometry → the post-move ordinal)', () => {
+    const table: Array<{ name: string; from: number; rowIndex: number; above: boolean; to: number | null }> = [
+      { name: 'head dragged, drop below row 1 (the swap): to = 1', from: 0, rowIndex: 1, above: false, to: 1 },
+      { name: 'tail dragged, drop above row 0 (the same swap): to = 0', from: 1, rowIndex: 0, above: true, to: 0 },
+      { name: 'head dragged, drop above row 1: rows shift up, to = 0', from: 0, rowIndex: 1, above: true, to: 0 },
+      { name: 'head dragged, drop above row 0 (the dragged row itself, top half): no-op', from: 0, rowIndex: 0, above: true, to: null },
+      { name: 'head dragged, drop below row 2: between, to = 2', from: 0, rowIndex: 2, above: false, to: 2 },
+      { name: 'middle dragged, drop above a later row: shift by one, to = 1', from: 1, rowIndex: 2, above: true, to: 1 },
+      { name: 'last dragged, drop below row 0: to = 1', from: 2, rowIndex: 0, above: false, to: 1 },
+      { name: 'dropped on the dragged row itself (either half): no-op', from: 1, rowIndex: 1, above: false, to: null }
+    ]
+    for (const t of table) {
+      it(t.name, () => {
+        expect(queueReorderTarget(t.from, t.rowIndex, t.above)).toBe(t.to)
+      })
+    }
+    it('composes with reorderQueueEntry: the target lands the entry exactly at the drop edge', () => {
+      const state = mirror([entry('a'), entry('b'), entry('c')])
+      // Drag 'a' (0) below 'c' (2): target 2 → [b, c, a].
+      const to = queueReorderTarget(0, 2, false)
+      expect(reorderQueueEntry(state, 'steering', 0, to!).steering.map((e) => e.text)).toEqual(['b', 'c', 'a'])
     })
   })
 

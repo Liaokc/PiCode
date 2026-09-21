@@ -60,6 +60,7 @@ import {
   planQueueRefeed,
   reconcileQueueMirror,
   removeQueueEntryAt,
+  reorderQueueEntry,
   type QueueKind,
   type QueueMirror
 } from '../shared/queue-mirror'
@@ -632,32 +633,32 @@ function queueToSdk(agentSession: AgentSession, kind: QueueKind, text: string, i
   return kind === 'steering' ? agentSession.steer(text, content) : agentSession.followUp(text, content)
 }
 
-/** The queue dance (ticket 100): remove ONE entry (kind + row ordinal) from
- * the live queue. The SDK 0.85.1 queue face has no single-entry removal, so
- * the dance runs clearQueue → reconcile the mirror against the RETURN value
- * → drop the target → re-feed the survivors in queue order through the
- * SDK's own steer/followUp with the mirror's images (the text-only face
- * cannot return them).
+/** The queue dance (ticket 100; ticket 128 extends the same mechanism to
+ * the reorder op): the SDK 0.85.1 queue face has no single-entry removal
+ * and no reorder, so EVERY mutation runs clearQueue → reconcile the mirror
+ * against the RETURN value → let the caller mutate the survivors → re-feed
+ * in queue order through the SDK's own steer/followUp with the mirror's
+ * images (the text-only face cannot return them).
  *
  * The clear-returns reconciliation IS the delivery-race strategy: an entry
  * the return no longer names was delivered inside the millisecond window
  * between the click and the dance — it drops instead of re-feeding (no
- * double delivery). The row index is an ordinal into the post-
- * reconciliation survivors; a race-emptied slot removes nothing. If the
+ * double delivery). The renderer's row indexes are ordinals into the post-
+ * reconciliation survivors; a race-emptied slot mutates nothing. If the
  * run settles during the dance window, the re-fed entries ride the SDK's
  * own queues exactly like freshly queued ones (same delivery semantics —
- * never a new rot class). Returns the removed entry for the edit prefill,
- * or found=false when the slot was already gone. */
-async function runQueueDance(kind: QueueKind, index: number): Promise<{ found: boolean; text: string; images: TranscriptImagePart[] }> {
+ * never a new rot class). The mutate step returns the caller's value; a
+ * no-session host (or a dance error) yields null. */
+async function runQueueDanceCore<T>(mutate: (survivors: QueueMirror) => { mirror: QueueMirror; value: T }): Promise<T | null> {
   const agentSession = runtime?.session
-  if (!agentSession) return { found: false, text: '', images: [] }
+  if (!agentSession) return null
   queueDanceActive = true
   try {
     const cleared = agentSession.clearQueue() // emits queue_update itself
     const survivors = reconcileQueueMirror(queueMirror, cleared)
-    const { mirror: remaining, removed } = removeQueueEntryAt(survivors, kind, index)
-    queueMirror = remaining
-    for (const feed of planQueueRefeed(remaining)) {
+    const { mirror, value } = mutate(survivors)
+    queueMirror = mirror
+    for (const feed of planQueueRefeed(mirror)) {
       try {
         await queueToSdk(agentSession, feed.kind, feed.text, feed.images)
       } catch (err) {
@@ -665,14 +666,26 @@ async function runQueueDance(kind: QueueKind, index: number): Promise<{ found: b
         send({ type: 'session_command_error', message: `Queue re-feed failed: ${errorText(err)}` })
       }
     }
-    if (removed === null) return { found: false, text: '', images: [] }
-    return { found: true, text: removed.rawText, images: removed.images }
+    return value
   } catch (err) {
     send({ type: 'session_command_error', message: errorText(err) })
-    return { found: false, text: '', images: [] }
+    return null
   } finally {
     queueDanceActive = false
   }
+}
+
+/** Remove ONE entry (kind + row ordinal) from the live queue: the dance
+ * with a remove mutation. Returns the removed entry for the edit prefill,
+ * or found=false when the slot was already gone. */
+async function runQueueDance(kind: QueueKind, index: number): Promise<{ found: boolean; text: string; images: TranscriptImagePart[] }> {
+  const value = await runQueueDanceCore((survivors) => {
+    const { mirror: remaining, removed } = removeQueueEntryAt(survivors, kind, index)
+    return removed === null
+      ? { mirror: survivors, value: { found: false, text: '', images: [] } }
+      : { mirror: remaining, value: { found: true, text: removed.rawText, images: removed.images } }
+  })
+  return value ?? { found: false, text: '', images: [] }
 }
 
 /** `edit_queue_entry` (ticket 100, additive): the dance plus the prefill
@@ -682,6 +695,19 @@ function handleEditQueueEntry(requestId: string, kind: QueueKind, index: number)
   void runQueueDance(kind, index).then((result) => {
     send({ type: 'queue_entry_edited', requestId, found: result.found, text: result.text, images: result.images })
   })
+}
+
+/** `reorder_queue_entry` (ticket 128, additive): the dance with a reorder
+ * mutation — the entry moves WITHIN its own segment (from → to, splice
+ * move; 越上越先注入) and the survivors re-feed in the new order, images
+ * from the mirror. No reply: the re-feed's queue_update events are the
+ * ack. Out-of-range / non-integer indexes or from === to mutate nothing
+ * (the honest no-op). */
+function handleReorderQueueEntry(kind: QueueKind, from: number, to: number): void {
+  void runQueueDanceCore((survivors) => ({
+    mirror: reorderQueueEntry(survivors, kind, from, to),
+    value: true
+  }))
 }
 
 async function handleSetModel(providerId: string, modelId: string): Promise<void> {
@@ -921,6 +947,18 @@ process.on('message', (message: unknown) => {
     case 'remove_queue_entry':
       if (isQueueKind(message.kind) && typeof message.index === 'number') {
         void runQueueDance(message.kind, message.index)
+      }
+      break
+    case 'reorder_queue_entry':
+      // Ticket 128 (additive): malformed payloads are ignored, same
+      // fire-and-forget discipline as the ticket-100 ops (the re-feed's
+      // queue_update events are the ack).
+      if (
+        isQueueKind(message.kind) &&
+        typeof message.from === 'number' &&
+        typeof message.to === 'number'
+      ) {
+        handleReorderQueueEntry(message.kind, message.from, message.to)
       }
       break
     case 'set_model':
