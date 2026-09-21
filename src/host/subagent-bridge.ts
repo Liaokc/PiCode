@@ -35,7 +35,7 @@ import type { InlineExtension } from '@earendil-works/pi-coding-agent'
 import type { SessionScopedEvent, SubagentFleetDTO, SubagentRunState } from '../shared/contract'
 import { subagentInfoOfDetails } from '../shared/sessions/parse'
 import { clampInlineText } from '../shared/subagents/format'
-import { parseRunStateEnvelope } from '../shared/subagents/artifact'
+import { digRecord, parseRunStateEnvelope } from '../shared/subagents/artifact'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -262,9 +262,8 @@ export class SubagentBridge {
       // { requestId, state, deliveryStatus, ... }); the bare top-level field
       // the first implementation read never existed on a real reply. The
       // top-level read stays as a tolerant fallback (unknown-field rule).
-      const data = isRecord(reply.data) ? reply.data : {}
-      const details = isRecord(data['details']) ? (data['details'] as Record<string, unknown>) : {}
-      const steering = isRecord(details['steering']) ? (details['steering'] as Record<string, unknown>) : {}
+      const data = digRecord(reply.data)
+      const steering = digRecord(reply.data, 'details', 'steering')
       const deliveryStatus = steering['deliveryStatus'] ?? data['deliveryStatus']
       if (deliveryStatus === 'delivered' || deliveryStatus === 'queued') {
         this.send({ type: 'subagent_steer_receipt', requestId, asyncId, ok: true, deliveryStatus })

@@ -65,6 +65,21 @@ export function parseRunStateEnvelope(raw: unknown): SubagentRunState | null {
   }
 }
 
+/**
+ * Digs a nested record path (…keys) through unknown values — an EMPTY record
+ * at the first non-record hop. The bridge's RPC reply reads and the
+ * ticket-111 probe's reply digging share this guard cascade (the standards
+ * review's dig finding) so the two never drift.
+ */
+export function digRecord(value: unknown, ...keys: string[]): Record<string, unknown> {
+  let current: unknown = value
+  for (const key of keys) {
+    if (!isRecord(current)) return {}
+    current = current[key]
+  }
+  return isRecord(current) ? current : {}
+}
+
 /** What the conversation tab needs from one run's artifact: the child
  * session file to follow (top-level, else the first step that records one —
  * chain/parallel runs keep per-step files), the run's state, and the step

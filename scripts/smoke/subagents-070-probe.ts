@@ -42,7 +42,7 @@ import * as pi from '@earendil-works/pi-coding-agent'
 import { SubagentBridge } from '../../src/host/subagent-bridge.ts'
 import type { HostEvent } from '../../src/host/subagent-bridge.ts'
 import { ensureSubagentRunnerPackageRoot } from '../../src/host/subagent-runner-root.ts'
-import { parseRunStateEnvelope, parseTranscriptSourceEnvelope } from '../../src/shared/subagents/artifact.ts'
+import { digRecord, isRecord, parseRunStateEnvelope, parseTranscriptSourceEnvelope } from '../../src/shared/subagents/artifact.ts'
 import { mapArtifactState } from '../../src/shared/subagents/directory.ts'
 
 const RPC_REQUEST_EVENT = 'subagents:rpc:v1:request'
@@ -60,10 +60,6 @@ function log(step: string, detail = ''): void {
 function fail(message: string): never {
   console.error(`PROBE FAIL ${message}`)
   process.exit(1)
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 async function withTimeout<T>(label: string, budgetMs: number, body: (deadline: number) => Promise<T>): Promise<T> {
@@ -149,6 +145,19 @@ function census(status: Record<string, unknown>): void {
   for (const key of Object.keys(status)) statusFieldCensus.add(key)
 }
 
+/** The spawn reply's launch receipt (data.details — the SAME shape the
+ * session transcript persists and ticket 90's replay parses): run id,
+ * asyncDir, and the raw details for the census. Null when the reply carries
+ * no usable identity. */
+function extractSpawnIdentity(reply: { success: boolean; data?: unknown }): { runId: string; asyncDir: string; details: Record<string, unknown> } | null {
+  if (reply.success !== true) return null
+  const details = digRecord(reply.data, 'details')
+  const runId = typeof details['runId'] === 'string' ? details['runId'] : (typeof details['asyncId'] === 'string' ? details['asyncId'] : undefined)
+  const asyncDir = typeof details['asyncDir'] === 'string' ? details['asyncDir'] : undefined
+  if (runId === undefined || runId === '' || asyncDir === undefined || asyncDir === '') return null
+  return { runId, asyncDir, details }
+}
+
 async function main(): Promise<void> {
   log('boot_start', 'real agent dir, real pi-subagents, bridge + observer inline')
   // The HOST's own ticket-111 fix (src/host/subagent-runner-root.ts), driven
@@ -169,9 +178,8 @@ async function main(): Promise<void> {
     while (true) {
       const ping = await rpc('ping', {}).catch(() => null)
       if (ping !== null && ping.success === true) {
-        const data = isRecord(ping.data) ? ping.data : {}
-        const capabilities = isRecord(data['capabilities']) ? (data['capabilities'] as Record<string, unknown>) : {}
-        const events = isRecord(data['events']) ? (data['events'] as Record<string, unknown>) : {}
+        const capabilities = digRecord(ping.data, 'capabilities')
+        const events = digRecord(ping.data, 'events')
         if (!isRecord(capabilities['fleetStatus']) || capabilities['fleetStatus']['version'] !== 1) {
           fail(`ping: fleetStatus capability is not v1 (${JSON.stringify(capabilities['fleetStatus'])})`)
         }
@@ -195,14 +203,11 @@ async function main(): Promise<void> {
   // seconds; reads + a long write keep it busy for tens of seconds).
   const LONG_TASK = 'Read the files package.json, tsconfig.json, vitest.config.ts, eslint.config.js and README.md in this directory ONE AT A TIME, waiting for each result before the next. After the five reads, write the numbers from 1 to 100, one per line. Then reply with exactly: PICODE070OK'
   const leg1 = await rpc('spawn', { agent: 'scout', task: LONG_TASK })
-  if (leg1.success !== true) fail(`spawn leg1 failed: ${JSON.stringify(leg1.error)}`)
-  const spawnData = isRecord(leg1.data) ? leg1.data : {}
-  const spawnDetails = isRecord(spawnData['details']) ? spawnData['details'] : {}
-  const runId1 = typeof spawnDetails['runId'] === 'string' ? spawnDetails['runId'] : (typeof spawnDetails['asyncId'] === 'string' ? spawnDetails['asyncId'] : undefined)
-  const asyncDir1 = typeof spawnDetails['asyncDir'] === 'string' ? spawnDetails['asyncDir'] : undefined
-  if (runId1 === undefined || runId1 === '') fail(`spawn leg1: no run id in details (keys=${JSON.stringify(Object.keys(spawnDetails))})`)
-  if (asyncDir1 === undefined || asyncDir1 === '') fail(`spawn leg1: no asyncDir in details (keys=${JSON.stringify(Object.keys(spawnDetails))})`)
-  log('spawn_leg1', `runId=${runId1} mode=${String(spawnDetails['mode'])}`)
+  const identity1 = extractSpawnIdentity(leg1)
+  if (identity1 === null) fail(`spawn leg1 failed or carried no identity: ${JSON.stringify(leg1.error ?? (isRecord(leg1.data) ? Object.keys(digRecord(leg1.data, 'details')) : leg1.data))}`)
+  const runId1 = identity1.runId
+  const asyncDir1 = identity1.asyncDir
+  log('spawn_leg1', `runId=${runId1} mode=${String(identity1.details['mode'])}`)
 
   // The runner writes the initial status.json (state running) BEFORE the
   // spawn reply returns — wait for it, then fire the steer IMMEDIATELY so it
@@ -264,13 +269,13 @@ async function main(): Promise<void> {
   // + the BRIDGE's forwarded subagent_status (available + fleet DTO + runs).
   const statusRaw = await rpc('status', {})
   if (statusRaw.success !== true) fail(`status RPC failed: ${JSON.stringify(statusRaw.error)}`)
-  const statusData = isRecord(statusRaw.data) ? statusRaw.data : {}
+  const statusData = digRecord(statusRaw.data)
   for (const key of ['text', 'details', 'fleet', 'asyncSnapshot']) {
     if (!(key in statusData)) fail(`status reply missing "${key}" (shape drift)`)
   }
-  const fleet = statusData['fleet'] as Record<string, unknown>
+  const fleet = digRecord(statusRaw.data, 'fleet')
   if (fleet['version'] !== 1 || !Array.isArray(fleet['entries'])) fail(`fleet DTO drift: ${JSON.stringify(fleet)}`)
-  const asyncSnapshot = statusData['asyncSnapshot']
+  const asyncSnapshot = digRecord(statusRaw.data, 'asyncSnapshot')
   if (!isRecord(asyncSnapshot) || !Array.isArray(asyncSnapshot['runs'])) fail(`asyncSnapshot drift: ${JSON.stringify(asyncSnapshot)}`)
   if (!(asyncSnapshot['runs'] as Array<Record<string, unknown>>).some((r) => r['id'] === runId1)) {
     fail(`asyncSnapshot.runs has no entry for ${runId1}`)
@@ -314,12 +319,10 @@ async function main(): Promise<void> {
   // ---- leg 2: spawn → running → RPC STOP → stopped ------------------------
 
   const leg2 = await rpc('spawn', { agent: 'scout', task: 'Read the files package.json, tsconfig.json and vitest.config.ts in this directory ONE AT A TIME, waiting for each result. Then write the numbers from 1 to 150, one per line, and reply with exactly: DONE150' })
-  if (leg2.success !== true) fail(`spawn leg2 failed: ${JSON.stringify(leg2.error)}`)
-  const spawn2 = isRecord(leg2.data) ? leg2.data : {}
-  const details2 = isRecord(spawn2['details']) ? spawn2['details'] : {}
-  const runId2 = typeof details2['runId'] === 'string' ? details2['runId'] : (typeof details2['asyncId'] === 'string' ? details2['asyncId'] : undefined)
-  const asyncDir2 = typeof details2['asyncDir'] === 'string' ? details2['asyncDir'] : undefined
-  if (runId2 === undefined || asyncDir2 === undefined) fail(`spawn leg2: details missing run id/asyncDir (keys=${JSON.stringify(Object.keys(details2))})`)
+  const identity2 = extractSpawnIdentity(leg2)
+  if (identity2 === null) fail(`spawn leg2 failed or carried no identity: ${JSON.stringify(leg2.error)}`)
+  const runId2 = identity2.runId
+  const asyncDir2 = identity2.asyncDir
   log('spawn_leg2', `runId=${runId2}`)
 
   await pollUntil('leg2 status.json running', CHILD_BUDGET_MS, () => readStatusJson(asyncDir2!), (s) => {
@@ -355,12 +358,10 @@ async function main(): Promise<void> {
   // ---- leg 3: child-targeted stop → the child-status event family --------
 
   const leg3 = await rpc('spawn', { agent: 'scout', task: 'Read the files package.json and tsconfig.json in this directory ONE AT A TIME, waiting for each result. Then write the numbers from 1 to 90, one per line, and reply with exactly: DONE90' })
-  if (leg3.success !== true) fail(`spawn leg3 failed: ${JSON.stringify(leg3.error)}`)
-  const spawn3 = isRecord(leg3.data) ? leg3.data : {}
-  const details3 = isRecord(spawn3['details']) ? spawn3['details'] : {}
-  const runId3 = typeof details3['runId'] === 'string' ? details3['runId'] : (typeof details3['asyncId'] === 'string' ? details3['asyncId'] : undefined)
-  const asyncDir3 = typeof details3['asyncDir'] === 'string' ? details3['asyncDir'] : undefined
-  if (runId3 === undefined || asyncDir3 === undefined) fail(`spawn leg3: details missing run id/asyncDir (keys=${JSON.stringify(Object.keys(details3))})`)
+  const identity3 = extractSpawnIdentity(leg3)
+  if (identity3 === null) fail(`spawn leg3 failed or carried no identity: ${JSON.stringify(leg3.error)}`)
+  const runId3 = identity3.runId
+  const asyncDir3 = identity3.asyncDir
   log('spawn_leg3', `runId=${runId3}`)
 
   await pollUntil('leg3 status.json running', CHILD_BUDGET_MS, () => readStatusJson(asyncDir3!), (s) => {
@@ -372,7 +373,7 @@ async function main(): Promise<void> {
   const childId3 = 'step:0'
   const stop3 = await rpc('stop', { id: runId3, childId: childId3 })
   if (stop3.success !== true) fail(`child-targeted stop failed: ${JSON.stringify(stop3.error)}`)
-  const stop3Data = isRecord(stop3.data) ? stop3.data : {}
+  const stop3Data = digRecord(stop3.data)
   if (stop3Data['state'] !== 'stopping') fail(`child-targeted stop reply state drift: ${JSON.stringify(stop3Data)}`)
   log('stop_child_raw', `state=${String(stop3Data['state'])} childId=${String(stop3Data['childId'])}`)
 
