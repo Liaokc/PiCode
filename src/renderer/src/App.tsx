@@ -1726,6 +1726,14 @@ export default function App(): JSX.Element {
    * ticket-17 chain so the boot empty state never inherits a stale preset. */
   const newTaskPresetActive = newTaskOpen ? newTaskPreset : null
 
+  // The toast surface (ticket 11) — one shared element for BOTH shells:
+  // the settings view's early return is a separate app-shell, and without
+  // the stack there every toast pushed while the settings window is open
+  // (Packages install/remove results since ticket 64) had no rendering
+  // surface at all (ticket 110). The workspace branch below mounts the
+  // same element.
+  const toastStack = <ToastStack toasts={toasts} onDismiss={dismissToastById} />
+
   if (ui.view === 'settings') {
     return (
       <div className="app-shell">
@@ -1742,6 +1750,7 @@ export default function App(): JSX.Element {
           focusedSessionId={chat.session?.sessionId ?? null}
           onNotify={notify}
         />
+        {toastStack}
         <TooltipHost />
       </div>
     )
@@ -1951,7 +1960,7 @@ export default function App(): JSX.Element {
           onClose={() => setSearchOpen(false)}
         />
       )}
-      <ToastStack toasts={toasts} onDismiss={dismissToastById} />
+      {toastStack}
       <TooltipHost />
     </div>
   )

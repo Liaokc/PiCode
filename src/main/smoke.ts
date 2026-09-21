@@ -448,11 +448,7 @@ export function startSmokeIfEnabled(
     if (!(await waitForProbe(win, `document.querySelector('.settings-shell') !== null`, 5_000))) {
       fail('ticket-96 stage: the settings window never opened for the no-session probe')
     }
-    await win.webContents.executeJavaScript(`(() => {
-      const item = [...document.querySelectorAll('.settings-item')].find((el) => el.textContent?.trim() === 'MCP')
-      if (item instanceof HTMLElement) item.click()
-      return true
-    })()`).catch(() => false)
+    await clickSettingsNavItem(win, 'MCP')
     if (!(await waitForProbe(win, `document.querySelector('[data-mcp-section]') !== null`, 5_000))) {
       fail('ticket-96 stage: the MCP section never rendered for the no-session probe')
     }
@@ -8878,12 +8874,7 @@ export function startSmokeIfEnabled(
           // configured-first, alphabetical within each group — computed
           // from the SAME cached auth report the renderer joined.
           {
-            if (!(await js(`(() => {
-              const item = [...document.querySelectorAll('.settings-item')].find((el) => el.textContent?.trim() === 'Models')
-              if (!(item instanceof HTMLElement)) return false
-              item.click()
-              return true
-            })()`).catch(() => false))) fail('ticket-76 stage: the Models nav item is missing')
+            if (!(await clickSettingsNavItem(win, 'Models'))) fail('ticket-76 stage: the Models nav item is missing')
             const authReport = getAuthReport ? await getAuthReport() : null
             if (authReport === null) fail('ticket-76 stage: the smoke could not read the cached auth report')
             const expectedProviders = sortProvidersConfiguredFirst(authReport.providers, configuredProviderIds(authReport)).map((p) => p.name)
@@ -8898,22 +8889,12 @@ export function startSmokeIfEnabled(
             }
             log('settings_models_provider_order_ok', expectedProviders.join(','))
             // Return to the Skills section the ticket-63 stage continues with.
-            if (!(await js(`(() => {
-              const item = [...document.querySelectorAll('.settings-item')].find((el) => el.textContent?.trim() === 'Skills')
-              if (!(item instanceof HTMLElement)) return false
-              item.click()
-              return true
-            })()`).catch(() => false))) fail('ticket-76 stage: the Skills nav item is missing')
+            if (!(await clickSettingsNavItem(win, 'Skills'))) fail('ticket-76 stage: the Skills nav item is missing')
           }
 
           // ③ The Skills section lists the sandbox's real loading surface
           // (the probe child + the SDK package manager do the enumeration).
-          if (!(await js(`(() => {
-            const item = [...document.querySelectorAll('.settings-item')].find((el) => el.textContent?.trim() === 'Skills')
-            if (!(item instanceof HTMLElement)) return false
-            item.click()
-            return true
-          })()`).catch(() => false))) fail('ticket-63 stage: the Skills nav item is missing')
+          if (!(await clickSettingsNavItem(win, 'Skills'))) fail('ticket-63 stage: the Skills nav item is missing')
           const rowSig = (name: string): string => `(() => {
             const row = document.querySelector('.skill-row[data-skill-name="${name}"]')
             if (!(row instanceof HTMLElement)) return null
@@ -9109,6 +9090,22 @@ export function startSmokeIfEnabled(
       )
       mkdirSync(path.join(projectDir, '.pi'), { recursive: true })
       writeFileSync(path.join(projectDir, '.pi', 'settings.json'), JSON.stringify({ packages: [projectPkgRoot] }))
+      // Ticket 110: the REAL packages are the dual-end test objects — the
+      // operator's installed pi-mcp-adapter + pi-subagents are symlinked
+      // into the sandbox npm root (the shared seed helper; deps resolve
+      // through the real paths). The settings ENTRIES reach the sandbox
+      // only in the TUI-side step (⑦) — until then the list stays empty so
+      // the ticket-64 flow is untouched.
+      let sandboxNpmRoot: string | null = null
+      for (const name of ['pi-mcp-adapter', 'pi-subagents']) {
+        const seeded = seedSandboxPackage(agentDir, name)
+        if (seeded === null) {
+          fail(
+            `ticket-110 step: the ${name} package is not installed at ${path.join(homedir(), '.pi', 'agent', 'npm', 'node_modules', name)} — install it (pi install npm:${name}) and rerun`
+          )
+        }
+        sandboxNpmRoot = seeded
+      }
       // The canonical settings form of the installed local package: pi
       // relativizes local sources against the settings file's directory
       // (the agent dir for user scope) — the row and the file carry THAT
@@ -9134,12 +9131,7 @@ export function startSmokeIfEnabled(
           if (!(await waitForProbe(win, `document.querySelector('.settings-shell') !== null`, 5_000))) {
             fail('ticket-64 stage: ⌘, never opened the settings window')
           }
-          if (!(await js(`(() => {
-            const item = [...document.querySelectorAll('.settings-item')].find((el) => el.textContent?.trim() === 'Packages')
-            if (!(item instanceof HTMLElement)) return false
-            item.click()
-            return true
-          })()`).catch(() => false))) fail('ticket-64 stage: the Packages nav item is missing')
+          if (!(await clickSettingsNavItem(win, 'Packages'))) fail('ticket-64 stage: the Packages nav item is missing')
           if (!(await waitForProbe(win, `document.querySelector('.packages-install-input') !== null`, 5_000))) {
             fail('ticket-64 stage: the Packages section never rendered its install row')
           }
@@ -9185,11 +9177,28 @@ export function startSmokeIfEnabled(
           })()`
           type PkgRowSig = { present: boolean; enabled: string | null; badges: string[]; counts: string | null } | null
           let pkgRow: PkgRowSig = null
-          for (let waited = 0; waited < 20_000 && pkgRow === null; waited += 250) {
-            pkgRow = (await js(rowFor(relPkg)).catch(() => null)) as PkgRowSig
-            if (pkgRow === null) await new Promise((r) => setTimeout(r, 250))
+          // Ticket 110: the success toast must carry the honest new-session
+          // semantics — packages load at session startup, never hot-loaded
+          // into running ones. The toast and the row land together (the
+          // notify precedes the op-settled refresh), so the same wait window
+          // polls both.
+          const installToasted = (): Promise<boolean> =>
+            js(
+              `[...document.querySelectorAll('.toast-message')].some((n) => (n.textContent ?? '').includes('Takes effect in new sessions'))`
+            ).catch(() => false) as Promise<boolean>
+          let installToastedSeen = false
+          for (let waited = 0; waited < 20_000 && (pkgRow === null || !installToastedSeen); waited += 250) {
+            if (pkgRow === null) pkgRow = (await js(rowFor(relPkg)).catch(() => null)) as PkgRowSig
+            if (!installToastedSeen) installToastedSeen = await installToasted()
+            if (pkgRow === null || !installToastedSeen) await new Promise((r) => setTimeout(r, 250))
           }
           if (pkgRow === null) fail(`ticket-64 stage: the installed package row never appeared (${pkgRoot} as ${relPkg})`)
+          if (!installToastedSeen) {
+            const diag = (await js(
+              `[...document.querySelectorAll('.toast-message')].map((n) => n.textContent ?? '')`
+            ).catch(() => 'diag unavailable')) as unknown
+            fail(`ticket-110 step: the install success toast never noted the new-session semantics — toasts: ${JSON.stringify(diag)}`)
+          }
           if (!pkgRow!.badges.some((b) => b.toLowerCase() === 'local')) fail('ticket-64 stage: the local install is not badged Local')
           if (!pkgRow!.counts?.includes('1 extension') || !pkgRow!.counts?.includes('1 skill') || !pkgRow!.counts?.includes('1 prompt')) {
             fail(`ticket-64 stage: the package component counts are wrong (${String(pkgRow!.counts)})`)
@@ -9275,10 +9284,49 @@ export function startSmokeIfEnabled(
           if (!removed) fail('ticket-64 stage: the package never left the list and the settings file')
           log('packages_remove_ok')
 
-          // ⑦ The PROJECT layer: the sandbox project's row renders, the
+          // ⑦ Ticket 110: the TUI side installs. `pi install` lands exactly
+          // one thing this app reads — an entry in the SAME settings.json
+          // (the installed files the pre-seeded symlinks stand for) — so the
+          // stage writes it EXTERNALLY, out-of-band of every cache-clearing
+          // op. Then the section REMOUNTS (nav away, nav back): the mount
+          // must force-refresh the per-dir cache — the blind spot: the
+          // cache has no TTL and only PiCode's own ops cleared it, so a
+          // cached mount used to serve a list that never heard about the
+          // TUI's install. Both real packages must appear WITHOUT a manual
+          // Refresh click, resolved (NPM badge + component counts).
+          const tuiInstalled = ['npm:pi-mcp-adapter', 'npm:pi-subagents']
+          writeFileSync(sandboxSettings, JSON.stringify({ packages: tuiInstalled }, null, 2))
+          if (!(await clickSettingsNavItem(win, 'Skills'))) fail('ticket-110 step: the Skills nav item is missing')
+          if (!(await waitForProbe(win, `document.querySelector('.packages-install-input') === null`, 5_000))) {
+            fail('ticket-110 step: the Packages section never unmounted on nav-away')
+          }
+          if (!(await clickSettingsNavItem(win, 'Packages'))) fail('ticket-110 step: the Packages nav item is missing')
+          if (!(await waitForProbe(win, `document.querySelector('.packages-install-input') !== null`, 5_000))) {
+            fail('ticket-110 step: the Packages section never remounted')
+          }
+          for (const realSource of tuiInstalled) {
+            let realRow: PkgRowSig = null
+            for (let waited = 0; waited < 10_000 && realRow === null; waited += 250) {
+              realRow = (await js(rowFor(realSource)).catch(() => null)) as PkgRowSig
+              if (realRow === null) await new Promise((r) => setTimeout(r, 250))
+            }
+            if (realRow === null) {
+              fail(`ticket-110 step: the TUI-side install never reached the remounted list (${realSource})`)
+            }
+            if (!realRow!.badges.some((b) => b.toLowerCase() === 'npm')) {
+              fail(`ticket-110 step: the real package is not badged NPM (${realSource}: ${JSON.stringify(realRow!.badges)})`)
+            }
+            if (realRow!.counts === null || realRow!.counts.includes('Not installed')) {
+              fail(`ticket-110 step: the real package did not resolve component counts (${realSource}: ${String(realRow!.counts)})`)
+            }
+          }
+          log('packages_tui_side_reflected_ok')
+
+          // ⑧ The PROJECT layer: the sandbox project's row renders, the
           // banner states Pi is not loading the project's resources, and
           // every project action is LOCKED (untrusted → the gate pi itself
-          // applies to project writes).
+          // applies to project writes). ⑧ continues the ticket-64 flow —
+          // the ticket-110 global rows above must not disturb it.
           const projectRowSel = `.skill-row[data-package-source="${projectPkgRoot}"]`
           if (!(await waitForProbe(win, `document.querySelector('${projectRowSel}') !== null`, 20_000))) {
             fail(`ticket-64 stage: the project package row never appeared (${projectPkgRoot})`)
@@ -9308,7 +9356,7 @@ export function startSmokeIfEnabled(
           }
           log('packages_project_untrusted_ok')
 
-          // ⑧ Escape closes the settings window.
+          // ⑨ Escape closes the settings window.
           await js(`(() => {
             window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
             return true
@@ -9326,12 +9374,45 @@ export function startSmokeIfEnabled(
           fail('ticket-64 stage: THE RED LINE — the app wrote trust.json')
         }
         log('packages_trust_json_untouched_ok')
+
+        // ⑩ THE NEW-SESSION LOAD PROBE (the matrix's loading face): a NEW
+        // session host in this sandbox agent dir must LOAD the
+        // TUI-side-installed packages — their skills surface as
+        // package-provided slash commands (source 'skill', names from the
+        // SKILL.md frontmatter) in the session's slash_commands
+        // announcement. /mcp-scripting proves the adapter loads;
+        // /council-mode proves pi-subagents loads. Both waiters register
+        // BEFORE the create so the announcement burst cannot race them.
+        const probeCreated = waitFor((e) => e.type === 'session_created', 'ticket-110 load probe: session_created')
+        const probeCmds = waitFor((e) => e.type === 'slash_commands', 'ticket-110 load probe: slash_commands')
+        supervisor.createSession(projectDir)
+        const createdEvent = await probeCreated
+        const cmdsEvent = await probeCmds
+        if (cmdsEvent.sessionId !== createdEvent.sessionId) {
+          fail(
+            `ticket-110 step: the slash_commands announcement drifted across sessions (${String(cmdsEvent.sessionId)} vs ${String(createdEvent.sessionId)})`
+          )
+        }
+        const skillNames =
+          (
+            cmdsEvent as { commands?: Array<{ name: string; source: string }> }
+          ).commands?.filter((c) => c.source === 'skill').map((c) => c.name) ?? []
+        for (const required of ['mcp-scripting', 'council-mode']) {
+          if (!skillNames.includes(required)) {
+            fail(
+              `ticket-110 step: the new session never loaded the package-provided skill command /${required} — skill commands: ${JSON.stringify(skillNames)}`
+            )
+          }
+        }
+        log('packages_new_session_loads_ok')
       } finally {
         // Sandbox hygiene: everything this stage created lives in throwaway
-        // dirs (the wrapper deletes the agent dir on exit).
+        // dirs (the wrapper deletes the agent dir on exit). The npm-root
+        // SYMLINKS (ticket 110) go too — the MCP stage re-seeds its own.
         rmSync(pkgRoot, { recursive: true, force: true })
         rmSync(projectDir, { recursive: true, force: true })
         rmSync(projectPkgRoot, { recursive: true, force: true })
+        if (sandboxNpmRoot !== null) rmSync(sandboxNpmRoot, { recursive: true, force: true })
         rmSync(sandboxSettings, { force: true })
       }
       log('packages_stage_done')
@@ -9355,14 +9436,13 @@ export function startSmokeIfEnabled(
       // agent's npm root — deps resolve through the real paths) and a
       // packages entry. PI_OFFLINE guarantees no install/network attempt:
       // the symlinked directory satisfies the version check offline.
-      const realAdapter = path.join(homedir(), '.pi', 'agent', 'npm', 'node_modules', 'pi-mcp-adapter')
-      if (!existsSync(path.join(realAdapter, 'package.json'))) {
-        fail(`ticket-89 stage: the pi-mcp-adapter package is not installed at ${realAdapter} — install it (pi install npm:pi-mcp-adapter) and rerun`)
+      // the symlinked directory satisfies the version check offline.
+      const sandboxNpmRoot = seedSandboxPackage(agentDir, 'pi-mcp-adapter')
+      if (sandboxNpmRoot === null) {
+        fail(
+          `ticket-89 stage: the pi-mcp-adapter package is not installed at ${path.join(homedir(), '.pi', 'agent', 'npm', 'node_modules', 'pi-mcp-adapter')} — install it (pi install npm:pi-mcp-adapter) and rerun`
+        )
       }
-      const sandboxNpmRoot = path.join(agentDir, 'npm', 'node_modules')
-      mkdirSync(sandboxNpmRoot, { recursive: true })
-      const sandboxAdapter = path.join(sandboxNpmRoot, 'pi-mcp-adapter')
-      if (!existsSync(sandboxAdapter)) symlinkSync(realAdapter, sandboxAdapter)
       const sandboxSettings = path.join(agentDir, 'settings.json')
       try {
         const current = JSON.parse(readFileSync(sandboxSettings, 'utf-8')) as { packages?: string[] }
@@ -9522,12 +9602,7 @@ export function startSmokeIfEnabled(
           if (!(await waitForProbe(win, `document.querySelector('.settings-shell') !== null`, 5_000))) {
             fail('ticket-89 stage: ⌘, never opened the settings window')
           }
-          if (!(await js(`(() => {
-            const item = [...document.querySelectorAll('.settings-item')].find((el) => el.textContent?.trim() === 'MCP')
-            if (!(item instanceof HTMLElement)) return false
-            item.click()
-            return true
-          })()`).catch(() => false))) fail('ticket-89 stage: the MCP nav item is missing')
+          if (!(await clickSettingsNavItem(win, 'MCP'))) fail('ticket-89 stage: the MCP nav item is missing')
           if (!(await waitForProbe(win, `document.querySelector('[data-mcp-section]') !== null`, 5_000))) {
             fail('ticket-89 stage: the MCP section never rendered')
           }
@@ -10064,10 +10139,7 @@ export function startSmokeIfEnabled(
       // Symlink the real package into the sandbox (the ticket-89 adapter
       // precedent — deps resolve through the real paths).
       if (piSubagentsInstalled) {
-        const sandboxNpmRoot90 = path.join(agentDir90, 'npm', 'node_modules')
-        mkdirSync(sandboxNpmRoot90, { recursive: true })
-        const sandboxSubagents = path.join(sandboxNpmRoot90, 'pi-subagents')
-        if (!existsSync(sandboxSubagents)) symlinkSync(realSubagents, sandboxSubagents)
+        seedSandboxPackage(agentDir90, 'pi-subagents')
         try {
           const current = JSON.parse(readFileSync(path.join(agentDir90, 'settings.json'), 'utf-8')) as { packages?: string[] }
           const packages = new Set<string>(['npm:pi-subagents', ...(Array.isArray(current.packages) ? current.packages : [])])
@@ -13746,6 +13818,36 @@ const SIDEBAR_ROWS_PROBE = `(() => {
 /** Poll `win` until a Task row appears (max 8s — index poll runs at 2s). */
 function waitForSidebarRows(win: BrowserWindow): Promise<boolean> {
   return waitForProbe(win, SIDEBAR_ROWS_PROBE, 8000)
+}
+
+/** Click one settings-window nav item by its exact label (the shared
+ * find-and-click shape every settings stage used to inline). False = the
+ * item is missing; callers fail with their own message. */
+function clickSettingsNavItem(win: BrowserWindow, label: string): Promise<boolean> {
+  return win.webContents
+    .executeJavaScript(`(() => {
+      const item = [...document.querySelectorAll('.settings-item')].find((el) => el.textContent?.trim() === ${JSON.stringify(label)})
+      if (!(item instanceof HTMLElement)) return false
+      item.click()
+      return true
+    })()`)
+    .catch(() => false)
+}
+
+/** Symlink one REAL installed package from the operator's agent npm root
+ * into a sandbox agent dir's npm root — deps resolve through the real
+ * paths, so the sandbox copy satisfies loaders offline (the ticket-89
+ * adapter precedent, shared with tickets 90/110). Returns the sandbox npm
+ * root, or null when the package is not installed in the real agent dir
+ * (callers decide: fail hard or degrade gracefully). Idempotent. */
+function seedSandboxPackage(agentDir: string, packageName: string): string | null {
+  const real = path.join(homedir(), '.pi', 'agent', 'npm', 'node_modules', packageName)
+  if (!existsSync(path.join(real, 'package.json'))) return null
+  const npmRoot = path.join(agentDir, 'npm', 'node_modules')
+  mkdirSync(npmRoot, { recursive: true })
+  const link = path.join(npmRoot, packageName)
+  if (!existsSync(link)) symlinkSync(real, link)
+  return npmRoot
 }
 
 function waitForProbe(win: BrowserWindow, probe: string, budgetMs: number): Promise<boolean> {
