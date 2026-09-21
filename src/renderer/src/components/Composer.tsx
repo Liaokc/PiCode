@@ -18,6 +18,7 @@ import {
   composerAutoGrowHeight,
   composerCaretReveal,
   composerExpandHeight,
+  composerTypingHeight,
   reduceComposerExpand,
   type ComposerExpandEvent,
   type ComposerExpandState
@@ -297,10 +298,27 @@ export default function Composer({
       }
       return
     }
-    // Typing commit: measure honestly — reset to auto first, a clamped
-    // element reports its clamped client height as scrollHeight, never the
-    // smaller content, so shrinking would stick at the cap without the
-    // reset.
+    // Typing commit (ticket 116, spec R11): the pinned height branches on
+    // expandState (Seam-1: composerTypingHeight) — input and delete are one
+    // path (a value change), and neither may shrink the EXPANDED surface:
+    // the main zone sizes that box, never the draft. The expanded branch
+    // below makes ONE height write and never runs the auto round-trip of
+    // the collapsed branch (a pass through 'auto' under a leftover glide
+    // marker would kill the animation, and with no measure there is no
+    // scroll clamp to undo — the view stays exactly where the operator
+    // left it).
+    if (expanded) {
+      el.style.height = `${composerTypingHeight('expanded', {
+        contentPx: Number.NaN,
+        mainAreaPx: mainRegionHeight(el)
+      })}px`
+      revealComposerCaret(el)
+      return
+    }
+    // Collapsed typing commit: measure honestly — reset to auto first, a
+    // clamped element reports its clamped client height as scrollHeight,
+    // never the smaller content, so shrinking would stick at the cap
+    // without the reset.
     //
     // Ticket 81 R7: the auto reset also collapses the box to its content,
     // which clamps the scrolled view back to the top the moment the draft
@@ -313,7 +331,10 @@ export default function Composer({
     // imperative DOM writes — the input path gains no setState.
     const savedScrollTop = el.scrollTop
     el.style.height = 'auto'
-    el.style.height = `${composerAutoGrowHeight(el.scrollHeight)}px`
+    el.style.height = `${composerTypingHeight('collapsed', {
+      contentPx: el.scrollHeight,
+      mainAreaPx: Number.NaN
+    })}px`
     el.scrollTop = savedScrollTop
     revealComposerCaret(el)
   }, [value, expanded])

@@ -15,6 +15,12 @@
  *     [280px, 560px], pushing the transcript down (no overlay). Ways back:
  *     re-click, Esc, the global ⌘E chord again (ticket 57), and a
  *     successful send.
+ *
+ *   typing-commit (ticket 116, spec R11) — a value change (input and
+ *     delete are one path) pins its height through composerTypingHeight:
+ *     expanded re-projects the expanded height (content never shrinks the
+ *     surface), collapsed keeps the auto-grow regression. The machine's
+ *     events (toggle / Esc / ⌘E / sent) stay the ONLY shrink triggers.
  */
 
 /** The auto-grow floor: the composer's resting one-line height. */
@@ -76,6 +82,46 @@ const EXPAND_TRANSITIONS: Readonly<Record<ComposerExpandState, Readonly<Record<C
 
 export function reduceComposerExpand(state: ComposerExpandState, event: ComposerExpandEvent): ComposerExpandState {
   return EXPAND_TRANSITIONS[state][event]
+}
+
+/**
+ * Ticket 116 (spec R11): the typing-commit height decision. Input and
+ * delete are ONE path — a value change — and which projection the commit
+ * pins branches on expandState, table-driven like the machine above so
+ * the split stays testable without Electron:
+ *
+ *   expanded  → composerExpandHeight(mainAreaPx): the main zone sizes the
+ *     box, so typing or deleting can never shrink the writing surface —
+ *     contentPx is not consulted (the operator's ~half-zone surface is
+ *     the point of the expanded state). The only shrink triggers stay
+ *     the machine's: toggle / Esc / ⌘E / sent.
+ *
+ *   collapsed → composerAutoGrowHeight(contentPx): the ticket-49/81
+ *     auto-grow regression — content-driven, clamped [74, 160], past the
+ *     cap the textarea scrolls internally.
+ *
+ * Each row consults only its own measurement; the other arrives as NaN
+ * (not gathered on that path — the component measures content only when
+ * collapsed, the main zone only when expanded). A collapsed row receiving
+ * junk still collapses to the floor through composerAutoGrowHeight's own
+ * defense.
+ */
+export interface ComposerTypingMeasure {
+  /** The content height after the honest auto reset — gathered only on the
+   * collapsed path; NaN (not gathered) on the expanded path. */
+  contentPx: number
+  /** The main zone's client height — gathered only on the expanded path;
+   * NaN (not gathered) on the collapsed path. */
+  mainAreaPx: number
+}
+
+const TYPING_HEIGHT_ROWS: Readonly<Record<ComposerExpandState, (measure: ComposerTypingMeasure) => number>> = {
+  expanded: (measure) => composerExpandHeight(measure.mainAreaPx),
+  collapsed: (measure) => composerAutoGrowHeight(measure.contentPx)
+}
+
+export function composerTypingHeight(expandState: ComposerExpandState, measure: ComposerTypingMeasure): number {
+  return TYPING_HEIGHT_ROWS[expandState](measure)
 }
 
 /**

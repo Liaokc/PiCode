@@ -241,6 +241,18 @@ const composerClearJs = `(() => {
   ta.dispatchEvent(new Event('input', { bubbles: true }))
   return true
 })()`
+/** Ticket 116: delete the last N characters of the composer draft — the
+ * native-setter + input-event shape of real backspaces (deletion rides the
+ * SAME layout-effect path as typing: a value change). */
+const composerDeleteTailJs = (count: number): string => `(() => {
+  const ta = document.querySelector('.composer-input')
+  if (!(ta instanceof HTMLTextAreaElement)) return false
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+  setter.call(ta, ta.value.slice(0, Math.max(0, ta.value.length - ${count})))
+  ta.dispatchEvent(new Event('input', { bubbles: true }))
+  ta.focus()
+  return true
+})()`
 
 /** Click the composer chip whose aria-label starts with the given prefix
  * (the model/thinking chips are uniquely addressable that way). */
@@ -3111,7 +3123,7 @@ export function startSmokeIfEnabled(
       const seed88 = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-preview88-'))
       writeFileSync(
         path.join(seed88, 'report.html'),
-        `<!doctype html>\n<html>\n<head>\n<meta charset="utf-8">\n<title>PICODE88 report</title>\n<link rel="stylesheet" href="report.css">\n</head>\n<body>\n<h1 class="p88-head">PENDING</h1>\n<img id="p88-img" alt="dot" src="dot.png">\n<script>\n  (function () {\n    var img = document.getElementById('p88-img')\n    var probe = {\n      probe: 'picode-88',\n      ran: true,\n      node: typeof require,\n      proc: typeof process,\n      picode: typeof window.picode,\n      title: document.title,\n      css: getComputedStyle(document.body).backgroundColor,\n      img: img !== null && img.naturalWidth > 0\n    }\n    try { parent.postMessage(JSON.stringify(probe), '*') } catch (e) {}\n    var head = document.querySelector('.p88-head')\n    if (head) head.textContent = 'PICODE88_SCRIPT_RAN'\n  })()\n</script>\n</body>\n</html>\n`
+        `<!doctype html>\n<html>\n<head>\n<meta charset="utf-8">\n<title>PICODE88 report</title>\n<link rel="stylesheet" href="report.css">\n</head>\n<body>\n<h1 class="p88-head">PENDING</h1>\n<img id="p88-img" alt="dot" src="dot.png">\n<script>\n  (function () {\n    var img = document.getElementById('p88-img')\n    var post = function (imgOk) {\n      var probe = {\n        probe: 'picode-88',\n        ran: true,\n        node: typeof require,\n        proc: typeof process,\n        picode: typeof window.picode,\n        title: document.title,\n        css: getComputedStyle(document.body).backgroundColor,\n        img: imgOk\n      }\n      try { parent.postMessage(JSON.stringify(probe), '*') } catch (e) {}\n    }\n    // The inline script runs at parse time, BEFORE the relative PNG can\n    // load — naturalWidth is still 0 right here. Post the immediate probe\n    // (sandbox/css checks are deterministic: the stylesheet blocks this\n    // script), then post again once the image settles so the parent can\n    // wait for the honest loaded state instead of racing the fetch.\n    post(img !== null && img.naturalWidth > 0)\n    if (img !== null && !(img.complete && img.naturalWidth > 0)) {\n      var settle = function () { post(img.naturalWidth > 0) }\n      img.addEventListener('load', settle)\n      img.addEventListener('error', settle)\n    }\n    var head = document.querySelector('.p88-head')\n    if (head) head.textContent = 'PICODE88_SCRIPT_RAN'\n  })()\n</script>\n</body>\n</html>\n`
       )
       writeFileSync(path.join(seed88, 'report.css'), 'body { background-color: rgb(255, 240, 224); font-family: sans-serif; }\n.p88-head { color: #b45309; }\n')
       writeFileSync(path.join(seed88, 'dot.png'), PNG_88)
@@ -3205,8 +3217,21 @@ export function startSmokeIfEnabled(
           if (probe['node'] !== 'undefined' || probe['proc'] !== 'undefined' || probe['picode'] !== 'undefined') {
             fail(`ticket-88 stage: the frame sees host/app globals: ${JSON.stringify(probe)}`)
           }
-          if (probe['css'] !== 'rgb(255, 240, 224)' || probe['img'] !== true) {
-            fail(`ticket-88 stage: relative resources failed (css=${String(probe['css'])} img=${String(probe['img'])})`)
+          if (probe['css'] !== 'rgb(255, 240, 224)') {
+            fail(`ticket-88 stage: relative resources failed (css=${String(probe['css'])})`)
+          }
+          // The image settles asynchronously (the frame posts a second
+          // probe on load/error — the immediate probe races the fetch under
+          // load): wait for the settled loaded state instead of the first
+          // message's snapshot.
+          if (
+            !(await waitForProbe(
+              win,
+              `(window.__p88msgs ?? []).some((m) => { try { const p = JSON.parse(m); return p.probe === 'picode-88' && p.img === true } catch (e) { return false } })`,
+              10_000
+            ))
+          ) {
+            fail(`ticket-88 stage: relative resources failed (css=${String(probe['css'])} img=false)`)
           }
           log('preview_88_html_ok', JSON.stringify(probe))
 
@@ -6468,6 +6493,180 @@ export function startSmokeIfEnabled(
     })
     log('composer_expand_done')
 
+    // ---- ticket 116: expanded typing height stability — the typing-commit
+    // split by expandState (spec R11) ----
+    // The ticket-49 stage above keeps the collapsed regression (auto-grow
+    // 74→160, the three collapse paths, the send collapse); this stage adds
+    // what it could not see — typing AND deleting inside the EXPANDED input
+    // never shrink the surface (the main zone sizes that box, never the
+    // draft; input and delete are one value-change path), and the expanded
+    // window-resize re-projection still tracks the zone. One real model
+    // round at the very end (the send-collapse regression, ticket-49
+    // pattern: agent_end waiter up before the send, quiet session left for
+    // the ticket-81 stage below).
+    log('composer_typing_116_start')
+    await withWindow(getWindow, async (win) => {
+      const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+      const ta116 = `document.querySelector('.chat-dock textarea.composer-input')`
+      /** The expanded projection re-derived from the live zone (the Seam-1
+       *  formula the component pins), plus the machine state's own flag. */
+      const EXPANDED_116 = `(() => {
+        const ta = document.querySelector('.chat-dock textarea.composer-input')
+        const zone = document.querySelector('.chat-view')
+        const btn = document.querySelector('.chat-dock .composer-expand')
+        if (!(ta instanceof HTMLElement) || zone === null || btn === null) return false
+        if (btn.getAttribute('aria-expanded') !== 'true') return false
+        const expected = Math.round(Math.min(Math.max(zone.clientHeight / 2, 280), 560))
+        return ta.clientHeight === expected && ta.clientHeight >= 280 && ta.clientHeight <= 560
+      })()`
+      /** The live height + projection as numbers (the resize leg compares
+       *  before/after, not just formula truth). */
+      const HEIGHT_116 = `(() => {
+        const ta = document.querySelector('.chat-dock textarea.composer-input')
+        const zone = document.querySelector('.chat-view')
+        if (!(ta instanceof HTMLElement) || zone === null) return null
+        return JSON.stringify({ h: ta.clientHeight, scrollH: ta.scrollHeight, projected: Math.round(Math.min(Math.max(zone.clientHeight / 2, 280), 560)) })
+      })()`
+      const diag116 = (): Promise<string> =>
+        win.webContents.executeJavaScript(HEIGHT_116).catch(() => 'unavailable') as Promise<string>
+
+      // A fresh session keeps the stage self-contained (ticket-49 pattern:
+      // createSession focuses it — the ChatView composer by construction).
+      const created116 = waitFor(
+        (e) => e.type === 'session_created',
+        'ticket-116 session_created'
+      ) as Promise<Extract<Scoped, { type: 'session_created' }>>
+      supervisor.createSession(cwd)
+      const session116 = await created116
+      const id116 = session116.sessionId
+      if (!(await waitForProbe(win, `${ta116} !== null && ${ta116}.clientHeight === 74`, 10_000))) {
+        fail('ticket-116 stage: the fresh session never settled at the 74px floor')
+      }
+
+      // Collapsed regression quick pin: three lines grow inside the band.
+      if (!(await win.webContents.executeJavaScript(composerTypeJs('alpha\nbeta\ngamma')).catch(() => false))) {
+        fail('ticket-116 stage: could not type the collapsed draft')
+      }
+      if (!(await waitForProbe(win, `${ta116}.clientHeight > 74 && ${ta116}.clientHeight < 160`, 5_000))) {
+        fail('ticket-116 stage: the collapsed auto-grow band regressed')
+      }
+      log('composer_typing_116_collapsed_band_ok')
+
+      // Expand, then keep typing: one more line (the operator's exact repro
+      // — a single keystroke into the ~half-zone surface), then a long
+      // multi-line draft that overflows the box internally.
+      const clickExpand116 = async (): Promise<void> => {
+        const clicked = (await js(`(() => {
+          const b = document.querySelector('.chat-dock .composer-expand')
+          if (b instanceof HTMLElement) { b.dispatchEvent(new MouseEvent('click', { bubbles: true })); return true }
+          return false
+        })()`)) as boolean
+        if (!clicked) fail('ticket-116 stage: could not click the chat-dock expand button')
+      }
+      await clickExpand116()
+      if (!(await waitForProbe(win, EXPANDED_116, 5_000))) {
+        fail('ticket-116 stage: the input never reached the expanded projection')
+      }
+      if (!(await win.webContents.executeJavaScript(composerTypeJs('alpha\nbeta\ngamma\ndelta')).catch(() => false))) {
+        fail('ticket-116 stage: could not type into the expanded input')
+      }
+      if (!(await waitForProbe(win, EXPANDED_116, 5_000))) {
+        fail(`ticket-116 stage: typing shrank the expanded input; DOM: ${await diag116()}`)
+      }
+      const LONG_116 = Array.from({ length: 40 }, (_, i) => `expanded draft line ${i + 1}`).join('\n')
+      if (!(await win.webContents.executeJavaScript(composerTypeJs(LONG_116)).catch(() => false))) {
+        fail('ticket-116 stage: could not type the long expanded draft')
+      }
+      // The overflow matters: a draft past the box's height must scroll
+      // INTERNALLY (scrollHeight > clientHeight) while the pinned height
+      // still equals the projection — content can never size the expanded
+      // box, however long it grows.
+      if (!(await waitForProbe(win, `${EXPANDED_116} && ${ta116}.scrollHeight > ${ta116}.clientHeight`, 5_000))) {
+        fail(`ticket-116 stage: the long draft left the expanded projection (or never overflowed it for an internal scroll); DOM: ${await diag116()}`)
+      }
+      log('composer_typing_116_input_stable_ok')
+
+      // Deletion is the same path: backspace a tail, then clear everything —
+      // an EMPTY draft must still hold the expanded surface.
+      if (!(await win.webContents.executeJavaScript(composerDeleteTailJs(48)).catch(() => false))) {
+        fail('ticket-116 stage: could not delete from the expanded input')
+      }
+      if (!(await waitForProbe(win, EXPANDED_116, 5_000))) {
+        fail(`ticket-116 stage: deleting shrank the expanded input; DOM: ${await diag116()}`)
+      }
+      if (!(await win.webContents.executeJavaScript(composerClearJs).catch(() => false))) {
+        fail('ticket-116 stage: could not clear the expanded input')
+      }
+      if (!(await waitForProbe(win, `${EXPANDED_116} && ${ta116}.value === ''`, 5_000))) {
+        fail(`ticket-116 stage: the empty draft collapsed the expanded input; DOM: ${await diag116()}`)
+      }
+      log('composer_typing_116_delete_stable_ok')
+
+      // The expanded window-resize re-projection (the existing listener):
+      // shrink the real window — the box must re-project to the new
+      // half-zone and stay in-band; restore, and it projects back.
+      const bounds116 = win.getBounds()
+      const shrunk116 = Math.max(680, bounds116.height - 180)
+      if (shrunk116 >= bounds116.height) {
+        fail('ticket-116 stage: the smoke window is too short to exercise the resize leg')
+      }
+      const before116Raw = await js(HEIGHT_116)
+      const before116 =
+        typeof before116Raw === 'string'
+          ? (JSON.parse(before116Raw) as { h: number; projected: number } | null)
+          : null
+      if (before116 === null) {
+        fail('ticket-116 stage: the height probe could not read the expanded composer before the resize')
+      }
+      win.setBounds({ ...bounds116, height: shrunk116 })
+      if (
+        !(await waitForProbe(
+          win,
+          `(() => { const r = JSON.parse(${HEIGHT_116}); return r !== null && r.h === r.projected && r.h !== ${before116.h} })()`,
+          5_000
+        ))
+      ) {
+        fail(`ticket-116 stage: the window resize never re-projected the expanded height; before ${JSON.stringify(before116)}, DOM: ${await diag116()}`)
+      }
+      win.setBounds(bounds116)
+      if (
+        !(await waitForProbe(
+          win,
+          `(() => { const r = JSON.parse(${HEIGHT_116}); return r !== null && r.h === r.projected && r.h === ${before116.h} })()`,
+          5_000
+        ))
+      ) {
+        fail(`ticket-116 stage: restoring the window never re-projected back; DOM: ${await diag116()}`)
+      }
+      log('composer_typing_116_resize_reproject_ok')
+
+      // The send collapse regression: typing while expanded (post-resize,
+      // one more stability sample), Enter, and the next turn starts from
+      // the resting composer. The agent_end waiter goes up BEFORE the send
+      // (warm host + fast model, the ticket-49 race note).
+      const replyEnd116 = waitFor((e) => e.type === 'agent_end' && e.sessionId === id116, 'ticket-116 reply agent_end')
+      if (!(await win.webContents.executeJavaScript(composerTypeJs('Reply with exactly: PICODE_SEND_116')).catch(() => false))) {
+        fail('ticket-116 stage: could not type the send draft')
+      }
+      if (!(await waitForProbe(win, EXPANDED_116, 5_000))) {
+        fail(`ticket-116 stage: the send draft shrank the expanded input; DOM: ${await diag116()}`)
+      }
+      await win.webContents.executeJavaScript(composerKeyJs('Enter'))
+      const sent116 = await waitForProbe(
+        win,
+        `(document.querySelector('.chat-thread')?.textContent ?? '').includes('PICODE_SEND_116') && ${ta116}.clientHeight === 74 && document.querySelector('.chat-dock .composer-expand')?.getAttribute('aria-expanded') === 'false'`,
+        10_000
+      )
+      if (!sent116) {
+        fail(`ticket-116 stage: the send never collapsed the expanded input; DOM: ${await diag116()}`)
+      }
+      log('composer_typing_116_send_collapse_ok')
+
+      await replyEnd116
+      await win.webContents.executeJavaScript(composerClearJs)
+    })
+    log('composer_typing_116_done')
+
     // ---- ticket 81: composer layout — the pi17 scene. Drives the shared
     // in-session composer with 4 pasted images + one input event per typed
     // line (the same per-event measure cycle a keystroke rides) and asserts
@@ -6718,7 +6917,13 @@ export function startSmokeIfEnabled(
       }
       log('composer_layout_81_reduced_motion_ok')
 
-      // Leave the composer clean for the later stages.
+      // Leave the composer clean for the later stages: clear the draft and
+      // the staged attachments, then COLLAPSE the expand state the
+      // reduced-motion leg left open. The ticket-116 fix keeps an expanded
+      // composer at its projected height through value changes, so the
+      // clear alone no longer re-floors the box — the machine's own Esc
+      // path must retire it, and later stages (ticket 91 on) start from
+      // the resting composer.
       await win.webContents.executeJavaScript(composerClearJs)
       await js(`(() => {
         document.querySelectorAll('.chat-dock .composer-attachment-remove').forEach((b) => (b instanceof HTMLElement) && b.dispatchEvent(new MouseEvent('click', { bubbles: true })))
@@ -6726,6 +6931,23 @@ export function startSmokeIfEnabled(
       })()`)
       if (!(await waitForProbe(win, `document.querySelectorAll('.chat-dock .composer-attachment').length === 0`, 5_000))) {
         fail('ticket-81 stage: the staged attachments never cleared for the later stages')
+      }
+      await js(`(() => {
+        const ta = document.querySelector('.chat-dock textarea.composer-input')
+        if (ta instanceof HTMLTextAreaElement) {
+          ta.focus()
+          ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+        }
+        return true
+      })()`)
+      if (
+        !(await waitForProbe(
+          win,
+          `(() => { const ta = document.querySelector('.chat-dock textarea.composer-input'); return ta !== null && ta.clientHeight === 74 && document.querySelector('.chat-dock .composer-expand')?.getAttribute('aria-expanded') === 'false' })()`,
+          5_000
+        ))
+      ) {
+        fail('ticket-81 stage: the cleanup never returned the composer to the resting 74px floor')
       }
     })
     log('composer_layout_81_done')
