@@ -14805,7 +14805,7 @@ export function startSmokeIfEnabled(
       ).then((e) => {
         const images = (e as Extract<Scoped, { type: 'user_message' }>).images
         if (!Array.isArray(images) || images.length !== 1 || images[0]?.data !== PNG_100) {
-          fail(`ticket-128 stage: the reordered Q4's delivery echo lost its own image (re-feed 保序 broken), got ${JSON.stringify(images)}`)
+          fail(`ticket-128 stage: the reordered Q4's delivery echo lost its own image (re-feed order-preserving broken), got ${JSON.stringify(images)}`)
         }
         return true
       })

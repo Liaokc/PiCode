@@ -189,7 +189,7 @@ describe('queue mirror (ticket 100 Seam-1)', () => {
       expect(after.steering.map((e) => e.text)).toEqual(['s1', 's2'])
     })
 
-    it('re-feeds the reordered queue in the new order (越上越先注入)', () => {
+    it('re-feeds the reordered queue in the new order (higher rows inject first)', () => {
       const state = reorderQueueEntry(mirror([entry('s1'), entry('s2', [IMG_A])]), 'steering', 0, 1)
       expect(planQueueRefeed(state)).toEqual([
         { kind: 'steering', text: 's2', images: [IMG_A] },
