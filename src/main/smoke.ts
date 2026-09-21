@@ -7026,7 +7026,9 @@ export function startSmokeIfEnabled(
           labels: [...document.querySelectorAll('.turn-container-label')].map((el) => el.textContent ?? ''),
           inert: [...document.querySelectorAll('.turn-container-header')].map((el) => el.getAttribute('aria-disabled') === 'true'),
           users: document.querySelectorAll('.msg-user').length,
-          answers: document.querySelectorAll('.msg-assistant .md').length
+          answers: document.querySelectorAll('.msg-assistant .md').length,
+          spinners: document.querySelectorAll('.turn-container-icon.spin').length,
+          footSpinners: document.querySelectorAll('.turn-container-live-foot .spin').length
         }))()`
         // Replayed zero-work turn: the row exists, bare and inert — "Worked"
         // with no duration (the ticket-14 rule), no chevron, no way to open.
@@ -7081,7 +7083,8 @@ export function startSmokeIfEnabled(
         const settled = (await waitForProbe(
           win,
           `${sig}.turns === 2 && ${sig}.labels.join() === 'Worked,Worked' && ${sig}.durations === 1 &&
-           ${sig}.open === 0 && ${sig}.chevrons === 0 && ${sig}.answers === 2 && ${sig}.inert.join() === 'true,true'`,
+           ${sig}.open === 0 && ${sig}.chevrons === 0 && ${sig}.answers === 2 && ${sig}.inert.join() === 'true,true' &&
+           ${sig}.spinners === 0 && ${sig}.footSpinners === 0`,
           10_000
         )) as boolean
         if (!settled) {
@@ -7102,13 +7105,17 @@ export function startSmokeIfEnabled(
         const liveWorked = (await waitForProbe(
           win,
           `${sig}.turns === 3 && ${sig}.users === 3 && ${sig}.open === 1 && ${sig}.chevrons === 1 &&
-           ${sig}.labels.join() === 'Worked,Worked,Working' && ${sig}.inert.join() === 'true,true,false'`,
+           ${sig}.labels.join() === 'Worked,Worked,Working' && ${sig}.inert.join() === 'true,true,false' &&
+           ${sig}.spinners === 1 && ${sig}.footSpinners === 1`,
           10_000
         )) as boolean
         if (!liveWorked) {
           const diag = (await win.webContents.executeJavaScript(sig).catch(() => 'unavailable')) as string
           fail(`ticket-55 stage: the with-work live turn did not render an expandable container; DOM: ${diag}`)
         }
+        // Ticket 103: live EXPANDED = the header ring AND the body-foot ring
+        // (the head-and-tail mirror), exactly one of each in this stage.
+        log('worked_container_spinners_live_expanded_ok')
         await new Promise((r) => setTimeout(r, 1200))
         const beforeFold = (await win.webContents
           .executeJavaScript(`parseInt(document.querySelectorAll('.turn-container-duration')[1]?.textContent ?? '0', 10)`)
@@ -7118,13 +7125,24 @@ export function startSmokeIfEnabled(
         await win.webContents.executeJavaScript(
           `(() => { const hs = document.querySelectorAll('.turn-container-header'); const el = hs[2]; if (el instanceof HTMLElement) el.click(); return true })()`
         )
-        const folded = (await waitForProbe(win, `${sig}.open === 0 && ${sig}.turns === 3`, 10_000)) as boolean
+        const folded = (await waitForProbe(
+          win,
+          `${sig}.open === 0 && ${sig}.turns === 3 && ${sig}.spinners === 1 && ${sig}.footSpinners === 0`,
+          10_000
+        )) as boolean
         if (!folded) fail('ticket-55 stage: the with-work live turn did not fold on click')
+        // Ticket 103: COLLAPSED live = the header ring alone (the foot ring
+        // unmounts with the body); position and count unchanged from the
+        // pre-103 header ring.
         await new Promise((r) => setTimeout(r, 1200))
         await win.webContents.executeJavaScript(
           `(() => { const hs = document.querySelectorAll('.turn-container-header'); const el = hs[2]; if (el instanceof HTMLElement) el.click(); return true })()`
         )
-        const reopened = (await waitForProbe(win, `${sig}.open === 1 && ${sig}.turns === 3`, 10_000)) as boolean
+        const reopened = (await waitForProbe(
+          win,
+          `${sig}.open === 1 && ${sig}.turns === 3 && ${sig}.spinners === 1 && ${sig}.footSpinners === 1`,
+          10_000
+        )) as boolean
         if (!reopened) fail('ticket-55 stage: the folded live turn did not reopen on click')
         const afterReopen = (await win.webContents
           .executeJavaScript(`parseInt(document.querySelectorAll('.turn-container-duration')[1]?.textContent ?? '0', 10)`)
@@ -7135,10 +7153,22 @@ export function startSmokeIfEnabled(
           fail(`ticket-55 stage: the container timer reset across fold/reopen (${beforeFold}s → ${afterReopen}s)`)
         }
         log('worked_container_timer_fold_ok', `${beforeFold}s → ${afterReopen}s`)
-        // Settle the third turn so the stage leaves a quiet session.
+        // Settle the third turn so the stage leaves a quiet session. Ticket
+        // 103: at settle turn.live drops — BOTH rings must vanish (header
+        // and foot), the auto-fold unmounts the body with it.
         emitContractEvent({ type: 'thinking_end', durationMs: 1500 })
         emitContractEvent({ type: 'message_end' })
         emitContractEvent({ type: 'agent_end' })
+        const settledSpinners = (await waitForProbe(
+          win,
+          `${sig}.open === 0 && ${sig}.spinners === 0 && ${sig}.footSpinners === 0`,
+          10_000
+        )) as boolean
+        if (!settledSpinners) {
+          const diag = (await win.webContents.executeJavaScript(sig).catch(() => 'unavailable')) as string
+          fail(`ticket-103 stage: a settled turn kept a live spinner; DOM: ${diag}`)
+        }
+        log('worked_container_spinners_settled_ok')
       })
     }
     log('worked_container_done')
