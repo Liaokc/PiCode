@@ -7,6 +7,7 @@ import {
   composerAutoGrowHeight,
   composerCaretReveal,
   composerExpandHeight,
+  composerTypingHeight,
   reduceComposerExpand,
   type ComposerExpandEvent,
   type ComposerExpandState
@@ -131,6 +132,72 @@ describe('reduceComposerExpand — ticket 57: the global ⌘E chord is its own e
 
   it('the key event is self-inverting: expanded → collapsed (⌘E again retracts)', () => {
     expect(reduceComposerExpand('expanded', 'key')).toBe('collapsed')
+  })
+})
+
+describe('composerTypingHeight — ticket 116 (spec R11): the typing-commit split by expandState', () => {
+  // Input and delete are ONE path — a value change. The table has no
+  // input/delete column because nothing at this seam can tell them apart:
+  // the decision sees only expandState and the two measurements. What it
+  // must pin: the EXPANDED row never consults the content (typing or
+  // deleting can never shrink the writing surface — the main zone sizes
+  // it; the only shrink triggers stay the machine's toggle/Esc/⌘E/sent),
+  // and the COLLAPSED row is the ticket-49/81 auto-grow regression
+  // verbatim.
+  const CONTENTS: Array<[number, string]> = [
+    [Number.NaN, 'content not gathered (the expanded path never measures it)'],
+    [0, 'an empty draft'],
+    [74, 'a one-line draft'],
+    [160, 'a draft at the cap'],
+    [440, 'a long pasted draft'],
+    [Number.POSITIVE_INFINITY, 'junk Infinity content']
+  ]
+  const MAIN_AREAS: Array<[number, string]> = [
+    [Number.NaN, 'main area not gathered (the collapsed path never measures it)'],
+    [560, 'a zone whose half lands on the floor'],
+    [700, 'a small window'],
+    [1000, 'a roomy window'],
+    [2000, 'a huge zone whose half pins the cap']
+  ]
+
+  it('expanded: the main zone sizes the box — content never shrinks it (input and delete alike)', () => {
+    for (const [mainArea] of MAIN_AREAS) {
+      const expected = composerExpandHeight(mainArea)
+      for (const [content] of CONTENTS) {
+        expect(
+          composerTypingHeight('expanded', { contentPx: content, mainAreaPx: mainArea }),
+          `expanded × main ${mainArea} × content ${content}`
+        ).toBe(expected)
+      }
+    }
+  })
+
+  it('collapsed: the auto-grow regression verbatim — the main zone never enters', () => {
+    for (const [content] of CONTENTS) {
+      const expected = composerAutoGrowHeight(content)
+      for (const [mainArea] of MAIN_AREAS) {
+        expect(
+          composerTypingHeight('collapsed', { contentPx: content, mainAreaPx: mainArea }),
+          `collapsed × content ${content} × main ${mainArea}`
+        ).toBe(expected)
+      }
+    }
+  })
+
+  it('the split is real: the same measurements pin different heights per state', () => {
+    // A 440px draft in a 1000px zone: collapsed pins the 160 cap, expanded
+    // pins half the zone (500) — only the expanded surface survives the
+    // keystroke at its operator-approved size.
+    expect(composerTypingHeight('collapsed', { contentPx: 440, mainAreaPx: 1000 })).toBe(COMPOSER_INPUT_MAX_PX)
+    expect(composerTypingHeight('expanded', { contentPx: 440, mainAreaPx: 1000 })).toBe(500)
+  })
+
+  it('the expanded typing height stays inside the expanded band', () => {
+    for (const [mainArea] of MAIN_AREAS) {
+      const height = composerTypingHeight('expanded', { contentPx: 440, mainAreaPx: mainArea })
+      expect(height).toBeGreaterThanOrEqual(COMPOSER_EXPAND_MIN_PX)
+      expect(height).toBeLessThanOrEqual(COMPOSER_EXPAND_MAX_PX)
+    }
   })
 })
 
