@@ -50,6 +50,7 @@
     "visual:thinking": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_THINKING=1 electron .",
     "visual:cwd": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_CWD=1 electron .",
     "visual:rail-stack": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_RAIL_STACK=1 electron .",
+    "visual:rail-anchor": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_RAIL_ANCHOR=1 electron .",
     "visual:expand": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_EXPAND=1 electron .",
     "visual:composer-layout": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_COMPOSER_LAYOUT=1 electron .",
     "visual:image-preview": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_IMAGE_PREVIEW=1 electron .",

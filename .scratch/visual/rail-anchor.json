@@ -1,0 +1,32 @@
+{
+  "liveBottom": {
+    "ticks": 4,
+    "focused": [
+      "m6"
+    ],
+    "distFromBottom": -0.5,
+    "scrollTop": 719.5,
+    "labels": [
+      "Worked",
+      "Worked",
+      "Worked",
+      "Working"
+    ],
+    "jumpVisible": false
+  },
+  "scrolledUp": {
+    "ticks": 4,
+    "focused": [
+      "ra120-u1"
+    ],
+    "distFromBottom": 719,
+    "scrollTop": 0,
+    "labels": [
+      "Worked",
+      "Worked",
+      "Worked",
+      "Working"
+    ],
+    "jumpVisible": true
+  }
+}

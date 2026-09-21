@@ -6,8 +6,8 @@ import {
   SCROLL_RETRY_FRAMES,
   SCROLL_TARGET_MARGIN_PX,
   VIEWPORT_PROBE_FRACTION,
-  anchoredTurnId,
   railAnchors,
+  railAnchoredTurnId,
   railRenders,
   railShown,
   railTicks,
@@ -55,9 +55,10 @@ export default function NavigatorRail({ turns, scrollRef }: NavigatorRailProps):
   const anchors = useMemo(() => railAnchors(turns), [turns])
   const ticks = useMemo(() => railTicks(anchors, anchored), [anchors, anchored])
 
-  // The viewport-anchored tick: the last user message at or above the probe
-  // line (Seam-1: anchoredTurnId). rAF-throttled so a scroll burst costs at
-  // most one measurement per frame, and a same-value setState never
+  // The viewport-anchored tick (Seam-1: railAnchoredTurnId — at the bottom
+  // the newest turn anchors, live included; off it the probe rule follows
+  // the reading position, ticket 120). rAF-throttled so a scroll burst costs
+  // at most one measurement per frame, and a same-value setState never
   // reconciles anything.
   const measureAnchored = useCallback((): void => {
     const el = scrollRef.current
@@ -69,8 +70,14 @@ export default function NavigatorRail({ turns, scrollRef }: NavigatorRailProps):
       if (id === undefined || id === '') continue
       geometry.push({ turnId: id, top: node.getBoundingClientRect().top - containerTop })
     }
-    setAnchored(anchoredTurnId(geometry, el.clientHeight * VIEWPORT_PROBE_FRACTION))
-  }, [scrollRef])
+    setAnchored(
+      railAnchoredTurnId(anchors, geometry, el.clientHeight * VIEWPORT_PROBE_FRACTION, {
+        scrollHeight: el.scrollHeight,
+        scrollTop: el.scrollTop,
+        clientHeight: el.clientHeight
+      })
+    )
+  }, [scrollRef, anchors])
 
   useEffect(() => {
     const el = scrollRef.current

@@ -23,6 +23,7 @@
  */
 
 import type { TurnGroup } from './turn-collapse'
+import { isAtBottom, type ScrollSnapshot } from './scroll-stay'
 
 // ---- ZCode-calibrated constants (behavior parameters, not invented design) ----
 // (The rail's static geometry — 48px hit zone, 36px tick column, 12×2px tick
@@ -163,4 +164,34 @@ export function anchoredTurnId(geometry: readonly AnchorGeometry[], probeY: numb
     if (g.top <= probeY) found = g.turnId
   }
   return found
+}
+
+/**
+ * The full anchoring decision (ticket 120): while the viewport sits ON the
+ * bottom the anchor is the LAST anchor — the live (streaming) turn included
+ * — so the focus tick tells the truth about where the newest work is. The
+ * probe rule could not: a just-started turn's user bubble sits in the lower
+ * viewport behind the Working container and the composer (~25% of the
+ * viewport), below the 35% probe line, so the pre-120 rail kept the focus on
+ * the previous turn until the turn's content had grown past 35% of the
+ * viewport (the pi18 “Working · 14s” forensics). Off the bottom the reader
+ * is up in history and the probe rule stands unchanged — the anchor follows
+ * the reading position.
+ *
+ * The bottom judgment reuses scroll-stay's `isAtBottom` (the send latch's
+ * ARRIVAL arm: distance 0 ± 1px, deliberately stricter than the 160px stick
+ * band — a reader parked inside the band but off the bottom has NOT
+ * arrived and reads under the probe rule). Pure.
+ */
+export function railAnchoredTurnId(
+  anchors: readonly RailAnchor[],
+  geometry: readonly AnchorGeometry[],
+  probeY: number,
+  viewport: ScrollSnapshot
+): string | null {
+  if (isAtBottom(viewport)) {
+    const last = anchors.length > 0 ? anchors[anchors.length - 1] : undefined
+    return last === undefined ? null : last.turnId
+  }
+  return anchoredTurnId(geometry, probeY)
 }
