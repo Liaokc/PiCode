@@ -1742,6 +1742,12 @@ export default function App(): JSX.Element {
           focusedSessionId={chat.session?.sessionId ?? null}
           onNotify={notify}
         />
+        {/* Ticket 110: the settings view's early return is a separate shell
+         * — without the stack here, every toast pushed while the settings
+         * window is open (Packages install/remove results since ticket 64)
+         * had no rendering surface at all. The workspace branch below
+         * mounts the same stack. */}
+        <ToastStack toasts={toasts} onDismiss={dismissToastById} />
         <TooltipHost />
       </div>
     )
