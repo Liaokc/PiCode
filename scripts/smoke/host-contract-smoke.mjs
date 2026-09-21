@@ -5,8 +5,10 @@
  *
  *   Round A (fresh session)
  *   session_created → composer_state + models_available + slash_commands
- *   → prompt (WITH an image, ticket 97报备) → agent_start → text_delta… →
- *   abort → agent_end (the echo projected its image parts; the imageless
+ *   → prompt (WITH an image, ticket 97报备) → agent_start → text_delta…
+ *   → set_session_label MID-RUN (ticket 104报备: the settled guard is gone —
+ *   the running path answers session_renamed, not session_command_error)
+ *   → abort → agent_end (the echo projected its image parts; the imageless
  *   round-2 echo stays field-absent; the delivered steer's echo projects
  *   its parts too — steer/follow-up 同修)
  *   → prompt → approval_required (gate) → approve+remember → tool_start
@@ -102,6 +104,10 @@ import { fork } from 'node:child_process'
 const HOST_ENTRY = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'out', 'main', 'host.js')
 const STEP_TIMEOUT_MS = 90_000
 const SMOKE_LABEL = 'PICODE_SMOKE_RENAMED'
+// Ticket 104报备: the mid-run rename label — sent WHILE the round-1 run is
+// streaming, before the abort. Round B's settled rename to SMOKE_LABEL
+// overwrites it, so the final file summary still expects SMOKE_LABEL.
+const SMOKE_RUN_LABEL_104 = 'PICODE_SMOKE_RENAMED_MIDRUN'
 
 // Ticket 79 round F: the seeded edit-resend fixture (written in onHostExit
 // once the isolated store is settled below).
@@ -772,11 +778,25 @@ function onEvent(event) {
       if (event.type === 'text_delta') {
         seen.text_delta++
         if (seen.text_delta === 3) {
-          console.log('SMOKE aborting mid-stream')
-          step = 'A agent_end 1'
-          child.send({ type: 'abort_turn' })
+          // Ticket 104报备: the run is LIVE here — the rename must succeed
+          // mid-run (TUI /name parity), not bounce off the settled guard.
+          console.log('SMOKE renaming mid-run (ticket 104)')
+          step = 'A rename midrun'
+          child.send({ type: 'set_session_label', name: SMOKE_RUN_LABEL_104 })
         }
       }
+      return
+    }
+    case 'A rename midrun': {
+      if (event.type === 'session_command_error') {
+        fail(`ticket-104: the mid-run rename must not be rejected, got: ${event.message}`)
+      }
+      if (event.type !== 'session_renamed') return
+      if (event.name !== SMOKE_RUN_LABEL_104) fail(`the mid-run rename write-back should carry the label, got ${event.name}`)
+      console.log('SMOKE ticket-104 mid-run rename ok (session_renamed while running)')
+      console.log('SMOKE aborting mid-stream')
+      step = 'A agent_end 1'
+      child.send({ type: 'abort_turn' })
       return
     }
     case 'A agent_end 1': {

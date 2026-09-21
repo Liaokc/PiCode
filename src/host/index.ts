@@ -762,11 +762,17 @@ async function handleAbort(): Promise<void> {
   }
 }
 
+/** Shared no-session error path (review adopted, ticket 104): the one
+ * 'No session is open.' guard, reused by the settled and non-settled
+ * command flavors alike — sends the error and answers null when closed. */
+function requireOpenSession(): AgentSession | null {
+  if (runtime !== null) return runtime.session
+  send({ type: 'session_command_error', message: 'No session is open.' })
+  return null
+}
+
 function requireSettledSession(): boolean {
-  if (!runtime) {
-    send({ type: 'session_command_error', message: 'No session is open.' })
-    return false
-  }
+  if (requireOpenSession() === null) return false
   if (!settled) {
     send({ type: 'session_command_error', message: 'Cannot restructure the session while the agent is running.' })
     return false
@@ -840,11 +846,16 @@ async function handleSubagentSteer(requestId: string, asyncId: string, text: str
   await subagentBridge.handleSteerRequest(requestId, asyncId, text)
 }
 
+/** Ticket 104: renaming works WHILE the agent runs (TUI `/name` parity —
+ * the SDK's setSessionName supports mid-run renames). Only the no-session
+ * path stays guarded; the restructure guard does NOT apply here. The
+ * success path is unchanged: session_renamed + the tree/index refresh. */
 function handleRename(name: string): void {
-  if (!requireSettledSession()) return
+  const agentSession = requireOpenSession()
+  if (agentSession === null) return
   try {
-    runtime!.session.setSessionName(name)
-    const finalName = runtime!.session.sessionManager.getSessionName() ?? null
+    agentSession.setSessionName(name)
+    const finalName = agentSession.sessionManager.getSessionName() ?? null
     send({ type: 'session_renamed', name: finalName })
     sendTree()
   } catch (err) {

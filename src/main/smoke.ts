@@ -141,6 +141,14 @@
  * return the caret, a real Tab must match :focus-visible (the Q19 ring)
  * and mouse flows must never rest on a control.
  *
+ * Ticket 104 adds the rename-midrun stage right after the queue-repair
+ * stage: while a real count run streams, the topbar Rename editor commits a
+ * new name through the host's set_session_label — the host (settled guard
+ * removed, TUI /name parity) answers session_renamed, the topbar title and
+ * the sidebar row update immediately, no error toast rises, and the run
+ * keeps streaming through the rename. After the Stop the settled rename
+ * re-runs through the same path (no regression).
+ *
  * Any missed step times out and exits non-zero. Progress logs as
  * `SMOKE <step>` lines on stdout. Not part of `npm test`.
  */
@@ -12236,6 +12244,231 @@ export function startSmokeIfEnabled(
       await js(composerClearJs)
     })
     log('queue_repair_done')
+
+    // ---- ticket 104: renaming WHILE the agent runs (TUI /name parity).
+    // The chat topbar's Rename button opens the inline editor mid-run;
+    // Enter commits through the host's set_session_label, which must
+    // SUCCEED while the run is live — the host answers session_renamed
+    // (no session_command_error toast), the topbar title and the sidebar
+    // row update immediately, and the run keeps streaming through it. The
+    // settled path re-renames after the Stop (no regression). ----
+    log('rename_midrun_start')
+    const rename104Created = waitFor(
+      (e) => e.type === 'session_created',
+      'ticket-104 session_created'
+    ) as Promise<Extract<Scoped, { type: 'session_created' }>>
+    supervisor.createSession(cwd)
+    const rename104Session = await rename104Created
+    const rename104Id = rename104Session.sessionId
+    log('ticket-104 session_created', `id=${rename104Id} file=${rename104Session.sessionFile ?? 'null'} cwd=${rename104Session.cwd}`)
+    // Long enough to still be streaming through the whole rename choreography
+    // (the ticket-100 count precedent: the run must outlive the stage legs).
+    const COUNT_PROMPT_104 =
+      'PICODE_RENAME_104_HOST: Count from 1 to 800. Output each number on its own line, one number per line. Do not summarize and do not stop early. Do not use any tools — write the numbers directly in your reply text.\n' +
+      '\n'.repeat(100)
+    const NAME_RUNNING_104 = 'PICODE 104 midrun rename'
+    const NAME_SETTLED_104 = 'PICODE 104 settled rename'
+    await withWindow(getWindow, async (win) => {
+      const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+      // The topbar rename flow: the Rename button opens the inline editor,
+      // the native-setter input event feeds React's onChange, Enter commits.
+      const openTopbarRename104 = `(() => {
+        const btn = document.querySelector('.chat-topbar button[aria-label="Rename task"]')
+        if (!(btn instanceof HTMLElement)) return false
+        btn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        return true
+      })()`
+      const typeTopbarRename104 = (name: string): string => `(() => {
+        const input = document.querySelector('.chat-title-input')
+        if (!(input instanceof HTMLInputElement)) return false
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+        setter.call(input, ${JSON.stringify(name)})
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+        return true
+      })()`
+      // Review adoption (spec axis): the spec says 成功（无错误 toast） — ANY
+      // new error toast fails, whatever its message (a setSessionName throw
+      // would ride session_command_error with a different text than the old
+      // guard's). Counted RELATIVE to the stage-start baseline so an
+      // unrelated leftover toast cannot make the assert vacuous.
+      const errorToastCount104 = `document.querySelectorAll('.toast-error').length`
+      const baselineErrorToasts104 = Number(await js(errorToastCount104))
+      const noNewErrorToast104 = `document.querySelectorAll('.toast-error').length <= ${baselineErrorToasts104}`
+
+      if (!(await waitForProbe(win, `document.querySelector('.chat-view') !== null`, 10_000))) {
+        fail('ticket-104 stage: the fresh session never reached the chat view')
+      }
+      supervisor.handleParentCommand({
+        type: 'session_command',
+        sessionId: rename104Id,
+        command: { type: 'prompt', text: 'PICODE_RENAME_104_WARM: Reply with exactly READY and nothing else.' }
+      })
+      // The SDK creates the session FILE only when the first ASSISTANT
+      // message persists (the session header + user message buffer in memory
+      // until then) — and the sidebar row needs the file. A short warm turn
+      // guarantees the file exists before the row probe and the mid-run
+      // rename choreography.
+      await waitFor((e) => e.type === 'agent_end' && e.sessionId === rename104Id, 'ticket-104 warm agent_end')
+      if (!(await waitForProbe(win, `document.querySelector('.cmp-send') !== null`, 15_000))) {
+        fail('ticket-104 stage: the composer never left the busy state after the warm turn')
+      }
+
+      // The sidebar may be closed or the session's project group folded when
+      // this (last) stage runs — every earlier row-touching stage uses the
+      // press-until-present ⌘B pattern + a group-unfold fallback. The row
+      // probe happens after the WARM turn: the SDK creates the session file
+      // only when the first assistant message persists, so a never-settled
+      // fresh session is invisible to the index.
+      // The row must be VISIBLE for the title assertion: the ticket-84 drag
+      // stage persists sort=manual (a fresh session lands at the group tail)
+      // and the default page cuts at 5 — so reveal the row the way a user
+      // would: unfold the group if it renders no rows, else click Show more
+      // (data-cwd locates the group — the ticket-84 selector precedent).
+      const sidebarPresent104 = `(document.querySelector('.sidebar') !== null)`
+      if (!((await js(sidebarPresent104)) as boolean)) {
+        await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', metaKey: true, bubbles: true })); true`)
+        await waitForProbe(win, sidebarPresent104, 5_000)
+      }
+      const row104 = `document.querySelector('.sb-task[data-file="${rename104Session.sessionFile}"]')`
+      const revealRow104 = `(() => {
+        const g = document.querySelector('[data-cwd="${cwd}"]')
+        if (!(g instanceof HTMLElement)) return 'no-group'
+        if (g.querySelector('.sb-task[data-file="${rename104Session.sessionFile}"]')) return 'ok'
+        if (g.querySelectorAll('.sb-task').length === 0) {
+          const header = g.querySelector('.sb-group-header')
+          if (header instanceof HTMLElement) { header.dispatchEvent(new MouseEvent('click', { bubbles: true })); return 'unfolded' }
+          return 'no-header'
+        }
+        const more = g.querySelector('.sb-show-more')
+        if (more instanceof HTMLElement && more.textContent === 'Show more') { more.dispatchEvent(new MouseEvent('click', { bubbles: true })); return 'show-more' }
+        return 'no-more'
+      })()`
+      if (!(await waitForProbe(win, `${row104} !== null`, 6_000))) {
+        let reveal = ''
+        for (let attempt = 0; attempt < 8; attempt++) {
+          reveal = (await js(revealRow104)) as string
+          if (reveal === 'ok') break
+          await new Promise((r) => setTimeout(r, 400))
+        }
+        if (!((await js(`${row104} !== null`)) as boolean)) {
+          const diag104 = (await js(
+            `window.picode.sessions.list().then((list) => JSON.stringify({
+              total: list.length,
+              mine: list.filter((s) => s.file === ${JSON.stringify(rename104Session.sessionFile)}).length,
+              byId: list.filter((s) => s.file.includes(${JSON.stringify(rename104Id)})).map((s) => s.file),
+              myCwdCount: list.filter((s) => s.cwd === ${JSON.stringify(cwd)}).length,
+              groupRows: document.querySelectorAll('[data-cwd="${cwd}"] .sb-task').length,
+              sample: [...document.querySelectorAll('[data-cwd="${cwd}"] .sb-task')].slice(0, 3).map((r) => (r.dataset['file'] ?? '').split('/').pop())
+            }))`
+          ).catch(() => 'diag-failed')) as string
+          const diskDiag104 = ((): string => {
+            try {
+              const store = process.env['PICODE_SESSION_DIR'] ?? ''
+              const base = path.basename(rename104Session.sessionFile ?? '___none')
+              const find = (dir: string): string | null => {
+                for (const entry of readdirSync(dir, { withFileTypes: true })) {
+                  const p = path.join(dir, entry.name)
+                  if (entry.isDirectory()) {
+                    const hit = find(p)
+                    if (hit !== null) return hit
+                  } else if (entry.name === base) return p
+                }
+                return null
+              }
+              const hit = find(store)
+              return hit !== null ? `on-disk head=${JSON.stringify(readFileSync(hit, 'utf8').slice(0, 100))}` : `NOT-on-disk (base=${base})`
+            } catch (err) {
+              return `disk-diag-failed: ${String(err)}`
+            }
+          })()
+          fail(`ticket-104 stage: the session row never rendered in the sidebar (last reveal: ${reveal}) — rows: ${String(await js(`document.querySelectorAll('.sb-task').length`).catch(() => 'n/a'))}, groups: ${String(await js(`document.querySelectorAll('.sb-group').length`).catch(() => 'n/a'))}, diag: ${diag104}, disk: ${diskDiag104}`)
+        }
+      }
+      const sidebarTitle104 = `${row104}?.querySelector('.sb-task-title')?.textContent`
+
+      // Now start the LONG run — the rename happens while IT streams.
+      supervisor.handleParentCommand({
+        type: 'session_command',
+        sessionId: rename104Id,
+        command: { type: 'prompt', text: COUNT_PROMPT_104 }
+      })
+      await waitFor((e) => e.type === 'agent_start' && e.sessionId === rename104Id, 'ticket-104 agent_start')
+      await waitFor((e) => e.type === 'text_delta' && e.sessionId === rename104Id, 'ticket-104 first text_delta')
+
+      // Mid-run rename through the topbar (the /name parity path).
+      const renamedRunning104 = waitFor(
+        (e) => e.type === 'session_renamed' && e.sessionId === rename104Id,
+        'ticket-104 session_renamed while running'
+      ) as Promise<Extract<Scoped, { type: 'session_renamed' }>>
+      if (!((await js(openTopbarRename104)) as boolean)) {
+        fail('ticket-104 stage: the topbar Rename button is missing mid-run')
+      }
+      if (!(await waitForProbe(win, `document.querySelector('.chat-title-input') instanceof HTMLInputElement`, 10_000))) {
+        fail('ticket-104 stage: the rename editor never opened mid-run')
+      }
+      if (!((await js(typeTopbarRename104(NAME_RUNNING_104))) as boolean)) {
+        fail('ticket-104 stage: the rename editor lost its input mid-run')
+      }
+      const renameRunningAck = await renamedRunning104
+      if (renameRunningAck.name !== NAME_RUNNING_104) {
+        fail(`ticket-104 stage: the mid-run rename ack carried the wrong name, got ${renameRunningAck.name}`)
+      }
+      log('rename104_midrun_ack_ok')
+
+      // The title updates immediately (topbar via the tree refresh, sidebar
+      // via the optimistic row + the index refresh) and NO error toast rose.
+      if (!(await waitForProbe(win, `document.querySelector('.chat-topbar-title')?.textContent === ${JSON.stringify(NAME_RUNNING_104)}`, 10_000))) {
+        fail(`ticket-104 stage: the topbar title never showed the mid-run rename — got ${(await js(`document.querySelector('.chat-topbar-title')?.textContent ?? 'none'`).catch(() => 'n/a')) as string}`)
+      }
+      if (!(await waitForProbe(win, `document.querySelector('.sb-task-active') === ${row104} && ${sidebarTitle104} === ${JSON.stringify(NAME_RUNNING_104)}`, 10_000))) {
+        fail(`ticket-104 stage: the sidebar row title never showed the mid-run rename — got ${String(await js(`${sidebarTitle104} ?? 'none'`).catch(() => 'n/a'))}`)
+      }
+      if (!(await js(noNewErrorToast104))) {
+        fail('ticket-104 stage: the mid-run rename raised an error toast (the settled guard must NOT apply)')
+      }
+      log('rename104_midrun_ui_ok')
+
+      // The run survived the rename: streaming continues through it.
+      await waitFor((e) => e.type === 'text_delta' && e.sessionId === rename104Id, 'ticket-104 post-rename text_delta')
+      log('rename104_midrun_run_alive_ok')
+
+      // Settle the run, then the settled rename must not regress.
+      await js(`document.querySelector('.cmp-stop')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
+      await waitFor((e) => e.type === 'agent_end' && e.sessionId === rename104Id, 'ticket-104 stop agent_end')
+      if (!(await waitForProbe(win, `document.querySelector('.cmp-send') !== null`, 15_000))) {
+        fail('ticket-104 stage: the composer never left the busy state after the Stop')
+      }
+      const renamedSettled104 = waitFor(
+        (e) => e.type === 'session_renamed' && e.sessionId === rename104Id,
+        'ticket-104 session_renamed when settled'
+      ) as Promise<Extract<Scoped, { type: 'session_renamed' }>>
+      if (!((await js(openTopbarRename104)) as boolean)) {
+        fail('ticket-104 stage: the topbar Rename button is missing when settled')
+      }
+      if (!(await waitForProbe(win, `document.querySelector('.chat-title-input') instanceof HTMLInputElement`, 10_000))) {
+        fail('ticket-104 stage: the rename editor never opened when settled')
+      }
+      if (!((await js(typeTopbarRename104(NAME_SETTLED_104))) as boolean)) {
+        fail('ticket-104 stage: the rename editor lost its input when settled')
+      }
+      const renameSettledAck = await renamedSettled104
+      if (renameSettledAck.name !== NAME_SETTLED_104) {
+        fail(`ticket-104 stage: the settled rename ack carried the wrong name, got ${renameSettledAck.name}`)
+      }
+      if (!(await waitForProbe(win, `document.querySelector('.chat-topbar-title')?.textContent === ${JSON.stringify(NAME_SETTLED_104)}`, 10_000))) {
+        fail('ticket-104 stage: the topbar title never showed the settled rename')
+      }
+      if (!(await waitForProbe(win, `document.querySelector('.sb-task-active') === ${row104} && ${sidebarTitle104} === ${JSON.stringify(NAME_SETTLED_104)}`, 10_000))) {
+        fail(`ticket-104 stage: the sidebar row title never showed the settled rename — got ${String(await js(`${sidebarTitle104} ?? 'none'`).catch(() => 'n/a'))}`)
+      }
+      if (!(await js(noNewErrorToast104))) {
+        fail('ticket-104 stage: the settled rename raised an error toast (regression)')
+      }
+      log('rename104_settled_ok')
+      await js(composerClearJs)
+    })
+    log('rename_midrun_done')
 
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
     const livePids = supervisor.hostPids
