@@ -11,10 +11,15 @@
  *     → build/icon.iconset/           Apple-named ladder (derived, gitignored)
  *
  * Pipeline (macOS built-ins only — same platform the packager targets):
- *   qlmanage    renders the SVG master once at 1024px (QuickLook, alpha
- *               preserved) — pinned single renderer so regenerated artifacts
- *               stay comparable regardless of what else is installed
- *   sips        resamples the master down to each size
+ *   qlmanage    renders the SVG master once at 1024px (QuickLook) — pinned
+ *               single renderer so regenerated artifacts stay comparable
+ *               regardless of what else is installed
+ *   icon-alpha  deterministic alpha repair: qlmanage composites its thumbnail
+ *               onto opaque white, so the canvas-edge-connected white matte is
+ *               flood-filled away (thresholds + unmixing rationale documented
+ *               in scripts/icon-alpha.ts). Pure post-processing — qlmanage
+ *               stays the single rasterizer (ticket 102 discipline)
+ *   sips        resamples the repaired master down to each size
  *   iconutil    packs build/icon.iconset → build/icon.icns
  *
  * Zero npm dependencies on purpose: icon regen is a rare, human-triggered
@@ -22,10 +27,11 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { decodePng, encodePng, stripEdgeWhiteMatte } from './icon-alpha.ts'
 
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const buildDir = path.join(root, 'build')
@@ -98,7 +104,19 @@ function main() {
 
     console.log(`→ rasterizing master ${path.relative(root, masterSvg)} at ${RASTER_SIZE}px`)
     rasterize(masterSvg, RASTER_SIZE, workDir + '/master.png', workDir)
-    copyFileSync(workDir + '/master.png', masterPng)
+
+    console.log('→ alpha repair (strip the qlmanage white matte)')
+    const master = decodePng(readFileSync(workDir + '/master.png'))
+    const cleared = stripEdgeWhiteMatte(master)
+    console.log(`  cleared ${cleared} edge-connected matte pixels`
+      + (cleared === 0 ? ' (no matte found — qlmanage output changed?)' : ''))
+    for (const [x, y] of [[0, 0], [master.width - 1, 0], [0, master.height - 1], [master.width - 1, master.height - 1]]) {
+      const o = (y * master.width + x) * 4
+      if (master.data[o + 3] !== 0) {
+        throw new Error(`alpha repair left corner (${x},${y}) opaque (a=${master.data[o + 3]}) — matte not stripped`)
+      }
+    }
+    writeFileSync(masterPng, encodePng(master))
 
     console.log('→ png ladder (build/icons)')
     for (const size of SIZES) resize(masterPng, size, path.join(iconsDir, `${size}.png`))
