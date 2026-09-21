@@ -101,8 +101,9 @@ export function shellUiReducer(state: ShellUiState, action: ShellUiAction): Shel
       return state.view === 'settings' ? state : { ...state, view: 'settings' }
     case 'back-to-workspace':
       return state.view === 'workspace' ? state : { ...state, view: 'workspace' }
-    // Ticket 63: the ⌘, chord and the titlebar gear are one toggle — open
-    // from the workspace, close from the settings window (Esc closes too).
+    // Ticket 63: the ⌘, chord is one toggle — open from the workspace,
+    // close from the settings window (Esc closes too). Ticket 127 retired
+    // the titlebar gear; the chord keeps the toggle semantics on its own.
     case 'toggle-settings':
       return { ...state, view: state.view === 'settings' ? 'workspace' : 'settings' }
     default:
