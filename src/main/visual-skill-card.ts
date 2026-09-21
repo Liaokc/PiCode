@@ -11,6 +11,11 @@
  *                       (× first, then a re-pick — the replace path)
  *   sc3-newtask-card  — the SAME card in the New Task empty state (the
  *                       shared-composer rule: both surfaces behave alike)
+ *   sc4-keep-text     — ticket 118: the operator's repro — the draft typed
+ *                       FIRST, then the caret back to the very start to
+ *                       type the `/` query and pick: the pick strips only
+ *                       the trigger token and the draft survives whole as
+ *                       the card's args
  *
  * Seeding: an isolated session store (PICODE_SESSION_DIR tmpdir) with one
  * backdated session whose cwd is a seeded project carrying a REAL .pi skill
@@ -71,6 +76,21 @@ const typeArgsJs = (text: string, surface = '.chat-dock'): string => `(() => {
   if (!(ta instanceof HTMLTextAreaElement)) return false
   const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
   setter.call(ta, ${JSON.stringify(text)})
+  ta.dispatchEvent(new Event('input', { bubbles: true }))
+  ta.focus()
+  return true
+})()`
+
+/** Ticket 118's repro staging: type the `/` query at the very START of the
+ * existing draft — the native setter prepends it and parks the caret right
+ * after the query (the handleChange path a real keystroke rides), so the
+ * menu opens over a composer that already holds the operator's text. */
+const typeQueryAtStartJs = (query: string, surface = '.chat-dock'): string => `(() => {
+  const ta = document.querySelector('${surface} textarea.composer-input')
+  if (!(ta instanceof HTMLTextAreaElement)) return false
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+  setter.call(ta, ${JSON.stringify(query)} + ta.value)
+  ta.selectionStart = ta.selectionEnd = ${JSON.stringify(query)}.length
   ta.dispatchEvent(new Event('input', { bubbles: true }))
   ta.focus()
   return true
@@ -190,6 +210,38 @@ export function startSkillCardVisualIfEnabled(getWindow: () => BrowserWindow | n
       }
       await sleep(300)
       await capture(win, 'sc2-template-card', 'prompt-template card: same treatment, same single slot')
+
+      // Frame sc4 (ticket 118): the operator's repro — the draft typed
+      // FIRST, then the caret back to the very start to type the `/` query
+      // and pick. The pick must strip only the trigger token: the draft
+      // survives whole as the card's args (the old pick cleared it). The
+      // draft text is distinct from sc1's so the frame is self-describing:
+      // what follows the card is exactly the pre-existing draft, not args
+      // typed after the pick.
+      const KEEP_TEXT = 'PICODE_VISUAL_KEEP this draft was typed before the pick'
+      await win.webContents.executeJavaScript(
+        `document.querySelector('.chat-dock .composer-command-card-remove')?.click(); true`
+      )
+      if (!(await waitFor(getWindow, `document.querySelector('.chat-dock .composer-command-card') === null`, 5_000))) {
+        throw new Error('skill-card visual: × never cleared the template card for the keep-text frame')
+      }
+      // The repro's draft: typed fresh into the cleared composer.
+      await win.webContents.executeJavaScript(typeArgsJs(KEEP_TEXT))
+      if (!(await waitFor(getWindow, `document.querySelector('.chat-dock textarea.composer-input')?.value === ${JSON.stringify(KEEP_TEXT)}`, 5_000))) {
+        throw new Error('skill-card visual: the keep-text draft never landed in the composer')
+      }
+      await win.webContents.executeJavaScript(typeQueryAtStartJs('/picode-visual'))
+      if (!(await waitFor(getWindow, cmdRowProbe(SKILL_NAME), 15_000))) {
+        throw new Error('skill-card visual: the skill row never appeared for the keep-text pick')
+      }
+      if (!((await win.webContents.executeJavaScript(cmdRowJs(SKILL_NAME))) as boolean)) {
+        throw new Error('skill-card visual: the skill row disappeared before the keep-text pick')
+      }
+      if (!(await waitFor(getWindow, `${cardWithName(SKILL_NAME)} && document.querySelector('.chat-dock textarea.composer-input')?.value === ${JSON.stringify(KEEP_TEXT)}`, 5_000))) {
+        throw new Error('skill-card visual: the keep-text pick did not keep the draft as the card args')
+      }
+      await sleep(300)
+      await capture(win, 'sc4-keep-text', 'ticket 118: the pick keeps the pre-existing draft as the card args')
 
       // Frame sc3: the New Task empty state — the shared composer stages the
       // same card there (the chip selects the seeded project so the catalog
