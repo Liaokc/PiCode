@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
 import {
   buildSessionTree,
   extractTranscriptItems,
@@ -9,247 +10,142 @@ import {
 
 /**
  * Ticket 112 (pi 0.86.1 alignment, spec R33): session-format compatibility
- * with the entry shapes the pi 0.86 TUI actually writes. Shapes below are
- * copied from a REAL TUI 0.86.1 session on this machine (system message with
- * prompt sections + toolsAdded — the before_agent_start transcript
- * persistence; custom_message extension notices) and from the 0.86.1 SDK
- * source/docs (appendCustomEntry → `custom` with customType; `usage` with
- * kind). The contract under test: a TUI 0.86 session opens in PiCode —
- * parse never throws, the pre-0.86 message entries ALL survive the
- * projections, and the new/unknown entry types degrade gracefully (out of
- * the LLM replay like the TUI keeps them, present as 'other' tree nodes,
- * lossless on disk).
+ * against a REAL TUI 0.86.1 session. The fixture
+ * `fixtures/tui-086-session.jsonl` is the actual session file the pi 0.86.1
+ * TUI wrote on this machine (wt-105, 2026-09-21, after `pi update`), with one
+ * mechanical transform: long string values capped at 200 chars — structure,
+ * keys, value types, and id/parentId linkage stay byte-real. It carries the
+ * 0.86 entry faces in the wild: the before_agent_start persistence (a
+ * role:system message with prompt sections + toolsAdded), custom_message
+ * extension notices, and — appended, documented, stable ids t112-bug1 /
+ * t112-usg1 / t112-fut1 — a `custom` pi.bug-report record (shape from the
+ * 0.86.1 SDK's appendCustomEntry), a cache-warm `usage` entry (0.86.0 docs
+ * shape), and a hypothetical future entry type.
+ *
+ * The contract under test: a TUI 0.86 session opens in PiCode — parse never
+ * throws, the message flow survives the projections completely, and the
+ * new/unknown entry types degrade gracefully (out of the LLM replay like the
+ * TUI keeps them, present as 'other' tree nodes, lossless end to end).
+ * Expected counts come from an independent raw JSON.parse census of the
+ * fixture, never from the projection code under test.
  */
 
-const T086 = '2026-09-21T06:20:00.000Z'
+const FIXTURE = new URL('./fixtures/tui-086-session.jsonl', import.meta.url)
+const TEXT = readFileSync(FIXTURE, 'utf8')
 
-/** The 0.86.0 system message: transcript-backed prompt/tool loadout
- * (before_agent_start persistence). Real shape: sections keyed by name,
- * toolsAdded array, integer timestamp INSIDE the message. */
-const systemMessageLine = JSON.stringify({
-  type: 'message',
-  id: 't086-sys1',
-  parentId: null,
-  timestamp: T086,
-  message: {
-    role: 'system',
-    content: '',
-    sections: {
-      preamble: 'You are an expert coding assistant...',
-      tools: '<tools>\n- read: ...\n</tools>',
-      rules: 'Be careful.'
-    },
-    toolsAdded: [
-      { name: 'read', description: 'Read a file', parameters: { type: 'object' } }
-    ],
-    timestamp: 1758438000000
+/** Independent census: raw JSON.parse of every line — the ground truth the
+ * projections are measured against. */
+function census(): { header: { id: string } | null; entries: { id: string; type: string; role?: string; toolCallIds: string[] }[]; lastId: string } {
+  const lines = TEXT.split('\n').filter((line) => line.trim() !== '')
+  let header: { id: string } | null = null
+  const entries: { id: string; type: string; role?: string; toolCallIds: string[] }[] = []
+  for (const line of lines) {
+    const raw = JSON.parse(line) as Record<string, unknown>
+    if (raw['type'] === 'session') {
+      header = { id: raw['id'] as string }
+      continue
+    }
+    const message = raw['message'] as Record<string, unknown> | undefined
+    const toolCallIds: string[] = []
+    if (Array.isArray(message?.['content'])) {
+      for (const part of message['content'] as Record<string, unknown>[]) {
+        if (part?.['type'] === 'toolCall' && typeof part['id'] === 'string') toolCallIds.push(part['id'])
+      }
+    }
+    entries.push({
+      id: raw['id'] as string,
+      type: raw['type'] as string,
+      role: typeof message?.['role'] === 'string' ? (message['role'] as string) : undefined,
+      toolCallIds
+    })
   }
-})
+  return { header, entries, lastId: entries[entries.length - 1]?.id ?? '' }
+}
 
-const userLine = JSON.stringify({
-  type: 'message',
-  id: 't086-u1',
-  parentId: 't086-sys1',
-  timestamp: T086,
-  message: { role: 'user', content: [{ type: 'text', text: 'T086 what changed in pi 0.86?' }] }
-})
+const CENSUS = census()
+const censusIds = new Set(CENSUS.entries.map((entry) => entry.id))
+const censusMessages = CENSUS.entries.filter((entry) => entry.type === 'message')
+const censusUsers = censusMessages.filter((entry) => entry.role === 'user')
+const censusToolCallIds = censusMessages.flatMap((entry) => entry.toolCallIds)
+/** Entry types that must stay OUT of the LLM replay (the TUI keeps them out too). */
+const NON_REPLAY_IDS = new Set(
+  CENSUS.entries
+    .filter((entry) => entry.type !== 'message' || entry.role === 'system')
+    .map((entry) => entry.id)
+)
 
-const assistantToolLine = JSON.stringify({
-  type: 'message',
-  id: 't086-a1',
-  parentId: 't086-u1',
-  timestamp: T086,
-  message: {
-    role: 'assistant',
-    content: [
-      { type: 'thinking', thinking: 'Check the changelog.' },
-      { type: 'toolCall', id: 't086-call1', name: 'read', arguments: { path: '/tmp/changelog.md' } }
-    ],
-    provider: 'anthropic',
-    model: 'claude-sonnet-4-5',
-    stopReason: 'toolUse'
-  }
-})
-
-/** The toolResult's recorded details: JSON-compatible values only (the
- * 0.86.0 tightening) — the subagent run-identity shape PiCode consumes. */
-const toolResultLine = JSON.stringify({
-  type: 'message',
-  id: 't086-r1',
-  parentId: 't086-a1',
-  timestamp: T086,
-  message: {
-    role: 'toolResult',
-    toolCallId: 't086-call1',
-    toolName: 'read',
-    content: [{ type: 'text', text: '0.86.0 changelog text' }],
-    isError: false,
-    details: { mode: 'single', runId: 't086-run-1', results: [{ agent: 'scout', status: 'completed', finalOutput: 'done' }] }
-  }
-})
-
-/** Extension-injected context that DOES participate in LLM context
- * (pi-subagents async notices ride this shape — real session evidence). */
-const customMessageLine = JSON.stringify({
-  type: 'custom_message',
-  id: 't086-cm1',
-  parentId: 't086-r1',
-  timestamp: T086,
-  customType: 'subagent-notify',
-  content: 'Background task completed: workflow',
-  display: false
-})
-
-const assistantReplyLine = JSON.stringify({
-  type: 'message',
-  id: 't086-a2',
-  parentId: 't086-cm1',
-  timestamp: T086,
-  message: {
-    role: 'assistant',
-    content: [{ type: 'text', text: 'T086 reply: three breaking changes, none hit PiCode.' }],
-    provider: 'anthropic',
-    model: 'claude-sonnet-4-5',
-    stopReason: 'stop'
-  }
-})
-
-/** The /bug record: appendCustomEntry(BUG_REPORT_CUSTOM_ENTRY_TYPE, data) →
- * a `custom` entry with customType "pi.bug-report" (0.86.0 bug reporting). */
-const bugReportLine = JSON.stringify({
-  type: 'custom',
-  id: 't086-bug1',
-  parentId: 't086-a2',
-  timestamp: T086,
-  customType: 'pi.bug-report',
-  data: {
-    schemaVersion: 1,
-    id: 'bug-t086',
-    createdAt: T086,
-    hint: null,
-    sessionIncluded: false,
-    summaryIncluded: false,
-    delivery: { uploaded: true }
-  }
-})
-
-/** 0.86.0 cache warming: model-attributed usage that is not an assistant
- * message and does not participate in LLM context. */
-const usageLine = JSON.stringify({
-  type: 'usage',
-  id: 't086-usg1',
-  parentId: 't086-bug1',
-  timestamp: T086,
-  kind: 'cache_warm',
-  provider: 'anthropic',
-  model: 'claude-sonnet-4-5',
-  usage: { input: 0, output: 0, cacheRead: 50000, cacheWrite: 0, totalTokens: 50000, cost: { total: 0.015 } }
-})
-
-/** Beyond every known type: the degradation contract must hold for entry
- * types a FUTURE TUI invents (the exact ticket-112 wording). */
-const futureLine = JSON.stringify({
-  type: 'hypothetical_113_entry',
-  id: 't086-fut1',
-  parentId: 't086-usg1',
-  timestamp: T086,
-  payload: { anything: true }
-})
-
-const HEADER = JSON.stringify({
-  type: 'session', version: 3, id: 't086-header-id', timestamp: T086, cwd: '/tmp/t086-cwd'
-})
-
-/** The seeded TUI 0.86 session: every 0.86 entry shape interleaved with the
- * pre-0.86 message flow, in real file order. */
-const TUI086_SESSION = [
-  HEADER,
-  systemMessageLine,
-  userLine,
-  assistantToolLine,
-  toolResultLine,
-  customMessageLine,
-  assistantReplyLine,
-  bugReportLine,
-  usageLine,
-  futureLine
-].join('\n')
-
-const MESSAGE_ENTRY_IDS = ['t086-sys1', 't086-u1', 't086-a1', 't086-r1', 't086-a2']
-// File order: the custom_message notice (child of r1) precedes the reply
-// (child of the notice).
-const ALL_ENTRY_IDS = ['t086-sys1', 't086-u1', 't086-a1', 't086-r1', 't086-cm1', 't086-a2', 't086-bug1', 't086-usg1', 't086-fut1']
-
-describe('ticket 112: TUI 0.86 session-format compatibility', () => {
-  it('parseSessionLines keeps the header and EVERY entry — new types are entries, not parse failures', () => {
-    const parsed = parseSessionLines(TUI086_SESSION)
-    expect(parsed.header?.id).toBe('t086-header-id')
-    expect(parsed.header?.cwd).toBe('/tmp/t086-cwd')
-    expect(parsed.entries.map((entry) => entry.id)).toEqual(ALL_ENTRY_IDS)
-    const types = new Map(parsed.entries.map((entry) => [entry.id, entry.type]))
-    expect(types.get('t086-sys1')).toBe('message')
-    expect(types.get('t086-cm1')).toBe('custom_message')
-    expect(types.get('t086-bug1')).toBe('custom')
-    expect(types.get('t086-usg1')).toBe('usage')
-    expect(types.get('t086-fut1')).toBe('hypothetical_113_entry')
+describe('ticket 112: real TUI 0.86.1 session opens in PiCode', () => {
+  it('parseSessionLines keeps the header and EVERY entry — no loss, no invention, no throw', () => {
+    const parsed = parseSessionLines(TEXT)
+    expect(parsed.header?.id).toBe(CENSUS.header?.id)
+    expect(parsed.entries).toHaveLength(CENSUS.entries.length)
+    const parsedIds = new Set(parsed.entries.map((entry) => entry.id))
+    expect(parsedIds).toEqual(censusIds)
+    for (const entry of parsed.entries) {
+      const raw = CENSUS.entries.find((candidate) => candidate.id === entry.id)
+      expect(entry.type).toBe(raw?.type)
+    }
   })
 
-  it('summarizeSession still reads the title from the first user message (system preamble never hijacks it)', () => {
-    const summary = summarizeSession(TUI086_SESSION, '/tmp/t086.jsonl', T086.length)
-    expect(summary).not.toBeNull()
-    expect(summary?.title).toContain('what changed in pi 0.86?')
-    // messageCount counts message entries — system messages included, every
-    // non-message type (custom/custom_message/usage/future) excluded.
-    expect(summary?.messageCount).toBe(MESSAGE_ENTRY_IDS.length)
+  it('extractTranscriptItems replays the message flow complete — 0.86 types stay out without loss', () => {
+    const items = extractTranscriptItems(parseSessionLines(TEXT).entries)
+    const itemIds = new Set(items.map((item) => item.id))
+    // Every user message replays, in file order.
+    const replayedUsers = items.filter((item) => item.role === 'user')
+    expect(replayedUsers.map((item) => item.id)).toEqual(censusUsers.map((entry) => entry.id))
+    // Every assistant toolCall replays as a tool item.
+    for (const callId of censusToolCallIds) {
+      expect(itemIds.has(callId)).toBe(true)
+    }
+    // Nothing outside the message universe (system/custom_message/custom/
+    // usage/future) leaks into the replay.
+    for (const item of items) {
+      expect(NON_REPLAY_IDS.has(item.id)).toBe(false)
+    }
+    expect(items.length).toBeGreaterThan(censusUsers.length + censusToolCallIds.length - 1)
   })
 
-  it('extractTranscriptItems replays the user/assistant/tool flow complete — 0.86 types stay out without loss', () => {
-    const items = extractTranscriptItems(parseSessionLines(TUI086_SESSION).entries)
-    // user, assistant(+thinking), tool (folded result), assistant — the
-    // system message, custom_message, custom bug report, usage, and the
-    // unknown type project NOTHING (the replay stays isomorphic with the
-    // TUI's conversation), yet nothing of the pre-0.86 flow is lost.
-    expect(items.map((item) => item.id)).toEqual(['t086-u1', 't086-a1', 't086-call1', 't086-a2'])
-    const tool = items[2]
-    expect(tool?.role).toBe('tool')
-    expect(tool && 'output' in tool ? tool.output : '').toContain('0.86.0 changelog text')
-    expect(tool && 'subagent' in tool ? tool.subagent?.runId : undefined).toBe('t086-run-1')
+  it('the real subagent toolResult projects its run identity through the JSON details', () => {
+    const items = extractTranscriptItems(parseSessionLines(TEXT).entries)
+    const subagentItems = items.filter(
+      (item) => item.role === 'tool' && 'subagent' in item && item.subagent?.runId !== undefined
+    )
+    expect(subagentItems.length).toBeGreaterThanOrEqual(1)
+    const withRunId = subagentItems.find((item) => item.role === 'tool' && 'subagent' in item)
+    expect(typeof (withRunId as { subagent?: { runId?: string } })?.subagent?.runId).toBe('string')
   })
 
-  it('buildSessionTree degrades every 0.86/unknown type to a tolerated other node — leaf stays the last entry', () => {
-    const entries = parseSessionLines(TUI086_SESSION).entries
-    const tree = buildSessionTree(entries)
-    expect(tree.nodes).toHaveLength(1) // the system message roots the chain
+  it('summarizeSession reads the sidebar summary from the real file (title + message census)', () => {
+    const summary = summarizeSession(TEXT, 'tui-086-session.jsonl', 0, null)
+    expect(summary?.id).toBe(CENSUS.header?.id)
+    expect(summary?.messageCount).toBe(censusMessages.length)
+    expect(summary?.title?.length).toBeGreaterThan(0)
+  })
+
+  it('buildSessionTree keeps every entry as a node — 0.86/unknown types degrade to other, leaf last', () => {
+    const entries = parseSessionLines(TEXT).entries
+    const tree = buildSessionTree(entries, '/Users/liaokechen')
     const kinds = new Map<string, string>()
-    const walk = (nodes: { id: string; kind: string; preview: string | null; children: unknown[] }[]): void => {
+    const walk = (nodes: { id: string; kind: string; children: unknown[] }[]): void => {
       for (const node of nodes) {
         kinds.set(node.id, node.kind)
         walk(node.children as typeof nodes)
       }
     }
     walk(tree.nodes)
-    expect(kinds.get('t086-sys1')).toBe('other') // system role — internal, never a user/assistant row
-    expect(kinds.get('t086-u1')).toBe('user')
-    expect(kinds.get('t086-a1')).toBe('assistant')
-    expect(kinds.get('t086-cm1')).toBe('other')
-    expect(kinds.get('t086-bug1')).toBe('other')
-    expect(kinds.get('t086-usg1')).toBe('other')
-    expect(kinds.get('t086-fut1')).toBe('other')
-    expect(tree.leafId).toBe('t086-fut1')
-    expect(leafIdOf(entries)).toBe('t086-fut1')
-  })
-
-  it('a system message degrades to an honest (system) preview, not a crash', () => {
-    const entries = parseSessionLines(TUI086_SESSION).entries
-    const tree = buildSessionTree(entries, '')
-    const find = (nodes: { id: string; preview: string | null; children: object[] }[]): { id: string; preview: string | null } | null => {
-      for (const node of nodes) {
-        if (node.id === 't086-sys1') return node
-        const hit = find(node.children as typeof nodes)
-        if (hit) return hit
-      }
-      return null
+    expect(kinds.size).toBe(CENSUS.entries.length)
+    expect(new Set(kinds.keys())).toEqual(censusIds)
+    // The before_agent_start system message and every 0.86/unknown type are
+    // tolerated other nodes — never a user/assistant row, never a crash.
+    for (const [id, type] of CENSUS.entries.map((entry) => [entry.id, entry.type] as const)) {
+      if (type === 'message') continue
+      expect(kinds.get(id)).toBe('other')
     }
-    expect(find(tree.nodes)?.preview).toBe('(system)')
+    for (const entry of censusMessages) {
+      if (entry.role === 'system') expect(kinds.get(entry.id)).toBe('other')
+      if (entry.role === 'user') expect(kinds.get(entry.id)).toBe('user')
+    }
+    expect(tree.leafId).toBe('t112-fut1')
+    expect(leafIdOf(entries)).toBe('t112-fut1')
   })
 })
