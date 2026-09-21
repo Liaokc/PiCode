@@ -15,6 +15,7 @@ import { archivedList, filterArchived } from '../../../shared/sessions/archive'
 import {
   filterHiddenGroups,
   groupSessions,
+  isDeadCwdGroup,
   isEmptyManualOrder,
   isSessionLive,
   projectLabel,
@@ -526,6 +527,15 @@ export default function Sidebar({
     () => groupSessions(listed, pinnedIds, sort, manualOrder),
     [listed, pinnedIds, sort, manualOrder]
   )
+  /** Ticket 123: the current render's dead-cwd groups — the sink bucket
+   * (they render below every live group under all three sorts) and the drag
+   * guard (their grips never drag, and their cwds never enter the persisted
+   * manual group order). Purely derived from the index's `cwdMissing`
+   * flags — a reappearing directory re-projects with no stored state. */
+  const deadGroupCwds = useMemo(
+    () => new Set(grouped.groups.filter((group) => isDeadCwdGroup(group)).map((group) => group.cwd)),
+    [grouped.groups]
+  )
   const timeline = useMemo(
     () => timelineSessions(listed, pinnedIds, sort, manualOrder),
     [listed, pinnedIds, sort, manualOrder]
@@ -533,6 +543,13 @@ export default function Sidebar({
   const visibleProjectGroups = useMemo(
     () => filterHiddenGroups(grouped.groups, hiddenCwds),
     [grouped.groups, hiddenCwds]
+  )
+  /** The live/dead boundary the group-drop indicator anchors on (ticket
+   * 123): the first VISIBLE dead group — the sunk tail's head. Null when
+   * every rendered group is live (no boundary exists). */
+  const firstDeadGroupCwd = useMemo(
+    () => visibleProjectGroups.find((group) => deadGroupCwds.has(group.cwd))?.cwd ?? null,
+    [visibleProjectGroups, deadGroupCwds]
   )
   const activeSession = sessions.find((s) => s.id === activeSessionId) ?? null
   /** The archive button's view rows (ticket 35): exactly the archived
@@ -684,8 +701,19 @@ export default function Sidebar({
       return
     }
     if (target.kind !== 'group') return
+    // Ticket 123: an anchor on the dead bucket (the boundary marker) commits
+    // at the end of the LIVE arrangement, and the reconcile list never feeds
+    // a dead cwd into the stored groups — dead groups don't enter the manual
+    // order, so a revived group returns to its natural sort position.
+    const anchor =
+      target.beforeCwd !== null && deadGroupCwds.has(target.beforeCwd) ? null : target.beforeCwd
     onCommitManualOrder(
-      moveGroupBefore(manualBase(), d.cwd, target.beforeCwd, grouped.groups.map((g) => g.cwd))
+      moveGroupBefore(
+        manualBase(),
+        d.cwd,
+        anchor,
+        grouped.groups.filter((group) => !deadGroupCwds.has(group.cwd)).map((group) => group.cwd)
+      )
     )
   }
 
@@ -707,7 +735,11 @@ export default function Sidebar({
   }
 
   /** The group drop target from ONE event's geometry against its section
-   * (top half = before this group, bottom half = after it). */
+   * (top half = before this group, bottom half = after it). Ticket 123: the
+   * dead bucket is derived, not arrangeable — an anchor aimed into it (a
+   * dead group's cwd, or past the list's end while dead groups render at
+   * the bottom) clamps to the live/dead boundary, so the indicator and the
+   * commit both land there, never between two dead groups. */
   function groupDropTargetFrom(
     event: DragEvent<HTMLElement>,
     group: { cwd: string },
@@ -715,7 +747,8 @@ export default function Sidebar({
   ): SidebarDropTarget {
     const rect = event.currentTarget.getBoundingClientRect()
     const above = event.clientY < rect.top + rect.height / 2
-    const beforeCwd = above ? group.cwd : (visibleProjectGroups[groupIndex + 1]?.cwd ?? null)
+    const raw = above ? group.cwd : (visibleProjectGroups[groupIndex + 1]?.cwd ?? null)
+    const beforeCwd = raw !== null && !deadGroupCwds.has(raw) ? raw : firstDeadGroupCwd
     return { kind: 'group', beforeCwd }
   }
 
@@ -1010,6 +1043,10 @@ export default function Sidebar({
               const rowCount = visibleRowCount(folds, group.cwd, group.sessions.length)
               const control = showMoreControl(folds, group.cwd, group.sessions.length)
               const rows = group.sessions.slice(0, rowCount)
+              /** Ticket 123: this group's cwd is dead — it renders sunk below
+               * every live group and its grip never drags (the manual order
+               * can never arrange it). */
+              const groupDead = deadGroupCwds.has(group.cwd)
               // The anchor id meaning "insert at the visible end" (ticket
               // 84): the first HIDDEN row when pagination hides any, else
               // null = the group's absolute end. Drops below the last
@@ -1106,29 +1143,39 @@ export default function Sidebar({
                     {/* The grip is the REAL drag handle now (ticket 84):
                         dragging it reorders the group; the section-level
                         dragover/drop pair above carries the drop. The ghost
-                        image is the whole header row (ZCode's move form). */}
+                        image is the whole header row (ZCode's move form).
+                        Ticket 123: a dead-cwd group's grip is display-only —
+                        dimmed, never draggable, no drag label. */}
                     <span
-                      className="sb-grip-handle"
-                      aria-label={`Drag to reorder ${group.project}`}
-                      draggable
-                      onDragStart={(e) => {
-                        dragRef.current = { kind: 'group', cwd: group.cwd }
-                        e.dataTransfer.effectAllowed = 'move'
-                        e.dataTransfer.setData('text/plain', group.cwd)
-                        const header = e.currentTarget.closest('.sb-group-header')
-                        if (header instanceof HTMLElement) {
-                          try {
-                            e.dataTransfer.setDragImage(header, 12, 12)
-                          } catch {
-                            // Synthetic (untrusted) events cannot set drag
-                            // images — the default grip ghost is fine.
-                          }
-                        }
-                      }}
-                      onDragEnd={() => {
-                        dragRef.current = null
-                        setDrop(null)
-                      }}
+                      className={groupDead ? 'sb-grip-handle sb-grip-dead' : 'sb-grip-handle'}
+                      aria-label={groupDead ? undefined : `Drag to reorder ${group.project}`}
+                      draggable={!groupDead}
+                      onDragStart={
+                        groupDead
+                          ? undefined
+                          : (e) => {
+                              dragRef.current = { kind: 'group', cwd: group.cwd }
+                              e.dataTransfer.effectAllowed = 'move'
+                              e.dataTransfer.setData('text/plain', group.cwd)
+                              const header = e.currentTarget.closest('.sb-group-header')
+                              if (header instanceof HTMLElement) {
+                                try {
+                                  e.dataTransfer.setDragImage(header, 12, 12)
+                                } catch {
+                                  // Synthetic (untrusted) events cannot set drag
+                                  // images — the default grip ghost is fine.
+                                }
+                              }
+                            }
+                      }
+                      onDragEnd={
+                        groupDead
+                          ? undefined
+                          : () => {
+                              dragRef.current = null
+                              setDrop(null)
+                            }
+                      }
                     >
                       <GripDotsIcon className="sb-grip" />
                     </span>

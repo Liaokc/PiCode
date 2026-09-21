@@ -956,6 +956,15 @@ kbd {
   color: var(--text-secondary);
 }
 
+/* Ticket 123: a dead-cwd group's grip is display-only — the group can
+   never enter the manual arrangement (it renders sunk below every live
+   group), so the dots dim and never grab. */
+.sb-grip-handle.sb-grip-dead,
+.sb-grip-handle.sb-grip-dead:active {
+  cursor: default;
+  opacity: 0.45;
+}
+
 /* Drop indicator (ticket 84): a 2px accent line inside the landing edge of
    the row/section the drag hovers. box-shadow paints without touching
    layout, so nothing shifts while the indicator walks the list. */
