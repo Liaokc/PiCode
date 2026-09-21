@@ -1078,6 +1078,6 @@ describe('turn wall-clock stamps (groupTurns) — ticket 108 R29+R30', () => {
     expect(turn.startedAtMs).toBe(Date.parse('2026-09-10T09:00:00.000Z'))
     expect(turn.endedAtMs).toBe(Date.parse('2026-09-10T09:00:05.000Z'))
     // The R30 settled seconds derive purely from the span — 5s, replayed.
-    expect(deriveWorkedSeconds(turn.startedAtMs, turn.endedAtMs, 0)).toBe(5)
+    expect(deriveWorkedSeconds(turn, 0)).toBe(5)
   })
 })

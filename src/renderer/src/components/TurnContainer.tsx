@@ -141,8 +141,11 @@ export default function TurnContainer({
   // the turn streams, the tick as the un-stamped fallback (ticket 61
   // discipline; see use-elapsed-seconds.ts).
   const clock = useElapsedClock(turn.live)
-  const workingSeconds = turn.live ? deriveWorkingSeconds(turn.startedAtMs, clock.nowMs, clock.tickSeconds) : null
-  const workedSeconds = turn.live ? null : deriveWorkedSeconds(turn.startedAtMs, turn.endedAtMs, clock.tickSeconds)
+  // Live rows are always timed (the derivation clamps up to 1s and falls
+  // back to the tick when anchorless); settled rows derive the span or
+  // degrade to untimed (null).
+  const workingSeconds = turn.live ? deriveWorkingSeconds(turn.startedAtMs, clock.nowMs, clock.tickSeconds) : 0
+  const workedSeconds = turn.live ? null : deriveWorkedSeconds(turn, clock.tickSeconds)
   // Ticket 94: the header element is the fold anchor — its viewport row is
   // what the deterministic rule holds still across open flips.
   const headerRef = useRef<HTMLButtonElement | null>(null)
@@ -179,8 +182,9 @@ export default function TurnContainer({
         {turn.live && <LoaderIcon size={16} className="turn-container-icon spin" />}
         <span className="turn-container-label">{turn.live ? 'Working' : 'Worked'}</span>
         {/* Ticket 108: the LIVE duration stays inline before the chevron —
-            anchor-derived (now − startedAt), ticking while the turn runs. */}
-        {workingSeconds !== null && (
+            anchor-derived (now − startedAt) and always present (≥1s) while
+            the turn runs — the live flag is the gate, no null check. */}
+        {turn.live && (
           <>
             <span className="turn-container-sep">·</span>
             <span className="turn-container-duration">{workingSeconds}s</span>

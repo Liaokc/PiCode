@@ -104,10 +104,12 @@ export function deriveWorkingSeconds(startedAtMs: number | null, nowMs: number |
 }
 
 /** R30: the settled header's seconds — the first→last entry-stamp span.
- * Returns null when untimed: no stamps and no in-view tick to fall back
- * on (a replayed pre-timestamp payload, a stampless turn remounted after a
- * session switch). */
-export function deriveWorkedSeconds(startedAtMs: number | null, endedAtMs: number | null, tickSeconds: number): number | null {
+ * Takes the turn's stamp pair (structurally `TurnStamps`, as `TurnGroup`
+ * carries it). Returns null when untimed: no stamps and no in-view tick to
+ * fall back on (a replayed pre-timestamp payload, a stampless turn
+ * remounted after a session switch). */
+export function deriveWorkedSeconds(stamps: TurnStamps, tickSeconds: number): number | null {
+  const { startedAtMs, endedAtMs } = stamps
   if (startedAtMs !== null && endedAtMs !== null) {
     return Math.max(1, Math.floor((endedAtMs - startedAtMs) / 1000))
   }

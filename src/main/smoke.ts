@@ -1749,7 +1749,7 @@ export function startSmokeIfEnabled(
          document.querySelectorAll('.turn-after-answer .tool-card').length === 2 &&
          document.querySelectorAll('.turn-after-answer .thinking-row').length === 1 &&
          document.querySelectorAll('.turn-container-duration').length >= 1 &&
-         [...document.querySelectorAll('.turn-container-duration')].some((d) => d.previousElementSibling !== null && d.previousElementSibling.classList.contains('turn-container-chevron'))`,
+         [...document.querySelectorAll('.turn-container-duration')].some((d) => ${afterChevron('d')})`,
         10_000
       )
       if (!folded) fail('replayed turns did not render collapsed (ticket 23 memory rule)')
@@ -13685,7 +13685,7 @@ export function startSmokeIfEnabled(
              document.querySelector('.turn-container-label')?.textContent === 'Worked' &&
              document.querySelectorAll('.turn-container-duration').length === 1 &&
              document.querySelector('.turn-container-icon.spin') === null &&
-             (() => { const d = document.querySelector('.turn-container-duration'); return d !== null && parseInt(d.textContent ?? '0', 10) >= ${lastReading} && d.previousElementSibling !== null && d.previousElementSibling.classList.contains('turn-container-chevron') })()`,
+             (() => { const d = document.querySelector('.turn-container-duration'); return d !== null && parseInt(d.textContent ?? '0', 10) >= ${lastReading} && ${afterChevron('d')} })()`,
             10_000
           )
           if (!settledOk) fail('ticket-108 stage: the settled turn never showed its span at the chevron right')
@@ -13729,7 +13729,7 @@ export function startSmokeIfEnabled(
              document.querySelectorAll('.turn-container-duration').length === 1 &&
              document.querySelector('.turn-container-duration')?.textContent === '5s' &&
              document.querySelectorAll('.turn-container-chevron').length === 1 &&
-             (() => { const d = document.querySelector('.turn-container-duration'); return d !== null && d.previousElementSibling !== null && d.previousElementSibling.classList.contains('turn-container-chevron') })()`,
+             ${afterChevron("document.querySelector('.turn-container-duration')")}`,
             10_000
           )
           if (!replayOk) fail('ticket-108 stage: the replayed turn never showed its 5s span at the chevron right')
@@ -14036,6 +14036,13 @@ function backdateMtime(file: string): void {
   const past = new Date(Date.now() - 5 * 60_000)
   utimesSync(file, past, past)
 }
+
+/** Evaluated inside the page: does the given duration element expression
+ * `d` sit directly after the container chevron (ticket 108 R30 shape)?
+ * Shared by the takeover replay leg and the ticket-108 stage probes
+ * (code-review: one probe fragment, not three copies). */
+const afterChevron = (d: string): string =>
+  `(${d} !== null && ${d}.previousElementSibling !== null && ${d}.previousElementSibling.classList.contains('turn-container-chevron'))`
 
 /** Open every folded turn container in the current view (ticket 23 gate:
  * inner rows render only inside an open container; shared by the follow

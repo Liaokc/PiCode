@@ -117,18 +117,23 @@ function withReceipt<T extends { type: string }>(event: T, receivedAtMs: number)
   return { ...event, receivedAtMs }
 }
 
+/** The events whose renderer receipt anchors an entry-level duration —
+ * shared by the bare and session-scoped stamp paths (code-review: one
+ * predicate, not two copies of the membership test). */
+function isReceiptStamped(event: { type: string }): boolean {
+  return event.type === 'thinking_delta' || event.type === 'user_message' || event.type === 'message_end'
+}
+
 function stampReceiptAnchors(event: HostToParent): ChatAction {
   if (event.type === 'session_event') return { ...event, event: stampScopedReceiptAnchors(event.event) }
-  if (event.type === 'thinking_delta' || event.type === 'user_message' || event.type === 'message_end') {
+  if (isReceiptStamped(event)) {
     return withReceipt(event, Date.now())
   }
   return event
 }
 
 function stampScopedReceiptAnchors(event: SessionScopedEvent): SessionScopedEvent {
-  return event.type === 'thinking_delta' || event.type === 'user_message' || event.type === 'message_end'
-    ? withReceipt(event, Date.now())
-    : event
+  return isReceiptStamped(event) ? withReceipt(event, Date.now()) : event
 }
 
 /** Ticket 106: the boot-failure toast copy — the event's own words where it

@@ -106,32 +106,32 @@ describe('deriveWorkingSeconds — R29 live Working · Ns (ticket 108)', () => {
 
 describe('deriveWorkedSeconds — R30 settled Worked · Ns (ticket 108)', () => {
   it('table · first→last entry-stamp span, floor, clamped ≥1', () => {
-    expect(deriveWorkedSeconds(0, 300, 0)).toBe(1)
-    expect(deriveWorkedSeconds(0, 5_000, 0)).toBe(5)
-    expect(deriveWorkedSeconds(0, 5_900, 0)).toBe(5)
-    expect(deriveWorkedSeconds(0, 6_100, 0)).toBe(6)
-    expect(deriveWorkedSeconds(1_000, 1_000, 0)).toBe(1) // zero-span single-entry turn
+    expect(deriveWorkedSeconds({ startedAtMs: 0, endedAtMs: 300 }, 0)).toBe(1)
+    expect(deriveWorkedSeconds({ startedAtMs: 0, endedAtMs: 5_000 }, 0)).toBe(5)
+    expect(deriveWorkedSeconds({ startedAtMs: 0, endedAtMs: 5_900 }, 0)).toBe(5)
+    expect(deriveWorkedSeconds({ startedAtMs: 0, endedAtMs: 6_100 }, 0)).toBe(6)
+    expect(deriveWorkedSeconds({ startedAtMs: 1_000, endedAtMs: 1_000 }, 0)).toBe(1) // zero-span single-entry turn
   })
 
   it('replay · a replayed turn derives from its recorded stamps alone — no clock, no tick', () => {
     // The ticket-14 premise (replays carry no duration) is retired: the
     // recorded entry timestamps always exist.
-    expect(deriveWorkedSeconds(Date.parse('2026-09-10T09:00:00.000Z'), Date.parse('2026-09-10T09:00:05.000Z'), 0)).toBe(5)
+    expect(deriveWorkedSeconds({ startedAtMs: Date.parse('2026-09-10T09:00:00.000Z'), endedAtMs: Date.parse('2026-09-10T09:00:05.000Z') }, 0)).toBe(5)
     // Remount (session switch) derives the identical value — pure function.
-    expect(deriveWorkedSeconds(Date.parse('2026-09-10T09:00:00.000Z'), Date.parse('2026-09-10T09:00:05.000Z'), 0)).toBe(5)
+    expect(deriveWorkedSeconds({ startedAtMs: Date.parse('2026-09-10T09:00:00.000Z'), endedAtMs: Date.parse('2026-09-10T09:00:05.000Z') }, 0)).toBe(5)
   })
 
   it('table · end stamp missing (aborted tail) → the in-view tick fallback; stampless remount → untimed', () => {
-    expect(deriveWorkedSeconds(1_000, null, 9)).toBe(9)
-    expect(deriveWorkedSeconds(null, null, 7)).toBe(7)
-    expect(deriveWorkedSeconds(1_000, null, 0)).toBeNull()
-    expect(deriveWorkedSeconds(null, null, 0)).toBeNull()
+    expect(deriveWorkedSeconds({ startedAtMs: 1_000, endedAtMs: null }, 9)).toBe(9)
+    expect(deriveWorkedSeconds({ startedAtMs: null, endedAtMs: null }, 7)).toBe(7)
+    expect(deriveWorkedSeconds({ startedAtMs: 1_000, endedAtMs: null }, 0)).toBeNull()
+    expect(deriveWorkedSeconds({ startedAtMs: null, endedAtMs: null }, 0)).toBeNull()
   })
 
   it('settle transition · live value at the end stamp equals the settled span (no jump at agent_end)', () => {
     const anchor = 10_000
     const end = 23_400
     expect(deriveWorkingSeconds(anchor, end, 99)).toBe(13)
-    expect(deriveWorkedSeconds(anchor, end, 99)).toBe(13)
+    expect(deriveWorkedSeconds({ startedAtMs: anchor, endedAtMs: end }, 99)).toBe(13)
   })
 })
