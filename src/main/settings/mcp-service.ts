@@ -24,9 +24,9 @@
  * else ~/.pi/agent).
  */
 
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { mkdir, rename, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import {
   buildMcpLayerDescriptors,
@@ -280,11 +280,32 @@ export class McpService {
   }
 
   /** Atomic write (temp + rename), 2-space JSON + trailing newline — the
-   * exact serialization shape the adapter's own writer produces. */
+   * exact serialization shape the adapter's own writer produces, and the
+   * adapter's 2.35 writeConfigText contract: an existing file resolves
+   * through symlinks (the alias survives; its TARGET is atomically
+   * replaced) and keeps its file mode — kept by chmod after the temp
+   * write, because open()'s mode is umask-masked while chmod is not; a
+   * missing file (or a dangling alias) is created at the literal canonical
+   * path; any other resolution error refuses the action honestly instead
+   * of silently replacing an alias we could not resolve. The returned/
+   * report path stays canonical. */
   private async writeRawDoc(file: string, doc: Record<string, unknown>): Promise<void> {
-    await mkdir(path.dirname(file), { recursive: true })
-    const temp = `${file}.picode-tmp`
-    await writeFile(temp, `${JSON.stringify(doc, null, 2)}\n`, 'utf-8')
-    await rename(temp, file)
+    let target = file
+    let mode: number | undefined
+    try {
+      target = realpathSync(file)
+      mode = statSync(target).mode & 0o777
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') throw err
+    }
+    await mkdir(path.dirname(target), { recursive: true })
+    const temp = `${target}.picode-tmp`
+    // Fresh temp every time (the adapter rms first too): a stale temp from
+    // a crashed run would truncate instead of being created, and open()'s
+    // mode would not apply to it.
+    await rm(temp, { force: true })
+    await writeFile(temp, `${JSON.stringify(doc, null, 2)}\n`, { encoding: 'utf-8', mode })
+    if (mode !== undefined) await chmod(temp, mode)
+    await rename(temp, target)
   }
 }

@@ -7,7 +7,7 @@
  * canonical-write-path guard.
  */
 
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -209,6 +209,56 @@ describe('removeServer — deletes from the owning layer', () => {
   it('an unknown name refuses honestly', async () => {
     const outcome = await service().removeServer('ghost', project)
     expect(outcome.ok).toBe(false)
+  })
+})
+
+describe('writer fidelity — the adapter 2.35 writeConfigText contract', () => {
+  it('a symlinked config keeps its alias: the write lands in the link target (2.35 #597)', async () => {
+    // The operator's dotfiles alias: the canonical path is a symlink to a
+    // managed file. The adapter resolves an existing file through realpath
+    // before the atomic replace — PiCode's writer must do the same, or the
+    // alias is silently destroyed and the operator's dotfiles diverge.
+    mkdirSync(path.join(home, 'dotfiles'), { recursive: true })
+    const managed = path.join(home, 'dotfiles', 'pi-mcp.json')
+    writeFileSync(managed, JSON.stringify({ mcpServers: { other: { command: 'o' } } }))
+    const flagFile = path.join(project, '.pi', 'mcp.json')
+    mkdirSync(path.dirname(flagFile), { recursive: true })
+    symlinkSync(managed, flagFile)
+    writeFileSync(path.join(project, '.mcp.json'), JSON.stringify({ mcpServers: { search: { command: 's' } } }))
+
+    const outcome = await service().toggleServer('search', true, project)
+    expect(outcome).toEqual({ ok: true, path: flagFile })
+    // The alias SURVIVES and still points at the managed file.
+    expect(lstatSync(flagFile).isSymbolicLink()).toBe(true)
+    expect(readlinkSync(flagFile)).toBe(managed)
+    // The content landed in the target (read through either path).
+    const expected = { mcpServers: { other: { command: 'o' }, search: { disabled: true } } }
+    expect(readDoc(managed)).toEqual(expected)
+    expect(readDoc(flagFile)).toEqual(expected)
+  })
+
+  it('an existing file keeps its mode across the atomic replace (2.35 writeConfigText)', async () => {
+    const flagFile = path.join(project, '.pi', 'mcp.json')
+    mkdirSync(path.dirname(flagFile), { recursive: true })
+    writeFileSync(flagFile, JSON.stringify({ mcpServers: { search: { command: 's' } } }))
+    chmodSync(flagFile, 0o600)
+
+    await service().toggleServer('search', true, project)
+    expect(readDoc(flagFile)).toEqual({ mcpServers: { search: { command: 's', disabled: true } } })
+    expect(statSync(flagFile).mode & 0o777).toBe(0o600)
+  })
+
+  it('group/other bits survive too — the umask must not mask the kept mode (2.35 writeConfigText)', async () => {
+    // 0o664 under the default umask 0o022 loses the group-write bit when
+    // the mode rides only on open() — the adapter chmods the temp file
+    // after writing (writeConfigText), and so must the mirror.
+    const flagFile = path.join(project, '.pi', 'mcp.json')
+    mkdirSync(path.dirname(flagFile), { recursive: true })
+    writeFileSync(flagFile, JSON.stringify({ mcpServers: { search: { command: 's' } } }))
+    chmodSync(flagFile, 0o664)
+
+    await service().toggleServer('search', true, project)
+    expect(statSync(flagFile).mode & 0o777).toBe(0o664)
   })
 })
 
