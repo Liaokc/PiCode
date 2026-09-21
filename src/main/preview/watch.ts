@@ -23,6 +23,12 @@ import type { PreviewWatchEvent } from '../../shared/preview/types'
  * feel immediate, long enough to swallow same-tick write bursts. */
 export const PREVIEW_WATCH_DEBOUNCE_MS = 200
 
+/** Maximum time a window can be held open by CONTINUOUS events (builds,
+ * installs): the flush fires at latest this long after the window's first
+ * event, so a sustained storm delivers at a bounded cadence instead of
+ * starving the debounce forever (the tree must never freeze mid-build). */
+export const PREVIEW_WATCH_MAX_HOLD_MS = 1000
+
 /** Raw changes buffered per window before the event degrades to overflow. */
 export const PREVIEW_WATCH_EVENT_CAP = 200
 
@@ -85,13 +91,18 @@ export function fsPreviewWatchFactory(cwd: string, onChange: (relativePath: stri
 export class PreviewWatchService {
   private handle: PreviewWatchHandle | null = null
   private activeCwd: string | null = null
-  /** Distinct parent dirs changed in the current window (insertion-free; the
-   * flush sorts for deterministic payloads). */
-  private pending = new Set<string>()
-  /** Raw events buffered this window — the storm meter. */
-  private pendingCount = 0
-  /** An unnamed change (or a cap breach) was seen this window. */
-  private unspecified = false
+  /** The open coalescing window (null = quiet). */
+  private window: {
+    /** Distinct parent dirs changed so far (sorted on flush for
+     * deterministic payloads). */
+    dirs: Set<string>
+    /** Raw events buffered — the storm meter. */
+    count: number
+    /** An unnamed change (or a cap breach) was seen. */
+    sawUnnamedChange: boolean
+    /** Monotonic start of the window (max-hold clock). */
+    startedAt: number
+  } | null = null
   private timer: NodeJS.Timeout | null = null
   /** Monotonic epoch: every start/close bumps it; buffered callbacks from a
    * dead epoch are dropped, so a stale watcher can never emit. */
@@ -100,7 +111,8 @@ export class PreviewWatchService {
   constructor(
     private readonly factory: PreviewWatchFactory,
     private readonly sink: PreviewWatchSink,
-    private readonly debounceMs: number = PREVIEW_WATCH_DEBOUNCE_MS
+    private readonly debounceMs: number = PREVIEW_WATCH_DEBOUNCE_MS,
+    private readonly maxHoldMs: number = PREVIEW_WATCH_MAX_HOLD_MS
   ) {}
 
   /** Watch one cwd. The browser is a sidebar singleton, so the service holds
@@ -129,24 +141,40 @@ export class PreviewWatchService {
       clearTimeout(this.timer)
       this.timer = null
     }
-    this.pending.clear()
-    this.pendingCount = 0
-    this.unspecified = false
+    this.resetWindow()
     this.handle?.close()
     this.handle = null
     this.activeCwd = null
   }
 
+  private resetWindow(): void {
+    this.window = null
+  }
+
   private record(generation: number, relativePath: string | null): void {
     if (generation !== this.generation || this.activeCwd === null) return
-    if (relativePath === null || relativePath === '') {
-      this.unspecified = true
-    } else {
-      this.pending.add(parentDirOf(relativePath))
-      this.pendingCount++
-      if (this.pendingCount > PREVIEW_WATCH_EVENT_CAP) this.unspecified = true
+    if (this.window === null) {
+      this.window = { dirs: new Set(), count: 0, sawUnnamedChange: false, startedAt: Date.now() }
     }
+    const win = this.window
+    if (relativePath === null || relativePath === '') {
+      win.sawUnnamedChange = true
+    } else {
+      win.dirs.add(parentDirOf(relativePath))
+      win.count++
+      if (win.count > PREVIEW_WATCH_EVENT_CAP) win.sawUnnamedChange = true
+    }
+    // Trailing debounce: each event re-arms the quiet timer — EXCEPT when
+    // this window has been held open past the max-hold bound by CONTINUOUS
+    // events (a long build would otherwise starve the flush forever and
+    // freeze the tree until the noise stops): flush now at the bounded
+    // cadence instead.
     if (this.timer !== null) clearTimeout(this.timer)
+    if (Date.now() - win.startedAt >= this.maxHoldMs) {
+      this.timer = null
+      this.flush(generation)
+      return
+    }
     this.timer = setTimeout(() => {
       this.timer = null
       this.flush(generation)
@@ -155,12 +183,12 @@ export class PreviewWatchService {
 
   private flush(generation: number): void {
     if (generation !== this.generation || this.activeCwd === null) return
+    const win = this.window
+    if (win === null) return
     const cwd = this.activeCwd
-    const dirs = [...this.pending].sort()
-    const overflow = this.unspecified || dirs.length > PREVIEW_WATCH_DIR_CAP
-    this.pending.clear()
-    this.pendingCount = 0
-    this.unspecified = false
+    const dirs = [...win.dirs].sort()
+    const overflow = win.sawUnnamedChange || dirs.length > PREVIEW_WATCH_DIR_CAP
+    this.resetWindow()
     this.sink.onWatchEvent({ cwd, dirs: overflow ? [] : dirs, overflow })
   }
 

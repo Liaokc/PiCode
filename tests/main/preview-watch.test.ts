@@ -3,6 +3,7 @@ import {
   PREVIEW_WATCH_DEBOUNCE_MS,
   PREVIEW_WATCH_DIR_CAP,
   PREVIEW_WATCH_EVENT_CAP,
+  PREVIEW_WATCH_MAX_HOLD_MS,
   PreviewWatchService,
   fsPreviewWatchFactory,
   parentDirOf,
@@ -89,6 +90,28 @@ describe('PreviewWatchService coalescing', () => {
     expect(events).toEqual([])
     vi.advanceTimersByTime(PREVIEW_WATCH_DEBOUNCE_MS + 1)
     expect(events).toEqual([{ cwd: '/work/api', dirs: ['', 'src'], overflow: false }])
+    service.stop()
+  })
+
+  it('a sustained storm still flushes at the max-hold cadence (the tree never freezes mid-build)', () => {
+    const spy = spyFactory()
+    const { events, sink } = recorder()
+    const service = new PreviewWatchService(spy.factory, sink)
+    service.start('/work/api')
+    const trigger = spy.triggerOf('/work/api')
+    // Continuous noise every 100ms — pure trailing debounce would never
+    // fire; the max-hold bound must flush roughly every hold period.
+    for (let t = 0; t < PREVIEW_WATCH_MAX_HOLD_MS + 1_500; t += 100) {
+      trigger.change(`src/file-${t}.ts`)
+      vi.advanceTimersByTime(100)
+    }
+    expect(events.length).toBeGreaterThanOrEqual(2)
+    // Settle the tail and confirm the last window closes cleanly.
+    vi.advanceTimersByTime(PREVIEW_WATCH_DEBOUNCE_MS + 1)
+    const total = events.length
+    trigger.change('final.ts')
+    vi.advanceTimersByTime(PREVIEW_WATCH_DEBOUNCE_MS + 1)
+    expect(events.length).toBe(total + 1)
     service.stop()
   })
 
