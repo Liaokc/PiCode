@@ -191,6 +191,19 @@
  * prefill path (PREFILL_EVENT — queue Edit and edit-resend ride the same
  * window event) must open a long draft showing its END.
  *
+ * Ticket 118 adds the skill-keep-text stage right after the ticket-117
+ * stage (spec R7, one real model round): picking a skill from the `/` menu
+ * strips ONLY the trigger token — the `/` + the query up to the caret plus
+ * the separator whitespace after it — so a draft typed BEFORE the operator
+ * went back to the start survives whole as the card's args (the old pick
+ * cleared the entire composer; only the images, an independent state,
+ * survived). The stage types a draft, pastes one image, picks the seeded
+ * skill from the start of the line, and asserts the kept text + the
+ * surviving attachment + the caret at the remaining text's head; the
+ * send's SDK expansion then proves the byte-identical `/skill:name args`
+ * recombination (the ticket-72 ⑤ evidence class), and the composer resets
+ * fully (args, card, image).
+ *
  * Any missed step times out and exits non-zero. Progress logs as
  * `SMOKE <step>` lines on stdout. Not part of `npm test`.
  */
@@ -7517,6 +7530,181 @@ export function startSmokeIfEnabled(
       }
     })
     log('composer_ime_117_done')
+
+    // ---- ticket 118: picking a skill keeps the pre-existing text (spec
+    // R7). The ticket-72 stage proved the card form on a composer holding
+    // ONLY the trigger token; this stage drives the operator's actual
+    // repro — a draft (text + one pasted image) typed FIRST, then the
+    // caret back to the very start to type the `/` query and pick the
+    // seeded skill. The pick must strip exactly the trigger token (`/` +
+    // query up to the caret + the separator whitespace after it — the
+    // menu-surface's own token boundary): the draft survives whole as the
+    // card's args, the image survives (independent state), and the caret
+    // lands at the remaining text's head. The send then recombines
+    // `/skill:name args` — byte-identical to the raw-text era, proven by
+    // the SDK's own expansion (the ticket-72 ⑤ evidence class) — and the
+    // composer resets fully. One real model round (the seeded skill's
+    // deterministic reply). ----
+    log('skill_keep_text_118_start')
+    {
+      const seedProject118 = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-seed118-'))
+      const SKILL_118 = 'picode-118-skill'
+      const ARGS_118 = 'PICODE_118_ARGS keep this exact draft'
+      try {
+        // The real project skill the fresh session's own resource loader
+        // enumerates (cwd-scoped .pi scan at session creation — the
+        // ticket-52 catalog precedent); the body forces a deterministic
+        // tool-free reply so the send's turn settles fast.
+        mkdirSync(path.join(seedProject118, '.pi', 'skills', SKILL_118), { recursive: true })
+        writeFileSync(
+          path.join(seedProject118, '.pi', 'skills', SKILL_118, 'SKILL.md'),
+          `---\nname: ${SKILL_118}\ndescription: Seeded keep-text skill\n---\nReply with exactly: PICODE_118_SKILL_OK. Never use tools.\n`
+        )
+
+        await withWindow(getWindow, async (win) => {
+          const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+          const ta118 = `document.querySelector('.chat-dock textarea.composer-input')`
+          const card118 = `(() => {
+            const c = document.querySelector('.chat-dock .composer-command-card')
+            return c === null ? null : { name: c.getAttribute('data-card-name'), source: c.getAttribute('data-card-source') }
+          })()`
+          const cmdRow118 = `(() => {
+            const rows = [...document.querySelectorAll('.cmp-popover .cmp-menu-row')]
+            const row = rows.find((r) => (r.querySelector('.cmp-cmd-name')?.textContent ?? '') === ${JSON.stringify(`/${SKILL_118}`)})
+            if (!(row instanceof HTMLElement)) return false
+            row.click()
+            return true
+          })()`
+          const cmdRowProbe118 = `(() => {
+            const rows = [...document.querySelectorAll('.cmp-popover .cmp-menu-row')]
+            return rows.some((r) => (r.querySelector('.cmp-cmd-name')?.textContent ?? '') === ${JSON.stringify(`/${SKILL_118}`)})
+          })()`
+
+          // A fresh session in the seeded project (ticket-116 pattern:
+          // createSession focuses it — the ChatView composer by
+          // construction); the cwd's .pi/skills reach the in-session menu.
+          const created118 = waitFor(
+            (e) => e.type === 'session_created',
+            'ticket-118 session_created'
+          ) as Promise<Extract<Scoped, { type: 'session_created' }>>
+          supervisor.createSession(seedProject118)
+          const id118 = (await created118).sessionId
+          if (!(await waitForProbe(win, `${ta118} !== null`, 15_000))) {
+            fail('ticket-118 stage: the fresh session never opened its chat composer')
+          }
+
+          // ① The operator's draft first: text + one real pasted image
+          // (the ticket-81 paste driver; a decodable 1×1 PNG).
+          if (!((await js(composerTypeJs(ARGS_118)).catch(() => false)) as boolean)) {
+            fail('ticket-118 stage: the chat composer textarea is missing for the draft')
+          }
+          const pasted118 = (await js(`(() => {
+            const ta = document.querySelector('.chat-dock textarea.composer-input')
+            if (!(ta instanceof HTMLTextAreaElement)) return false
+            const bytes = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='), (c) => c.charCodeAt(0))
+            const dt = new DataTransfer()
+            dt.items.add(new File([bytes], 'picode-118.png', { type: 'image/png' }))
+            ta.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+            return true
+          })()`)) as boolean
+          if (!pasted118) fail('ticket-118 stage: the composer textarea is missing for the image paste')
+          if (!(await waitForProbe(win, `document.querySelectorAll('.chat-dock .composer-attachment').length === 1`, 10_000))) {
+            fail('ticket-118 stage: the pasted image never rendered its attachment card')
+          }
+          log('skill_keep_text_118_draft_staged_ok')
+
+          // ② Back to the very start, type the `/` query (the native
+          // setter + input event with the caret right after the query —
+          // the handleChange path a real keystroke rides), then pick the
+          // seeded skill row from the open menu.
+          const typeQueryAtStart118 = `(() => {
+            const ta = document.querySelector('.chat-dock textarea.composer-input')
+            if (!(ta instanceof HTMLTextAreaElement)) return false
+            const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+            setter.call(ta, '/picode-118' + ta.value)
+            ta.selectionStart = ta.selectionEnd = '/picode-118'.length
+            ta.dispatchEvent(new Event('input', { bubbles: true }))
+            ta.focus()
+            return true
+          })()`
+          if (!((await js(typeQueryAtStart118).catch(() => false)) as boolean)) {
+            fail('ticket-118 stage: could not type the query at the start of the draft')
+          }
+          if (!(await waitForProbe(win, cmdRowProbe118, 15_000))) {
+            fail('ticket-118 stage: the seeded skill row never reached the in-session `/` menu')
+          }
+          if (!((await js(cmdRow118).catch(() => false)) as boolean)) {
+            fail('ticket-118 stage: the seeded skill row disappeared before the pick')
+          }
+
+          // ③ THE assertion: the pick kept the whole draft as the card's
+          // args, the image survived, and the caret sits at the remaining
+          // text's head (updateValue's rAF lands it there).
+          const kept118 = `(() => {
+            const card = document.querySelector('.chat-dock .composer-command-card')
+            const ta = document.querySelector('.chat-dock textarea.composer-input')
+            if (!(ta instanceof HTMLTextAreaElement) || card === null) return false
+            return card.getAttribute('data-card-name') === ${JSON.stringify(SKILL_118)}
+              && card.getAttribute('data-card-source') === 'skill'
+              && ta.value === ${JSON.stringify(ARGS_118)}
+              && ta.selectionStart === 0 && ta.selectionEnd === 0
+              && document.querySelectorAll('.chat-dock .composer-attachment').length === 1
+          })()`
+          if (!(await waitForProbe(win, kept118, 5_000))) {
+            fail('ticket-118 stage: the pick did not keep the draft as the card args (text/image/caret)')
+          }
+          log('skill_keep_text_118_pick_kept_ok')
+
+          // ④ The send recombines `/skill:name args` byte-identically —
+          // the SDK's own expansion is the proof (ticket-72 ⑤): the
+          // persisted user message is the skill prologue plus the EXACT
+          // args. One-shot auto-deny keeps a hallucinated tool call from
+          // stalling the turn.
+          let gateWatch118 = true
+          const onGateAsk118 = (event: Scoped): void => {
+            if (!gateWatch118) return
+            if (event.type === 'approval_required') {
+              gateWatch118 = false
+              log('skill_keep_text_118_gate_auto_deny', `tool=${event.toolName}`)
+              supervisor.handleParentCommand({
+                type: 'session_command',
+                sessionId: event.sessionId,
+                command: {
+                  type: 'deny_tool',
+                  toolCallId: event.toolCallId,
+                  reason: 'smoke auto-deny: the keep-text send must settle as a plain skill reply'
+                }
+              })
+            } else if (event.type === 'agent_end' || event.type === 'host_exit') {
+              gateWatch118 = false
+            }
+          }
+          observers.push(onGateAsk118)
+          const expanded118 = waitFor(
+            (e) =>
+              e.type === 'user_message' &&
+              e.sessionId === id118 &&
+              e.text.includes(`<skill name="${SKILL_118}"`) &&
+              e.text.includes(ARGS_118),
+            'ticket-118 SDK skill expansion user_message'
+          )
+          await js(composerKeyJs('Enter'))
+          await expanded118
+          log('skill_keep_text_118_send_expanded_ok')
+          await waitFor((e) => e.type === 'agent_end' && e.sessionId === id118, 'ticket-118 send agent_end')
+          observers.splice(observers.indexOf(onGateAsk118), 1)
+
+          // ⑤ The send resets the whole composer: args, card, AND image.
+          if (!(await waitForProbe(win, `${card118} === null && (${ta118}.value ?? 'missing') === '' && document.querySelectorAll('.chat-dock .composer-attachment').length === 0`, 5_000))) {
+            fail('ticket-118 stage: the send left composer content behind (card/args/image)')
+          }
+          log('skill_keep_text_118_send_reset_ok')
+        })
+      } finally {
+        rmSync(seedProject118, { recursive: true, force: true })
+      }
+    }
+    log('skill_keep_text_118_done')
 
     // ---- ticket 81: composer layout — the pi17 scene. Drives the shared
     // in-session composer with 4 pasted images + one input event per typed
