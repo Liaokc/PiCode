@@ -191,7 +191,7 @@ import type { HostSupervisor } from './host-supervisor'
 import { focusSessionFromNotification, type ApprovalNotice } from './notifications'
 import type { HostToParent, SessionScopedEvent } from '../shared/contract'
 import type { AuthProbeReport } from '../shared/auth-status'
-import { configuredProviderIds, sortProvidersConfiguredFirst } from '../shared/provider-sort'
+import { configuredProviderIds, configuredProvidersOnly, sortProvidersConfiguredFirst } from '../shared/provider-sort'
 import { projectNewTaskCatalog } from '../shared/new-task-models'
 import { FOLLOW_TAKEOVER_REJECTED_TOAST } from '../shared/sessions/group'
 import { CWD_MISSING_ROW_TOAST } from '../shared/sessions/cwd-liveness'
@@ -526,22 +526,25 @@ export function startSmokeIfEnabled(
       if (modelRows.length === 0) fail('the empty-state model menu lists no models')
       log('empty_state_menu_catalog_ok', `providers=${providerRows} models=${modelRows.length}`)
 
-      // ②b (ticket 76): the provider column is ordered configured-first,
-      // alphabetical within each group, joined from the SAME auth report
-      // the settings service cached (zero new contract — the expectation
-      // is computed from that report, so the check holds on any machine:
-      // all-configured ⇒ pure alphabetical; missing report ⇒ registry
-      // order). The current provider is also located and check-marked on
-      // open — the chip's chained default (the report's first configured
-      // provider, report order).
+      // ②b (ticket 121): the provider column lists the CONFIGURED
+      // providers only — the same list a live session's `models_available`
+      // catalog would show (both surfaces speak one truth; unconfigured
+      // registry entries like Amazon Bedrock never appear) — alphabetical
+      // among them, joined from the SAME auth report the settings service
+      // cached (zero new contract — the expectation is computed from that
+      // report, so the check holds on any machine: all-configured ⇒ pure
+      // alphabetical; missing report ⇒ registry order). The current
+      // provider is also located and check-marked on open — the chip's
+      // chained default (the report's first configured provider, report
+      // order).
       {
         const authReport = getAuthReport ? await getAuthReport() : null
-        if (authReport === null) fail('the smoke could not read the cached auth report for the ticket-76 order check')
-        const sortedGroups = sortProvidersConfiguredFirst(
+        if (authReport === null) fail('the smoke could not read the cached auth report for the ticket-121 order check')
+        const configuredGroups = configuredProvidersOnly(
           projectNewTaskCatalog(authReport).providers,
           configuredProviderIds(authReport)
         )
-        const expectedProviders = sortedGroups.map((group) => group.name)
+        const expectedProviders = configuredGroups.map((group) => group.name)
         let menuCols: string[][] = []
         for (let waited = 0; waited < 5_000; waited += 100) {
           menuCols = (await win.webContents.executeJavaScript(
@@ -552,7 +555,7 @@ export function startSmokeIfEnabled(
         }
         const providerTitles = menuCols[0] ?? []
         if (JSON.stringify(providerTitles) !== JSON.stringify(expectedProviders)) {
-          fail(`ticket-76 order: provider column ${JSON.stringify(providerTitles)} != expected ${JSON.stringify(expectedProviders)}`)
+          fail(`ticket-121 order: provider column ${JSON.stringify(providerTitles)} != expected (configured-only) ${JSON.stringify(expectedProviders)}`)
         }
         const located = (await win.webContents.executeJavaScript(
           `(() => {
@@ -1328,6 +1331,27 @@ export function startSmokeIfEnabled(
         await new Promise((r) => setTimeout(r, 100))
       }
       if (cascade.providers === 0) fail('the model menu never listed providers')
+      // Ticket 121: the IN-SESSION column lists the SAME configured-only
+      // set the New Task menu showed (both surfaces speak one truth) —
+      // computed from the SAME cached auth report, so the parity holds on
+      // any machine (all-configured ⇒ pure alphabetical; expired OAuth
+      // counts as configured in both the probe and the runtime's
+      // availability snapshot — both ride checkAuth).
+      {
+        const authReport = getAuthReport ? await getAuthReport() : null
+        if (authReport === null) fail('the smoke could not read the cached auth report for the ticket-121 in-session parity check')
+        const expectedParity = configuredProvidersOnly(
+          projectNewTaskCatalog(authReport).providers,
+          configuredProviderIds(authReport)
+        ).map((group) => group.name)
+        const sessionTitles = (await js(
+          `(() => { const col = [...document.querySelectorAll('.cmp-popover .cmp-cascade-col')][0]; return col ? [...col.querySelectorAll('.cmp-menu-title')].map((n) => n.textContent ?? '') : [] })()`
+        ).catch(() => [])) as string[]
+        if (JSON.stringify(sessionTitles) !== JSON.stringify(expectedParity)) {
+          fail(`ticket-121 parity: the in-session provider column ${JSON.stringify(sessionTitles)} != the configured-only list ${JSON.stringify(expectedParity)}`)
+        }
+        log('menu_keyboard_model_parity_ok', sessionTitles.join(','))
+      }
       for (let step = 0; step < cascade.providers - 1; step++) {
         await js(listKeyJs('.cmp-popover .cmp-cascade', 'ArrowRight'))
         await new Promise((r) => setTimeout(r, 40))

@@ -62,3 +62,22 @@ export function sortProvidersConfiguredFirst<T extends ProviderRow>(
   const rank = (row: T): number => (configured.has(row.providerId) ? 0 : 1)
   return [...rows].sort((a, b) => rank(a) - rank(b) || byDisplayName(a, b))
 }
+
+/**
+ * The configured providers only, alphabetical among them (ticket 121): the
+ * new-task empty state's model menu speaks the session surface's list —
+ * the same configured-only column a live session's menu renders from its
+ * `models_available` snapshot — so unconfigured providers never appear even
+ * though the probe report carries the full registry. The settings Models
+ * section deliberately keeps the full ticket-76 list; the two surfaces are
+ * unbound. A null `configured` (missing/empty report) degrades to the
+ * incoming order — the sort's own honesty rule. Never mutates the input;
+ * nested model lists ride their group untouched.
+ */
+export function configuredProvidersOnly<T extends ProviderRow>(
+  rows: readonly T[],
+  configured: ReadonlySet<string> | null
+): T[] {
+  if (configured === null) return [...rows]
+  return rows.filter((row) => configured.has(row.providerId)).sort(byDisplayName)
+}
