@@ -5832,7 +5832,16 @@ export function startSmokeIfEnabled(
     supervisor.createSession(cwd)
     const navSession = await navCreated
     const navId = navSession.sessionId
-    const NAV_1 = 'Reply with exactly: PICODE_NAV_1'
+    // Ticket-120 ripple: the anchoring rule now pins the NEWEST turn while
+    // the viewport sits on the bottom (isAtBottom — a transcript that does
+    // not overflow is TRIVIALLY at the bottom), so the click-jump leg below
+    // needs a transcript that genuinely overflows, or the jump can never
+    // leave the bottom and the clicked tick can never take focus. The FIRST
+    // prompt carries deterministic blank padding BETWEEN its lines (the
+    // ticket-93/45 count-prompt precedent: the bubble's pre-wrap height is
+    // fully controlled, the model's reply is not — and the composer's send
+    // path TRIMS the text, so the padding must not ride at the edges).
+    const NAV_1 = 'Reply with exactly, after the blank lines:\n' + '\n'.repeat(40) + 'PICODE_NAV_1'
     const NAV_2 = 'Reply with exactly: PICODE_NAV_2'
     await withWindow(getWindow, async (win) => {
       const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
@@ -6005,6 +6014,179 @@ export function startSmokeIfEnabled(
       await win.webContents.executeJavaScript(composerClearJs)
     })
     log('nav_rail_done')
+
+    // ---- ticket 120: navigator-rail live anchoring — at the bottom the
+    // newest turn (live included) anchors; scrolled up, the probe rule
+    // follows the reading position ----
+    // Deterministic, zero model calls (the ticket-94 seeding shape): an
+    // emitted replay of three TALL settled turns overflows the smoke
+    // window, then a hand-emitted LIVE turn (user_message + agent_start +
+    // one short delta, no agent_end) reproduces the operator's 图2 geometry
+    // — the newest user bubble sits in the lower viewport, below the 35%
+    // probe line, while the Working container streams. Four assertion
+    // cells: ① live × at-bottom → the focus tick is the NEWEST turn (the
+    // pre-120 probe rule left it on the previous turn for the whole run);
+    // ② live × scrolled-up → the anchor follows the reading position
+    // (probe-rule regression); ③ settled × scrolled-up (a mid-transcript
+    // reading position placed deterministically BETWEEN the 3rd and 4th
+    // turn tops) → same; ④ settled × at-bottom → the newest turn again.
+    log('nav_live_anchor_start')
+    {
+      const NAVLIVE_TURN_TEXT = (n: number): string =>
+        `PICODE_NAVLIVE_T${n}: settled answer.\n` +
+        Array.from({ length: 14 }, (_, i) => `settled body line ${i + 1} for turn ${n}`).join('\n')
+      const navliveItems: Extract<HostToParent, { type: 'history_loaded' }>['items'] = []
+      for (let n = 1; n <= 3; n++) {
+        navliveItems.push(
+          {
+            role: 'user',
+            id: `nl120-u${n}`,
+            text: `PICODE_NAVLIVE turn ${n} prompt\n${'\n'.repeat(20)}`,
+            timestamp: `2026-09-20T09:0${n}:00.000Z`,
+            skillName: null
+          },
+          {
+            role: 'assistant',
+            id: `nl120-a${n}`,
+            timestamp: `2026-09-20T09:0${n}:30.000Z`,
+            text: NAVLIVE_TURN_TEXT(n),
+            parts: [{ kind: 'text', text: NAVLIVE_TURN_TEXT(n) }]
+          }
+        )
+      }
+      emitContractEvent({
+        type: 'session_created',
+        sessionId: 'smoke-nav-live-120',
+        cwd,
+        model: 'claude-opus-4-5',
+        resumed: true
+      })
+      emitContractEvent({ type: 'history_loaded', items: navliveItems })
+      await withWindow(getWindow, async (win) => {
+        const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+        /** Focus probe for the i-th user bubble's tick — ticks render in
+         * turn order, so the DOM index IS the turn index. */
+        const TICK_FOCUS_I = (i: number): string => `(() => {
+          const turns = document.querySelectorAll('[data-turn-id]')
+          const node = turns[${i}]
+          if (!(node instanceof Element)) return false
+          const id = node.getAttribute('data-turn-id')
+          const tick = id === null ? null : document.querySelector('.nav-tick-slot[data-nav-tick="' + id + '"] .nav-tick')
+          return tick !== null && tick.classList.contains('nav-tick-focus')
+        })()`
+        const AT_BOTTOM = `(() => {
+          const el = document.querySelector('.chat-scroll')
+          return el !== null && el.scrollHeight - el.scrollTop - el.clientHeight < 1
+        })()`
+
+        // Scene: three settled turns → three ticks, and the transcript
+        // must genuinely overflow (the scroll cells need real travel).
+        const scene = await waitForProbe(
+          win,
+          `(() => {
+            const rail = document.querySelector('.nav-rail')
+            const el = document.querySelector('.chat-scroll')
+            return rail !== null && rail.querySelectorAll('.nav-tick-slot').length === 3 &&
+              el !== null && el.scrollHeight > el.clientHeight + 200
+          })()`,
+          10_000
+        )
+        if (!scene) {
+          fail('ticket-120 stage: the emitted replay never rendered three overflowing turns')
+        }
+        log('nav_live_anchor_scene_ok')
+
+        // ---- ① live × at-bottom: the newest (4th, live) tick reads focus.
+        // The short stream keeps the newest bubble low — the exact
+        // geometry where the pre-120 probe rule anchored the previous turn.
+        emitContractEvent({ type: 'user_message', text: 'PICODE_NAVLIVE_LIVE: keep working while I watch' })
+        emitContractEvent({ type: 'agent_start' })
+        emitContractEvent({ type: 'message_start' })
+        emitContractEvent({ type: 'text_delta', delta: 'A short streamed line so the live container has a body.' })
+        const liveBottom = await waitForProbe(
+          win,
+          `${TICK_FOCUS_I(3)} && ${AT_BOTTOM} &&
+           (() => {
+             const labels = [...document.querySelectorAll('.turn-container-label')].map((l) => l.textContent)
+             return labels.length === 4 && labels[3] === 'Working'
+           })()`,
+          10_000
+        )
+        if (!liveBottom) {
+          const diag = (await js(
+            `JSON.stringify({
+              ticks: document.querySelectorAll('.nav-tick-slot').length,
+              focused: [...document.querySelectorAll('.nav-tick-focus')].map((t) => t.closest('.nav-tick-slot')?.getAttribute('data-nav-tick')),
+              dist: (() => { const el = document.querySelector('.chat-scroll'); return el === null ? null : el.scrollHeight - el.scrollTop - el.clientHeight })(),
+              labels: [...document.querySelectorAll('.turn-container-label')].map((l) => l.textContent)
+            })`
+          ).catch(() => 'unavailable')) as string
+          fail(`ticket-120 stage: at the bottom with a live turn the focus tick is not the newest turn; DOM: ${diag}`)
+        }
+        log('nav_live_anchor_live_bottom_ok')
+
+        // ---- ② live × scrolled-up: the anchor follows the reading
+        // position — the FIRST turn's tick takes focus and the live newest
+        // tick loses it (programmatic scrollTop = a real scroll event).
+        await js(`(() => { const el = document.querySelector('.chat-scroll'); if (el === null) return false; el.scrollTop = 0; return true })()`)
+        const liveTop = await waitForProbe(win, `${TICK_FOCUS_I(0)} && !(${TICK_FOCUS_I(3)})`, 10_000)
+        if (!liveTop) {
+          fail('ticket-120 stage: scrolled to the top while live, the anchor did not follow the reading position')
+        }
+        log('nav_live_anchor_live_scrolled_ok')
+
+        // ---- settle the turn, then read mid-transcript: the probe line is
+        // placed deterministically BETWEEN the 3rd and 4th turn tops, so
+        // the anchor must be the 3rd turn — the reading position — while
+        // the newest tick stays muted.
+        emitContractEvent({ type: 'message_end' })
+        emitContractEvent({ type: 'agent_end' })
+        const settledLabels = await waitForProbe(
+          win,
+          `(() => {
+            const labels = [...document.querySelectorAll('.turn-container-label')].map((l) => l.textContent)
+            return labels.length === 4 && labels[3] === 'Worked'
+          })()`,
+          10_000
+        )
+        if (!settledLabels) {
+          fail('ticket-120 stage: the live turn never settled (labels never showed Worked)')
+        }
+        const midScroll = (await js(`(() => {
+          const el = document.querySelector('.chat-scroll')
+          const turns = document.querySelectorAll('[data-turn-id]')
+          if (el === null || turns.length !== 4) return null
+          const topOf = (node) => node.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop
+          const t3 = topOf(turns[2])
+          const t4 = topOf(turns[3])
+          el.scrollTop = Math.round((t3 + t4) / 2 - el.clientHeight * 0.35)
+          return JSON.stringify({ t3, t4, scrollTop: el.scrollTop })
+        })()`).catch(() => null)) as string | null
+        if (midScroll === null) {
+          fail('ticket-120 stage: could not place the mid-transcript reading position')
+        }
+        const settledMid = await waitForProbe(win, `${TICK_FOCUS_I(2)} && !(${TICK_FOCUS_I(3)})`, 10_000)
+        if (!settledMid) {
+          const diag = (await js(
+            `JSON.stringify({
+              focused: [...document.querySelectorAll('.nav-tick-focus')].map((t) => t.closest('.nav-tick-slot')?.getAttribute('data-nav-tick')),
+              placed: ${JSON.stringify(midScroll)}
+            })`
+          ).catch(() => 'unavailable')) as string
+          fail(`ticket-120 stage: mid-transcript after settle, the anchor did not follow the reading position; DOM: ${diag}`)
+        }
+        log('nav_live_anchor_settled_scrolled_ok')
+
+        // ---- ④ settled × at-bottom: the newest turn anchors again.
+        await js(`(() => { const el = document.querySelector('.chat-scroll'); if (el === null) return false; el.scrollTop = el.scrollHeight; return true })()`)
+        const settledBottom = await waitForProbe(win, `${TICK_FOCUS_I(3)} && ${AT_BOTTOM}`, 10_000)
+        if (!settledBottom) {
+          fail('ticket-120 stage: back at the bottom after settle, the focus tick is not the newest turn')
+        }
+        log('nav_live_anchor_settled_bottom_ok')
+      })
+    }
+    log('nav_live_anchor_done')
 
     // ---- ticket 49: composer adaptive height — auto-grow 74→160px plus
     // the top-right expand button ----

@@ -135,7 +135,7 @@ create 派发瞬间乐观注入侧栏的会话占位（票 106）：以已知事
 _Avoid_: 假会话（未宣布不得假扮已确认）；乐观时间戳上屏（派发时钟仅排序键，永不渲染为时间）；占位可交互（一切变更动作等真实卡片）
 
 **导航轨（Turn Navigator）**：
-主转录左缘的垂直 tick 束（ZCode turn navigator 同型，票 46）：每个真实用户消息（含 steer/follow-up）一根；等宽基条以 scaleX 表达焦点/活跃衰减——视口锚定根 focus 前景色满宽、其余 muted 次级色按距离衰减有下限，运行中不低于 0.72 不透明；hover 右弹双段预览气泡（用户输入 clamp 2 行 + 助手回复 clamp 3 行，短延迟开合，上下移动气泡微位移跟随）；点击 smooth 平滑定位该用户消息（DOM 直查优先，未挂载 rAF 兜底等挂载）；tick 列垂直居中、独立滚动（滚轮滚 tick 列不滚转录）；tick < 2 整轨不渲染；窗口宽低于 864px（ZCode 校准）不显示，显隐带 opacity/位移过渡。仅 ChatView；FollowView 不做。渲染决策全部收敛于 Seam-1 纯模型（锚点分数、tick 显隐规则）。
+主转录左缘的垂直 tick 束（ZCode turn navigator 同型，票 46）：每个真实用户消息（含 steer/follow-up）一根；等宽基条以 scaleX 表达焦点/活跃衰减——视口锚定根 focus 前景色满宽、其余 muted 次级色按距离衰减有下限，运行中不低于 0.72 不透明；**锚定规则（票 120）：吸底（isAtBottom 口径，复用回底钮词条的吸底判据——到底 ± 1px，严于 160px 吸底带）时锚定最新回合（含 live——吸底时焦点 tick 即最新工作所在，探针几何不再把焦点留在上一轮）；非吸底维持探针规则——视口 35% 探针线上最末用户消息锚定，锚定跟随阅读位置**；hover 右弹双段预览气泡（用户输入 clamp 2 行 + 助手回复 clamp 3 行，短延迟开合，上下移动气泡微位移跟随）；点击 smooth 平滑定位该用户消息（DOM 直查优先，未挂载 rAF 兜底等挂载）；tick 列垂直居中、独立滚动（滚轮滚 tick 列不滚转录）；tick < 2 整轨不渲染；窗口宽低于 864px（ZCode 校准）不显示，显隐带 opacity/位移过渡。仅 ChatView；FollowView 不做。渲染决策全部收敛于 Seam-1 纯模型（锚定决策、锚点分数、tick 显隐规则）。
 _Avoid_: 黑条（颜色绑定）、minimap（语义不同）、进度条（tick 不表达进度）
 
 **回底钮（Jump to Latest）**：

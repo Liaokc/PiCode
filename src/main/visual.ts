@@ -259,6 +259,8 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
   if (process.env['PICODE_VISUAL_CWD'] === '1') return
   // And for the rail-stacking harness (ticket 62).
   if (process.env['PICODE_VISUAL_RAIL_STACK'] === '1') return
+  // And for the rail live-anchoring harness (ticket 120).
+  if (process.env['PICODE_VISUAL_RAIL_ANCHOR'] === '1') return
   // And for the context-ring harness (ticket 77).
   if (process.env['PICODE_VISUAL_CONTEXT_RING'] === '1') return
   // And for the subagent-directory harness (ticket 90).

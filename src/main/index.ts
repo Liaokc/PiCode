@@ -55,6 +55,7 @@ import { startChronologyVisualIfEnabled, isolateChronologyUserData } from './vis
 import { startSendPinVisualIfEnabled, isolateSendPinUserData } from './visual-send-pin'
 import { startFilebarVisualIfEnabled, isolateFilebarUserData } from './visual-filebar'
 import { startRailStackVisualIfEnabled, isolateRailStackUserData } from './visual-rail-stack'
+import { startRailAnchorVisualIfEnabled, isolateRailAnchorUserData } from './visual-rail-anchor'
 import { startThinkingVisualIfEnabled, isolateThinkingUserData } from './visual-thinking'
 import { startExpandVisualIfEnabled, isolateExpandUserData } from './visual-expand'
 import { startComposerLayoutVisualIfEnabled, isolateComposerLayoutUserData } from './visual-composer-layout'
@@ -188,6 +189,10 @@ isolateFilebarUserData()
 // Ticket-62 rail-stacking harness — same throwaway-userData rule (no-op
 // unless PICODE_VISUAL_RAIL_STACK=1).
 isolateRailStackUserData()
+
+// Ticket-120 rail live-anchoring harness — same throwaway-userData rule
+// (no-op unless PICODE_VISUAL_RAIL_ANCHOR=1).
+isolateRailAnchorUserData()
 
 // Ticket-61 thinking-row harness — same throwaway-userData rule (no-op
 // unless PICODE_VISUAL_THINKING=1).
@@ -582,6 +587,9 @@ app.whenReady().then(() => {
   // Ticket-62 rail-stacking harness — same seeding constraint (it seeds an
   // isolated store before the index reads PICODE_SESSION_DIR).
   startRailStackVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  // Ticket-120 rail live-anchoring harness — settled replay + live turn
+  // injection, same seeding constraint.
+  startRailAnchorVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-61 thinking-row harness — live streaming + fold/reopen continuity.
   startThinkingVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
 

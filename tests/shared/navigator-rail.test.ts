@@ -12,12 +12,14 @@ import {
   TICK_SCALE_FLOOR,
   anchoredTurnId,
   railAnchors,
+  railAnchoredTurnId,
   railRenders,
   railShown,
   railTicks,
   type AnchorGeometry,
   type RailAnchor
 } from '../../src/shared/navigator-rail'
+import type { ScrollSnapshot } from '../../src/shared/scroll-stay'
 import { chatReducer, initialChatState, type ChatState } from '../../src/shared/chat-reducer'
 import { groupTurns } from '../../src/shared/turn-collapse'
 import type { HostToParent } from '../../src/shared/contract'
@@ -258,5 +260,123 @@ describe('anchoredTurnId (which message anchors the viewport)', () => {
     expect(anchoredTurnId(geometry, 400)).toBe('m5')
     expect(anchoredTurnId(geometry, 899)).toBe('m5')
     expect(anchoredTurnId(geometry, 100_000)).toBe('m9')
+  })
+})
+
+describe('railAnchoredTurnId (ticket 120: at-bottom anchors the newest turn, scrolled-up keeps the probe rule)', () => {
+  const anchor = (turnId: string, live = false): RailAnchor => ({
+    turnId,
+    userText: `input ${turnId}`,
+    replyText: `reply ${turnId}`,
+    live
+  })
+
+  // A 600px viewport over 2000px of content. AT_BOTTOM: scrollTop 1400 →
+  // distance 0 (isAtBottom true). SCROLLED_TO_TOP / READING_TURN_3:
+  // distance far off the bottom (probe rule). IN_BAND_OFF_BOTTOM:
+  // distance 100 — INSIDE the 160px stick band yet NOT at the bottom; the
+  // isAtBottom口径 (the send latch's arrival arm) is deliberately stricter
+  // than the band, so the probe rule still governs. OFF_BY_ONE: distance
+  // exactly 1 — the isAtBottom boundary itself.
+  const AT_BOTTOM: ScrollSnapshot = { scrollHeight: 2000, scrollTop: 1400, clientHeight: 600 }
+  const SCROLLED_TO_TOP: ScrollSnapshot = { scrollHeight: 2000, scrollTop: 0, clientHeight: 600 }
+  const READING_TURN_3: ScrollSnapshot = { scrollHeight: 2000, scrollTop: 1200, clientHeight: 600 }
+  const IN_BAND_OFF_BOTTOM: ScrollSnapshot = { scrollHeight: 2000, scrollTop: 1300, clientHeight: 600 }
+  const OFF_BY_ONE: ScrollSnapshot = { scrollHeight: 2000, scrollTop: 1399, clientHeight: 600 }
+
+  // Viewport-relative tops (the measure pass's own coordinate space —
+  // element top minus the container's visible top) for four turns while
+  // the viewport sits at the bottom: the fourth's bubble sits at 500, below
+  // the 35% probe line (210) — exactly the pre-120 geometry where the live
+  // turn's bubble hides behind the Working container + composer and the
+  // probe rule leaves the anchor on the previous turn.
+  const AT_BOTTOM_GEOMETRY: AnchorGeometry[] = [
+    { turnId: 'a', top: -1400 },
+    { turnId: 'b', top: -1000 },
+    { turnId: 'c', top: -100 },
+    { turnId: 'd', top: 500 }
+  ]
+  // The same turns with the viewport at the top / reading turn 3: content
+  // tops 0 / 400 / 1300 / 1900 become viewport-relative by subtraction.
+  const TOP_GEOMETRY: AnchorGeometry[] = [
+    { turnId: 'a', top: 0 },
+    { turnId: 'b', top: 400 },
+    { turnId: 'c', top: 1300 },
+    { turnId: 'd', top: 1900 }
+  ]
+  const READING_3_GEOMETRY: AnchorGeometry[] = [
+    { turnId: 'a', top: -1200 },
+    { turnId: 'b', top: -800 },
+    { turnId: 'c', top: 100 },
+    { turnId: 'd', top: 700 }
+  ]
+  // The scrollTop 1300 / 1399 projections of the same content tops — the
+  // in-band and off-by-one snapshots keep their own coherent geometry.
+  const IN_BAND_GEOMETRY: AnchorGeometry[] = [
+    { turnId: 'a', top: -1300 },
+    { turnId: 'b', top: -900 },
+    { turnId: 'c', top: 0 },
+    { turnId: 'd', top: 600 }
+  ]
+  const OFF_BY_ONE_GEOMETRY: AnchorGeometry[] = [
+    { turnId: 'a', top: -1399 },
+    { turnId: 'b', top: -999 },
+    { turnId: 'c', top: -99 },
+    { turnId: 'd', top: 501 }
+  ]
+  const PROBE_Y = 600 * 0.35 // 210
+  const SETTLED: RailAnchor[] = [anchor('a'), anchor('b'), anchor('c'), anchor('d')]
+  const LIVE_LAST: RailAnchor[] = [anchor('a'), anchor('b'), anchor('c'), anchor('d', true)]
+
+  it('at the bottom the anchor is the newest turn — live included (the Working · 14s defect)', () => {
+    expect(railAnchoredTurnId(LIVE_LAST, AT_BOTTOM_GEOMETRY, PROBE_Y, AT_BOTTOM)).toBe('d')
+  })
+
+  it('at the bottom the anchor is the newest turn when it is settled too', () => {
+    expect(railAnchoredTurnId(SETTLED, AT_BOTTOM_GEOMETRY, PROBE_Y, AT_BOTTOM)).toBe('d')
+  })
+
+  it('at the bottom the newest turn anchors even when the probe rule would point at the previous one', () => {
+    // The same at-bottom geometry under the probe rule alone leaves the
+    // anchor on 'c' — the override is what the ticket fixes.
+    expect(anchoredTurnId(AT_BOTTOM_GEOMETRY, PROBE_Y)).toBe('c')
+    expect(railAnchoredTurnId(SETTLED, AT_BOTTOM_GEOMETRY, PROBE_Y, AT_BOTTOM)).toBe('d')
+  })
+
+  it('at the bottom a single-turn transcript anchors that turn (live and settled)', () => {
+    const single = [{ turnId: 'only', top: 500 }]
+    expect(railAnchoredTurnId([anchor('only', true)], single, PROBE_Y, AT_BOTTOM)).toBe('only')
+    expect(railAnchoredTurnId([anchor('only')], single, PROBE_Y, AT_BOTTOM)).toBe('only')
+  })
+
+  it('scrolled up, the anchor follows the reading position — the probe rule, live turn or not', () => {
+    expect(railAnchoredTurnId(LIVE_LAST, TOP_GEOMETRY, PROBE_Y, SCROLLED_TO_TOP)).toBe('a')
+    expect(railAnchoredTurnId(SETTLED, TOP_GEOMETRY, PROBE_Y, SCROLLED_TO_TOP)).toBe('a')
+    expect(railAnchoredTurnId(LIVE_LAST, READING_3_GEOMETRY, PROBE_Y, READING_TURN_3)).toBe('c')
+    expect(railAnchoredTurnId(SETTLED, READING_3_GEOMETRY, PROBE_Y, READING_TURN_3)).toBe('c')
+    // And the off-bottom rows ARE the probe rule, byte for byte.
+    expect(railAnchoredTurnId(LIVE_LAST, TOP_GEOMETRY, PROBE_Y, SCROLLED_TO_TOP)).toBe(
+      anchoredTurnId(TOP_GEOMETRY, PROBE_Y)
+    )
+    expect(railAnchoredTurnId(LIVE_LAST, READING_3_GEOMETRY, PROBE_Y, READING_TURN_3)).toBe(
+      anchoredTurnId(READING_3_GEOMETRY, PROBE_Y)
+    )
+  })
+
+  it('scrolled up past every message, a single-turn transcript anchors nothing', () => {
+    expect(railAnchoredTurnId([anchor('only', true)], [{ turnId: 'only', top: 500 }], PROBE_Y, SCROLLED_TO_TOP)).toBeNull()
+    expect(railAnchoredTurnId([anchor('only')], [{ turnId: 'only', top: 500 }], PROBE_Y, SCROLLED_TO_TOP)).toBeNull()
+  })
+
+  it('inside the 160px stick band but off the bottom, the probe rule still governs (isAtBottom is stricter)', () => {
+    // Distance 100 < 160 (the stick band) yet > 0: the reader has NOT
+    // arrived at the bottom, so the anchor follows the reading position.
+    expect(railAnchoredTurnId(LIVE_LAST, IN_BAND_GEOMETRY, PROBE_Y, IN_BAND_OFF_BOTTOM)).toBe('c')
+    expect(railAnchoredTurnId(LIVE_LAST, OFF_BY_ONE_GEOMETRY, PROBE_Y, OFF_BY_ONE)).toBe('c')
+  })
+
+  it('an empty transcript anchors nothing either way', () => {
+    expect(railAnchoredTurnId([], [], PROBE_Y, AT_BOTTOM)).toBeNull()
+    expect(railAnchoredTurnId([], [], PROBE_Y, SCROLLED_TO_TOP)).toBeNull()
   })
 })
