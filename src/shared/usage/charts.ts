@@ -63,7 +63,8 @@ export interface HeatSlot {
 }
 
 export interface HeatColumn {
-  /** Monday of the column's week (also the single slot date in weekly mode). */
+  /** First day of the column: its Monday in daily/cumulative mode, the
+   * column's single day in weekly mode. */
   start: string
   /** Short month label when the column opens a month (or is the first column). */
   monthLabel: string | null
@@ -91,10 +92,14 @@ function yieldCollidingFirstLabel(columns: HeatColumn[]): void {
 }
 
 /**
- * Lay heatmap cells out GitHub-style: columns are Monday-start weeks; daily and
- * cumulative modes fill seven weekday slots per column (padded to whole weeks),
- * weekly mode collapses each week into a single slot. Levels are 0–4 against
- * the maximum of the chosen mode, so toggling modes re-colors the same grid.
+ * Lay heatmap cells out GitHub-style: columns are Monday-start weeks; daily
+ * and cumulative modes fill seven weekday slots per column (padded to whole
+ * weeks), weekly mode reads as the current week's seven days — one
+ * single-day column per weekday (ticket 125), so a week is always exactly
+ * seven boxes: zero-usage days (and the days after today inside the week)
+ * render as level-0 empty-color cells instead of going missing. Levels are
+ * 0–4 against the maximum of the chosen mode, so toggling modes re-colors
+ * the same grid.
  */
 export function heatmapGrid(cells: HeatCell[], mode: HeatmapMode): HeatGrid {
   if (cells.length === 0) return { mode, max: 0, columns: [] }
@@ -102,17 +107,18 @@ export function heatmapGrid(cells: HeatCell[], mode: HeatmapMode): HeatGrid {
   const sorted = [...cells].sort((a, b) => a.date.localeCompare(b.date))
 
   if (mode === 'weekly') {
-    const weekTotals = new Map<string, number>()
-    for (const cell of sorted) {
-      const week = mondayOf(cell.date)
-      weekTotals.set(week, (weekTotals.get(week) ?? 0) + cell.tokens)
-    }
-    const weeks = [...weekTotals.keys()].sort()
-    const max = Math.max(...weekTotals.values())
-    const weeklyColumns = weeks.map((week, i) => ({
-      start: week,
-      monthLabel: i === 0 ? formatMonthLabel(week) : columnMonthLabel(week, addDays(week, 6)),
-      slots: [{ date: week, value: weekTotals.get(week) ?? 0, level: levelOf(weekTotals.get(week) ?? 0, max) }]
+    // The snapshot's daily cells are zero-filled through today, so the latest
+    // cell anchors "today"; its Monday starts the current week.
+    const valueByDate = new Map<string, number>()
+    for (const cell of sorted) valueByDate.set(cell.date, cell.tokens)
+    const weekStart = mondayOf(sorted[sorted.length - 1].date)
+    const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
+    const values = days.map((date) => valueByDate.get(date) ?? 0)
+    const max = Math.max(0, ...values)
+    const weeklyColumns = days.map((date, i) => ({
+      start: date,
+      monthLabel: i === 0 ? formatMonthLabel(date) : columnMonthLabel(date, date),
+      slots: [{ date, value: values[i], level: levelOf(values[i], max) }]
     }))
     yieldCollidingFirstLabel(weeklyColumns)
     return {

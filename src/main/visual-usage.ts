@@ -5,7 +5,10 @@
  * Drives the real UI through the settings shell and captures:
  *
  *   u1-usage-overview  — headline cards + Token activity heatmap (daily)
- *   u2-usage-weekly    — heatmap toggled to Weekly
+ *   u2-usage-weekly    — heatmap toggled to Weekly: the current week's
+ *                        seven day cells (ticket 125)
+ *   u2b-usage-weekly-hover — real-input hover on the leftmost weekly cell:
+ *                        white-card tooltip + complete (unclipped) outline
  *   u3-usage-trend     — time range + per-model daily trend chart (30d,
  *                        curves clamped into the plot band — ticket 65)
  *   u4-usage-donut     — model usage donut with legend shares
@@ -128,7 +131,8 @@ async function capture(win: BrowserWindow, name: string): Promise<void> {
       donutSlices: document.querySelectorAll('.donut-legend-row').length,
       drilldown: document.querySelectorAll('.drilldown').length,
       trendTooltip: document.querySelectorAll('.trend-tooltip').length,
-      donutTooltip: document.querySelectorAll('.donut-tooltip').length
+      donutTooltip: document.querySelectorAll('.donut-tooltip').length,
+      heatTooltip: document.querySelectorAll('.heat-tooltip').length
     }))()`
   )
   console.log(`VISUAL captured ${file} ${JSON.stringify(sig)}`)
@@ -172,6 +176,33 @@ export function startUsageVisualIfEnabled(getWindow: () => BrowserWindow | null)
       if (!(await clickSeg(wc, 'Heatmap mode', 'Weekly'))) throw new Error('usage visual: Weekly seg missing')
       await sleep(400)
       await capture(win, 'u2-usage-weekly')
+
+      // ticket 125: hover the leftmost weekly cell with REAL input (synthetic
+      // moves never light the CSS :hover outline) — the white-card tooltip
+      // and the complete, unclipped outline share the frame.
+      const leftPoint = await execute<{ x: number; y: number } | null>(
+        wc,
+        `(() => {
+          const cell = document.querySelector('.heatmap-weekly .heat')
+          if (!cell) return null
+          const r = cell.getBoundingClientRect()
+          return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
+        })()`
+      )
+      if (!leftPoint) throw new Error('usage visual: no weekly heat cell to hover')
+      win.webContents.sendInputEvent({ type: 'mouseMove', x: leftPoint.x, y: leftPoint.y })
+      let heatTip = false
+      for (let waited = 0; waited < 5_000 && !heatTip; waited += 200) {
+        heatTip = await execute<boolean>(wc, `document.querySelectorAll('.heat-tooltip').length > 0`)
+        if (!heatTip) await sleep(200)
+      }
+      if (!heatTip) throw new Error('usage visual: heat cell hover never opened the white-card tooltip')
+      await sleep(300)
+      await capture(win, 'u2b-usage-weekly-hover')
+      // Drop the hover so later frames stay clean.
+      win.webContents.sendInputEvent({ type: 'mouseMove', x: leftPoint.x + 240, y: leftPoint.y - 80 })
+      await sleep(300)
+
       if (!(await clickSeg(wc, 'Heatmap mode', 'Daily'))) throw new Error('usage visual: Daily seg missing')
       await sleep(300)
 
