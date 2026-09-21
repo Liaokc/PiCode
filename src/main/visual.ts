@@ -216,6 +216,10 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
   if (process.env['PICODE_VISUAL_ACCESS'] === '1') return
   // And for the group-fold harness (ticket 39).
   if (foldVisualEnabled()) return
+  // And for the pending-create harness (ticket 106) — it dispatches a REAL
+  // create through the empty state, so the base flow's synthetic fork/replay
+  // announcements must not share the window with it.
+  if (process.env['PICODE_VISUAL_PENDING'] === '1') return
   // And for the codeblock-label harness (ticket 50).
   if (codeblockVisualEnabled()) return
   // And for the mermaid diagram-card harness (ticket 59).

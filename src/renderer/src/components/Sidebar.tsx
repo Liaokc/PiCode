@@ -33,6 +33,7 @@ import {
   visibleRowCount
 } from '../../../shared/sessions/fold-model'
 import { cwdRowState } from '../../../shared/sessions/cwd-liveness'
+import { stripPendingGroups } from '../../../shared/sessions/pending-create'
 import { sidebarDotState, sidebarRowState, type SidebarDotState } from '../../../shared/session-registry'
 import { useNowTick } from './use-now'
 import Tooltip from './Tooltip'
@@ -99,6 +100,10 @@ interface SidebarProps {
    * end-state styling only. */
   open: boolean
   sessions: SessionSummary[]
+  /** Ticket 106: the optimistic New Task placeholders' renderer-local ids —
+   * their rows render honestly ("starting…" where the time goes, no dot, no
+   * rename/pin/archive/drag/menu) and never enter the manual arrangement. */
+  pendingIds: ReadonlySet<string>
   /** The session currently focused in the chat view. NOT the selected row
    * while Follow is active — selection follows the view (ticket 28). */
   activeSessionId: string | null
@@ -181,6 +186,7 @@ function TaskItem({
   dot,
   dimmed,
   pinned,
+  pending,
   renaming,
   draft,
   onOpen,
@@ -207,6 +213,12 @@ function TaskItem({
    * missing" meta explains, and the click is intercepted upstream (App
    * answers with the explanation toast; zero resume). */
   dimmed: boolean
+  /** Ticket 106: an optimistic New Task placeholder. The row shows only
+   * what is known (the projected first-message title); its time slot reads
+   * the honest "starting…" instead of a fabricated recency, and every
+   * mutation/interaction is inert — nothing to open, pin, rename, archive,
+   * drag or menu while the host is still booting. */
+  pending: boolean
   pinned: boolean
   /** Controlled inline rename (ticket 35): WHICH row is renaming and the
    * draft live in the sidebar, so the context menu's Rename task enters the
@@ -243,14 +255,17 @@ function TaskItem({
     <div
       className={dimmed ? `${cls} sb-task-dimmed${dropCls}` : `${cls}${dropCls}`}
       data-file={session.file}
+      data-pending={pending || undefined}
       // Row-body drag (ticket 84); gray (dimmed) rows drag the same path.
       // The rename input must never fight an ancestor drag for selection.
+      // Ticket 106: a pending placeholder never drags (drag is undefined).
       draggable={drag !== undefined && !renaming}
-      onClick={onOpen}
-      onDoubleClick={onRenameStart}
+      onClick={pending ? undefined : onOpen}
+      onDoubleClick={pending ? undefined : onRenameStart}
       {...(drag ?? {})}
       onContextMenu={(e) => {
         e.preventDefault()
+        if (pending) return
         onContextMenu(e.clientX, e.clientY)
       }}
     >
@@ -265,19 +280,23 @@ function TaskItem({
         {dot === 'awaiting-approval' && <span className="sb-await-dot" aria-label="Awaiting approval" />}
         {dot === 'tui-live' && <span className="sb-live-dot" aria-label="Running in another window" />}
         {dot === 'unread' && <span className="sb-unread-dot" aria-label="Unread" />}
-        <Tooltip label="Archive task">
-          <button
-            type="button"
-            className="sb-arch-btn"
-            aria-label={`Archive task: ${session.title}`}
-            onClick={(e) => {
-              e.stopPropagation()
-              onArchive()
-            }}
-          >
-            <ArchiveBoxIcon size={12} />
-          </button>
-        </Tooltip>
+        {/* Ticket 106: a pending placeholder has no archive affordance — the
+            slot stays empty (the row is not a session yet). */}
+        {!pending && (
+          <Tooltip label="Archive task">
+            <button
+              type="button"
+              className="sb-arch-btn"
+              aria-label={`Archive task: ${session.title}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                onArchive()
+              }}
+            >
+              <ArchiveBoxIcon size={12} />
+            </button>
+          </Tooltip>
+        )}
       </span>
       {renaming ? (
         <input
@@ -301,11 +320,15 @@ function TaskItem({
           itself — no tooltip, no modal; the click toast carries the rest. */}
       {dimmed && <span className="sb-task-cwd-meta">cwd missing</span>}
       {/* Fixed-width time slot (ticket 34): hover fades ONLY the text —
-          the slot itself never resizes, so nothing in the row shifts. */}
-      <span className="sb-task-time">{relativeTime(session.modifiedAt, now)}</span>
+          the slot itself never resizes, so nothing in the row shifts.
+          Ticket 106: a pending placeholder shows the honest starting label
+          instead of a recency the session file has not earned yet. */}
+      <span className="sb-task-time">{pending ? 'starting…' : relativeTime(session.modifiedAt, now)}</span>
       {/* Reserved row-end slot (ticket 34, grilling Q5 decision a): the pin
           is the LAST child in every row — pinned rows keep it visible
-          (orange), unpinned rows fade it in on hover at the same x. */}
+          (orange), unpinned rows fade it in on hover at the same x.
+          Ticket 106: a pending placeholder's pin is inert (nothing to pin
+          yet — the real id does not exist). */}
       <Tooltip label={pinned ? 'Unpin' : 'Pin'}>
         <button
           type="button"
@@ -313,6 +336,7 @@ function TaskItem({
           aria-label={pinned ? 'Unpin task' : 'Pin task'}
           onClick={(e) => {
             e.stopPropagation()
+            if (pending) return
             onTogglePin()
           }}
         >
@@ -326,6 +350,7 @@ function TaskItem({
 export default function Sidebar({
   open,
   sessions,
+  pendingIds,
   activeSessionId,
   followedFile,
   pinnedIds,
@@ -574,8 +599,12 @@ export default function Sidebar({
   /** Fixed-slot dot state for one row (ticket 20 + 25 + 28): orange = parked
    * at the approval gate, animated = running in this app, green = written by
    * another end (120s rule), indigo = unread, empty = idle. An in-app
-   * session never shows the TUI dot — its mtime is ours. */
+   * session never shows the TUI dot — its mtime is ours. Ticket 106: a
+   * pending placeholder shows the EMPTY slot — its dispatch-clock mtime
+   * would otherwise read as the green live-elsewhere dot, a liveness claim
+   * the not-yet-born session cannot make. */
   function dotFor(s: SessionSummary): SidebarDotState {
+    if (pendingIds.has(s.id)) return 'idle'
     return sidebarDotState(
       awaitingIds.has(s.id),
       runningIds.has(s.id),
@@ -598,9 +627,11 @@ export default function Sidebar({
   /** The arrangement the drop composes onto: the first drag EVER snapshots
    * the current render (so Manual activates without rows jumping); every
    * later drag composes onto the stored order — preserved across
-   * Updated/Created detours, never silently rebuilt. */
+   * Updated/Created detours, never silently rebuilt. Ticket 106: pending
+   * placeholders are stripped first — their synthetic ids must never enter
+   * the persisted arrangement. */
   function manualBase(): ManualSidebarOrder {
-    return isEmptyManualOrder(manualOrder) ? snapshotManualOrder(grouped) : manualOrder
+    return isEmptyManualOrder(manualOrder) ? snapshotManualOrder(stripPendingGroups(grouped, pendingIds)) : manualOrder
   }
 
   /** One drop, committed: apply the anchored move and persist — the App
@@ -613,7 +644,14 @@ export default function Sidebar({
     if (d === null) return
     if (d.kind === 'session') {
       if (target.kind !== 'session' || d.cwd !== target.cwd) return
-      const rendered = grouped.groups.find((g) => g.cwd === d.cwd)?.sessions.map((s) => s.id) ?? []
+      // Ticket 106: the rendered list handed to the reconcile excludes
+      // placeholders — a drop mid-boot cannot bake a synthetic id into the
+      // stored order.
+      const rendered =
+        grouped.groups
+          .find((g) => g.cwd === d.cwd)
+          ?.sessions.filter((s) => !pendingIds.has(s.id))
+          .map((s) => s.id) ?? []
       onCommitManualOrder(moveSessionBefore(manualBase(), d.cwd, d.sessionId, target.beforeId, rendered))
       return
     }
@@ -875,6 +913,7 @@ export default function Sidebar({
                 dot={dotFor(s)}
                 dimmed={dimmedFor(s)}
                 pinned
+                pending={pendingIds.has(s.id)}
                 renaming={renamingFile === s.file}
                 draft={renameDraft}
                 onOpen={() => onOpenSession(s)}
@@ -1084,6 +1123,7 @@ export default function Sidebar({
                       dot={dotFor(s)}
                       dimmed={dimmedFor(s)}
                       pinned={false}
+                      pending={pendingIds.has(s.id)}
                       renaming={renamingFile === s.file}
                       draft={renameDraft}
                       onOpen={() => onOpenSession(s)}
@@ -1094,7 +1134,7 @@ export default function Sidebar({
                       onDraftChange={setRenameDraft}
                       onArchive={() => onSessionAction(s, 'archive')}
                       onContextMenu={(x, y) => openSessionMenu(s, x, y)}
-                      drag={rowDrag(group, s, rows, rowIndex, endBeforeId)}
+                      drag={pendingIds.has(s.id) ? undefined : rowDrag(group, s, rows, rowIndex, endBeforeId)}
                       dropMark={
                         dropTarget !== null && dropTarget.kind === 'session' && dropTarget.cwd === group.cwd
                           ? dropTarget.beforeId === s.id
@@ -1138,6 +1178,7 @@ export default function Sidebar({
                 dot={dotFor(s)}
                 dimmed={dimmedFor(s)}
                 pinned={false}
+                pending={pendingIds.has(s.id)}
                 renaming={renamingFile === s.file}
                 draft={renameDraft}
                 onOpen={() => onOpenSession(s)}

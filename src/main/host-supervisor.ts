@@ -15,6 +15,7 @@ import { fork, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import type { SessionDefaults } from '../shared/preferences'
+import { PROVISIONAL_SESSION_ID_PREFIX } from '../shared/contract'
 import type { HostControlCommand, HostToParent, ParentToHost, SessionScopedEvent } from '../shared/contract'
 import { encodeSessionArgs } from '../host/session-args'
 
@@ -171,7 +172,10 @@ export class HostSupervisor {
     })
     const binding: HostBinding = {
       child,
-      sessionId: `pending-${++this.provisionalSeq}`,
+      // The provisional id shape is contract-level (ticket 106): boot failures
+      // reach the renderer scoped to it, and the pending-create reconciliation
+      // matches on it. One source of truth for the prefix.
+      sessionId: `${PROVISIONAL_SESSION_ID_PREFIX}${++this.provisionalSeq}`,
       expectedExit: false
     }
     this.bindings.push(binding)

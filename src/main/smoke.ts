@@ -149,6 +149,15 @@
  * keeps streaming through the rename. After the Stop the settled rename
  * re-runs through the same path (no regression).
  *
+ * Ticket 106 adds the instant-card stage right before the quit: dispatching
+ * a New Task create makes the sidebar's project group + session card appear
+ * IMMEDIATELY (the optimistic placeholder — honest "starting…" time slot,
+ * no fabricated recency), session_created stamps the real id, the session
+ * index confirms the card (对账替换: real id/title/mtime, no pending rows
+ * left), an existing folder's create is equally instant, and a dead-cwd
+ * boot failure removes the placeholder with a verbatim error toast — no
+ * ghost entries. The index polling mechanism is untouched.
+ *
  * Any missed step times out and exits non-zero. Progress logs as
  * `SMOKE <step>` lines on stdout. Not part of `npm test`.
  */
@@ -12816,6 +12825,247 @@ export function startSmokeIfEnabled(
       await js(composerClearJs)
     })
     log('rename_midrun_done')
+
+    // ---- ticket 106: the optimistic New Task placeholder — the sidebar's
+    // project group + session card appear the INSTANT create_session is
+    // dispatched (the existing grouping/sort semantics place the card in
+    // its cwd group, newest-first), session_created stamps the real id on
+    // the placeholder (no display claim), the session index confirms the
+    // card (对账替换: real id/title/mtime, zero pending rows left), an
+    // existing folder's create is equally instant, and a dead-cwd boot
+    // failure removes the placeholder with a verbatim error toast — no
+    // ghost entries. The index polling mechanism is untouched. ----
+    log('instant_card_start')
+    const instantDir = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-instant106-'))
+    const instantDeadDir = path.join(os.tmpdir(), `picode-smoke-instant106-dead-${Date.now()}`)
+    const instantLabel = path.basename(instantDir)
+    const instantDeadLabel = path.basename(instantDeadDir)
+    // Legs ① and ③ create through the chip's "Open folder…" row — the
+    // picker short-circuit answers from PICODE_SMOKE_CWD, so the stage
+    // pins it per leg (restored in finally).
+    const previousSmokeCwd = process.env['PICODE_SMOKE_CWD']
+    process.env['PICODE_SMOKE_CWD'] = instantDir
+    const PENDING_ROW = `(r) => (r.getAttribute('data-file') ?? '').startsWith('pending:')`
+    const REAL_ROW = `(r) => (r.getAttribute('data-file') ?? '').endsWith('.jsonl')`
+    /** Group-relative sidebar state for one cwd: row counts by kind plus the
+     * first real row's honest-display facts (time slot text + title). */
+    const instantGroupStateJs = (cwd: string): string => `(() => {
+      const g = document.querySelector('.sb-group[data-cwd="${cwd}"]')
+      if (!g) return JSON.stringify({ group: false })
+      const rows = [...g.querySelectorAll('.sb-task')]
+      const pending = rows.filter(${PENDING_ROW})
+      const real = rows.filter(${REAL_ROW})
+      return JSON.stringify({
+        group: true,
+        total: rows.length,
+        pendingRows: pending.length,
+        anyPendingMarked: pending.every((r) => r.hasAttribute('data-pending')),
+        pendingDotEmpty: pending.length === 0 ? null : pending.every((r) => (r.querySelector('.sb-dot-slot')?.children.length ?? 1) === 0),
+        real: real.length,
+        time: real[0]?.querySelector('.sb-task-time')?.textContent ?? null,
+        title: real[0]?.querySelector('.sb-task-title')?.textContent ?? null
+      })
+    })()`
+    interface InstantGroupState {
+      group: boolean
+      total?: number
+      pendingRows?: number
+      anyPendingMarked?: boolean
+      pendingDotEmpty?: boolean | null
+      real?: number
+      time?: string | null
+      title?: string | null
+    }
+    try {
+      await withWindow(getWindow, async (win) => {
+        const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+        const groupState = async (cwd: string): Promise<InstantGroupState> =>
+          JSON.parse(String(await js(instantGroupStateJs(cwd)))) as InstantGroupState
+        const openNewTask = async (): Promise<void> => {
+          if (!((await js(`document.querySelector('.sidebar') !== null`)) as boolean)) {
+            await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', metaKey: true, bubbles: true })); true`)
+            await waitForProbe(win, `document.querySelector('.sidebar') !== null`, 5_000)
+          }
+          await js(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', code: 'KeyN', metaKey: true, bubbles: true })); true`)
+          if (!(await waitForProbe(win, `document.querySelector('.empty-state textarea.composer-input') !== null`, 5_000))) {
+            fail('ticket-106 stage: ⌘N never opened the new-task empty state')
+          }
+        }
+        /** Chip dropdown → one row ("Open folder…" env short-circuit, or the
+         * recent-projects row whose label matches). */
+        const pickProject = async (mode: 'folder' | 'recent', label: string): Promise<void> => {
+          if (!((await js(`(() => { const c = document.querySelector('.newtask-chip'); if (c instanceof HTMLElement) { c.dispatchEvent(new MouseEvent('click', { bubbles: true })); return true } return false })()`)) as boolean)) {
+            fail('ticket-106 stage: the project chip never opened its dropdown')
+          }
+          if (!(await waitForProbe(win, `document.querySelector('.newtask-pop') !== null`, 5_000))) {
+            fail('ticket-106 stage: the chip dropdown never rendered')
+          }
+          const clicked =
+            mode === 'folder'
+              ? await js(`(() => { const b = document.querySelector('.newtask-openfolder'); if (b instanceof HTMLElement) { b.dispatchEvent(new MouseEvent('click', { bubbles: true })); return true } return false })()`)
+              : await js(`(() => { const row = [...document.querySelectorAll('.newtask-row')].find((r) => r.querySelector('.newtask-row-label')?.textContent === '${label}'); if (row instanceof HTMLElement) { row.dispatchEvent(new MouseEvent('click', { bubbles: true })); return true } return false })()`)
+          if (!(clicked as boolean)) fail(`ticket-106 stage: the ${mode} project row never clicked`)
+          if (!(await waitForProbe(win, `document.querySelector('.newtask-chip span')?.textContent === '${label}'`, 5_000))) {
+            fail(`ticket-106 stage: the chip never showed the picked project (${label})`)
+          }
+        }
+        const sendFromEmptyState = (text: string): void => {
+          void (async () => {
+            if (!(await js(composerTypeJs(text)).catch(() => false))) {
+              fail('ticket-106 stage: the empty-state composer textarea is missing')
+            }
+            await new Promise((r) => setTimeout(r, 300))
+            await js(composerKeyJs('Enter'))
+          })()
+        }
+
+        // ① NEW folder: create dispatched → group + card appear BEFORE any
+        // host could boot; the placeholder is honest (starting… slot, no
+        // recency claim, data-pending marker).
+        await openNewTask()
+        await pickProject('folder', instantLabel)
+        let created1At = 0
+        const created1 = waitFor((e) => e.type === 'session_created', 'instant-106 new-folder session_created')
+        void created1.then(() => {
+          created1At = Date.now()
+        })
+        const enter1At = Date.now()
+        sendFromEmptyState('Reply with exactly: PICODE_106_INSTANT_NEW_FOLDER')
+        let pending1At = 0
+        for (let waited = 0; waited < 1_500; waited += 100) {
+          const state = await groupState(instantDir)
+          if (state.group === true && (state.pendingRows ?? 0) >= 1) {
+            pending1At = Date.now()
+            if (state.anyPendingMarked !== true) fail('ticket-106 stage: the placeholder row lost its data-pending marker')
+            if (state.pendingDotEmpty !== true) fail('ticket-106 stage: the placeholder dot slot must be empty (no liveness claim)')
+            const slotJs = `document.querySelector('.sb-group[data-cwd="${instantDir}"] [data-file^="pending:"] .sb-task-time')?.textContent`
+            const slot = String(await js(slotJs))
+            if (slot !== 'starting…') fail(`ticket-106 stage: the placeholder time slot must read the honest starting label, got ${JSON.stringify(slot)}`)
+            break
+          }
+          await new Promise((r) => setTimeout(r, 100))
+        }
+        if (pending1At === 0) fail(`ticket-106 stage: the placeholder card never appeared instantly (state: ${JSON.stringify(await groupState(instantDir))})`)
+        log('instant_pending_ok', `waited ${pending1At - enter1At}ms after dispatch`)
+        const created1Event = (await created1) as Extract<Scoped, { type: 'session_created' }>
+        log('instant_announced', `session_created ${created1At - enter1At}ms after dispatch (id ${created1Event.sessionId})`)
+        supervisor.handleParentCommand({
+          type: 'session_command',
+          sessionId: created1Event.sessionId,
+          command: { type: 'abort_turn' }
+        })
+        // 对账替换: the index confirms the file — the real card replaces the
+        // placeholder (zero pending rows, real recency, marker title).
+        let settled1: InstantGroupState | null = null
+        for (let waited = 0; waited < 25_000; waited += 150) {
+          const state = await groupState(instantDir)
+          if (
+            state.group === true &&
+            (state.pendingRows ?? 1) === 0 &&
+            (state.real ?? 0) === 1 &&
+            state.time !== 'starting…' &&
+            (state.title ?? '').includes('PICODE_106_INSTANT_NEW_FOLDER')
+          ) {
+            settled1 = state
+            break
+          }
+          await new Promise((r) => setTimeout(r, 150))
+        }
+        if (settled1 === null) fail(`ticket-106 stage: the placeholder never reconciled into the real card (state: ${JSON.stringify(await groupState(instantDir))})`)
+        log('instant_reconciled_ok', `title=${JSON.stringify(settled1.title)} time=${JSON.stringify(settled1.time)} (created ${created1At - enter1At}ms; card instant)`)
+
+        // ② EXISTING folder: the group's New Task hover action presets the
+        // cwd — the placeholder appears instantly INSIDE the existing group.
+        if (!((await js(`(() => { const b = [...document.querySelectorAll('.sb-group[data-cwd="${instantDir}"] .sb-group-action')].find((x) => x.getAttribute('aria-label') === 'New task in ${instantLabel}'); if (b instanceof HTMLElement) { b.dispatchEvent(new MouseEvent('click', { bubbles: true })); return true } return false })()`)) as boolean)) {
+          fail('ticket-106 stage: the group New Task hover action never clicked')
+        }
+        if (!(await waitForProbe(win, `document.querySelector('.empty-state textarea.composer-input') !== null`, 5_000))) {
+          fail('ticket-106 stage: the group action never opened the new-task empty state')
+        }
+        let created2At = 0
+        const created2 = waitFor((e) => e.type === 'session_created', 'instant-106 existing-folder session_created')
+        void created2.then(() => {
+          created2At = Date.now()
+        })
+        const enter2At = Date.now()
+        sendFromEmptyState('Reply with exactly: PICODE_106_INSTANT_EXISTING_FOLDER')
+        let pending2At = 0
+        for (let waited = 0; waited < 1_500; waited += 100) {
+          const state = await groupState(instantDir)
+          if (state.group === true && (state.pendingRows ?? 0) >= 1) {
+            pending2At = Date.now()
+            break
+          }
+          await new Promise((r) => setTimeout(r, 100))
+        }
+        if (pending2At === 0) fail(`ticket-106 stage: the existing-folder placeholder never appeared instantly (state: ${JSON.stringify(await groupState(instantDir))})`)
+        log('instant_existing_pending_ok', `waited ${pending2At - enter2At}ms after dispatch`)
+        const created2Event = (await created2) as Extract<Scoped, { type: 'session_created' }>
+        log('instant_existing_announced', `session_created ${created2At - enter2At}ms after dispatch (id ${created2Event.sessionId})`)
+        supervisor.handleParentCommand({
+          type: 'session_command',
+          sessionId: created2Event.sessionId,
+          command: { type: 'abort_turn' }
+        })
+        let settled2: InstantGroupState | null = null
+        for (let waited = 0; waited < 25_000; waited += 150) {
+          const state = await groupState(instantDir)
+          if (
+            state.group === true &&
+            (state.pendingRows ?? 1) === 0 &&
+            (state.real ?? 0) === 2 &&
+            (state.title ?? '').includes('PICODE_106_INSTANT_EXISTING_FOLDER')
+          ) {
+            settled2 = state
+            break
+          }
+          await new Promise((r) => setTimeout(r, 150))
+        }
+        if (settled2 === null) fail(`ticket-106 stage: the existing-folder create never reconciled (state: ${JSON.stringify(await groupState(instantDir))})`)
+        log('instant_existing_reconciled_ok', `total=${settled2.total}`)
+
+        // ③ BOOT FAILURE: a dead cwd — the host boots and fails on its own
+        // (dead-cwd exit(1) semantics). The placeholder must be REMOVED with
+        // a verbatim error toast; no ghost entry, no ghost group.
+        process.env['PICODE_SMOKE_CWD'] = instantDeadDir
+        await openNewTask()
+        await pickProject('folder', instantDeadLabel)
+        sendFromEmptyState('PICODE_106_INSTANT_BOOT_FAIL')
+        let deadPendingSeen = false
+        for (let waited = 0; waited < 1_500; waited += 100) {
+          const state = await groupState(instantDeadDir)
+          if (state.group === true && (state.pendingRows ?? 0) >= 1) {
+            deadPendingSeen = true
+            break
+          }
+          await new Promise((r) => setTimeout(r, 100))
+        }
+        if (!deadPendingSeen) fail('ticket-106 stage: the dead-cwd placeholder never appeared before the boot failure')
+        log('instant_dead_pending_ok')
+        const failureToast = `[...document.querySelectorAll('.toast-error .toast-message')].some((n) => (n.textContent ?? '').includes('failed to start'))`
+        let failureOk = false
+        for (let waited = 0; waited < 25_000; waited += 150) {
+          const state = await groupState(instantDeadDir)
+          const toast = (await js(failureToast)) as boolean
+          if (state.group === false && toast) {
+            failureOk = true
+            break
+          }
+          await new Promise((r) => setTimeout(r, 150))
+        }
+        if (!failureOk) {
+          const state = await groupState(instantDeadDir)
+          const pendingAnywhere = (await js(`document.querySelectorAll('[data-file^="pending:"]').length`)) as number
+          fail(`ticket-106 stage: the boot failure never removed the placeholder / never toasted (state: ${JSON.stringify(state)}, pending rows anywhere: ${pendingAnywhere})`)
+        }
+        log('instant_failure_removed_ok', 'placeholder gone + verbatim error toast, no ghost group')
+      })
+    } finally {
+      if (previousSmokeCwd === undefined) delete process.env['PICODE_SMOKE_CWD']
+      else process.env['PICODE_SMOKE_CWD'] = previousSmokeCwd
+      rmSync(instantDir, { recursive: true, force: true })
+    }
+    log('instant_card_done')
 
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
     const livePids = supervisor.hostPids

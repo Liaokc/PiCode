@@ -52,6 +52,14 @@ import { installComposerFocusDiscipline } from './composer-focus'
 import type { AuthProbeReport } from '../../shared/auth-status'
 import { configuredProviderIds, sortProvidersConfiguredFirst } from '../../shared/provider-sort'
 import { selectCommandCatalog, type NewTaskCommandCatalog } from '../../shared/new-task-commands'
+import {
+  announcePending,
+  dropFailedPending,
+  makePendingCreate,
+  mergePendingCreates,
+  reconcilePending,
+  type PendingCreate
+} from '../../shared/sessions/pending-create'
 import type { SessionSummary, TranscriptItem } from '../../shared/sessions/types'
 import TitleBar from './components/TitleBar'
 import Sidebar from './components/Sidebar'
@@ -115,6 +123,17 @@ function stampThinkingStart(event: HostToParent): ChatAction {
 
 function stampScopedThinkingStart(event: SessionScopedEvent): SessionScopedEvent {
   return event.type === 'thinking_delta' ? withReceipt(event, Date.now()) : event
+}
+
+/** Ticket 106: the boot-failure toast copy — the event's own words where it
+ * carries any (session_error's verbatim message), else the exit facts the
+ * supervisor synthesized (host_exit code/signal). Never invented detail. */
+function bootFailureCopy(event: HostToParent): string {
+  if (event.type === 'session_error') return `Session failed to start — ${event.message}`
+  if (event.type === 'host_exit') {
+    return `Session failed to start — the host exited (code ${event.code ?? '—'}, signal ${event.signal ?? '—'})`
+  }
+  return 'Session failed to start.'
 }
 
 /**
@@ -215,6 +234,22 @@ export default function App(): JSX.Element {
 
   // ---- session index + sidebar state ----
   const [sessions, setSessions] = useState<SessionSummary[]>([])
+  /** Ticket 106: optimistic New Task placeholders — one entry per dispatched
+   * create_session, rendered by the sidebar the instant it is pushed and
+   * reconciled against the session index (the confirmation source) or
+   * removed on boot failure. The index polling mechanism is untouched. */
+  const [pendingCreates, setPendingCreates] = useState<readonly PendingCreate[]>([])
+  const pendingCreatesRef = useRef<readonly PendingCreate[]>([])
+  pendingCreatesRef.current = pendingCreates
+  /** Monotonic generator for the renderer-local placeholder ids
+   * (`pending-create-N` — never a Pi session id). */
+  const pendingCreateSeq = useRef(0)
+  /** Ticket 106: the sidebar's merged view — the file index plus the
+   * in-flight placeholder rows. Existing grouping/sort/drag semantics apply
+   * to the merged list untouched; ⌘K and the follow paths keep the raw
+   * index (a placeholder is not yet an addressable session). */
+  const sidebarSessions = useMemo(() => mergePendingCreates(sessions, pendingCreates), [sessions, pendingCreates])
+  const pendingIds = useMemo(() => new Set(pendingCreates.map((p) => p.id)), [pendingCreates])
   const [pinnedIds, setPinnedIds] = useState<ReadonlySet<string>>(() => loadPinnedIds())
   const [treeOpen, setTreeOpen] = useState(false)
   /** Live Follow: the session file being watched read-only, its transcript. */
@@ -331,7 +366,13 @@ export default function App(): JSX.Element {
   const refreshSessions = useCallback((): void => {
     void window.picode.sessions
       .list()
-      .then((list) => setSessions(list))
+      .then((list) => {
+        setSessions(list)
+        // Ticket 106: a pending whose announced session id has reached the
+        // index is fully reconciled — the real file-derived summary renders
+        // and the placeholder drops (对账). One refresh, both states.
+        setPendingCreates((prev) => reconcilePending(list, prev))
+      })
       .catch(() => setSessions([]))
   }, [])
 
@@ -433,6 +474,17 @@ export default function App(): JSX.Element {
           setNewTaskOpen(false)
           setFollowedFile(null)
           window.picode.sessions.unfollow()
+          // Ticket 106: record the announcement on the pending create it
+          // belongs to (oldest unannounced cwd match that announced as a
+          // FRESH create — `resumed: true` announcements never consume a
+          // placeholder; same-cwd fork announcements can in the rare
+          // double-boot window, benign: the pending drops early and the real
+          // card still arrives through the index). Display is unchanged: the
+          // card keeps its known title and honest "starting…" slot until the
+          // index confirms the file (对账替换).
+          if (scopeId !== null && scopeEvent.type === 'session_created') {
+            setPendingCreates((prev) => announcePending(prev, scopeId, scopeEvent.cwd, scopeEvent.resumed === true))
+          }
           // Focus is switching to the announced session — the branch-history
           // panel belongs to the view being left behind; close it.
           setTreeOpen(false)
@@ -541,6 +593,26 @@ export default function App(): JSX.Element {
           setCreating(false)
           pendingPromptRef.current = null
           pendingImagesRef.current = null
+          // Ticket 106: a boot failure removes the placeholder it killed —
+          // no ghost entries — and the failure is toasted verbatim (the
+          // empty state shows no error banner, so the toast is the honest
+          // surface). Boundary (documented, proportionate): a provisional-id
+          // failure is correlated by SHAPE, not identity — the renderer
+          // never learns its create's provisional id, so the oldest
+          // still-booting pending is consumed. A same-moment failed RESUME
+          // boot (also provisional-scoped) can therefore consume the
+          // pending prematurely; the failure toast stays truthful (some
+          // session did fail to start) and the real card still lands
+          // through the index. A failure scoped to an unrelated LIVE
+          // session's real id, or to a real id matching no pending, consumes
+          // nothing.
+          if (scopeId !== null) {
+            const failed = dropFailedPending(pendingCreatesRef.current, scopeId)
+            if (failed.dropped !== null) {
+              setPendingCreates(failed.pending)
+              notify(bootFailureCopy(scopeEvent), 'error')
+            }
+          }
           break
         default:
           break
@@ -573,10 +645,14 @@ export default function App(): JSX.Element {
    * since ticket 41, any model/thinking choice made in the new-task empty
    * state — the choice wins where present (same precedence as switching after
    * send), preference fields ride untouched, zero new contract (the additive
-   * `defaults` field). */
-  const sendCreateSession = useCallback((cwd: string, choice?: NewTaskModelChoice): void => {
+   * `defaults` field). Ticket 106: this is the ONE create-dispatch entry —
+   * every dispatch pairs the command with its optimistic placeholder
+   * (firstMessageText = '' when no first message is known), so a future
+   * dispatch site cannot forget the instant card. */
+  const sendCreateSession = useCallback((cwd: string, choice?: NewTaskModelChoice, firstMessageText = ''): void => {
     const defaults = mergeNewTaskDefaults(sessionDefaultsFromPreferences(settings.preferences), choice ?? null) ?? undefined
     window.picode.chat.sendToHost({ type: 'create_session', cwd, defaults })
+    injectPendingCreate(cwd, firstMessageText)
   }, [settings.preferences])
 
   /** Ticket 17/19: ⌘N, the New Task row or a group's hover action opens the
@@ -745,8 +821,23 @@ export default function App(): JSX.Element {
       // as the first prompt once the session exists.
       pendingPromptRef.current = text
       pendingImagesRef.current = images.length > 0 ? images : null
-      sendCreateSession(project, choice)
+      // Ticket 106: the dispatch pairs the command with its optimistic
+      // placeholder — the sidebar's project group and session card appear
+      // NOW with the knowns (cwd, typed text), long before the host finishes
+      // booting.
+      sendCreateSession(project, choice, text)
     })()
+  }
+
+  /** Ticket 106: push one optimistic placeholder for a dispatched
+   * create_session. The id is a renderer-local marker (never a Pi session
+   * id); `session_created` stamps the real id on it, the session index
+   * confirms it, and a boot failure removes it. Called only from
+   * sendCreateSession — the one create-dispatch entry. */
+  function injectPendingCreate(cwd: string, text: string): void {
+    pendingCreateSeq.current += 1
+    const id = `pending-create-${pendingCreateSeq.current}`
+    setPendingCreates((prev) => [...prev, makePendingCreate(id, cwd, text, Date.now())])
   }
 
   function handleSteer(text: string, images: ImageAttachment[] = []): void {
@@ -881,6 +972,9 @@ export default function App(): JSX.Element {
     const cwd = chat.error?.kind === 'host' ? chat.error.cwd : null
     if (!cwd) return
     setCreating(true)
+    // Ticket 106: same instant-card treatment as the New Task dispatch (the
+    // dispatch pairs it) — no first message is known, so the placeholder
+    // carries the scanner's own `New Task` fallback title.
     sendCreateSession(cwd)
   }
 
@@ -890,6 +984,7 @@ export default function App(): JSX.Element {
     const cwd = await window.picode.chat.pickWorkingDirectory()
     if (!cwd) return
     setCreating(true)
+    // Ticket 106: same instant-card treatment as the New Task dispatch.
     sendCreateSession(cwd)
   }
 
@@ -1101,6 +1196,10 @@ export default function App(): JSX.Element {
   }
 
   function handleOpenSession(summary: SessionSummary): void {
+    // Ticket 106: a placeholder card is inert — no session exists yet, so
+    // there is nothing to focus, follow or resume. The sidebar renders the
+    // row without interactions; this guard covers any future caller.
+    if (pendingIds.has(summary.id)) return
     // Gray row (ticket 54, Dimmed Row): a session whose cwd is gone with no
     // live host here is a pure display state — the click EXPLAINS and never
     // resumes (resume on a deleted cwd makes the host exit(1)). The guard is
@@ -1704,7 +1803,8 @@ export default function App(): JSX.Element {
         open={ui.sidebarOpen}
         width={ui.sidebarWidth}
         dispatch={dispatchShellPersisting}
-        sessions={sessions}
+        sessions={sidebarSessions}
+        pendingIds={pendingIds}
         activeSessionId={focusedId}
         followedFile={followedFile}
         pinnedIds={pinnedIds}

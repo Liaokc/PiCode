@@ -37,6 +37,7 @@
     "visual:subagent-chat": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_SUBAGENTS_CHAT=1 electron .",
     "visual:access": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_ACCESS=1 electron .",
     "visual:fold": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_FOLD=1 electron .",
+    "visual:pending": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_PENDING=1 electron .",
     "visual:codeblock": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_CODEBLOCK=1 electron .",
     "visual:answer": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_ANSWER=1 electron .",
     "visual:mermaid": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_MERMAID=1 electron .",
