@@ -59,6 +59,7 @@ import { startExpandVisualIfEnabled, isolateExpandUserData } from './visual-expa
 import { startComposerLayoutVisualIfEnabled, isolateComposerLayoutUserData } from './visual-composer-layout'
 import { startImagePreviewVisualIfEnabled, isolateImagePreviewUserData } from './visual-image-preview'
 import { startFocusVisualIfEnabled, isolateFocusUserData, focusVisualEnabled } from './visual-focus'
+import { startTerminalFocusVisualIfEnabled, isolateTerminalFocusUserData } from './visual-terminal-focus'
 import { startBubbleVisualIfEnabled, isolateBubbleUserData } from './visual-bubble'
 import { startPreviewVisualIfEnabled, isolatePreviewUserData } from './visual-preview'
 import { startSkillCardVisualIfEnabled, isolateSkillCardUserData } from './visual-skill-card'
@@ -132,6 +133,9 @@ isolateImagePreviewUserData()
 // Ticket-98 focus-discipline harness — same throwaway-userData rule (no-op
 // unless PICODE_VISUAL_FOCUS=1).
 isolateFocusUserData()
+// Ticket-105 terminal-focus harness — same throwaway-userData rule (no-op
+// unless PICODE_VISUAL_TERMINAL_FOCUS=1).
+isolateTerminalFocusUserData()
 // Ticket-97 composite-bubble harness — same throwaway-userData rule (no-op
 // unless PICODE_VISUAL_BUBBLE=1).
 isolateBubbleUserData()
@@ -537,6 +541,8 @@ app.whenReady().then(() => {
   startImagePreviewVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-98 focus-discipline harness — same seeding constraint.
   startFocusVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  // Ticket-105 terminal-focus harness — same seeding constraint.
+  startTerminalFocusVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-97 composite-bubble harness — settled-replay injection, same pattern.
   startBubbleVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-88 preview dual-view harness — same seeding constraint (the fake

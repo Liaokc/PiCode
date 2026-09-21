@@ -65,6 +65,7 @@ import { expandVisualEnabled } from './visual-expand'
 import { composerLayoutVisualEnabled } from './visual-composer-layout'
 import { imagePreviewVisualEnabled } from './visual-image-preview'
 import { focusVisualEnabled } from './visual-focus'
+import { terminalFocusVisualEnabled } from './visual-terminal-focus'
 import { skillCardVisualEnabled } from './visual-skill-card'
 import { answerVisualEnabled } from './visual-answer'
 import { workedVisualEnabled } from './visual-worked-container'
@@ -232,6 +233,8 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
   if (imagePreviewVisualEnabled()) return
   // And for the focus-discipline harness (ticket 98).
   if (focusVisualEnabled()) return
+  // And for the terminal-focus harness (ticket 105).
+  if (terminalFocusVisualEnabled()) return
   // And for the command-card harness (ticket 72).
   if (skillCardVisualEnabled()) return
   // And for the answer-split harness (ticket 53).

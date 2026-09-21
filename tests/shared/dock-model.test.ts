@@ -18,7 +18,8 @@ describe('initialDockState', () => {
       panel: 'terminal',
       height: DOCK_DEFAULT_HEIGHT_PX,
       tabOpen: false,
-      gen: 0
+      gen: 0,
+      focusSeq: 0
     })
   })
 
@@ -51,6 +52,81 @@ describe('dockReducer — ⌘J terminal panel', () => {
     expect(state.open).toBe(true)
     expect(state.panel).toBe('terminal')
     expect(state.tabOpen).toBe(true)
+  })
+})
+
+describe('dockReducer — focus request sequence (ticket 105: ⌘J means type into the shell)', () => {
+  it('⌘J opening the terminal bumps the focus request', () => {
+    const opened = dockReducer(initialDockState(), { type: 'toggle-terminal-panel' })
+    expect(opened.focusSeq).toBe(1)
+  })
+
+  it('⌘J closing the dock does not request focus', () => {
+    const opened = dockReducer(initialDockState(), { type: 'toggle-terminal-panel' })
+    const closed = dockReducer(opened, { type: 'toggle-terminal-panel' })
+    expect(closed.open).toBe(false)
+    expect(closed.focusSeq).toBe(opened.focusSeq)
+  })
+
+  it('⌘J reopen/close cycles keep requesting focus (never stale)', () => {
+    let state = dockReducer(initialDockState(), { type: 'toggle-terminal-panel' })
+    for (let expected = 2; expected <= 5; expected++) {
+      state = dockReducer(state, { type: 'toggle-terminal-panel' }) // close
+      state = dockReducer(state, { type: 'toggle-terminal-panel' }) // open
+      expect(state.focusSeq).toBe(expected)
+    }
+  })
+
+  it('⌘J switching back from the bridge requests focus', () => {
+    const atTerminal = dockReducer(initialDockState(), { type: 'toggle-terminal-panel' })
+    let state = dockReducer(atTerminal, { type: 'toggle-bridge-panel' })
+    expect(state.focusSeq).toBe(atTerminal.focusSeq)
+    state = dockReducer(state, { type: 'toggle-terminal-panel' })
+    expect(state.panel).toBe('terminal')
+    expect(state.focusSeq).toBe(atTerminal.focusSeq + 1)
+  })
+
+  it('bridge-only actions never request focus (the terminal must not steal)', () => {
+    let state = dockReducer(initialDockState(), { type: 'toggle-bridge-panel' })
+    expect(state.focusSeq).toBe(0)
+    state = dockReducer(state, { type: 'open-bridge-panel' })
+    expect(state.focusSeq).toBe(0)
+    state = dockReducer(state, { type: 'toggle-bridge-panel' }) // close
+    expect(state.focusSeq).toBe(0)
+  })
+
+  it('hides and tab closes never request focus', () => {
+    const opened = dockReducer(initialDockState(), { type: 'toggle-terminal-panel' })
+    expect(dockReducer(opened, { type: 'hide-dock' }).focusSeq).toBe(opened.focusSeq)
+    expect(dockReducer(opened, { type: 'close-terminal-tab' }).focusSeq).toBe(opened.focusSeq)
+  })
+
+  it('new-session (+) requests focus for the fresh shell when the terminal shows', () => {
+    // Same decision as restart()'s kit.userTerm.focus(): a fresh shell is
+    // spawn-to-type; focus must not stay parked on the + button.
+    const opened = dockReducer(initialDockState(), { type: 'toggle-terminal-panel' })
+    const next = dockReducer(opened, { type: 'new-session' })
+    expect(next.gen).toBe(opened.gen + 1)
+    expect(next.focusSeq).toBe(opened.focusSeq + 1)
+  })
+
+  it('new-session never requests focus for a hidden terminal (bridge showing)', () => {
+    const bridge = dockReducer(
+      dockReducer(initialDockState(), { type: 'toggle-terminal-panel' }),
+      { type: 'toggle-bridge-panel' }
+    )
+    const next = dockReducer(bridge, { type: 'new-session' })
+    expect(next.panel).toBe('bridge')
+    expect(next.focusSeq).toBe(bridge.focusSeq)
+  })
+
+  it('a plain workspace remount (task switch) carries the old sequence: no bump, no steal', () => {
+    // Switching tasks re-keys TerminalWorkspace but dispatches NO dock
+    // action — the state (and its focusSeq) is untouched, so the renderer
+    // must not focus the new shell.
+    const opened = dockReducer(initialDockState(), { type: 'toggle-terminal-panel' })
+    expect(dockForNewTask(opened)).toBe(opened)
+    expect(opened.focusSeq).toBe(1)
   })
 })
 
