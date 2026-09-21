@@ -54,7 +54,10 @@ export default function UsagePage(props: UsagePageProps): JSX.Element {
   const heatCells = snapshot.heatmap.daily
   const trend = trendView(snapshot, trendRange)
   // Zero-token models never reach the donut (ticket 124, R9) — filtered
-  // before the top-slices cut so they cannot occupy a slot either.
+  // before the top-slices cut so they cannot occupy a slot either. The two
+  // charts' measurement windows are deliberately different: the donut
+  // projects ALL-TIME modelTotals (reference-09 semantics) while the trend
+  // above follows the selected Time Range — do not unify them.
   const donut = excludeZeroTokenModels(snapshot.modelTotals).slice(0, DONUT_SLICES)
 
   return (

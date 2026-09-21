@@ -9559,19 +9559,19 @@ export function startSmokeIfEnabled(
     // ---- ticket 65: usage charts — curve clamping + hover white cards ----
     // Runs with PICODE_FAKE_USAGE=1 (run-all stage env + electron-smoke
     // wrapper): the usage IPC serves the deterministic fixture, so the
-    // Usage page renders real charts. Stages:
+    // Usage page renders real charts. Stages, in execution order:
     // ① the settings shell opens onto the Usage page (cards + trend);
     // ② hovering the trend chart pops the ZCode white card (guide line +
     //    intersection dots + date · per-model tokens · total);
     // ③ leaving the chart hides the chrome again;
     // ④ hovering a donut arc pops its card (model · tokens · share);
-    // ⑤ the trend click STILL opens the drill-down (zero click regression);
-    // ⑥ ticket 124 (R9): the strict-zero fixture model is absent from both
+    // ⑤ ticket 124 (R9): the strict-zero fixture model is absent from both
     //    legends while the tiny non-zero one stays (30d default range);
-    // ⑦ ticket 124 (R9): switching to 7d re-projects (x-axis 3 ticks) and
+    // ⑥ ticket 124 (R9): switching to 7d re-projects (x-axis 3 ticks) and
     //    the same legend invariants hold; switching back to 30d restores 7;
+    // ⑦ the trend click STILL opens the drill-down (zero click regression);
     // ⑧ ticket 124 (R15): the drill-down rows carry no Open task button and
-    //    the row layout (head + session/tokens/cost cells) survives.
+    //    the row grid (session + token-value cells per row) survives.
     log('usage_hover_start')
     await withWindow(getWindow, async (win) => {
       const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
@@ -9670,7 +9670,7 @@ export function startSmokeIfEnabled(
       }
       log('usage_donut_hover_ok')
 
-      // ⑥ Ticket 124 (R9): the strict-zero fixture model must be absent from
+      // ⑤ Ticket 124 (R9): the strict-zero fixture model must be absent from
       // the trend legend AND the donut (sectors + legend), while the tiny
       // non-zero model stays in both — and no donut token cell may read a
       // bare '0 tokens' (exact match: '120 tokens' is legit, '0 tokens' is not).
@@ -9696,7 +9696,7 @@ export function startSmokeIfEnabled(
       }
       log('usage_zero_filter_30d_ok')
 
-      // ⑦ Switch to 7 days: the trend re-projects (7 dates → 3 x-ticks) and
+      // ⑥ Switch to 7 days: the trend re-projects (7 dates → 3 x-ticks) and
       // the same legend invariants hold; back to 30 days restores 7 ticks.
       const clickRange = async (label: string): Promise<void> => {
         const clickedSeg = (await js(
@@ -9729,7 +9729,7 @@ export function startSmokeIfEnabled(
       }
       log('usage_zero_filter_back_30d_ok')
 
-      // ⑤ Click regression: the trend click still opens the drill-down.
+      // ⑦ Click regression: the trend click still opens the drill-down.
       const clicked = (await js(
         `(() => {
           const svg = document.querySelector('.trend-svg')
@@ -9750,19 +9750,26 @@ export function startSmokeIfEnabled(
       log('usage_drilldown_click_ok')
 
       // ⑧ Ticket 124 (R15): the drill-down rows are pure display — no Open
-      // task button anywhere, and the row grid (head + session/tokens/cost
-      // cells) still renders.
+      // task button anywhere, and every data row keeps its two value
+      // columns: the session id cell (.dd-session) and the bare token
+      // figure (.dd-tokens — formatTokenCount output like '1.80M', never
+      // the word 'tokens', which only the head row and footer carry).
       const rowsIntact = (await js(
         `(() => {
           const open = document.querySelectorAll('.dd-open')
           const rows = [...document.querySelectorAll('.dd-row')]
           const head = document.querySelector('.dd-row-head')
+          const sessionCells = [...document.querySelectorAll('.dd-row .dd-session')]
+          const tokenCells = [...document.querySelectorAll('.dd-row .dd-tokens')]
           return open.length === 0
             && rows.length > 1
             && head !== null
             && (head.textContent ?? '').includes('Session')
             && (head.textContent ?? '').includes('Tokens')
-            && rows.slice(1).every((row) => (row.textContent ?? '').includes('tokens'))
+            && sessionCells.length === rows.length - 1
+            && sessionCells.every((cell) => (cell.textContent ?? '').trim().length > 0)
+            && tokenCells.length === rows.length - 1
+            && tokenCells.every((cell) => /^[\\d.]+[KMB]?$/.test((cell.textContent ?? '').trim()))
         })()`
       )) as boolean
       if (!rowsIntact) {

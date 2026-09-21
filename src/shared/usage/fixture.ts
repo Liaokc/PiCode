@@ -54,6 +54,15 @@ function foldFiles(opts: Required<Options>): SessionFileUsage[] {
   for (const span of spans) {
     const days = new Map<string, Map<string, DayModelCell>>()
     const modelDisplay = new Map<string, ModelSpelling>()
+    // One registration path for every fixture model (seeded and ticket-124
+    // alike): the chronologically first raw spelling wins — the same fold
+    // rule the aggregation layer applies.
+    const registerSpelling = (model: string, firstTs: number): void => {
+      const key = normalizeModelId(model)
+      const spelling: ModelSpelling = { raw: model, firstTs }
+      const current = modelDisplay.get(key)
+      if (!current || isEarlierSpelling(current, spelling)) modelDisplay.set(key, spelling)
+    }
     const activity = new Map<string, ActivitySpan>()
     for (let back = span.startOffset; back >= 0; back--) {
       const dayMs = todayMs - back * 86_400_000
@@ -79,10 +88,7 @@ function foldFiles(opts: Required<Options>): SessionFileUsage[] {
         byModel.set(model, cell)
         // Fixture models are already distinct under case folding; the display
         // spelling is the raw id itself.
-        const key = normalizeModelId(model)
-        const spelling: ModelSpelling = { raw: model, firstTs: dayMs }
-        const current = modelDisplay.get(key)
-        if (!current || isEarlierSpelling(current, spelling)) modelDisplay.set(key, spelling)
+        registerSpelling(model, dayMs)
       }
       // Ticket 124 fixtures (see FAKE_USAGE_ZERO_MODEL): the zero-token
       // model's failed calls and the tiny model's one real call, on a
@@ -94,12 +100,8 @@ function foldFiles(opts: Required<Options>): SessionFileUsage[] {
           costMicros: Math.round((FAKE_USAGE_TINY_TOKENS / 1_000_000) * 2_500_000),
           events: 1
         })
-        for (const model of [FAKE_USAGE_ZERO_MODEL, FAKE_USAGE_TINY_MODEL]) {
-          const key = normalizeModelId(model)
-          const spelling: ModelSpelling = { raw: model, firstTs: dayMs }
-          const current = modelDisplay.get(key)
-          if (!current || isEarlierSpelling(current, spelling)) modelDisplay.set(key, spelling)
-        }
+        registerSpelling(FAKE_USAGE_ZERO_MODEL, dayMs)
+        registerSpelling(FAKE_USAGE_TINY_MODEL, dayMs)
       }
       days.set(date, byModel)
 
