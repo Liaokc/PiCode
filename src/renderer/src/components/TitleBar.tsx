@@ -2,7 +2,6 @@ import type { Dispatch, JSX } from 'react'
 import type { DockAction } from '../../../shared/dock-model'
 import type { ShellUiAction, ShellUiState } from '../../../shared/layout-model'
 import {
-  GearIcon,
   PanelBottomIcon,
   PanelLeftIcon,
   PanelRightIcon,
@@ -35,9 +34,10 @@ interface TitleBarProps {
  * the shared bottom dock, swaps it in while the other shows, or closes the
  * dock when its own panel is already showing.
  * Tooltip discipline (ticket 22): a control with a shortcut shows ONLY its
- * keycaps — ⌘B sidebar / ⌥⌘B side panel / ⌘J terminal / ⌥⌘J bridge /
- * ⌘, settings (ticket 63: the gear toggles the settings window, open from
- * the workspace and close from it — the ⌘, chord does the same).
+ * keycaps — ⌘B sidebar / ⌥⌘B side panel / ⌘J terminal / ⌥⌘J bridge.
+ * Ticket 127 retired the settings gear (the ticket-63 UI face): the ⌘,
+ * chord and the sidebar's bottom-left gear are the settings entries —
+ * the shortcut and the visible button stay decoupled.
  */
 export default function TitleBar({ ui, dispatch, dispatchDock, subagentRunningCount = 0, onOpenSubagents }: TitleBarProps): JSX.Element {
   const settings = ui.view === 'settings'
@@ -121,18 +121,6 @@ export default function TitleBar({ ui, dispatch, dispatchDock, subagentRunningCo
             </button>
           </Tooltip>
         )}
-        {/* Ticket 63: the settings-window gear — toggle, not just open. */}
-        <Tooltip shortcut="⌘,">
-          <button
-            type="button"
-            className={settings ? 'tb-btn tb-btn-active' : 'tb-btn'}
-            aria-label={settings ? 'Close settings' : 'Open settings'}
-            aria-pressed={settings}
-            onClick={() => dispatch({ type: 'toggle-settings' })}
-          >
-            <GearIcon />
-          </button>
-        </Tooltip>
       </div>
     </header>
   )

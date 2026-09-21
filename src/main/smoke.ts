@@ -9245,6 +9245,9 @@ export function startSmokeIfEnabled(
     // writes the pi-config-format override into the SANDBOX settings.json,
     // and deleting the link unlinks ONLY the link — the real directory it
     // points at survives byte-for-byte (the ticket's data-safety line).
+    // Ticket 127 adds the settings-entry dedupe legs: no gear button in
+    // the titlebar (either view), the sidebar gear opens, ⌘, closes and
+    // reopens, and Escape closes after the sidebar-gear open too.
     log('settings_skills_start')
     {
       const sandboxAgent = process.env['PICODE_PI_AGENT_DIR']
@@ -9281,6 +9284,17 @@ export function startSmokeIfEnabled(
         await withWindow(getWindow, async (win) => {
           const js = (script: string) => win.webContents.executeJavaScript(script)
 
+          // ⓪ (ticket 127): settings-entry dedupe — the titlebar carries
+          // no gear button in the workspace view (the sidebar gear + ⌘,
+          // are the surviving entries).
+          if (
+            (await js(
+              `document.querySelector('.titlebar button[aria-label="Open settings"], .titlebar button[aria-label="Close settings"]') !== null`
+            ).catch(() => false))
+          ) {
+            fail('ticket-127 stage: the workspace titlebar still carries a settings gear')
+          }
+
           // ① ⌘, opens the settings window (physical Comma chord → the
           // keymap table → the shell reducer).
           await js(`(() => {
@@ -9295,20 +9309,27 @@ export function startSmokeIfEnabled(
           if (!opened) fail('ticket-63 stage: ⌘, never opened the settings window')
           log('settings_open_cmdcomma_ok')
 
-          // ② The titlebar gear toggles it closed again (and ⌘, reopens).
-          if (!(await js(`(() => {
-            const gear = document.querySelector('button[aria-label="Close settings"]')
-            if (!(gear instanceof HTMLElement)) return false
-            gear.click()
-            return true
-          })()`).catch(() => false))) fail('ticket-63 stage: the titlebar gear is missing in the settings view')
-          let gearClosed = false
-          for (let waited = 0; waited < 5_000 && !gearClosed; waited += 100) {
-            gearClosed = (await js(`document.querySelector('.settings-shell') === null`).catch(() => false)) as boolean
-            if (!gearClosed) await new Promise((r) => setTimeout(r, 100))
+          // ② (ticket 127) The TitleBar gear is retired — no gear button
+          // in the settings view either — and ⌘, itself toggles the window
+          // closed (then reopens it below).
+          if (
+            (await js(
+              `document.querySelector('.titlebar button[aria-label="Close settings"], .titlebar button[aria-label="Open settings"]') !== null`
+            ).catch(() => false))
+          ) {
+            fail('ticket-127 stage: the settings view titlebar still carries a settings gear')
           }
-          if (!gearClosed) fail('ticket-63 stage: the gear never closed the settings window')
-          log('settings_gear_toggle_ok')
+          await js(`(() => {
+            window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Comma', key: ',', metaKey: true, cancelable: true }))
+            return true
+          })()`)
+          let cmdClosed = false
+          for (let waited = 0; waited < 5_000 && !cmdClosed; waited += 100) {
+            cmdClosed = (await js(`document.querySelector('.settings-shell') === null`).catch(() => false)) as boolean
+            if (!cmdClosed) await new Promise((r) => setTimeout(r, 100))
+          }
+          if (!cmdClosed) fail('ticket-63 stage: ⌘, never closed the settings window')
+          log('settings_close_cmdcomma_ok')
           await js(`(() => {
             window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Comma', key: ',', metaKey: true, cancelable: true }))
             return true
@@ -9479,6 +9500,37 @@ export function startSmokeIfEnabled(
           }
           if (!escClosed) fail('ticket-63 stage: Escape never closed the settings window')
           log('settings_esc_close_ok')
+
+          // ⑦b (ticket 127): the surviving entry — the sidebar's
+          // bottom-left gear opens the settings window (the sidebar may
+          // be closed by earlier stages; reopen it through its titlebar
+          // toggle first), and Escape closes it again.
+          await js(`(() => {
+            if (document.querySelector('.sb-account-bar') !== null) return true
+            const toggle = document.querySelector('button[aria-label="Show sidebar"]')
+            if (toggle instanceof HTMLElement) toggle.click()
+            return true
+          })()`)
+          if (!(await waitForProbe(win, `document.querySelector('button[aria-label="Settings"]') !== null`, 5_000))) {
+            fail('ticket-127 stage: the sidebar settings gear is missing')
+          }
+          await js(`(() => {
+            const gear = document.querySelector('button[aria-label="Settings"]')
+            if (gear instanceof HTMLElement) gear.click()
+            return true
+          })()`)
+          if (!(await waitForProbe(win, `document.querySelector('.settings-shell') !== null`, 5_000))) {
+            fail('ticket-127 stage: the sidebar gear never opened the settings window')
+          }
+          log('settings_open_sidebar_gear_ok')
+          await js(`(() => {
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+            return true
+          })()`)
+          if (!(await waitForProbe(win, `document.querySelector('.settings-shell') === null`, 5_000))) {
+            fail('ticket-127 stage: Escape never closed the settings window after the sidebar-gear open')
+          }
+          log('settings_sidebar_gear_esc_ok')
         })
       } finally {
         // Sandbox hygiene: the seeded skills + settings live ONLY in the

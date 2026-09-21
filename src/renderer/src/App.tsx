@@ -1094,8 +1094,9 @@ export default function App(): JSX.Element {
    * composer's draft first. Closing actions (back-to-workspace, and the
    * toggle's close leg) park stale-idempotently: no composer is mounted in
    * the settings shell, and a park only ever rewrites the owner's own
-   * slot with what it last published. The TitleBar gear and the sidebar
-   * button both route through here. */
+   * slot with what it last published. Ticket 127 retired the TitleBar
+   * gear, so the sidebar button is the visible route through here; the
+   * ⌘, chord parks in its own keydown handler before dispatching. */
   const dispatchShellParking = useCallback(
     (action: ShellUiAction): void => {
       if (action.type === 'open-settings' || action.type === 'toggle-settings' || action.type === 'back-to-workspace') {
