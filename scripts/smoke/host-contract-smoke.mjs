@@ -97,6 +97,25 @@
  *   stop control channel accepted) + the control/stop-requests request file
  *   asserted on disk → shutdown → exit 0.
  *
+ *   Round L (ticket 112报备: the pi 0.86 session-format compatibility smoke)
+ *   — the seed IS a TUI-built session: a committed copy of the real session
+ *   file the pi 0.86.1 TUI wrote on this machine (tests/shared/fixtures/
+ *   tui-086-session.jsonl — long strings capped, structure/id linkage byte-
+ *   real; it carries the before_agent_start persistence as a role:system
+ *   message with prompt sections + toolsAdded, custom_message notices, a
+ *   real subagent toolResult, plus appended documented t112-bug1/usg1/fut1
+ *   lines: the custom pi.bug-report record, a cache-warm usage entry, and a
+ *   hypothetical future entry type). Zero model calls; expectations derived
+ *   from an independent raw-JSON census of the fixture, never from the
+ *   projection under test:
+ *   resume → session_created(resumed) → history_loaded (every census user
+ *   id replays in file order; every toolCall replays; nothing outside the
+ *   message universe leaks in; the real subagent run identity projects) →
+ *   session_tree (every census entry still a node; 0.86/unknown types
+ *   degraded to tolerated 'other'; leaf on the last entry or the resume's
+ *   bookkeeping tail) → shutdown → the file is lossless (every census id
+ *   still on disk, message count unchanged, no branch_summary) → exit 0.
+ *
  * Usage: npm run build && node scripts/smoke/host-contract-smoke.mjs
  * Expects working model auth in ~/.pi/agent (same as the pi TUI). Session
  * files land in an isolated throwaway store (PICODE_SESSION_DIR, ticket 13)
@@ -140,6 +159,12 @@ let subagent90TempRoot = ''
 let subagent99File = ''
 let subagent101File = ''
 let subagent101RunDir = ''
+// Ticket 112 round L: the seeded pi-0.86 session-format fixture (a byte
+// copy of tests/shared/fixtures/tui-086-session.jsonl) + its independent
+// raw-JSON census (expectations derived from the file, not the projection).
+let session086File = ''
+let census086 = null
+let fixture086 = ''
 const subagent101TempRoot = path.join(tmpdir(), 'picode-smoke-subagent101-root')
 
 // Ticket 96 round I: a workspace whose seeded .mcp.json drives the ADAPTER
@@ -720,6 +745,69 @@ async function onHostExit(exited, code) {
     if (code !== 0) fail(`round K exit should be clean 0, got ${code}`)
     rmSync(subagent101TempRoot, { recursive: true, force: true })
     delete process.env.PI_SUBAGENTS_TEMP_ROOT
+    // Ticket 112报备: round L — the pi 0.86 session-format compatibility
+    // smoke, zero model calls. The seed IS a TUI-built session: a byte copy
+    // of the committed fixture extracted from the real session file the pi
+    // 0.86.1 TUI wrote on this machine (tests/shared/fixtures/
+    // tui-086-session.jsonl — long strings capped, structure/id linkage
+    // byte-real; before_agent_start persistence, custom_message notices, a
+    // real subagent toolResult, plus the appended documented t112-bug1/
+    // t112-usg1/t112-fut1 lines). Expectations derive from an independent
+    // raw-JSON census of the fixture, never from the projection under test.
+    const fixture086Path = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'tests', 'shared', 'fixtures', 'tui-086-session.jsonl')
+    fixture086 = readFileSync(fixture086Path, 'utf8')
+    census086 = (() => {
+      const entries = []
+      for (const line of fixture086.split('\n')) {
+        if (line.trim() === '') continue
+        const raw = JSON.parse(line)
+        if (raw.type === 'session') continue
+        const content = raw.message?.content
+        const toolCallIds = Array.isArray(content)
+          ? content.filter((p) => p?.type === 'toolCall' && typeof p.id === 'string').map((p) => p.id)
+          : []
+        const runId = raw.message?.role === 'toolResult' && typeof raw.message?.details?.runId === 'string'
+          ? raw.message.details.runId
+          : null
+        entries.push({ id: raw.id, type: raw.type, role: raw.message?.role, toolCallIds, runId })
+      }
+      return {
+        entries,
+        users: entries.filter((e) => e.type === 'message' && e.role === 'user').map((e) => e.id),
+        toolCallIds: entries.flatMap((e) => e.toolCallIds),
+        messageCount: entries.filter((e) => e.type === 'message').length,
+        subagentRunId: entries.find((e) => e.runId !== null)?.runId ?? null,
+        lastId: entries[entries.length - 1].id
+      }
+    })()
+    const seedDir086 = path.join(tmpdir(), 'picode-smoke-seed086-workspace')
+    mkdirSync(seedDir086, { recursive: true })
+    session086File = path.join(process.env.PICODE_SESSION_DIR, 'tui086-seeded.jsonl')
+    writeFileSync(session086File, fixture086)
+    console.log('SMOKE round K shutdown ok — starting round L (ticket-112 pi-0.86 session-format compatibility, TUI-built fixture: ' + census086.entries.length + ' entries)')
+    step = 'L session_created'
+    bumpTimeout()
+    child = forkHost([seedDir086, session086File], onEvent)
+    return
+  }
+  if (step === 'L shutdown') {
+    if (code !== 0) fail(`round L exit should be clean 0, got ${code}`)
+    // Lossless closeout: every seeded entry id — pre-0.86 messages AND
+    // 0.86/unknown types — still on disk after the open/replay cycle; no
+    // new message entries were appended by the resume itself (its own SDK
+    // bookkeeping — e.g. thinking_level_change — is the only legal tail);
+    // no branch_summary exists.
+    const after086 = readFileSync(session086File, 'utf8').split('\n').filter((l) => l.trim() !== '')
+    const censusLines086 = fixture086.split('\n').filter((l) => l.trim() !== '')
+    for (const line of censusLines086) {
+      if (!after086.includes(line)) fail(`the 0.86 session open lost or mutated a seeded line: ${line.slice(0, 120)}…`)
+    }
+    const messageLines086 = after086.filter((l) => l.includes('"type":"message"'))
+    if (messageLines086.length !== census086.messageCount) {
+      fail(`the 0.86 open must not append message entries (expected ${census086.messageCount}, got ${messageLines086.length})`)
+    }
+    if (after086.some((l) => l.includes('"branch_summary"'))) fail('the 0.86 session open must not append branch summaries')
+    console.log(`SMOKE round L shutdown ok — pi-0.86 session lossless on disk (${censusLines086.length}/${censusLines086.length} seeded lines byte-identical, no appended messages, no branch_summary)`)
     await finishClean(code)
     return
   }
@@ -742,11 +830,17 @@ async function finishClean(code) {
   // — the pure builder turns the jsonl the SDK actually wrote into
   // per-call payloads (entry = one model call, usage columns per ADR-0002).
   await verifySessionTraceContract()
-  console.log('SMOKE PASS host contract smoke complete (chat loop + tool round + resume/rename/tree/fork + candidate states + ticket-80 access sentinel)')
+  console.log('SMOKE PASS host contract smoke complete (chat loop + tool round + resume/rename/tree/fork + candidate states + ticket-80 access sentinel + ticket-112 pi-0.86 session compat)')
   process.exit(0)
 }
 
 function onEvent(event) {
+  // Activity-aware step budget: the timer re-arms on EVERY host event, so
+  // the 90s kill means "90s of event silence" (a hang), never "a healthy
+  // stream that ran long". Model-latency eras (0.86.1 included) stream
+  // multi-delivery queue steps past an absolute budget while perfectly
+  // alive — deltas visible in the log at kill time.
+  bumpTimeout()
   console.log(`[contract] ${JSON.stringify(event).slice(0, 200)}`)
   const fatal = new Set(['session_error', 'turn_error', 'session_command_error'])
   if (fatal.has(event.type)) fail(`${event.type}: ${event.message}`)
@@ -1766,6 +1860,84 @@ function onEvent(event) {
       if (request.type !== 'stop') fail(`the control-channel request must be a stop, got ${JSON.stringify(request)}`)
       console.log('SMOKE ticket-101 subagent_stop ok (ok=true state=stopping; stop request file in the control inbox)')
       step = 'K shutdown'
+      child.send({ type: 'shutdown' })
+      return
+    }
+
+    // ---------- Round L: ticket 112报备 — the pi 0.86 session-format compat ----------
+    case 'L session_created': {
+      if (event.type !== 'session_created') return
+      if (!event.resumed) fail('round L must open the seeded file as a resume')
+      if (event.sessionFile !== session086File) fail(`round L resumed the wrong file: ${event.sessionFile}`)
+      console.log('SMOKE round L session ok (seeded pi-0.86 fixture opened by the real SDK 0.86.1 host)')
+      step = 'L history'
+      return
+    }
+    case 'L history': {
+      if (event.type !== 'history_loaded') return
+      const items = event.items
+      if (!Array.isArray(items)) fail('round L replay must be an array')
+      const itemIds = new Set(items.map((item) => item.id))
+      // Every census user message replays, in file order.
+      const replayedUsers = items.filter((item) => item.role === 'user').map((item) => item.id)
+      if (JSON.stringify(replayedUsers) !== JSON.stringify(census086.users)) {
+        fail(`round L user replay must equal the census users in file order: ${JSON.stringify(replayedUsers)} vs ${JSON.stringify(census086.users)}`)
+      }
+      // Every census toolCall replays as a tool item.
+      for (const callId of census086.toolCallIds) {
+        if (!itemIds.has(callId)) fail(`round L lost the tool item for census toolCall ${callId}`)
+      }
+      // Nothing outside the message universe (system/custom_message/custom/
+      // usage/future) leaks into the replay.
+      const nonReplay = new Set(census086.entries.filter((e) => e.type !== 'message' || e.role === 'system').map((e) => e.id))
+      for (const item of items) {
+        if (nonReplay.has(item.id)) fail(`round L replay leaked a non-message entry: ${item.id}`)
+      }
+      // The real subagent toolResult projects its run identity through the
+      // JSON details (the 0.86.0 tightening must not break the projection).
+      if (census086.subagentRunId !== null) {
+        const withRunId = items.find((item) => item.role === 'tool' && item.subagent?.runId === census086.subagentRunId)
+        if (!withRunId) fail(`round L lost the subagent run identity (${census086.subagentRunId}) on the replay`)
+      }
+      console.log(`SMOKE round L replay ok — ${items.length} items vs census ${census086.entries.length} entries (users ${census086.users.length}, toolCalls ${census086.toolCallIds.length}); 0.86/unknown types stayed out, nothing lost`)
+      step = 'L tree'
+      child.send({ type: 'request_tree' })
+      return
+    }
+    case 'L tree': {
+      if (event.type !== 'session_tree') return
+      const nodesL = []
+      const walkL = (list) => {
+        for (const node of list) {
+          nodesL.push(node)
+          walkL(node.children ?? [])
+        }
+      }
+      walkL(event.tree.nodes ?? [])
+      const kindL = new Map(nodesL.map((node) => [node.id, node.kind]))
+      const seededL = new Set(census086.entries.map((e) => e.id))
+      // Every census entry must survive as a node — the 0.86/unknown types
+      // degrade to 'other', the message kinds stay intact.
+      for (const entry of census086.entries) {
+        if (!kindL.has(entry.id)) fail(`the 0.86 session open lost tree node ${entry.id}`)
+        if (entry.type !== 'message' || entry.role === 'system') {
+          if (kindL.get(entry.id) !== 'other') fail(`entry ${entry.id} (${entry.type}) must degrade to an 'other' node, got ${kindL.get(entry.id)}`)
+        } else if (entry.role === 'user' && kindL.get(entry.id) !== 'user') {
+          fail(`census user ${entry.id} must stay a user node, got ${kindL.get(entry.id)}`)
+        }
+      }
+      // The only legal extra node is the resume's own bookkeeping tail
+      // (e.g. the thinking_level_change the host applies on open).
+      const extraL = nodesL.filter((node) => !seededL.has(node.id))
+      for (const node of extraL) {
+        if (node.kind !== 'other') fail(`unexpected non-bookkeeping extra node ${node.id} kind ${node.kind}`)
+      }
+      if (extraL.length > 1) fail(`more than one bookkeeping tail node: ${JSON.stringify(extraL.map((n) => n.id))}`)
+      if (event.tree?.leafId !== census086.lastId && !(extraL.length === 1 && extraL[0].id === event.tree?.leafId)) {
+        fail(`the leaf must sit on the last entry (seeded or the bookkeeping tail), got ${event.tree?.leafId}`)
+      }
+      console.log(`SMOKE round L tree ok — ${seededL.size} seeded nodes + ${extraL.length} bookkeeping tail, 0.86/unknown types degraded to other, leaf on the last entry`)
+      step = 'L shutdown'
       child.send({ type: 'shutdown' })
       return
     }
