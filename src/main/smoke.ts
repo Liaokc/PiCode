@@ -13524,8 +13524,10 @@ export function startSmokeIfEnabled(
       const tcA = 'smoke-108-a'
       const tcB = 'smoke-108-b'
       const rowSel = (id: string): string => `.sb-task[data-file$="${id}.jsonl"]`
+      const present = (sel: string): string => `document.querySelector('${sel}') !== null`
       const pinnedRowSel = (id: string): string => `.sb-scroll > .sb-task[data-file$="${id}.jsonl"]`
-      const activeRowProbe = (id: string): string => `document.querySelector('.sb-task-active[data-file$="${id}.jsonl"]') !== null`
+      const activeRowProbe = (id: string): string =>
+        present(`.sb-task-active[data-file$="${id}.jsonl"]`)
       const scoped = (sessionId: string, event: SessionScopedEvent): HostToParent => ({ type: 'session_event', sessionId, event })
       try {
         for (const seed of [
@@ -13554,7 +13556,7 @@ export function startSmokeIfEnabled(
             await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', metaKey: true, bubbles: true })); true`)
             await waitForProbe(win, `document.querySelector('.sidebar') !== null`, 5_000)
           }
-          if (!(await waitForProbe(win, `${rowSel(tcA)} !== null && ${rowSel(tcB)} !== null`, 30_000))) {
+          if (!(await waitForProbe(win, `${present(rowSel(tcA))} && ${present(rowSel(tcB))}`, 30_000))) {
             fail('ticket-108 stage: the seeded session rows never reached the sidebar')
           }
           log('timer_continuity_rows_ok')
@@ -13582,6 +13584,10 @@ export function startSmokeIfEnabled(
           )
           if (!liveStarted) fail('ticket-108 stage: the live turn never rendered its Working · Ns row')
           log('timer_continuity_live_run_ok')
+          // Let the derived count earn a real second before the first read
+          // (the display clamps sub-second spans up to 1s — a boundary the
+          // growth math below must not stand on).
+          await new Promise((r) => setTimeout(r, 1500))
 
           const readSeconds = `parseInt(document.querySelector('.turn-container-duration')?.textContent ?? '0', 10) || 0`
           let lastReading = (await js(readSeconds)) as number
@@ -13599,7 +13605,7 @@ export function startSmokeIfEnabled(
             if (!clicked) fail(`ticket-108 stage: the pin button of ${id} never appeared to click`)
             const moved = await waitForProbe(
               win,
-              pinned ? `${pinnedRowSel(id)} !== null` : `${pinnedRowSel(id)} === null && ${rowSel(id)} !== null`,
+              pinned ? present(pinnedRowSel(id)) : `${present(pinnedRowSel(id))} === false && ${present(rowSel(id))}`,
               5_000
             )
             if (!moved) fail(`ticket-108 stage: ${id} never ${pinned ? 'moved into' : 'left'} the pinned section`)
@@ -13615,8 +13621,9 @@ export function startSmokeIfEnabled(
             if (!clickedAway) fail(`ticket-108 stage: leg ${leg} — the away row never appeared to click`)
             await waitForProbe(win, activeRowProbe(awayId), 5_000)
             // Hold the view on the other session so the switch-away moment
-            // is real; keep A's stream folding in the background.
-            await new Promise((r) => setTimeout(r, 1300))
+            // is real (and the derived floor genuinely advances past the
+            // pre-switch reading); keep A's stream folding in the background.
+            await new Promise((r) => setTimeout(r, 2300))
             if (awayMarker !== null) emitContractEvent(scoped(tcA, { type: 'text_delta', delta: awayMarker }))
             const back = await clickSelector(win, rowSel(tcA))
             if (!back) fail(`ticket-108 stage: leg ${leg} — the return row never appeared to click`)
@@ -13640,7 +13647,7 @@ export function startSmokeIfEnabled(
           // derived count must match now − injectedAt, not a local tick.
           emitContractEvent(scoped(tcB, { type: 'session_created', sessionId: tcB, cwd: tc108Dir, model: 'claude-opus-4-5' }))
           await waitForProbe(win, activeRowProbe(tcB), 10_000)
-          await new Promise((r) => setTimeout(r, 1300))
+          await new Promise((r) => setTimeout(r, 2300))
           emitContractEvent(scoped(tcA, { type: 'text_delta', delta: 'alpha-108 stream block two' }))
           const back1 = await clickSelector(win, rowSel(tcA))
           if (!back1) fail('ticket-108 stage: leg 0 — the return row never appeared to click')
