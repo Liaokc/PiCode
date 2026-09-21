@@ -1,25 +1,31 @@
-# 134: Finder/Dock 启动也能 spawn subagent——主进程启动时合成子进程 PATH
+# 134: Finder/Dock 启动也能 spawn subagent——PATH 合成 + 捆绑 SDK 对齐（本批最后实现）
 
-**What to build:** 从 **Finder/Dock 正常启动**的 PiCode 里，会话内 spawn pi-subagent 也能工作——修复方式 = 主进程启动时**合成子进程 spawn 用的 PATH**：①启动早期（缓存一次，带超时与失败降级）经 `$SHELL -lc 'echo $PATH'` 捕获用户登录 shell 的 PATH 快照；②叠加静态探测的常见 node 安装点（`~/.nvm/versions/node/*/bin`（当前版本）、`/usr/local/bin`、`/opt/homebrew/bin`、`~/.pi/agent/bin`）；③合成结果注入所有需要 PATH 的子 spawn 环境（subagent 子进程；会话 host 如涉及同样注入）。实现候选①②可并用，落点与缓存失效策略票内裁量；**LSEnvironment 方案否决**（PATH 机器相关，不能烧进通用 bundle）。
+**What to build:** 从 Finder/Dock 正常启动的 PiCode 里，会话内 spawn pi-subagent 能工作。**双根因子，双修复**——全部落在 `~/PiCode` 源码、随 v1.8.0 上线（**不碰已安装/已发版的 app bundle**）：
 
-**背景（取证）：** 操作者实测（2026-09-22 自治批次空跑发现）：Finder/Dock 启动的 PiCode 内会话 spawn subagent 失败；解决办法 = 终端带 PATH 启动 `PATH="$HOME/.nvm/versions/node/v22.19.0/bin:$PATH" open -a PiCode`。根因方向 = launchd 启动的 GUI app 不继承交互 shell 的 PATH（只有系统默认 `/usr/bin:/bin:/usr/sbin:/sbin` 等），操作者的 node/pi 在 nvm 版本目录——spawn 链找不到可执行文件；终端 `open` 继承当前 shell 环境所以带前缀就通。
+①**PATH 合成**：主进程启动早期（缓存一次、超时与失败降级）合成子进程 spawn 用的 PATH——`$SHELL -lc 'echo $PATH'` 登录 shell 快照 + 静态探测常见 node 安装点（`~/.nvm/versions/node/*/bin` 当前版本、`/usr/local/bin`、`/opt/homebrew/bin`、`~/.pi/agent/bin`），注入所有需要 PATH 的子 spawn（subagent 子进程；会话 host 如涉及同样注入）。**LSEnvironment 否决**（PATH 机器相关，不能烧进通用 bundle）；探测不阻塞窗口就绪（异步初始化，票内裁量）。
 
-**⚠️ 复现纪律（防误判，操作者当前实例即 workaround 启动）：** 本票实施会话大概率跑在 workaround 启动的实例里——**当前会话 spawn 可用是预期现象，绝不构成「无法复现/无需修复」的证据**。复现与验收的唯一合法条件 = **净化环境启动 app 实例**（`env -i HOME=… PATH=/usr/bin:/bin:/usr/sbin:/sbin` 直启二进制或等效手段，模拟 launchd 条件）；workaround 启动 = 对照组。同一机器两种启动条件一好一坏 = 现成的 A/B 复现材料，也正是根因在启动环境 PATH（而非 spawn 机制本身）的对照证据。**精确断点（哪个 spawn 缺哪个可执行）必须在净化环境实例里插桩定位**（不臆测纪律）。
+②**捆绑 SDK 对齐核验**：spawn 链依赖捆绑 SDK 的能力面——实测瓶颈 = app 捆绑 pi-ai 0.85.1 **没有 transcript 工具导出（0.86.1 才有）**，pi-subagents 0.70.1 的 review.js 需要它。修复 = 确保 app 实际捆绑的 SDK/pi-ai 为 0.86.1（package.json pin 已 0.86.1；npm install 同步 node_modules/lock；打包链核验产物内版本）+ 启动期版本自检（票内裁量：SDK < 0.86.1 与 pi-subagents ≥ 0.70 组合时如实提示，不静默失败）。
 
-**注意：** 修复对新启动的 app 实例生效（运行中实例不会热更）；v1.8 自治批次运行本身依赖操作者的启动 workaround，本票修复的是后续所有正常启动。
+**测试方法（操作者指定）：** 用「**从 Finder/Dock 启动 PiCode → 其中的会话 spawn pi-subagent**」作为测试全流程：①**定位** = Finder/Dock（或净化环境等效：`env -i HOME=… PATH=/usr/bin:/bin:/usr/sbin:/sbin` 直启二进制）启动 → 应用内会话 spawn 失败现场 + 插桩两根因子分别实证（PATH 断点 + SDK 导出缺失断点）；②**修复后同条件复测** → spawn 成功。可自动化部分进 electron smoke（sanitized-env 启动 + 应用内 spawn 腿）；Finder/Dock 实启最终确认留操作者（验收记录模板：启动方式 / spawn 结果 / 版本事实三要素）。
 
-**Blocked by:** 无（独立）.
+**实现时点：本批最后实现（116–133 全部合并后）**——验证要带着批次全部修复启动 app；批次运行自身（Pi Agent 主会话）不依赖本票。
+
+**背景（取证）：** 两轮自治批次空跑实证。第一轮定位 PATH 因子（GUI 启动不继承 shell PATH；workaround = 终端带 nvm PATH 启动即通）。第二轮（PATH workaround 已生效仍失败）深挖出第二因子——**app 捆绑 pi-ai 0.85.1 缺 transcript 工具导出，pi-subagents 0.70.1 的 review.js 需要它（0.86.1 才有）**。node_modules 实装 0.85.1 = 批次开场已记录的「npm install 未跑」缺口——本票把「捆绑版本正确」从环境前提升格为本票验收项。操作者原话：「不是已经发版的代码，而是 ~/PiCode 内部的相关代码，这个修复在 v1.8.0 上线」。
+
+**Blocked by:** 116–133 全部合并（本批最后实现）.
 
 **Status:** ready-for-agent
 
 ## Acceptance
 
-- [ ] **插桩定位 = 第一验收项，且复现必须用净化环境**：以 `env -i` 最小 PATH 启动 app 实例（dev 或 packaged，等效 launchd 条件）复现 spawn 失败并留档精确断点；**当前 workaround 实例 spawn 可用 = 预期现象，不得据此判定无法复现**
-- [ ] Seam-1：PATH 合成纯函数表驱动（登录 shell 快照 / 静态探测点 / 去重与顺序 / shell 探测失败降级 / 已有良好 PATH 时不劣化）
-- [ ] 手工验收记录（两条件对照）：①**净化环境启动（不设 PATH）→ 修复后应用内会话 spawn subagent 成功**；②workaround 启动路径不回归（已有良好 PATH 时不劣化）；重启前不生效的边界在 Comments 记录
-- [ ] Electron 主进程启动延迟无感（PATH 探测不阻塞窗口就绪——超时与异步初始化票内裁量）
+- [ ] **插桩定位 = 第一验收项，双因子分别实证**：Finder/Dock（或净化环境等效）启动的实例里——PATH 断点（哪个进程找哪个可执行失败）+ SDK 导出缺失断点（pi-subagents review.js 需要的导出在捆绑版本缺席）留档
+- [ ] Seam-1：PATH 合成纯函数表驱动（登录 shell 快照 / 静态探测点 / 去重与顺序 / 失败降级 / 已有良好 PATH 时不劣化）
+- [ ] electron smoke：sanitized-env 启动 + 应用内 spawn subagent 成功腿；正常 PATH 启动不回归
+- [ ] 捆绑版本核验：dev node_modules 与打包产物内 SDK/pi-ai = 0.86.1（断言或探针）；启动自检如实提示（若做，不静默失败）
+- [ ] 手工验收记录模板：操作者 Finder/Dock 实启 → 应用内 spawn 成功（修复以新启动实例为限——运行中实例不热更，边界记 Comments）
 - [ ] vitest / typecheck 全绿；跑 dev app / smoke 前 `ps` 自查（dev-app serialization）
 
 ## Comments
 
-- 2026-09-22 (requirements intake，Round 6)：P28 定稿为 R21（纯文本票）。操作者原话：「让我从 Finder/Dock 启动 PiCode 也能让其中的会话 spawn pi-subagent」。v1.8 自治批次空跑实证 spawn 失败 + workaround 有效；根因精确断点留票内插桩。
+- 2026-09-22 (requirements intake，Round 6)：P28 定稿 R21（PATH 因子，单因子口径）。
+- 2026-09-22 (Round 7 修订)：第二空跑（workaround 已生效仍失败）实证第二根因子——捆绑 pi-ai 0.85.1 缺 transcript 导出、pi-subagents 0.70.1 review.js 需要。操作者裁决三项：①134 移至**批次最后实现**；②测试 = Finder/Dock 实启 + 应用内 spawn 全流程；③修复落 `~/PiCode` 源码、随 v1.8.0 上线（不碰已发版 bundle）。原文保留第一轮口径备查：PATH 合成 + LSEnvironment 否决 + 复现纪律（workaround 实例 spawn 可用是预期现象）——全部继续有效。

@@ -132,7 +132,8 @@ Status: ready-for-spec
 - **Round 4（Q1–Q9 + P26）**：九问裁决（Q1 维持 2 tick / Q2 确认 / Q3=A / Q4=B / Q5=B / Q6 无立即钮 / Q7 推荐 / Q8 确认 / Q9 报备）；P26 空闲输入移动转录报入（操作者附机制推测：「自动校准到会话底部、Copy/Fork 行可能不算底部」）。
 - **Round 5（P27 + P2 复核）**：操作者复核 P2 是否已考虑（答：R2/票 120 在案）+ 用户泡文本不可选报入——根因实锤（body 禁选 × 助手放开的对称缺口），机制唯一免问定稿。
 - **Round 6（P28，自治空跑发现）**：操作者按主 Agent prompt 首跑批次，PiCode 会话内 spawn subagent 失败（GUI 启动 PATH 缺失）； workaround 实证 = 带 nvm PATH 启动。操作者裁决：立票修复（Finder/Dock 启动也能 spawn）+ 复原空跑全部改动 + 修订批次文档与主 Agent prompt 后重跑。定稿 R21（票 134）。
-- **至此前沿树空**：28 条痛点 → 21 个 R 簇 + 1 项现状确认 × 全部边界均有裁决。
+- **Round 7（P28 修订，第二次空跑实证双根因子）**：PATH workaround 已生效后 spawn 仍失败——深挖出第二根因子：**app 捆绑 pi-ai 0.85.1 无 transcript 工具导出（0.86.1 才有），pi-subagents 0.70.1 的 review.js 需要它**。操作者裁决三项：①134 移至**批次最后实现**（116–133 全合并后）；②测试 = Finder/Dock 实启 + 应用内 spawn 全流程；③修复落 `~/PiCode` 源码、随 v1.8.0 上线（不碰已发版 bundle）。另：执行环境改定 = **主 Agent 在 Pi Agent 新会话运行（不在 PiCode 内）**。
+- **至此前沿树空**：28 条痛点 → 21 个 R 簇（R21 双因子修订）+ 1 项现状确认 × 全部边界均有裁决。
 
 ## 归类记录
 

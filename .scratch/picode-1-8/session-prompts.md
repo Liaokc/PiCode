@@ -7,7 +7,7 @@
 > 证据帧：`.scratch/compare/pi18-*`（操作者待复制——会话内贴图无法落盘）。
 > 术语新增（队列卡 → 票 128 rider）与修订（导航轨锚定规则 → 票 120；Manual 排序沉底 → 票 123；技能卡既有文本共存 → 票 118）随票入 CONTEXT.md。
 > 本批 **1 个 additive 契约/投影增量**：128 `reorder_queue_entry`——**实施时报备入 host-contract smoke**。
-> 开工硬前提：①**node_modules SDK 0.85.1 → pin 0.86.1 未同步**——跑 dev app / smoke 前必须 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm install`；②**PiCode 必须以带 nvm PATH 的方式启动**（Finder/Dock 直启会话无法 spawn subagent——票 134 修复前的批次运行前提）：`PATH="$HOME/.nvm/versions/node/v22.19.0/bin:$PATH" open -a PiCode`。
+> 开工硬前提：①**node_modules SDK 0.85.1 → pin 0.86.1 未同步**——跑 dev app / smoke 前必须 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm install`（捆绑 pi-ai 0.85.1 缺 transcript 导出、pi-subagents 0.70.1 review.js 需要 0.86.1——票 134 第二根因子）；②**主 Agent 会话跑在 Pi Agent（终端），不在 PiCode 内**——PiCode 的 spawn 问题由票 134 修复（Finder/Dock 实启 + 应用内 spawn 全流程测试，随 v1.8.0 上线）。
 
 ## 开工前一次性准备（操作者）
 
@@ -49,11 +49,11 @@ cd ~/PiCode && bash scripts/merge-ticket.sh <NN>
 | 波 | 票 | 说明 |
 |---|---|---|
 | W1 | 116 → 117 → 118（A 群强串行）· 120 · 121 · 123 · 126 · 127 | A 群 = composer 群逐票串行；W1 其余独立并行 |
-| W2 | 129 · 130 · 133 · 125 · 134 | 独立（134 = spawn 启动修复——对后续批次启动生效，本批运行仍靠操作者启动 workaround） |
+| W2 | 129 · 130 · 133 · 125 | 独立 |
 | W3 | 122（Blocked by 121）· 124 | 菜单几何在 provider 口径之后 |
 | W4 | 119（Blocked by 117）· 128 | 空闲转录门在 composer 滚动族后；queue 重构独立大票 |
 | W5 | 131（History 复现定位）· 132（⌘J 复现定位） | 两张定位票随时可插空（与 dev-app serialization 错峰） |
-| W6 | 131/132 的修复腿（若与 W4/W5 冲突顺延） | — |
+| W6 | **134（spawn 启动修复——本批最后实现）** | Blocked by 116–133 全合并；验证 = Finder/Dock 实启 + 应用内 spawn，带批次全部修复启动 app |
 | 收尾 | 全量回归：vitest + smoke:host + smoke:electron + visual 抽帧 | T00 或操作者 |
 
 ---
@@ -554,7 +554,7 @@ Status 改 ready-for-human + Comments 记 sha。跑应用通道前 ps 自查（�
 
 ---
 
-## T134 — Finder/Dock 启动可 spawn（W2，无阻塞）
+## T134 — Finder/Dock 启动可 spawn（W6 · 本批最后实现 · Blocked by 116–133 全合并）
 
 ```bash
 cd ~/PiCode
@@ -566,18 +566,21 @@ cd .worktrees/wt-134-spawn-path && npm install
 /implement .scratch/picode-1-8/issues/134-finder-dock-spawn-path.md
 
 规矩：CONTEXT.md 是术语权威；docs/adr/ 0001–0006 有效；1.8 总 spec 在
-.scratch/picode-1-8/spec.md。你当前在 worktree 分支 t134-spawn-path。
+.scratch/picode-1-8/spec.md。你当前在 worktree 分支 t134-spawn-path
+（基于 116–133 全部合并后的 main——本票最后实现）。
 
-核心：主进程启动时合成子进程 spawn 用的 PATH——登录 shell 快照（$SHELL -lc，
-缓存+超时降级）+ 静态探测常见 node 安装点（nvm/`/usr/local/bin`/homebrew/
-~/.pi/agent/bin），注入所有需要 PATH 的子 spawn。LSEnvironment 否决（PATH
-机器相关）。插桩定位精确断点 = 第一验收项（Finder 启动 spawn 失败的具体
-环节，不臆测）；PATH 探测不阻塞窗口就绪。注意：修复对新启动实例生效。
+核心：双根因子双修复，全部落 ~/PiCode 源码、随 v1.8.0 上线（不碰已发版
+bundle）：①PATH 合成——主进程启动早期合成子进程 spawn 环境（登录 shell
+快照 + 静态探测常见 node 安装点，LSEnvironment 否决）；②捆绑 SDK 对齐
+0.86.1（实测瓶颈 = 捆绑 pi-ai 0.85.1 缺 transcript 工具导出，
+pi-subagents 0.70.1 review.js 需要；npm install 同步 + 打包产物版本核验 +
+启动自检不静默失败）。
 
-复现纪律：你所在的实例大概率是 workaround 启动（spawn 可用是预期现象，
-不是「无法复现」的证据）。复现与验收必须用净化环境启动 app 实例
-（env -i 最小 PATH 直启二进制，等效 launchd 条件），与 workaround 启动
-构成 A/B 对照。
+测试 = 操作者指定全流程：Finder/Dock（或 env -i 净化环境等效）启动
+PiCode → 应用内会话 spawn pi-subagent 作定位与复测；两根因子分别插桩
+实证 = 第一验收项；可自动化部分进 electron smoke（sanitized-env 启动 +
+应用内 spawn 腿）。修复对新启动实例生效（运行中不热更）；
+dev-app serialization 照纪律（ps 自查）。
 
 流程：Status→claimed → 实现全验收项 → 全英文文案 → code-review → 提交当前
 分支（不自行 merge，提示操作者 bash scripts/merge-ticket.sh 134）→

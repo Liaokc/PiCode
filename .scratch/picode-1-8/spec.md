@@ -168,7 +168,7 @@ v1.7.0 验收后的真实使用判定——**十四处缺陷、六处交付行�
 - **R→票映射纪律**：本 spec 每条 R 必须映射到至少一张票（1.3 R11 掉票教训，1.5–1.7 已执行）。
 - **缝确认**：零新缝——全落既有四缝。**additive 契约/投影增量一项**（R17 `reorder_queue_entry`）实施时报备入 host-contract smoke（1.6/1.7 惯例）。
 - **ADR 检查**：无新 ADR——R13 视图注册表扩展在 ADR-0006 框架内；R19 会话命名写 fork 自身文件 = 既有 rename 机制（ADR-0002 会话文件纪律不破——SDK 既有写入面）；R17 host 舞步 = 票 100 同机制（ADR-0003 host 架构内）。
-- **依赖与波次提示（/to-tickets 用）**：同文件群 A（composer 群）R11→R12→R7 强串行（116→117→118），R18（119）弱邻接随后；同区段 B（菜单群）R3→R4+R5 串行（121→122）；独立可并行 R2/R8/R9+R15/R10/R16/R14/R13/R19/R1/R6/R20/R21（134）；R17 独立大票。
+- **依赖与波次提示（/to-tickets 用）**：同文件群 A（composer 群）R11→R12→R7 强串行（116→117→118），R18（119）弱邻接随后；同区段 B（菜单群）R3→R4+R5 串行（121→122）；独立可并行 R2/R8/R9+R15/R10/R16/R14/R13/R19/R1/R6/R20；R17 独立大票；**R21（134）本批最后实现**（116–133 全合并后，验证带全部修复启动 app）。
 - **操作者待办**：①`ELECTRON_MIRROR=… npm install`（node_modules 0.85.1 → pin 0.86.1——实施前必须）；②实拍图原件复制入 `.scratch/compare/`（pi18-*）；③dev app serialization 口径；④merge-ticket.sh ls-files 补 picode-1-8（默认操作者执行）。
 
 ## Comments
