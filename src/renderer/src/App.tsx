@@ -50,7 +50,7 @@ import type { AccessMode, ImageAttachment, ThinkingLevel } from '../../shared/co
 import { parkedDraft, type ComposerDraft, type ComposerDraftEntry } from '../../shared/composer/drafts'
 import { installComposerFocusDiscipline } from './composer-focus'
 import type { AuthProbeReport } from '../../shared/auth-status'
-import { configuredProviderIds, sortProvidersConfiguredFirst } from '../../shared/provider-sort'
+import { configuredProviderIds, configuredProvidersOnly, sortProvidersConfiguredFirst } from '../../shared/provider-sort'
 import { selectCommandCatalog, type NewTaskCommandCatalog } from '../../shared/new-task-commands'
 import {
   announcePending,
@@ -1662,14 +1662,18 @@ export default function App(): JSX.Element {
   )
 
   // ---- ticket 76: configured providers first, unconfigured after,
-  // alphabetical within each group — the settings Models section AND both
-  // composer model-menu sources (the live session's contract-pushed catalog
-  // and the new-task projection) share the rule. The renderer joins the
+  // alphabetical within each group — the settings Models section AND the
+  // live session's composer model-menu source share the rule (the settings
+  // list stays FULL; ticket 121 keeps it that way). The renderer joins the
   // auth-probe report it already holds; a missing/empty report degrades to
   // the incoming order. Zero new contract.
   const configuredIds = useMemo(() => configuredProviderIds(settings.auth), [settings.auth])
+  // ---- ticket 121: the new-task empty state's model menu is deliberately
+  // UNBOUND from that rule — it lists the CONFIGURED providers only (the
+  // session surface's `models_available` catalog speaks the same list),
+  // alphabetical among them so both surfaces render the identical column.
   const newTaskProviders = useMemo(
-    () => sortProvidersConfiguredFirst(newTaskCatalog?.providers ?? [], configuredIds),
+    () => configuredProvidersOnly(newTaskCatalog?.providers ?? [], configuredIds),
     [newTaskCatalog, configuredIds]
   )
   const chatForView = useMemo(
@@ -1709,15 +1713,18 @@ export default function App(): JSX.Element {
     [settings.preferences.defaultModel, settings.preferences.defaultThinkingLevel, newTaskCatalog]
   )
   /** The model menu's empty-catalog hint: the menu never opens blank —
-   * scanning, unconfigured, and probe failure each explain themselves. */
+   * scanning, unconfigured, and probe failure each explain themselves.
+   * Ticket 121: "no models configured" now also covers a healthy catalog
+   * whose providers all lack credentials — the configured-only filter can
+   * empty the list the raw catalog never did. */
   const newTaskModelMenuHint = useMemo(() => {
     if (newTaskCatalog === null) return 'Scanning for models…'
     if (newTaskCatalog.error !== null) return 'Model catalog unavailable — refresh from Settings'
-    if (newTaskCatalog.providers.length === 0) {
+    if (newTaskProviders.length === 0) {
       return 'No models configured — sign in from the Pi TUI, then refresh in Settings'
     }
     return null
-  }, [newTaskCatalog])
+  }, [newTaskCatalog, newTaskProviders])
 
   // Feed the empty-state menu by running the auth-probe scan once per app
   // lifetime when a new-task surface is on screen (boot empty state or ⌘N).
