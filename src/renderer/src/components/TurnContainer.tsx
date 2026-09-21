@@ -1,6 +1,7 @@
 import { memo, useRef, type JSX, type RefObject } from 'react'
 import type { TurnGroup, TurnWorkItem } from '../../../shared/turn-collapse'
-import { useElapsedSeconds } from './use-elapsed-seconds'
+import { deriveWorkedSeconds, deriveWorkingSeconds } from '../../../shared/turn-duration'
+import { useElapsedClock } from './use-elapsed-seconds'
 import { useFoldAnchor } from './use-fold-anchor'
 import { ChevronDownIcon, ChevronRightIcon, LoaderIcon } from './icons'
 import ApprovalPill from './ApprovalPill'
@@ -115,9 +116,16 @@ interface TurnContainerProps {
  * is empty, so the row is bare and INERT: no chevron, click no-op,
  * aria-disabled — expandable ⇔ body non-empty (Q12 ruling A).
  *
- * The header ticks seconds only for turns that actually streamed in this
- * view: replayed turns carry no recorded duration and degrade to a plain
- * row (same rule as replayed thinking rows, ticket 14).
+ * Ticket 108: the seconds are ANCHOR-DERIVED, never a bare tick. The live
+ * header shows (now − startedAt) from the turn's first entry stamp, so a
+ * session switch (the view unmounts per ADR-0006; the old tick counter
+ * reset to 1s on switch-back — the pi17-working-7s defect) and a fold both
+ * continue from the original value. The settled header shows the turn's
+ * first→last entry-stamp span at the chevron's RIGHT — uniformly for turns
+ * that streamed here and REPLAYED turns alike (session files always record
+ * entry timestamps; the ticket-14 no-duration premise is retired). The
+ * local tick survives only as the un-stamped fallback (ticket 61
+ * discipline; see use-elapsed-seconds.ts).
  */
 export default function TurnContainer({
   turn,
@@ -129,18 +137,22 @@ export default function TurnContainer({
   onDeny,
   scrollRef
 }: TurnContainerProps): JSX.Element {
-  const seconds = useElapsedSeconds(turn.live)
+  // Ticket 108: one clock serves both derivations — wall-clock now while
+  // the turn streams, the tick as the un-stamped fallback (ticket 61
+  // discipline; see use-elapsed-seconds.ts).
+  const clock = useElapsedClock(turn.live)
+  // Live rows are always timed (the derivation clamps up to 1s and falls
+  // back to the tick when anchorless); settled rows derive the span or
+  // degrade to untimed (null).
+  const workingSeconds = turn.live ? deriveWorkingSeconds(turn.startedAtMs, clock.nowMs, clock.tickSeconds) : 0
+  const workedSeconds = turn.live ? null : deriveWorkedSeconds(turn, clock.tickSeconds)
   // Ticket 94: the header element is the fold anchor — its viewport row is
   // what the deterministic rule holds still across open flips.
   const headerRef = useRef<HTMLButtonElement | null>(null)
-  // Turns that streamed in this view keep their ticked duration frozen after
-  // settling (the hook retains its count once inactive); replayed turns never
-  // tick and degrade to a duration-less row (same rule as replayed thinking,
-  // ticket 14 — the session file records no turn duration).
-  const timed = turn.live || seconds > 0
   // Ticket 55: 可展开 ⇔ 体非空. The container itself is mounted across folds
-  // (only the body unmounts), so the header timer survives folding and
-  // reopening without resetting.
+  // (only the body unmounts); ticket 108 makes the header's seconds derive
+  // from the turn's entry stamps, so folding AND session-switch remounts
+  // alike continue from the same anchor instead of resetting.
   const expandable = turn.hasWork
   // Ticket 94: every open flip of THIS container obeys the shared
   // deterministic anchor rule (pure model in shared/fold-anchor.ts) — the
@@ -169,10 +181,13 @@ export default function TurnContainer({
             position unchanged, collapsed keeps this single header ring. */}
         {turn.live && <LoaderIcon size={16} className="turn-container-icon spin" />}
         <span className="turn-container-label">{turn.live ? 'Working' : 'Worked'}</span>
-        {timed && (
+        {/* Ticket 108: the LIVE duration stays inline before the chevron —
+            anchor-derived (now − startedAt) and always present (≥1s) while
+            the turn runs — the live flag is the gate, no null check. */}
+        {turn.live && (
           <>
             <span className="turn-container-sep">·</span>
-            <span className="turn-container-duration">{Math.max(seconds, 1)}s</span>
+            <span className="turn-container-duration">{workingSeconds}s</span>
           </>
         )}
         {expandable &&
@@ -181,6 +196,13 @@ export default function TurnContainer({
           ) : (
             <ChevronRightIcon size={13} className="turn-container-chevron" />
           ))}
+        {/* Ticket 108 R30: the SETTLED duration sits at the chevron's right
+            — uniform for in-view settled and replayed turns alike (first→
+            last entry-stamp span). A zero-work row (no chevron) shows it
+            right after the label. */}
+        {workedSeconds !== null && (
+          <span className="turn-container-duration turn-container-duration-settled">{workedSeconds}s</span>
+        )}
       </button>
       {expandable && open && (
         <div className="turn-container-body">

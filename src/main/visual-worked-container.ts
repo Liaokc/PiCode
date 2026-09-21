@@ -12,7 +12,10 @@
  *   1. A REPLAYED zero-work turn (pure-text answer) keeps its "Worked" row
  *      after settling — the settled half of the operator's evidence frame
  *      `.scratch/compare/pi15-empty-worked-container.png` (the row used to
- *      vanish entirely). Replayed rows carry no duration (ticket 14 rule).
+ *      vanish entirely). Ticket 108 revises the ticket-14 rule: the row
+ *      shows its recorded entry-stamp duration too (5s — the seeded
+ *      timestamps span five seconds), at the chevron's right; an inert row
+ *      has no chevron, so it renders right after the label.
  *   2. The empty body is NOT expandable: no chevron, click no-op,
  *      aria-disabled (Q12 ruling A — expandable ⇔ body non-empty).
  *   3. A LIVE zero-work turn shows "Working · Ns" through the silent period
@@ -26,7 +29,7 @@
  * sessions; throwaway userData keeps the run off the operator's preferences.
  *
  * Captures (PNGs land in the visual out dir):
- *   wc1-worked-replayed  — replayed zero-work turn: bare inert "Worked" row
+ *   wc1-worked-replayed  — replayed zero-work turn: bare inert "Worked › 5s" row
  *   wc2-worked-silent    — live silent period: bare inert "Working · 1s" row
  *   wc3-worked-settled   — settled streamed turn: "Worked · 1s" row persists
  *
@@ -79,6 +82,7 @@ const SIG = `(() => ({
   open: document.querySelectorAll('.turn-container-open').length,
   chevrons: document.querySelectorAll('.turn-container-chevron').length,
   durations: document.querySelectorAll('.turn-container-duration').length,
+  durationTexts: [...document.querySelectorAll('.turn-container-duration')].map((el) => el.textContent ?? ''),
   labels: [...document.querySelectorAll('.turn-container-label')].map((el) => el.textContent ?? ''),
   inert: [...document.querySelectorAll('.turn-container-header')].map((el) => el.getAttribute('aria-disabled') === 'true'),
   answers: document.querySelectorAll('.msg-assistant .md').length,
@@ -107,6 +111,7 @@ interface WorkedSig {
   open: number
   chevrons: number
   durations: number
+  durationTexts: string[]
   labels: string[]
   inert: boolean[]
   answers: number
@@ -172,13 +177,15 @@ export function startWorkedVisualIfEnabled(getWindow: () => BrowserWindow | null
       emitContractEvent({ type: 'history_loaded', items: HISTORY_ITEMS })
       await sleep(700)
 
-      // ---- wc1: the replayed zero-work turn keeps its bare "Worked" row ----
+      // ---- wc1: the replayed zero-work turn keeps its bare "Worked" row
+      // (with its recorded 5s entry-stamp span — ticket 108) ----
       const replayed = (await win.webContents.executeJavaScript(SIG)) as WorkedSig
       const replayedProblems: string[] = []
       if (replayed.turns !== 1) replayedProblems.push(`turns ${replayed.turns} !== 1`)
       if (replayed.open !== 0) replayedProblems.push(`open ${replayed.open} !== 0`)
       if (replayed.chevrons !== 0) replayedProblems.push(`chevrons ${replayed.chevrons} !== 0`)
-      if (replayed.durations !== 0) replayedProblems.push(`durations ${replayed.durations} !== 0`)
+      if (replayed.durations !== 1) replayedProblems.push(`durations ${replayed.durations} !== 1`)
+      if (replayed.durationTexts.join() !== '5s') replayedProblems.push(`durationTexts ${replayed.durationTexts.join()} !== '5s'`)
       if (replayed.labels.join() !== 'Worked') replayedProblems.push(`labels ${replayed.labels.join()} !== 'Worked'`)
       if (replayed.inert.join() !== 'true') replayedProblems.push('the empty row is not aria-disabled')
       if (replayed.answers !== 1) replayedProblems.push(`answers ${replayed.answers} !== 1`)
@@ -211,7 +218,9 @@ export function startWorkedVisualIfEnabled(getWindow: () => BrowserWindow | null
       }
       await sleep(1200) // let the container timer earn its 1s tick
       const silent = (await win.webContents.executeJavaScript(SIG)) as WorkedSig
-      if (silent.durations !== 1) throw new Error(`worked visual wc2: silent-period duration rows ${silent.durations} !== 1`)
+      // Two durations: the replayed turn's recorded 5s + the live silent
+      // row's anchor-derived 1s (ticket 108).
+      if (silent.durations !== 2) throw new Error(`worked visual wc2: silent-period duration rows ${silent.durations} !== 2`)
       console.log(`VISUAL probe wc2: ${JSON.stringify(silent)}`)
 
       await win.webContents.executeJavaScript(
@@ -232,7 +241,7 @@ export function startWorkedVisualIfEnabled(getWindow: () => BrowserWindow | null
       emitContractEvent({ type: 'agent_end' })
       const settledOk = await waitFor(
         win,
-        `${SIG}.turns === 2 && ${SIG}.labels.join() === 'Worked,Worked' && ${SIG}.durations === 1 &&
+        `${SIG}.turns === 2 && ${SIG}.labels.join() === 'Worked,Worked' && ${SIG}.durations === 2 &&
          ${SIG}.open === 0 && ${SIG}.chevrons === 0 && ${SIG}.answers === 2 && ${SIG}.inert.join() === 'true,true' &&
          ${SIG}.spinners === 0 && ${SIG}.footSpinners === 0`,
         10_000

@@ -1267,3 +1267,51 @@ describe('chatReducer — composer + approval gate (ticket 05)', () => {
     ).not.toThrow()
   })
 })
+
+describe('chatReducer — turn wall-clock stamps (ticket 108)', () => {
+  it('user_message copies the receipt stamp onto the entry (the turn\u0027s anchor)', () => {
+    const state = run(initialChatState(), { type: 'user_message', text: 'anchor me', receivedAtMs: 5_000 })
+    expect((state.entries[0] as { startedAtMs?: number }).startedAtMs).toBe(5_000)
+  })
+
+  it('un-stamped user_message (harness shape) leaves the entry stamp-less', () => {
+    const state = run(initialChatState(), { type: 'user_message', text: 'plain' })
+    expect((state.entries[0] as { startedAtMs?: number }).startedAtMs).toBeUndefined()
+  })
+
+  it('message_end stamps the closing assistant entry with the completion receipt', () => {
+    const state = run(
+      initialChatState(),
+      { type: 'message_start' },
+      { type: 'text_delta', delta: 'answer' },
+      { type: 'message_end', receivedAtMs: 9_000 }
+    )
+    expect((state.entries[0] as { endedAtMs?: number }).endedAtMs).toBe(9_000)
+  })
+
+  it('un-stamped message_end keeps the additive-absent shape (exact entry shape unchanged)', () => {
+    const state = run(
+      initialChatState(),
+      { type: 'message_start' },
+      { type: 'text_delta', delta: 'answer' },
+      { type: 'message_end' }
+    )
+    expect(state.entries[0]).toEqual({ id: 'm0', role: 'assistant', parts: [{ kind: 'text', text: 'answer' }], streaming: false })
+  })
+
+  it('replayEntry parses the recorded timestamp into user/assistant stamps; invalid stamps degrade to undefined', () => {
+    const user = replayEntry({ role: 'user', id: 'r-u1', text: 'q', timestamp: '2026-09-10T09:00:00.000Z', skillName: null })
+    expect((user as { startedAtMs?: number }).startedAtMs).toBe(Date.parse('2026-09-10T09:00:00.000Z'))
+    const assistant = replayEntry({
+      role: 'assistant',
+      id: 'r-a1',
+      timestamp: '2026-09-10T09:00:05.000Z',
+      text: 'a',
+      parts: [{ kind: 'text', text: 'a' }]
+    })
+    expect((assistant as { endedAtMs?: number }).endedAtMs).toBe(Date.parse('2026-09-10T09:00:05.000Z'))
+    // The pre-108 harness shape ('t') is not a timestamp — no invented stamp.
+    const legacy = replayEntry({ role: 'user', id: 'r-u2', text: 'q', timestamp: 't', skillName: null })
+    expect((legacy as { startedAtMs?: number }).startedAtMs).toBeUndefined()
+  })
+})

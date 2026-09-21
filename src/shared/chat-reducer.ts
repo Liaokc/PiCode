@@ -64,6 +64,12 @@ export interface UserEntry {
    * it. (Ticket 97: the live `user_message` echo now carries the parts, so
    * the entry no longer waits for the next replay.) */
   images?: TranscriptImagePart[]
+  /** Wall-clock anchor of the TURN's opening entry (ticket 108, additive):
+   * the live echo's renderer receipt (stamped at the App dispatch boundary,
+   * ticket 61 pattern) or the replayed entry's recorded timestamp. Raw
+   * material of the turn timer's (now − startedAt) derivation; undefined
+   * only on un-stamped harness events / pre-108 payloads. */
+  startedAtMs?: number
 }
 
 export interface AssistantEntry {
@@ -73,6 +79,14 @@ export interface AssistantEntry {
   parts: AssistantPart[]
   /** Still receiving message-level content (deltas may still arrive). */
   streaming: boolean
+  /** Wall-clock completion of the message (ticket 108, additive): the live
+   * message_end's renderer receipt or the replayed entry's recorded
+   * timestamp (the session file writes the message once, complete). Raw
+   * material of the settled turn's first→last entry-stamp span; undefined
+   * only on un-stamped harness events / pre-108 payloads (an aborted tail
+   * without message_end stays stamp-less — the span honestly stops at the
+   * last stamped entry). */
+  endedAtMs?: number
 }
 
 export type ToolState =
@@ -141,11 +155,13 @@ export type ChatError =
   | { kind: 'agent'; message: string }
   | { kind: 'host'; message: string; /** Last known working directory, when a rebuild can reuse it. */ cwd: string | null }
 
-/** Renderer-side wall-clock receipt stamp (ticket 61): attached by the App's
- * dispatch boundary to live `thinking_delta` actions so the entry-level
- * thinking timer gets its start anchor. The reducer stays time-free — it only
- * copies the stamp into entry state. Optional: absent on every other action
- * and on directly injected test/harness events. */
+/** Renderer-side wall-clock receipt stamp (tickets 61+108): attached by the
+ * App's dispatch boundary to live `thinking_delta` actions so the entry-level
+ * thinking timer gets its start anchor, and to `user_message` / `message_end`
+ * so the turn header's Working/Worked duration gets its anchor and end stamp
+ * (ticket 108). The reducer stays time-free — it only copies the stamp into
+ * entry state. Optional: absent on every other action and on directly
+ * injected test/harness events. */
 interface ReceivedAtStamp {
   receivedAtMs?: number
 }
@@ -230,6 +246,10 @@ export function replayEntry(item: TranscriptItem): ChatEntry {
         role: 'user',
         text: item.text,
         skillName: item.skillName,
+        // Ticket 108: the recorded timestamp anchors the replayed turn's
+        // duration (first→last entry-stamp span). Unparsable stamps degrade
+        // to no stamp — the untimed row, never an invented number.
+        startedAtMs: Date.parse(item.timestamp) || undefined,
         ...(item.images !== undefined ? { images: item.images } : {})
       }
     case 'assistant':
@@ -241,7 +261,10 @@ export function replayEntry(item: TranscriptItem): ChatEntry {
             ? { kind: 'thinking' as const, text: part.text, streaming: false, durationMs: part.durationMs }
             : part
         ),
-        streaming: false
+        streaming: false,
+        // Ticket 108: the recorded message timestamp (the session file
+        // writes the message once, complete) ends the replayed turn's span.
+        endedAtMs: Date.parse(item.timestamp) || undefined
       }
     case 'tool':
       return {
@@ -456,6 +479,10 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
           role: 'user',
           text: event.text,
           skillName: sniffSkillName(event.text),
+          // Ticket 108: the echo's receipt stamp anchors the turn's live
+          // timer (now − startedAt survives every view unmount — session
+          // switches and folds alike); absent on unstamped harness events.
+          ...(event.receivedAtMs !== undefined ? { startedAtMs: event.receivedAtMs } : {}),
           ...(images !== undefined ? { images } : {})
         }
       ]
@@ -551,12 +578,20 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       }
       // Ticket 51: the host backfills the real session entry id (read back
       // at persistence) so the fork anchor addresses the actual entry.
+      // Ticket 108: the receipt stamp records the message's completion —
+      // the settled turn's end stamp (first→last entry-stamp span).
       return {
         ...state,
         lastUsage,
         entries: [
           ...state.entries.slice(0, -1),
-          { ...last, id: event.entryId ?? last.id, streaming: false, parts: last.parts.map(closeThinking) }
+          {
+            ...last,
+            id: event.entryId ?? last.id,
+            streaming: false,
+            parts: last.parts.map(closeThinking),
+            ...(event.receivedAtMs !== undefined ? { endedAtMs: event.receivedAtMs } : {})
+          }
         ]
       }
     }
