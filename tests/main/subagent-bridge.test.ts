@@ -454,6 +454,44 @@ describe('subagent_steer handling', () => {
       { type: 'subagent_steer_receipt', requestId: 'req-s7', asyncId: 'run-7', ok: false, error: 'the steer message is empty' }
     ])
   })
+
+  it('a stale bus (an in-host fork replaced the session mid-roundtrip) degrades, never crashes (ticket 130)', async () => {
+    // The SDK invalidates the old extension ctx on session replacement; any
+    // use of the captured bus throws its stale-ctx guard. A fleet roundtrip
+    // that raced the swap must answer the honest null path exactly like the
+    // never-wired bus — no unhandled rejection, no host exit.
+    const sent: HostEvent[] = []
+    const bridge = new SubagentBridge((event) => sent.push(event))
+    const ext = bridge.extension as unknown as FactoryExtension
+    ext.factory({
+      events: {
+        on: () => () => {},
+        emit: () => {
+          throw new Error('This extension ctx is stale after session replacement or reload.')
+        }
+      }
+    } as never)
+    await bridge.handleStatusRequest('req-stale', () => [])
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toMatchObject({ type: 'subagent_status', requestId: 'req-stale', available: false, runs: [], fleet: null })
+
+    const steerSent: HostEvent[] = []
+    const steerBridge = new SubagentBridge((event) => steerSent.push(event))
+    const steerExt = steerBridge.extension as unknown as FactoryExtension
+    steerExt.factory({
+      events: {
+        on: () => () => {},
+        emit: () => {
+          throw new Error('This extension ctx is stale after session replacement or reload.')
+        }
+      }
+    } as never)
+    await steerBridge.handleSteerRequest('req-stale-2', 'run-stale', 'hello')
+    expect(steerSent).toHaveLength(1)
+    const receipt = steerSent[0]
+    if (receipt.type !== 'subagent_steer_receipt') throw new Error('wrong event')
+    expect(receipt.ok).toBe(false)
+  })
 })
 
 // ---- the artifact reader ----------------------------------------------------

@@ -204,19 +204,11 @@ export function summarizeSession(
   if (!header) return null
 
   let name: string | null = null
-  let firstUser: string | null = null
   let messageCount = 0
   for (const entry of entries) {
     if (entry.type === 'session_info') name = entryName(entry) ?? name
     if (entry.type !== 'message') continue
     messageCount++
-    if (firstUser === null && entry.message?.role === 'user') {
-      // Ticket 42: skip a leading skill-injection prologue — the title is
-      // the user's own words (or the skill name when the turn carries
-      // nothing else), never the raw `<skill name=… locat…` text.
-      const raw = firstUserText(entry.message.content)
-      if (raw !== null) firstUser = sessionTitleFromUserText(raw)
-    }
   }
   // Later session_info entries win (file order), matching SessionManager.getSessionName.
   const trimmedName = name !== null ? name : null
@@ -226,7 +218,7 @@ export function summarizeSession(
     id: header.id,
     cwd: header.cwd,
     name: trimmedName,
-    title: trimmedName ?? (firstUser !== null ? truncateTitle(firstUser) : 'New Task'),
+    title: sidebarTitleProjection(trimmedName, entries),
     startedAt: header.timestamp,
     modifiedAt,
     createdAt: typeof createdAt === 'number' && Number.isFinite(createdAt) && createdAt > 0 ? createdAt : null,
@@ -539,6 +531,42 @@ function truncate(text: string, max: number): string {
 /** Single-line title text, truncated to the sidebar row budget. */
 export function truncateTitle(text: string, max = TITLE_MAX_CHARS): string {
   return truncate(text, max)
+}
+
+/** First user message's title text — the skill-prologue-stripped user
+ * wording (ticket 42), or null when the entries carry no readable user
+ * text. */
+function firstUserTitle(entries: readonly RawSessionEntry[]): string | null {
+  for (const entry of entries) {
+    if (entry.message?.role !== 'user') continue
+    const raw = firstUserText(entry.message.content)
+    if (raw !== null) return sessionTitleFromUserText(raw)
+  }
+  return null
+}
+
+/** The sidebar title projection: the explicit name when the session has
+ * one, else the first user message's text (skill prologue stripped, ticket
+ * 42), else "New Task". One code path for the index scanner
+ * (summarizeSession) and the host's fork auto-naming (ticket 130) — both
+ * surfaces agree by construction. */
+export function sidebarTitleProjection(name: string | null, entries: readonly RawSessionEntry[]): string {
+  if (name !== null) return name
+  const firstUser = firstUserTitle(entries)
+  return firstUser !== null ? truncateTitle(firstUser) : 'New Task'
+}
+
+/** Ticket 130: the prefix of a fork's automatic name. */
+export const FORK_NAME_PREFIX = 'Fork of '
+
+/** Ticket 130: the automatic name a freshly landed fork receives —
+ * "Fork of " + the source's sidebar title projection (its explicit name
+ * when it has one, else the first user message the sidebar itself shows,
+ * per the Q7 ruling), clamped to the sidebar's own title budget
+ * (TITLE_MAX_CHARS) so the row never overflows. The result is a normal
+ * session name: the user can rename over it at any time. */
+export function forkAutoName(sourceName: string | null, entries: readonly RawSessionEntry[]): string {
+  return truncateTitle(`${FORK_NAME_PREFIX}${sidebarTitleProjection(sourceName, entries)}`)
 }
 
 /**

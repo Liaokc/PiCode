@@ -176,6 +176,7 @@ export class SubagentBridge {
     const requestId = `picode-${++this.rpcSeq}-${Date.now().toString(36)}`
     return new Promise((resolve) => {
       let settled = false
+      let cleanup: () => void = () => {}
       const done = (
         value:
           | { kind: 'reply'; success: true; data: unknown }
@@ -186,27 +187,38 @@ export class SubagentBridge {
         if (settled) return
         settled = true
         clearTimeout(timer)
-        unsubscribe()
+        cleanup()
         resolve(value)
       }
       const timer = setTimeout(() => done({ kind: 'timeout' }), timeoutMs)
-      const unsubscribe = events.on(`${RPC_REPLY_PREFIX}${requestId}`, (data) => {
-        if (!isRecord(data)) return done(null)
-        if (data['success'] === true) {
-          done({ kind: 'reply', success: true, data: data['data'] })
-          return
-        }
-        const error = isRecord(data['error']) ? (data['error'] as Record<string, unknown>) : {}
-        done({
-          kind: 'reply',
-          success: false,
-          error: {
-            ...(typeof error['code'] === 'string' ? { code: error['code'] } : {}),
-            ...(typeof error['message'] === 'string' ? { message: error['message'] } : {})
+      try {
+        const unsubscribe = events.on(`${RPC_REPLY_PREFIX}${requestId}`, (data) => {
+          if (!isRecord(data)) return done(null)
+          if (data['success'] === true) {
+            done({ kind: 'reply', success: true, data: data['data'] })
+            return
           }
+          const error = isRecord(data['error']) ? (data['error'] as Record<string, unknown>) : {}
+          done({
+            kind: 'reply',
+            success: false,
+            error: {
+              ...(typeof error['code'] === 'string' ? { code: error['code'] } : {}),
+              ...(typeof error['message'] === 'string' ? { message: error['message'] } : {})
+            }
+          })
         })
-      })
-      events.emit(RPC_REQUEST_EVENT, { version: 1, requestId, method, params, source: { extension: 'picode-subagent-bridge' } })
+        cleanup = () => unsubscribe()
+        events.emit(RPC_REQUEST_EVENT, { version: 1, requestId, method, params, source: { extension: 'picode-subagent-bridge' } })
+      } catch {
+        // The captured bus can go stale mid-request: an in-host session
+        // replacement (fork) invalidates the old extension ctx and the SDK's
+        // guard throws on any use of it. A roundtrip that raced the swap
+        // degrades exactly like the never-wired bus — the caller answers its
+        // honest null path (fleet: null / ok:false receipts) instead of
+        // killing the host with an unhandled rejection (ticket 130 fixup).
+        done(null)
+      }
     })
   }
 

@@ -15635,6 +15635,218 @@ export function startSmokeIfEnabled(
       log('thinking_memory_done')
     }
 
+
+    // ---- ticket 130: fork auto-name — "Fork of …" the moment the fork
+    // lands. Two legs through REAL hosts (seeded files + resume, zero model
+    // calls): a NAMED source (explicit session_info) and an UNNAMED source
+    // (whose sidebar title is the first user message — the projection the
+    // fork must reuse, Q7 ruling). Each fork announces as "Fork of <source>",
+    // the sidebar row and the topbar title show it, the rename editor
+    // prefills it, and a rename over the auto-name succeeds (the name is not
+    // locked). The SOURCE files stay byte-identical through the fork. ----
+    log('fork_auto_name_start')
+    {
+      const store130 = process.env['PICODE_SESSION_DIR']
+      if (!store130) fail('ticket-130 stage: PICODE_SESSION_DIR is not set')
+      const stamp130 = new Date().toISOString()
+      const namedName130 = 'PICODE_130_NAMED_SOURCE_NAME'
+      const unnamedFirstUser130 = 'PICODE_130_UNNAMED first user message'
+      const namedCwd130 = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-t130-named-'))
+      const unnamedCwd130 = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-t130-unnamed-'))
+      const namedFile130 = path.join(store130, 't130-named.jsonl')
+      const unnamedFile130 = path.join(store130, 't130-unnamed.jsonl')
+      try {
+        // Named source: one settled user/assistant turn + an explicit
+        // session_info name (the rename write face's own entry shape).
+        writeFileSync(
+          namedFile130,
+          [
+            JSON.stringify({ type: 'session', version: 3, id: 't130-named-src', timestamp: stamp130, cwd: namedCwd130 }),
+            JSON.stringify({
+              type: 'message', id: 't130-n-u1', parentId: null, timestamp: stamp130,
+              message: { role: 'user', content: [{ type: 'text', text: 'PICODE_130_NAMED first user message' }] }
+            }),
+            JSON.stringify({
+              type: 'message', id: 't130-n-a1', parentId: 't130-n-u1', timestamp: stamp130,
+              message: { role: 'assistant', content: [{ type: 'text', text: 'PICODE_130_NAMED first reply' }], stopReason: 'stop' }
+            }),
+            JSON.stringify({ type: 'session_info', id: 't130-n-name', parentId: 't130-n-a1', timestamp: stamp130, name: namedName130 }),
+            // A thinking entry keeps the seed a REAL session shape: the SDK
+            // appends one itself when a resumed session lacks it, which would
+            // dirty the source-file fidelity snapshot below for a reason that
+            // is Pi's own resume semantics, not this ticket's fork.
+            JSON.stringify({ type: 'thinking_level_change', id: 't130-n-think', parentId: 't130-n-name', timestamp: stamp130, thinkingLevel: 'medium' })
+          ].join('\n') + '\n'
+        )
+        // Unnamed source: the same turn shape, NO session_info — the
+        // sidebar titles it with the first user message.
+        writeFileSync(
+          unnamedFile130,
+          [
+            JSON.stringify({ type: 'session', version: 3, id: 't130-unnamed-src', timestamp: stamp130, cwd: unnamedCwd130 }),
+            JSON.stringify({
+              type: 'message', id: 't130-u-u1', parentId: null, timestamp: stamp130,
+              message: { role: 'user', content: [{ type: 'text', text: unnamedFirstUser130 }] }
+            }),
+            JSON.stringify({
+              type: 'message', id: 't130-u-a1', parentId: 't130-u-u1', timestamp: stamp130,
+              message: { role: 'assistant', content: [{ type: 'text', text: 'PICODE_130_UNNAMED first reply' }], stopReason: 'stop' }
+            }),
+            JSON.stringify({ type: 'thinking_level_change', id: 't130-u-think', parentId: 't130-u-a1', timestamp: stamp130, thinkingLevel: 'medium' })
+          ].join('\n') + '\n'
+        )
+
+        const legs130 = [
+          { label: 'named', file: namedFile130, cwd: namedCwd130, anchor: 't130-n-a1', expected: `Fork of ${namedName130}` },
+          { label: 'unnamed', file: unnamedFile130, cwd: unnamedCwd130, anchor: 't130-u-a1', expected: `Fork of ${unnamedFirstUser130}` }
+        ] as const
+
+        for (const leg of legs130) {
+          supervisor.handleParentCommand({ type: 'resume_session', sessionFile: leg.file, cwd: leg.cwd })
+          const sourceCreated130 = (await waitFor(
+            (e) => e.type === 'session_created' && e.sessionFile === leg.file,
+            `ticket-130 ${leg.label} source session_created`
+          )) as Extract<Scoped, { type: 'session_created' }>
+          await waitFor(
+            (e) => e.type === 'history_loaded' && e.sessionId === sourceCreated130.sessionId,
+            `ticket-130 ${leg.label} source replay`
+          )
+          // The fidelity baseline is the POST-resume state — the claim under
+          // test is that the FORK (and its auto-name write) never touches
+          // the source file.
+          const before130 = readFileSync(leg.file, 'utf8')
+
+          // The fork anchors at the settled answer (position 'at' — the same
+          // semantics every Fork button drives).
+          supervisor.handleParentCommand({
+            type: 'session_command',
+            sessionId: sourceCreated130.sessionId,
+            command: { type: 'fork_session', entryId: leg.anchor }
+          })
+          const forkCreated130 = (await waitFor(
+            (e) => e.type === 'session_created' && e.sessionId !== sourceCreated130.sessionId && e.cwd === leg.cwd,
+            `ticket-130 ${leg.label} fork session_created`
+          )) as Extract<Scoped, { type: 'session_created' }>
+          if (typeof forkCreated130.sessionFile !== 'string') {
+            fail(`ticket-130 ${leg.label} stage: the fork announcement carries no session file`)
+          }
+          if (forkCreated130.name !== leg.expected) {
+            fail(
+              `ticket-130 ${leg.label} stage: the fork must announce as ${JSON.stringify(leg.expected)}, got ${JSON.stringify(forkCreated130.name)}`
+            )
+          }
+          log(`fork_auto_name_${leg.label}_announce_ok`, `name=${forkCreated130.name}`)
+
+          // The auto-name rides the EXISTING rename chain: the host's
+          // session_renamed ack, scoped to the fork's new id.
+          await waitFor(
+            (e) => e.type === 'session_renamed' && e.sessionId === forkCreated130.sessionId && e.name === leg.expected,
+            `ticket-130 ${leg.label} fork session_renamed`
+          )
+          log(`fork_auto_name_${leg.label}_renamed_event_ok`)
+
+          // ADR-0002 discipline, disk-side: the name landed as a session_info
+          // entry in the FORK's own file (the rename write face) — the exact
+          // entry shape the SDK's appendSessionInfo persists.
+          const forkLines130 = readFileSync(forkCreated130.sessionFile, 'utf8').trim().split('\n')
+          const forkInfo130 = forkLines130
+            .map((line) => JSON.parse(line) as { type?: string; name?: string })
+            .filter((entry) => entry.type === 'session_info')
+            .pop()
+          if (forkInfo130?.name !== leg.expected) {
+            fail(
+              `ticket-130 ${leg.label} stage: the fork's own file must carry the auto-name as its latest session_info, got ${JSON.stringify(forkInfo130?.name ?? null)}`
+            )
+          }
+          log(`fork_auto_name_${leg.label}_session_info_written_ok`)
+
+          await withWindow(getWindow, async (win) => {
+            const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+            // The sidebar may be closed or the settings window left open by
+            // earlier stages — restore the workspace view first.
+            if ((await js(`document.querySelector('.settings-shell') !== null`)) as boolean) {
+              await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Comma', key: ',', metaKey: true, cancelable: true })); true`)
+              await waitForProbe(win, `document.querySelector('.settings-shell') === null`, 5_000)
+            }
+            if (!((await js(`document.querySelector('.sidebar') !== null`)) as boolean)) {
+              await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', metaKey: true, bubbles: true })); true`)
+              await waitForProbe(win, `document.querySelector('.sidebar') !== null`, 5_000)
+            }
+            const row130 = `document.querySelector('.sb-task[data-file="${forkCreated130.sessionFile}"]')`
+            const rowTitle130 = `${row130}?.querySelector('.sb-task-title')?.textContent`
+            if (!(await waitForProbe(win, `${row130} !== null`, 15_000))) {
+              fail(`ticket-130 ${leg.label} stage: the forked session's row never reached the sidebar`)
+            }
+            if (!(await waitForProbe(win, `${rowTitle130} === ${JSON.stringify(leg.expected)}`, 10_000))) {
+              fail(
+                `ticket-130 ${leg.label} stage: the sidebar row must title the fork ${JSON.stringify(leg.expected)}, got ${String(
+                  await js(`${rowTitle130} ?? 'none'`).catch(() => 'n/a')
+                )}`
+              )
+            }
+            if (!(await waitForProbe(win, `document.querySelector('.chat-topbar-title')?.textContent === ${JSON.stringify(leg.expected)}`, 10_000))) {
+              fail(`ticket-130 ${leg.label} stage: the topbar must title the fork ${JSON.stringify(leg.expected)}`)
+            }
+            log(`fork_auto_name_${leg.label}_surfaces_ok`)
+
+            // The rename editor prefills the auto-name (the naming surface),
+            // and typing over it renames — the auto-name is not locked.
+            const openRename130 = `(() => {
+              const btn = document.querySelector('.chat-topbar button[aria-label="Rename task"]')
+              if (!(btn instanceof HTMLElement)) return false
+              btn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+              return true
+            })()`
+            if (!((await js(openRename130)) as boolean)) {
+              fail(`ticket-130 ${leg.label} stage: the topbar Rename button never rendered`)
+            }
+            if (!(await waitForProbe(win, `document.querySelector('.chat-title-input') instanceof HTMLInputElement`, 5_000))) {
+              fail(`ticket-130 ${leg.label} stage: the rename editor never opened`)
+            }
+            const prefill130 = (await js(`document.querySelector('.chat-title-input')?.value ?? null`)) as string | null
+            if (prefill130 !== leg.expected) {
+              fail(`ticket-130 ${leg.label} stage: the rename editor must prefill the auto-name, got ${JSON.stringify(prefill130)}`)
+            }
+            const override130 = `PICODE_130_${leg.label.toUpperCase()}_OVERRIDE`
+            const renameAck130 = waitFor(
+              (e) => e.type === 'session_renamed' && e.sessionId === forkCreated130.sessionId && e.name === override130,
+              `ticket-130 ${leg.label} rename-over-fork ack`
+            )
+            const typeRename130 = `(() => {
+              const input = document.querySelector('.chat-title-input')
+              if (!(input instanceof HTMLInputElement)) return false
+              const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+              setter.call(input, ${JSON.stringify(override130)})
+              input.dispatchEvent(new Event('input', { bubbles: true }))
+              input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+              return true
+            })()`
+            if (!((await js(typeRename130)) as boolean)) {
+              fail(`ticket-130 ${leg.label} stage: the rename editor lost its input`)
+            }
+            await renameAck130
+            if (!(await waitForProbe(win, `${rowTitle130} === ${JSON.stringify(override130)}`, 10_000))) {
+              fail(`ticket-130 ${leg.label} stage: the sidebar row never showed the rename over the auto-name`)
+            }
+            if (!(await waitForProbe(win, `document.querySelector('.chat-topbar-title')?.textContent === ${JSON.stringify(override130)}`, 10_000))) {
+              fail(`ticket-130 ${leg.label} stage: the topbar never showed the rename over the auto-name`)
+            }
+            log(`fork_auto_name_${leg.label}_rename_overrides_ok`)
+          })
+
+          // Source fidelity: the fork wrote only its OWN file.
+          if (readFileSync(leg.file, 'utf8') !== before130) {
+            fail(`ticket-130 ${leg.label} stage: the fork modified the source session file`)
+          }
+          log(`fork_auto_name_${leg.label}_source_untouched_ok`)
+        }
+      } finally {
+        rmSync(namedCwd130, { recursive: true, force: true })
+        rmSync(unnamedCwd130, { recursive: true, force: true })
+      }
+      log('fork_auto_name_done')
+    }
+
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
     const livePids = supervisor.hostPids
     if (livePids.length < 2) fail(`expected at least 2 live hosts before quit, saw ${livePids.length}`)
