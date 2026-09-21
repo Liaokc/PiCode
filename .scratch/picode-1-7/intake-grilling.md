@@ -175,6 +175,11 @@ Status: ready-for-spec
 - **取证（changelog × PiCode 集成面交叉核对）**：0.86.0 三条 breaking **均不命中**——①Context→TranscriptContext 是自定义 provider API（PiCode 零自定义 provider）；②ToolCall.arguments/ToolResultMessage.details 收紧为 JSON 兼容（PiCode 消费的 details.diff/images/async 信息本就是 JSON 值）；③user_bash fail-closed（PiCode 不用 user_bash）。PiCode 用面签名全在位（createAgentSessionServices/FromServices/Runtime、SessionManager.open/create、steer/followUp/clearQueue/setSessionName、queue_update 形态不变）。**风险点**：TUI 0.86 写的会话含**新 entry 类型**（before_agent_start 持久化、pi.bug-report 等）——PiCode 0.85.1 parse 遇到的兼容性 + ADR-0005 会话格式冒烟正是为此。
 - **定稿**：**SDK 对齐检查点票**（ADR-0005 例行）——内嵌 SDK 升 0.86.0 + 会话格式兼容冒烟（TUI 0.86 写的会话 PiCode 能开、新 entry 类型优雅降级）+ changelog 影响面适配（typecheck 实证 breaking 不命中；pi.on 退订函数可选采纳）+ 回归全绿（vitest/host-contract/electron smoke）。
 
+### R34 应用图标白边 —— 缺陷（Round 16 免问定稿，票 102 交付物缺陷）
+- **痛点**：Dock/Finder 里图标四角有白边；期望去掉白边、只留黑色 squircle 的圆滑弧角（截图 截屏2026-09-21 14.02.45）。
+- **根因实锤**：qlmanage 光栅化 SVG 时把画布透明区垫成**不透明白**（独立 alphatest.svg 复现 + `build/icon.png` 四角 RGBA 实测 255,255,255,255）；SVG 源四角本是透明的。票 102 钉死 qlmanage 单光栅化器（产物不依环境变的纪律）——白垫底是它的合成行为。
+- **定稿**：make-icons.mjs 加**确定性 alpha 修复步**——1024 主图边缘连通白区 flood-fill → alpha=0（纯 Node 无新依赖；π 白笔画/橙块不连边缘不受影响，intake 已 1024 全图试算 43,992 像素清除 + 目检通过）；iconset/icns 重生成 + 打包产物 Dock 实视为验收。
+
 ### R26 运行中重命名 —— 缺陷（Round 10 免问定稿）
 - **痛点**：agent 运行时重命名会话报错 toast（右下角）；TUI 的 `/name` 运行中可用。
 - **根因**：`host/index.ts` handleRename 开头 `requireSettledSession()` 守卫——运行中被拒发 session_command_error。SDK setSessionName 运行中可写（TUI 实证）。
@@ -211,7 +216,9 @@ Status: ready-for-spec
 - **Round 12（免问）**：Worked 时长显示（第 29 条痛点）——票 14 口径修订（条目时间戳可派生时长），落点 chevron 右侧，并入票 108。定稿见 R30。
 - **Round 13（免问）**：双端包安装互通（第 30 条痛点）——安装路径机制面已互通（installAndPersist 同 `pi install` 代码路径），缺口 = Packages 列表缓存对 TUI 侧安装不自动反映；定稿 = 节挂载 force 刷新 + 双端验证矩阵 + 新会话生效语义提示。定稿见 R31。
 - **Round 14（免问）**：pi-subagents 0.70.0 适配（第 31 条痛点）——核心集成面无 breaking 实证，适配 = 0.70.0 上重验 90/99/101 集成面、漂移即修。定稿见 R32。
-- **Round 15（免问）**：pi agent 0.86.0 升级适配（第 32 条痛点）——ADR-0005 SDK 对齐检查点：三条 breaking 均不命中（交叉核对实证）、新 entry 类型兼容冒烟是核心风险面。定稿见 R33。（后补：TUI `pi update` 实测 0.86.1——零新增 breaking，票 112 目标版本同步；`pi update` 跳过扩展、R32 基准不受影响。）
+- **Round 15（免问）**：pi agent 0.86.0 升级适配（第 32 条痛点）——ADR-0005 SDK 对齐检查点：三条 breaking 均不命中（交叉核对实证）、新 entry 类型兼容冒烟是核心风险面。定稿见 R33。
+- **Round 16（免问）**：应用图标白边（第 33 条痛点）——qlmanage 白垫底实锤 + flood-fill 修法验证通过（intake 1024 试算目检）。定稿见 R34。
+- 至此前沿树空：34 条痛点 → 34 个 R 簇 × 全部边界均有裁决。（后补：TUI `pi update` 实测 0.86.1——零新增 breaking，票 112 目标版本同步；`pi update` 跳过扩展、R32 基准不受影响。）
 - 至此前沿树空：33 条痛点 → 33 个 R 簇 × 全部边界均有裁决。
 - 至此前沿树空：32 条痛点 → 32 个 R 簇 × 全部边界均有裁决。
 - 至此前沿树空：31 条痛点 → 31 个 R 簇 × 全部边界均有裁决。
@@ -224,6 +231,7 @@ Status: ready-for-spec
 - 打通验证 1：R31（双端包安装互通——缓存盲区补齐 + 验证矩阵）。
 - 适配验证 1：R32（pi-subagents 0.70.0——集成面重验）。
 - SDK 对齐检查点 1：R33（pi 0.86.0——SDK 升级 + 会话格式兼容冒烟）。
+- 票 102 交付物缺陷 1：R34（图标白边——qlmanage 白垫底）。
 - 交付行为修订 6：R1（票 78 live 增长）、R2（1.4 表格卡 360px）、R6（容器无锚定）、R15（票 56 提升规则）、R19（技能 marker 容器内 + 空泡）、R30（票 14 无时长规则——条目时间戳可派生）。
 - 交付行为修订 5：R1（票 78 live 增长）、R2（1.4 表格卡 360px）、R6（容器无锚定）、R15（票 56 提升规则）、R19（技能 marker 容器内 + 空泡）。
 - 清理 1：R12（幽灵钮删除）。
