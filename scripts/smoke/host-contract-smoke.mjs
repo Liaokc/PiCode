@@ -97,6 +97,22 @@
  *   stop control channel accepted) + the control/stop-requests request file
  *   asserted on disk → shutdown → exit 0.
  *
+ *   Round L (ticket 112报备: the pi 0.86 session-format compatibility smoke)
+ *   — a SEEDED session file carrying EVERY entry shape the pi 0.86 TUI
+ *   writes (shapes copied from a real TUI 0.86.1 session + the 0.86.1 SDK:
+ *   the before_agent_start persistence as a role:system message with prompt
+ *   sections + toolsAdded, a custom_message extension notice, a `custom`
+ *   pi.bug-report record, a cache-warm `usage` entry, PLUS a fully unknown
+ *   future entry type), interleaved with the pre-0.86 message flow, zero
+ *   model calls:
+ *   resume → session_created(resumed) → history_loaded (the pre-0.86 flow
+ *   replays COMPLETE: user/assistant/tool items in order, the tool item
+ *   carries its result and the additive subagent projection) → session_tree
+ *   (all seeded entries still nodes; every 0.86/unknown type degraded to a
+ *   tolerated 'other' node; leaf = the last entry) → shutdown → the file is
+ *   lossless (every seeded entry id still on disk, no new message entries,
+ *   no branch_summary) → exit 0.
+ *
  * Usage: npm run build && node scripts/smoke/host-contract-smoke.mjs
  * Expects working model auth in ~/.pi/agent (same as the pi TUI). Session
  * files land in an isolated throwaway store (PICODE_SESSION_DIR, ticket 13)
@@ -140,6 +156,8 @@ let subagent90TempRoot = ''
 let subagent99File = ''
 let subagent101File = ''
 let subagent101RunDir = ''
+// Ticket 112 round L: the seeded pi-0.86 session-format fixture.
+let session086File = ''
 const subagent101TempRoot = path.join(tmpdir(), 'picode-smoke-subagent101-root')
 
 // Ticket 96 round I: a workspace whose seeded .mcp.json drives the ADAPTER
@@ -720,6 +738,107 @@ async function onHostExit(exited, code) {
     if (code !== 0) fail(`round K exit should be clean 0, got ${code}`)
     rmSync(subagent101TempRoot, { recursive: true, force: true })
     delete process.env.PI_SUBAGENTS_TEMP_ROOT
+    // Ticket 112报备: round L — the pi 0.86 session-format compatibility
+    // smoke, zero model calls. The seed carries EVERY entry shape the pi
+    // 0.86 TUI writes (shapes copied from a real TUI 0.86.1 session on this
+    // machine + the 0.86.1 SDK source/docs): the before_agent_start
+    // persistence (role:system message with prompt sections + toolsAdded),
+    // a custom_message extension notice, a `custom` pi.bug-report record, a
+    // cache-warm `usage` entry, PLUS a fully unknown future entry type —
+    // interleaved with the pre-0.86 message flow. Opening it must keep the
+    // old flow COMPLETE and degrade every new/unknown type gracefully.
+    const seedDir086 = path.join(tmpdir(), 'picode-smoke-seed086-workspace')
+    mkdirSync(seedDir086, { recursive: true })
+    session086File = path.join(process.env.PICODE_SESSION_DIR, 'tui086-seeded.jsonl')
+    const stamp086 = '2026-09-21T06:20:00.000Z'
+    writeFileSync(
+      session086File,
+      [
+        JSON.stringify({ type: 'session', version: 3, id: 't086-header-id', timestamp: stamp086, cwd: seedDir086 }),
+        // before_agent_start persistence (0.86.0): the prompt/tool loadout
+        // rides a role:system message — sections keyed by name, toolsAdded.
+        JSON.stringify({
+          type: 'message', id: 't086-sys1', parentId: null, timestamp: stamp086,
+          message: {
+            role: 'system', content: '',
+            sections: { preamble: 'You are an expert coding assistant...', tools: '<tools>\n- read: ...\n</tools>', rules: 'Be careful.' },
+            toolsAdded: [{ name: 'read', description: 'Read a file', parameters: { type: 'object' } }],
+            timestamp: 1758438000000
+          }
+        }),
+        JSON.stringify({
+          type: 'message', id: 't086-u1', parentId: 't086-sys1', timestamp: stamp086,
+          message: { role: 'user', content: [{ type: 'text', text: 'PICODE_T086 what changed in pi 0.86?' }] }
+        }),
+        JSON.stringify({
+          type: 'message', id: 't086-a1', parentId: 't086-u1', timestamp: stamp086,
+          message: { role: 'assistant', content: [{ type: 'thinking', thinking: 'Check the changelog.' }, { type: 'toolCall', id: 't086-call1', name: 'read', arguments: { path: '/tmp/changelog.md' } }], stopReason: 'toolUse' }
+        }),
+        JSON.stringify({
+          type: 'message', id: 't086-r1', parentId: 't086-a1', timestamp: stamp086,
+          message: {
+            role: 'toolResult', toolCallId: 't086-call1', toolName: 'read',
+            content: [{ type: 'text', text: 'T086 changelog text' }],
+            isError: false,
+            // JSON-compatible details only (the 0.86.0 tightening) — the
+            // subagent run-identity shape PiCode's projection consumes.
+            details: { mode: 'single', runId: 't086-run-1', results: [] }
+          }
+        }),
+        // Extension-injected LLM-context message (pi-subagents async
+        // notices ride this shape — real TUI 0.86.1 session evidence).
+        JSON.stringify({
+          type: 'custom_message', id: 't086-cm1', parentId: 't086-r1', timestamp: stamp086,
+          customType: 'subagent-notify', content: 'Background task completed: workflow', display: false
+        }),
+        JSON.stringify({
+          type: 'message', id: 't086-a2', parentId: 't086-cm1', timestamp: stamp086,
+          message: { role: 'assistant', content: [{ type: 'text', text: 'PICODE_T086 reply: three breaking changes, none hit.' }], stopReason: 'stop' }
+        }),
+        // The /bug record: appendCustomEntry('pi.bug-report', data).
+        JSON.stringify({
+          type: 'custom', id: 't086-bug1', parentId: 't086-a2', timestamp: stamp086,
+          customType: 'pi.bug-report', data: { schemaVersion: 1, id: 'bug-t086', createdAt: stamp086, hint: null, sessionIncluded: false, summaryIncluded: false }
+        }),
+        // Cache warming (0.86.0): model-attributed usage outside the LLM
+        // context.
+        JSON.stringify({
+          type: 'usage', id: 't086-usg1', parentId: 't086-bug1', timestamp: stamp086,
+          kind: 'cache_warm', provider: 'anthropic', model: 'claude-sonnet-4-5',
+          usage: { input: 0, output: 0, cacheRead: 50000, cacheWrite: 0, totalTokens: 50000, cost: { total: 0.015 } }
+        }),
+        // Beyond every known type: the degradation contract must hold for
+        // entry types a FUTURE TUI invents (the exact ticket-112 wording).
+        JSON.stringify({
+          type: 'hypothetical_113_entry', id: 't086-fut1', parentId: 't086-usg1', timestamp: stamp086,
+          payload: { anything: true }
+        })
+      ].join('\n') + '\n'
+    )
+    console.log('SMOKE round K shutdown ok — starting round L (ticket-112 pi-0.86 session-format compatibility)')
+    step = 'L session_created'
+    bumpTimeout()
+    child = forkHost([seedDir086, session086File], onEvent)
+    return
+  }
+  if (step === 'L shutdown') {
+    if (code !== 0) fail(`round L exit should be clean 0, got ${code}`)
+    // Lossless closeout: every seeded entry id — pre-0.86 messages AND
+    // 0.86/unknown types — still on disk after the open/replay cycle; no
+    // new message entries were appended by the resume itself (its own SDK
+    // bookkeeping — e.g. thinking_level_change — is the only legal tail);
+    // no branch_summary exists.
+    const after086 = readFileSync(session086File, 'utf8').split('\n').filter((l) => l.trim() !== '')
+    const ids086 = ['t086-sys1', 't086-u1', 't086-a1', 't086-r1', 't086-cm1', 't086-a2', 't086-bug1', 't086-usg1', 't086-fut1']
+    for (const id of ids086) {
+      if (!after086.some((l) => l.includes(`"${id}"`))) fail(`the 0.86 session open lost entry ${id} — the read path must be lossless`)
+    }
+    const messageLines086 = after086.filter((l) => l.includes('"type":"message"'))
+    if (messageLines086.length !== 5) {
+      fail(`the 0.86 open must not append message entries (expected 5, got ${messageLines086.length})`)
+    }
+    if (after086.some((l) => l.includes('"branch_summary"'))) fail('the 0.86 session open must not append branch summaries')
+    console.log('SMOKE round L shutdown ok — pi-0.86 session lossless on disk (9/9 seeded ids, no appended messages, no branch_summary)')
     await finishClean(code)
     return
   }
@@ -742,11 +861,17 @@ async function finishClean(code) {
   // — the pure builder turns the jsonl the SDK actually wrote into
   // per-call payloads (entry = one model call, usage columns per ADR-0002).
   await verifySessionTraceContract()
-  console.log('SMOKE PASS host contract smoke complete (chat loop + tool round + resume/rename/tree/fork + candidate states + ticket-80 access sentinel)')
+  console.log('SMOKE PASS host contract smoke complete (chat loop + tool round + resume/rename/tree/fork + candidate states + ticket-80 access sentinel + ticket-112 pi-0.86 session compat)')
   process.exit(0)
 }
 
 function onEvent(event) {
+  // Activity-aware step budget: the timer re-arms on EVERY host event, so
+  // the 90s kill means "90s of event silence" (a hang), never "a healthy
+  // stream that ran long". Model-latency eras (0.86.1 included) stream
+  // multi-delivery queue steps past an absolute budget while perfectly
+  // alive — deltas visible in the log at kill time.
+  bumpTimeout()
   console.log(`[contract] ${JSON.stringify(event).slice(0, 200)}`)
   const fatal = new Set(['session_error', 'turn_error', 'session_command_error'])
   if (fatal.has(event.type)) fail(`${event.type}: ${event.message}`)
@@ -1766,6 +1891,74 @@ function onEvent(event) {
       if (request.type !== 'stop') fail(`the control-channel request must be a stop, got ${JSON.stringify(request)}`)
       console.log('SMOKE ticket-101 subagent_stop ok (ok=true state=stopping; stop request file in the control inbox)')
       step = 'K shutdown'
+      child.send({ type: 'shutdown' })
+      return
+    }
+
+    // ---------- Round L: ticket 112报备 — the pi 0.86 session-format compat ----------
+    case 'L session_created': {
+      if (event.type !== 'session_created') return
+      if (!event.resumed) fail('round L must open the seeded file as a resume')
+      if (event.sessionFile !== session086File) fail(`round L resumed the wrong file: ${event.sessionFile}`)
+      console.log('SMOKE round L session ok (seeded pi-0.86 fixture opened by the real SDK 0.86.1 host)')
+      step = 'L history'
+      return
+    }
+    case 'L history': {
+      if (event.type !== 'history_loaded') return
+      const items = event.items
+      // The pre-0.86 message flow must replay COMPLETE — the interleaved
+      // 0.86 entry types (system/custom_message/custom/usage/unknown) stay
+      // out of the LLM replay without dropping a single message item.
+      if (!Array.isArray(items) || items.length !== 4) fail(`round L replay must hold the 4 pre-0.86 message items, got ${JSON.stringify(items?.length)}`)
+      if (items[0]?.role !== 'user' || items[0]?.id !== 't086-u1') fail(`round L replay broken at the first item: ${JSON.stringify(items[0])}`)
+      if (items[1]?.role !== 'assistant' || items[1]?.id !== 't086-a1') fail('round L replay broken at the assistant toolCall item')
+      const tool = items[2]
+      if (tool?.role !== 'tool' || tool?.id !== 't086-call1') fail(`round L replay broken at the folded tool item: ${JSON.stringify(tool)}`)
+      if (!String(tool.output).includes('T086 changelog text')) fail('the folded tool item lost its recorded result text')
+      if (tool.isError !== false) fail('the folded tool item must keep isError=false')
+      if (tool.subagent?.runId !== 't086-run-1') fail(`the additive subagent projection broke on 0.86 JSON details: ${JSON.stringify(tool.subagent)}`)
+      if (items[3]?.role !== 'assistant' || items[3]?.id !== 't086-a2') fail('round L replay broken at the final assistant item')
+      console.log('SMOKE round L replay ok — pre-0.86 flow complete (4 items; system/custom/usage/unknown stayed out, nothing lost)')
+      step = 'L tree'
+      child.send({ type: 'request_tree' })
+      return
+    }
+    case 'L tree': {
+      if (event.type !== 'session_tree') return
+      const nodesL = []
+      const walkL = (list) => {
+        for (const node of list) {
+          nodesL.push(node)
+          walkL(node.children ?? [])
+        }
+      }
+      walkL(event.tree.nodes ?? [])
+      const seededL = ['t086-sys1', 't086-u1', 't086-a1', 't086-r1', 't086-cm1', 't086-a2', 't086-bug1', 't086-usg1', 't086-fut1']
+      const kindL = new Map(nodesL.map((node) => [node.id, node.kind]))
+      // Every seeded entry must survive as a node — the 0.86/unknown types
+      // degrade to 'other', the pre-0.86 message kinds stay intact.
+      for (const id of seededL) {
+        if (!kindL.has(id)) fail(`the 0.86 session open lost tree node ${id}`)
+        if (['t086-sys1', 't086-cm1', 't086-bug1', 't086-usg1', 't086-fut1'].includes(id) && kindL.get(id) !== 'other') {
+          fail(`entry ${id} must degrade to an 'other' node, got ${kindL.get(id)}`)
+        }
+      }
+      if (kindL.get('t086-u1') !== 'user' || kindL.get('t086-a1') !== 'assistant') {
+        fail('the pre-0.86 user/assistant nodes must keep their kinds')
+      }
+      // The only legal extra node is the resume's own bookkeeping tail
+      // (e.g. the thinking_level_change the host applies on open).
+      const extraL = nodesL.filter((node) => !seededL.includes(node.id))
+      for (const node of extraL) {
+        if (node.kind !== 'other') fail(`unexpected non-bookkeeping extra node ${node.id} kind ${node.kind}`)
+      }
+      if (extraL.length > 1) fail(`more than one bookkeeping tail node: ${JSON.stringify(extraL.map((n) => n.id))}`)
+      if (event.tree?.leafId !== 't086-fut1' && !(extraL.length === 1 && extraL[0].id === event.tree?.leafId)) {
+        fail(`the leaf must sit on the last entry (seeded or the bookkeeping tail), got ${event.tree?.leafId}`)
+      }
+      console.log(`SMOKE round L tree ok — ${seededL.length}/${seededL.length} seeded nodes + ${extraL.length} bookkeeping tail, 0.86/unknown types degraded to other, leaf on the last entry`)
+      step = 'L shutdown'
       child.send({ type: 'shutdown' })
       return
     }
