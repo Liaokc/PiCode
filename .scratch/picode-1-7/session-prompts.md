@@ -2,7 +2,7 @@
 
 > 每个工单一个新 pi 会话、一个 worktree、一条分支。本手册每块都可独立复制粘贴。
 > 约定详情见 `AGENTS.md › Parallel development (git worktrees)`。
-> 总 spec：`.scratch/picode-1-7/spec.md`（R1–R34 决议与验收口径；**每条 R 1:1 映射进票，81–108**（107 文件浏览器、109 visual fixture 修缮——已撤销由 87 顺带交付——为 intake 通道增补票；110 包互通挂 R31）——R5 拆三票、R7/R8/R10 合 81、R14/R17/R19 合 97）。
+> 总 spec：`.scratch/picode-1-7/spec.md`（R1–R35 决议与验收口径；**每条 R 1:1 映射进票，81–108**（107 文件浏览器、109 visual fixture 修缮——已撤销由 87 顺带交付——为 intake 通道增补票；110 包互通挂 R31）——R5 拆三票、R7/R8/R10 合 81、R14/R17/R19 合 97）。
 > 需求定稿全记录（23 痛点 × 六轮 25 问 + file:line 根因 + Pi 包取证 + ZCode bundle 键表 + 两处改判/一处加码）：`.scratch/picode-1-7/intake-grilling.md`。
 > 证据帧：`.scratch/compare/pi17-*`（操作者待复制——会话内贴图无法落盘）+ `icon-proposals/`（V2 定稿）。
 > 术语新增（子智能体目录/子代理对话/Manual 排序/图片预览/MCP 节 → 各票 rider；回合正文/常显段/过程叙述 live 语义修订 → 票 82）随票入 CONTEXT.md。
@@ -70,6 +70,7 @@ cd ~/PiCode && bash scripts/merge-ticket.sh <NN>
 | **W10** | **108** 计时不丢 | 容器 header 锚点派生（票 61 口径迁移） | **94** |
 | | **110** 双端包安装互通 | PackagesSection force 刷新 + 验证矩阵 | **89** |
 | | **111** pi-subagents 0.70.0 适配 | 90/99/101 集成面重验 | **101** |
+| | **115** pi-mcp-adapter 2.35.0 适配 | 89/96/110 消费面重验 | **96** |
 | **W11** | **114** 图标白边修复 | make-icons alpha 修复步 | 无 |
 | | **112** pi 0.86.0 升级适配 | SDK 升级 + 会话格式兼容冒烟 | 无（宜在 110/111 后） |
 
@@ -805,6 +806,27 @@ cd .worktrees/wt-114-icon-alpha && npm install
 重生成；打包产物 Dock 实视无白边 = 硬验收；c102-icon-* 帧重捕获。
 零产品代码、零契约增量。
 流程同 T81（merge-ticket.sh 114）。
+```
+
+---
+
+## T115 — pi-mcp-adapter 2.35.0 适配（W11，Blocked by 96）
+
+```bash
+cd ~/PiCode
+git worktree add .worktrees/wt-115-mcp-235 -b t115-mcp-235 main
+cd .worktrees/wt-115-mcp-235 && npm install
+```
+
+```text
+/implement .scratch/picode-1-7/issues/115-mcp-adapter-235-adaptation.md
+
+规矩：同 T81（分支 t115-mcp-235）。开工前 rebase main 拿 96 的基座。
+
+核心：pi-mcp-adapter 已 2.34.0→2.35.0（核心消费面文档核对无 breaking）。
+在 2.35.0 上重验 89/96/110 全部消费面（状态快照事件形状/写目标语义/OAuth
+流实测）——漂移即修、不漂移留档；2.35 新能力呈现 = 观察项不立项。
+流程同 T81（merge-ticket.sh 115）。
 ```
 
 ---

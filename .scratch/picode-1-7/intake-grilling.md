@@ -180,6 +180,11 @@ Status: ready-for-spec
 - **根因实锤**：qlmanage 光栅化 SVG 时把画布透明区垫成**不透明白**（独立 alphatest.svg 复现 + `build/icon.png` 四角 RGBA 实测 255,255,255,255）；SVG 源四角本是透明的。票 102 钉死 qlmanage 单光栅化器（产物不依环境变的纪律）——白垫底是它的合成行为。
 - **定稿**：make-icons.mjs 加**确定性 alpha 修复步**——1024 主图边缘连通白区 flood-fill → alpha=0（纯 Node 无新依赖；π 白笔画/橙块不连边缘不受影响，intake 已 1024 全图试算 43,992 像素清除 + 目检通过）；iconset/icns 重生成 + 打包产物 Dock 实视为验收。
 
+### R35 pi-mcp-adapter 2.35.0 适配 —— 适配验证（Round 17 免问定稿）
+- **背景**：pi-mcp-adapter 已更新 **2.34.0 → 2.35.0**（本机 09-21 14:59 就位）。票 89/96/110 的消费面以 2.34.0 文档为基准。
+- **取证**：核心消费面**无 breaking**——MCP_STATUS_EVENT 快照（servers[].name/status/toolCount/disabled + 计数）形状不变；配置层级与写目标语义不变（disabled 旗标/.pi/mcp.json/setup 目标原文在册）；OAuth 流在位且**重连可靠性有修复**（对我们有利）。2.35 变更 = 新能力（Jev 自然语言工具发现、MCP Tasks、`/mcp edit`、runtime-only approval）+ 修复（CJK 搜索、structuredContent 保留、symlink 原子写）。
+- **定稿**：**适配验证票**——在 2.35.0 上重验 89/96/110 消费面（状态快照事件形状实测、写入语义实测、OAuth 流实测），漂移即修、不漂移留档确认；新能力（Jev/Tasks/edit 命令）呈现 = 观察项不立项。
+
 ### R26 运行中重命名 —— 缺陷（Round 10 免问定稿）
 - **痛点**：agent 运行时重命名会话报错 toast（右下角）；TUI 的 `/name` 运行中可用。
 - **根因**：`host/index.ts` handleRename 开头 `requireSettledSession()` 守卫——运行中被拒发 session_command_error。SDK setSessionName 运行中可写（TUI 实证）。
@@ -218,6 +223,8 @@ Status: ready-for-spec
 - **Round 14（免问）**：pi-subagents 0.70.0 适配（第 31 条痛点）——核心集成面无 breaking 实证，适配 = 0.70.0 上重验 90/99/101 集成面、漂移即修。定稿见 R32。
 - **Round 15（免问）**：pi agent 0.86.0 升级适配（第 32 条痛点）——ADR-0005 SDK 对齐检查点：三条 breaking 均不命中（交叉核对实证）、新 entry 类型兼容冒烟是核心风险面。定稿见 R33。
 - **Round 16（免问）**：应用图标白边（第 33 条痛点）——qlmanage 白垫底实锤 + flood-fill 修法验证通过（intake 1024 试算目检）。定稿见 R34。
+- **Round 17（免问）**：pi-mcp-adapter 2.35.0 适配（第 34 条痛点）——核心消费面无 breaking 实证，适配 = 2.35.0 上重验 89/96/110 消费面、漂移即修。定稿见 R35。
+- 至此前沿树空：35 条痛点 → 35 个 R 簇 × 全部边界均有裁决。
 - 至此前沿树空：34 条痛点 → 34 个 R 簇 × 全部边界均有裁决。（后补：TUI `pi update` 实测 0.86.1——零新增 breaking，票 112 目标版本同步；`pi update` 跳过扩展、R32 基准不受影响。）
 - 至此前沿树空：33 条痛点 → 33 个 R 簇 × 全部边界均有裁决。
 - 至此前沿树空：32 条痛点 → 32 个 R 簇 × 全部边界均有裁决。
@@ -232,6 +239,7 @@ Status: ready-for-spec
 - 适配验证 1：R32（pi-subagents 0.70.0——集成面重验）。
 - SDK 对齐检查点 1：R33（pi 0.86.0——SDK 升级 + 会话格式兼容冒烟）。
 - 票 102 交付物缺陷 1：R34（图标白边——qlmanage 白垫底）。
+- 适配验证 2：R35（pi-mcp-adapter 2.35.0——消费面重验）。
 - 交付行为修订 6：R1（票 78 live 增长）、R2（1.4 表格卡 360px）、R6（容器无锚定）、R15（票 56 提升规则）、R19（技能 marker 容器内 + 空泡）、R30（票 14 无时长规则——条目时间戳可派生）。
 - 交付行为修订 5：R1（票 78 live 增长）、R2（1.4 表格卡 360px）、R6（容器无锚定）、R15（票 56 提升规则）、R19（技能 marker 容器内 + 空泡）。
 - 清理 1：R12（幽灵钮删除）。
