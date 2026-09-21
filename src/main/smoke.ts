@@ -204,6 +204,19 @@
  * recombination (the ticket-72 ⑤ evidence class), and the composer resets
  * fully (args, card, image).
  *
+ * Ticket 133 adds the bubble-text-select stage right before the quit (zero
+ * model calls): the user bubble's text segment opts back into selection
+ * (the .user-bubble-text user-select:text rule — the same one
+ * .msg-assistant carries; the body-level none never exempted the user
+ * bubble). A REAL trusted mouse drag across the text segment selects a
+ * strict part of the message; the same gesture over the skill row, the
+ * action row, and off a thumbnail selects nothing (and neither clicks the
+ * thumbnail — a plain real press still opens the ticket-91 preview); with
+ * a live selection in the bubble, Copy still lands the FULL raw text on
+ * the pasteboard and Edit still prefills the composer (ticket 79); the
+ * same drag-select rule holds in the read-only Live Follow view (a
+ * freshly-stamped seeded file opened through the sidebar row).
+ *
  * Any missed step times out and exits non-zero. Progress logs as
  * `SMOKE <step>` lines on stdout. Not part of `npm test`.
  */
@@ -16218,6 +16231,487 @@ export function startSmokeIfEnabled(
       }
       log('fork_auto_name_done')
     }
+
+    // ---- ticket 133: the user bubble's TEXT segment is selectable (spec
+    // R20). The app-level user-select:none (the body rule) opted only the
+    // assistant text back in (.msg-assistant); the user bubble never did,
+    // so dragging over the user's own words selected nothing — the
+    // asymmetry the .user-bubble-text user-select:text rule closes (same
+    // rule as the assistant text). This stage proves the BEHAVIOR on both
+    // transcript views:
+    // ① a REAL mouse drag across the text segment selects a non-empty run
+    //   that lives INSIDE that segment and is a strict PART of the message
+    //   (trusted input events — the ticket-81 scrollbar-drag shape;
+    //   synthetic dispatches never select anything);
+    // ② the same gesture over the SKILL ROW, the ACTION ROW, and off a
+    //   THUMBNAIL selects NOTHING (rendering widgets, not text); the drag
+    //   off the thumbnail neither selects nor CLICKS it, and a plain real
+    //   press still opens the ticket-91 preview (the button is unbroken);
+    // ③ the row's Edit still prefills the composer with the original text
+    //   and image (ticket 79, untouched) after all the drag gestures;
+    // ④ the SAME selection rule in the read-only Live Follow view: a second
+    //   seeded file (fresh mtime → the sidebar row click takes the Live
+    //   Follow path, the ticket-94 shape) drag-selects its bubble text the
+    //   same way;
+    // ⑤ Copy semantics unchanged WITH a live selection in the bubble: the
+    //   row's Copy still lands the message's FULL raw text on the pasteboard
+    //   (whole-bubble copy is the rule; selection is the part-copy
+    //   complement, not a replacement). This leg runs LAST and reads u1's
+    //   row — the block that survives ③'s leaf move — because it is the one
+    //   leg that needs the window FOCUSED (the ticket-44 class: a locked
+    //   screen or an active operator denies every steal), so a focus-denied
+    //   run still proves every other leg first.
+    log('bubble_text_select_start')
+    const selectProject133 = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-select133-'))
+    try {
+      const store133 = process.env['PICODE_SESSION_DIR']
+      if (!store133) fail('ticket-133 stage: PICODE_SESSION_DIR is not set')
+      const stamp133 = new Date().toISOString()
+      const selectFile133 = path.join(store133, 'select133.jsonl')
+      const followFile133 = path.join(store133, 'select133-follow.jsonl')
+      const png133 =
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+      const skillPrologue133 = (name: string): string =>
+        `<skill name="${name}" location="${path.join(selectProject133, 'SKILL.md')}">\nSkill body.\n</skill>\n`
+      // Three deliberate lines: pre-wrap keeps each on its own rendered line
+      // inside the ~600px bubble, so the drag below crosses ONE line and the
+      // selection is a strict part of the message — never the whole text
+      // (the partial-copy story), whatever the exact wrap width.
+      const DRAG_TEXT_133 = [
+        'PICODE_SELECT_133 first line of the selectable bubble text',
+        'PICODE_SELECT_133 second line of the selectable bubble text',
+        'PICODE_SELECT_133 third line of the selectable bubble text'
+      ].join('\n')
+      const COPY_TEXT_133 = 'PICODE_SELECT_133 the copy and edit rows still work on this message'
+      writeFileSync(
+        selectFile133,
+        [
+          JSON.stringify({ type: 'session', version: 3, id: 'select133-electron-id', timestamp: stamp133, cwd: selectProject133 }),
+          // u1: SKILL + three-line TEXT — the selectable text segment and
+          // the unselectable skill row share ONE bubble (legs ① and ②).
+          JSON.stringify({
+            type: 'message', id: 's133-u1', parentId: null, timestamp: stamp133,
+            message: { role: 'user', content: [{ type: 'text', text: `${skillPrologue133('grilling')}${DRAG_TEXT_133}` }] }
+          }),
+          JSON.stringify({
+            type: 'message', id: 's133-a1', parentId: 's133-u1', timestamp: stamp133,
+            message: { role: 'assistant', content: [{ type: 'text', text: 'PICODE_SELECT_133 first reply' }], stopReason: 'stop' }
+          }),
+          // u2: TEXT + IMAGE — the thumbnail legs and the Copy/Edit rows.
+          JSON.stringify({
+            type: 'message', id: 's133-u2', parentId: 's133-a1', timestamp: stamp133,
+            message: {
+              role: 'user',
+              content: [
+                { type: 'text', text: COPY_TEXT_133 },
+                { type: 'image', data: png133, mimeType: 'image/png' }
+              ]
+            }
+          }),
+          JSON.stringify({
+            type: 'message', id: 's133-a2', parentId: 's133-u2', timestamp: stamp133,
+            message: { role: 'assistant', content: [{ type: 'text', text: 'PICODE_SELECT_133 second reply' }], stopReason: 'stop' }
+          })
+        ].join('\n') + '\n'
+      )
+      // The follow seed (leg ④): one turn, the same three-line text, fresh
+      // mtime so the sidebar row click opens the Live Follow view.
+      writeFileSync(
+        followFile133,
+        [
+          JSON.stringify({ type: 'session', version: 3, id: 'select133-follow-id', timestamp: stamp133, cwd: selectProject133 }),
+          JSON.stringify({
+            type: 'message', id: 's133f-u1', parentId: null, timestamp: stamp133,
+            message: { role: 'user', content: [{ type: 'text', text: DRAG_TEXT_133 }] }
+          }),
+          JSON.stringify({
+            type: 'message', id: 's133f-a1', parentId: 's133f-u1', timestamp: stamp133,
+            message: { role: 'assistant', content: [{ type: 'text', text: 'PICODE_SELECT_133 follow reply' }], stopReason: 'stop' }
+          })
+        ].join('\n') + '\n'
+      )
+      utimesSync(followFile133, new Date(), new Date())
+
+      // The stage switches the focused session to its own seed — remember
+      // the row that holds focus NOW so the legs can hand the workspace
+      // back at the end (the suite's later stages must find the focused
+      // session unchanged — in this stage's取证 position that is the
+      // ticket-44 leg, which re-reads the first session's transcript).
+      let restoreRow133: string | null = null
+      await withWindow(getWindow, async (win) => {
+        restoreRow133 = (await win.webContents
+          .executeJavaScript(`document.querySelector('.sb-task.sb-task-active')?.getAttribute('data-file') ?? null`)
+          .catch(() => null)) as string | null
+      })
+
+      supervisor.handleParentCommand({ type: 'resume_session', sessionFile: selectFile133, cwd: selectProject133 })
+      const created133 = (await waitFor(
+        (e) => e.type === 'session_created' && e.sessionFile === selectFile133,
+        'ticket-133 resume session_created'
+      )) as Extract<Scoped, { type: 'session_created' }>
+      const selectSessionId133 = created133.sessionId
+      await waitFor((e) => e.type === 'history_loaded' && e.sessionId === selectSessionId133, 'ticket-133 resume replay')
+
+      await withWindow(getWindow, async (win) => {
+        const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+        const sleep133 = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+
+        if (!(await waitForProbe(win, `document.querySelector('.chat-view') !== null`, 10_000))) {
+          fail('ticket-133 stage: the resumed session never reached the chat view')
+        }
+        if (!(await waitForProbe(win, `document.querySelectorAll('.chat-thread > .msg-user-block').length === 2`, 10_000))) {
+          fail('ticket-133 stage: the two seeded user blocks never rendered')
+        }
+
+        /** A REAL drag with trusted input events (mouseDown → interpolated
+         * mouseMoves → mouseUp) — the native text-selection gesture; the
+         * synthetic MouseEvents earlier stages dispatch never select. */
+        const realDrag133 = async (from: { x: number; y: number }, to: { x: number; y: number }): Promise<void> => {
+          win.webContents.sendInputEvent({ type: 'mouseDown', x: from.x, y: from.y, button: 'left', clickCount: 1 })
+          await sleep133(60)
+          const steps = 5
+          for (let step = 1; step <= steps; step++) {
+            win.webContents.sendInputEvent({
+              type: 'mouseMove',
+              x: Math.round(from.x + ((to.x - from.x) * step) / steps),
+              y: Math.round(from.y + ((to.y - from.y) * step) / steps)
+            })
+            await sleep133(30)
+          }
+          win.webContents.sendInputEvent({ type: 'mouseUp', x: to.x, y: to.y, button: 'left', clickCount: 1 })
+          await sleep133(150)
+        }
+
+        /** Center-line geometry of the element the snippet picks (scrolled
+         * into view first; the rect is read after the scroll settles). */
+        const geom133 = async (elJs: string): Promise<{ x: number; y: number; w: number; h: number } | null> => {
+          const raw = (await js(`(() => {
+            const el = ${elJs}
+            if (!(el instanceof HTMLElement)) return null
+            el.scrollIntoView({ block: 'center' })
+            const r = el.getBoundingClientRect()
+            return JSON.stringify({ x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) })
+          })()`).catch(() => null)) as string | null
+          return raw === null ? null : (JSON.parse(raw) as { x: number; y: number; w: number; h: number })
+        }
+
+        /** The live selection read against one element: the selected text,
+         * and whether both selection ends sit INSIDE that element. */
+        const readSelection133 = async (elJs: string): Promise<{ text: string; inside: boolean } | null> => {
+          const raw = (await js(`(() => {
+            const el = ${elJs}
+            const sel = window.getSelection()
+            if (!(el instanceof HTMLElement) || sel === null) return null
+            const inside = sel.anchorNode !== null && sel.focusNode !== null &&
+              el.contains(sel.anchorNode) && el.contains(sel.focusNode)
+            return JSON.stringify({ text: sel.toString(), inside })
+          })()`).catch(() => null)) as string | null
+          return raw === null ? null : (JSON.parse(raw) as { text: string; inside: boolean })
+        }
+
+        /** True when the page holds NO text selection (absent or collapsed
+         * ranges read as none — a drag over unselectable widgets must end
+         * exactly here). */
+        const noSelection133 = async (): Promise<boolean> =>
+          ((await js(`(() => {
+            const sel = window.getSelection()
+            return sel !== null && sel.toString() === '' && (sel.rangeCount === 0 || sel.isCollapsed)
+          })()`).catch(() => false)) as boolean)
+
+        const u1Text133 = `document.querySelectorAll('.chat-thread > .msg-user-block')[0]?.querySelector('.user-bubble-text')`
+
+        // ① THE POSITIVE DRAG: across u1's text segment (the skill+text
+        // bubble) — a non-empty, in-segment, PARTIAL selection. The click
+        // the drag ends on lands on the plain text div, so the ticket-98
+        // focus discipline never reclaims the caret (only button-like
+        // controls do) and the selection survives the mouseup.
+        const textGeom133 = await geom133(u1Text133)
+        if (textGeom133 === null) fail('ticket-133 stage: the first bubble text segment never rendered for the drag')
+        const midY133 = textGeom133.y + Math.round(textGeom133.h / 2)
+        await realDrag133({ x: textGeom133.x + 3, y: midY133 }, { x: textGeom133.x + textGeom133.w - 3, y: midY133 })
+        const picked133 = await readSelection133(u1Text133)
+        if (picked133 === null) fail('ticket-133 stage: the drag selection probe never ran')
+        if (picked133.text === '' || !picked133.inside) {
+          fail(
+            `ticket-133 stage: dragging across the bubble text selected nothing (text ${JSON.stringify(picked133.text)}, inside ${String(picked133.inside)})`
+          )
+        }
+        const run133 = picked133.text.replace(/^\s+/, '').replace(/\s+$/, '')
+        if (run133 === '' || !DRAG_TEXT_133.includes(run133)) {
+          fail(`ticket-133 stage: the drag selection is not a run of the message text (${JSON.stringify(picked133.text)})`)
+        }
+        if (run133.length >= DRAG_TEXT_133.length) {
+          fail(
+            `ticket-133 stage: the drag selected the WHOLE message (${run133.length} of ${DRAG_TEXT_133.length} chars) — the part-copy story wants a strict part`
+          )
+        }
+        log('bubble_text_drag_select_ok', `${run133.length} of ${DRAG_TEXT_133.length} chars`)
+
+        // ② THE NEGATIVE DRAGS: the same gesture over the skill row and
+        // the action row selects nothing (rendering widgets, not text).
+        for (const [label133, elJs133] of [
+          ['skill row', `document.querySelectorAll('.chat-thread > .msg-user-block')[0]?.querySelector('.user-skill-row')`],
+          ['action row', `document.querySelectorAll('.chat-thread > .msg-user-block')[1]?.querySelector('.msg-actions')`]
+        ] as const) {
+          await js(`window.getSelection().removeAllRanges(); true`)
+          const geomNeg133 = await geom133(elJs133)
+          if (geomNeg133 === null) fail(`ticket-133 stage: the ${label133} never rendered for the negative drag`)
+          const negY133 = geomNeg133.y + Math.round(geomNeg133.h / 2)
+          await realDrag133({ x: geomNeg133.x + 3, y: negY133 }, { x: geomNeg133.x + geomNeg133.w - 3, y: negY133 })
+          if (!(await noSelection133())) {
+            const leaked133 = await readSelection133(elJs133)
+            fail(
+              `ticket-133 stage: dragging over the ${label133} selected text (${JSON.stringify(leaked133?.text ?? null)}) — rendering widgets must stay unselectable`
+            )
+          }
+        }
+        log('bubble_widget_rows_unselectable_ok')
+
+        // The thumbnail drag: DOWN off the button — no selection, and no
+        // click either (mousedown and mouseup on different elements never
+        // fire the button's onClick).
+        await js(`window.getSelection().removeAllRanges(); true`)
+        const thumbJs133 = `document.querySelectorAll('.chat-thread > .msg-user-block')[1]?.querySelector('.user-image-thumb')`
+        const thumbGeom133 = await geom133(thumbJs133)
+        if (thumbGeom133 === null) fail('ticket-133 stage: the bubble thumbnail never rendered for the negative drag')
+        const thumbCx133 = thumbGeom133.x + Math.round(thumbGeom133.w / 2)
+        const thumbCy133 = thumbGeom133.y + Math.round(thumbGeom133.h / 2)
+        await realDrag133({ x: thumbCx133, y: thumbCy133 }, { x: thumbCx133, y: thumbGeom133.y + thumbGeom133.h + 14 })
+        if (!(await noSelection133())) {
+          fail('ticket-133 stage: dragging off the thumbnail selected text — rendering widgets must stay unselectable')
+        }
+        if (!(await waitForProbe(win, `document.querySelector('.image-preview-backdrop') === null`, 2_000))) {
+          fail('ticket-133 stage: the drag off the thumbnail clicked it open — a drag is not a click')
+        }
+        // ...and the thumbnail BUTTON is unbroken: a real press (down + up
+        // at the same point) still opens the ticket-91 preview; Escape
+        // closes it.
+        win.webContents.sendInputEvent({ type: 'mouseDown', x: thumbCx133, y: thumbCy133, button: 'left', clickCount: 1 })
+        await sleep133(60)
+        win.webContents.sendInputEvent({ type: 'mouseUp', x: thumbCx133, y: thumbCy133, button: 'left', clickCount: 1 })
+        await sleep133(150)
+        if (!(await waitForProbe(win, `document.querySelector('.image-preview-backdrop') !== null`, 5_000))) {
+          fail('ticket-133 stage: the real thumbnail press never opened the preview overlay — the drag broke the button')
+        }
+        await js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); true`)
+        if (!(await waitForProbe(win, `document.querySelector('.image-preview-backdrop') === null`, 5_000))) {
+          fail('ticket-133 stage: Escape never closed the preview overlay')
+        }
+        log('bubble_thumb_drag_inert_press_ok')
+
+
+        // ③ THE EDIT ROW STILL WORKS: after the drag gestures, the row's
+        // Edit prefills the composer with the message's original text and
+        // image (the ticket-79 flow, untouched) — and the leaf move to u2's
+        // parent abandons only u2's tail, so u1's block (the Copy leg's
+        // target below) survives the replay.
+        const clickedEdit133 = (await js(`(() => {
+          const block = document.querySelectorAll('.chat-thread > .msg-user-block')[1]
+          if (!(block instanceof HTMLElement)) return false
+          const btn = [...block.querySelectorAll('.msg-action-btn')].find((b) => b.textContent?.includes('Edit'))
+          if (!(btn instanceof HTMLElement)) return false
+          btn.click()
+          return true
+        })()`)) as boolean
+        if (!clickedEdit133) fail('ticket-133 stage: the second user row never rendered an Edit button')
+        const prefilled133 = await waitForProbe(
+          win,
+          `(() => {
+            const ta = document.querySelector('.composer-input')
+            return ta instanceof HTMLTextAreaElement && ta.value === ${JSON.stringify(COPY_TEXT_133)} &&
+              document.querySelectorAll('.composer-attachments figure').length === 1
+          })()`,
+          10_000
+        )
+        if (!prefilled133) {
+          const diag133 = (await js(`JSON.stringify({
+            value: document.querySelector('.composer-input')?.value ?? null,
+            figures: document.querySelectorAll('.composer-attachments figure').length
+          })`).catch(() => 'diag-failed')) as string
+          fail(`ticket-133 stage: Edit never prefilled the composer with the original text + image — ${diag133}`)
+        }
+        log('bubble_edit_row_ok')
+
+        // ④ THE SAME RULE IN THE READ-ONLY FOLLOW VIEW: the seeded follow
+        // file stays live (mtime re-stamped at the click — the other end is
+        // "still writing"), so the sidebar row click opens the Live Follow
+        // view, whose composite bubble drag-selects the same way.
+        // The sidebar may be closed (earlier stages) — open with ⌘B, the
+        // ticket-108/129 pattern.
+        if (!((await js(`document.querySelector('.sidebar') !== null`)) as boolean)) {
+          await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', metaKey: true, bubbles: true })); true`)
+          if (!(await waitForProbe(win, `document.querySelector('.sidebar') !== null`, 5_000))) {
+            fail('ticket-133 stage: the sidebar never opened for the follow row')
+          }
+        }
+        utimesSync(followFile133, new Date(), new Date())
+        const row133 = `[data-file="${followFile133}"]`
+        if (!(await waitForProbe(win, `document.querySelector('${row133}') !== null`, 15_000))) {
+          fail('ticket-133 stage: the seeded follow session never reached the sidebar')
+        }
+        const clickedRow133 = (await js(`(() => {
+          const row = document.querySelector('${row133}')
+          if (!(row instanceof HTMLElement)) return false
+          row.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+          return true
+        })()`)) as boolean
+        if (!clickedRow133) fail('ticket-133 stage: the seeded follow row vanished before the click')
+        if (
+          !(await waitForProbe(
+            win,
+            `document.querySelector('.follow-badge') !== null &&
+             document.querySelector('.chat-thread .user-bubble-text') !== null`,
+            10_000
+          ))
+        ) {
+          fail('ticket-133 stage: the follow view never rendered the composite bubble')
+        }
+        const followTextJs133 = `document.querySelector('.chat-thread .user-bubble-text')`
+        const followGeom133 = await geom133(followTextJs133)
+        if (followGeom133 === null) fail('ticket-133 stage: the follow view text segment never rendered for the drag')
+        const followMidY133 = followGeom133.y + Math.round(followGeom133.h / 2)
+        await realDrag133(
+          { x: followGeom133.x + 3, y: followMidY133 },
+          { x: followGeom133.x + followGeom133.w - 3, y: followMidY133 }
+        )
+        const followSel133 = await readSelection133(followTextJs133)
+        if (followSel133 === null) fail('ticket-133 stage: the follow view selection probe never ran')
+        if (followSel133.text === '' || !followSel133.inside) {
+          fail(
+            `ticket-133 stage: the follow view drag never selected the bubble text (text ${JSON.stringify(followSel133.text)}, inside ${String(followSel133.inside)})`
+          )
+        }
+        const followRun133 = followSel133.text.replace(/^\s+/, '').replace(/\s+$/, '')
+        if (followRun133 === '' || !DRAG_TEXT_133.includes(followRun133) || followRun133.length >= DRAG_TEXT_133.length) {
+          fail(
+            `ticket-133 stage: the follow view drag selection is not a strict part of the message (${JSON.stringify(followSel133.text)})`
+          )
+        }
+        log('bubble_follow_text_select_ok', `${followRun133.length} of ${DRAG_TEXT_133.length} chars`)
+
+        // Exit the follow back to the focused session's chat view — the
+        // Copy leg below reads the chat view's user row (the follow view
+        // has none). After ③'s leaf move the transcript holds exactly ONE
+        // user block (u1's).
+        await js(
+          `(() => { const b = [...document.querySelectorAll('.chat-topbar .chat-topbar-btn')].find((x) => (x.textContent ?? '') === 'Stop following'); if (!b) return false; b.click(); return true })()`
+        )
+        if (
+          !(await waitForProbe(
+            win,
+            `document.querySelector('.follow-badge') === null &&
+             document.querySelector('.chat-view') !== null &&
+             document.querySelectorAll('.chat-thread > .msg-user-block').length === 1`,
+            10_000
+          ))
+        ) {
+          fail('ticket-133 stage: Stop following never returned to the chat view for the Copy leg')
+        }
+
+        // ⑤ COPY SEMANTICS UNCHANGED — with a live part-selection in the
+        // bubble, the row's Copy still lands the message's FULL raw text on
+        // the pasteboard (real round-trip, the ticket-44 shape: the
+        // renderer's navigator.clipboard needs the window focused). This
+        // leg reads u1's row — the block that survives ③'s leaf move — and
+        // its payload is the FULL 177-char text against the 58-char
+        // selection: the sharpest full-vs-part proof. The focus gate is the
+        // ticket-44 environmental class — the operator's machine may deny
+        // the steal for a stretch (macOS refuses activation while they type
+        // elsewhere, and a locked screen denies every steal) — so the whole
+        // gate→drag→click round retries a few times, re-stealing every poll
+        // tick, until the window can actually hold focus (the ticket-98
+        // trustedUntil shape); the assertion itself stays the strict
+        // pasteboard check.
+        const previous133 = await clipboard.readText()
+        try {
+          await clipboard.writeText('PICODE_CLIPBOARD_SENTINEL_133')
+          let copied133 = false
+          let everFocused133 = false
+          for (let attempt133 = 0; attempt133 < 5 && !copied133; attempt133++) {
+            win.show()
+            win.focus()
+            app.focus({ steal: true })
+            let focused133 = false
+            for (let waited = 0; waited < 15_000 && !focused133; waited += 100) {
+              focused133 = (await js('document.hasFocus()').catch(() => false)) === true
+              if (!focused133) {
+                if (!win.isFocused()) app.focus({ steal: true })
+                await sleep133(100)
+              }
+            }
+            if (!focused133) continue
+            everFocused133 = true
+            // Re-arm the drag selection so the Copy below runs WITH a live
+            // part-selection in the bubble — the sharpest form of the
+            // semantics proof (a selection-driven copy would land the PART).
+            const reGeom133 = await geom133(u1Text133)
+            if (reGeom133 === null) fail('ticket-133 stage: the text segment vanished before the Copy leg')
+            const reMidY133 = reGeom133.y + Math.round(reGeom133.h / 2)
+            await realDrag133({ x: reGeom133.x + 3, y: reMidY133 }, { x: reGeom133.x + reGeom133.w - 3, y: reMidY133 })
+            const rePicked133 = await readSelection133(u1Text133)
+            if (rePicked133 === null || rePicked133.text === '' || !rePicked133.inside) {
+              fail('ticket-133 stage: the re-armed drag selection never landed before the Copy click')
+            }
+            const clickedCopy133 = (await js(`(() => {
+              const block = document.querySelectorAll('.chat-thread > .msg-user-block')[0]
+              if (!(block instanceof HTMLElement)) return false
+              const btn = block.querySelector('.msg-action-btn')
+              if (!(btn instanceof HTMLElement)) return false
+              btn.click()
+              return true
+            })()`)) as boolean
+            if (!clickedCopy133) fail('ticket-133 stage: the first user row (u1 — the post-Edit sole block) never rendered a Copy button')
+            let got133 = ''
+            for (let waited = 0; waited < 5_000; waited += 100) {
+              got133 = await clipboard.readText()
+              if (got133 === COPY_TEXT_133) break
+              await sleep133(100)
+            }
+            if (got133 === COPY_TEXT_133) copied133 = true
+          }
+          if (!copied133) {
+            fail(
+              everFocused133
+                ? `ticket-133 stage: Copy never landed the message's full raw text on the pasteboard`
+                : 'ticket-133 stage: the smoke window never took focus for the real-clipboard copy (operator-active environment — the ticket-44 class)'
+            )
+          }
+          log('bubble_copy_full_text_ok')
+        } finally {
+          await clipboard.writeText(previous133) // leave the operator's pasteboard as found
+        }
+
+        // Hand the workspace back to the session that held it before this
+        // stage switched the focus to its own seed — the later stages must
+        // find the focused session unchanged.
+        if (restoreRow133 !== null) {
+          const restoreClicked133 = (await js(`(() => {
+            const row = document.querySelector('[data-file=${JSON.stringify(restoreRow133)}]')
+            if (!(row instanceof HTMLElement)) return false
+            row.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+            return true
+          })()`)) as boolean
+          if (!restoreClicked133) {
+            fail('ticket-133 stage: the pre-stage focused row vanished before the workspace hand-back')
+          }
+          if (
+            !(await waitForProbe(
+              win,
+              `document.querySelector('[data-file=${JSON.stringify(restoreRow133)}]')?.classList.contains('sb-task-active') === true`,
+              10_000
+            ))
+          ) {
+            fail('ticket-133 stage: the workspace hand-back never refocused the pre-stage session')
+          }
+        }
+
+        // Leave the page clean for the quit.
+        await js(`window.getSelection().removeAllRanges(); true`)
+      })
+    } finally {
+      rmSync(selectProject133, { recursive: true, force: true })
+    }
+    log('bubble_text_select_done')
 
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
     const livePids = supervisor.hostPids
