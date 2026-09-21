@@ -4,7 +4,9 @@
  * probes (exit 1 on any violation) and captures the frames:
  *
  *   cwd1-dimmed-row     — the sidebar's gray row (dimmed + "cwd missing"
- *                         meta) next to an alive control row
+ *                         meta) next to an alive control row; ticket 123
+ *                         also asserts the dead-cwd GROUP renders below
+ *                         the alive group (the liveness bucket)
  *   cwd2-gray-row-menu  — the gray row's context menu: the four harmless
  *                         entries only, no open-type action
  *   cwd3-restored       — the same row after its directory reappears:
@@ -162,6 +164,20 @@ export function startCwdVisualIfEnabled(getWindow: () => BrowserWindow | null): 
       const titles = await measure<string[]>(getWindow, `[...document.querySelectorAll('.sb-task-title')].map((el) => el.textContent)`)
       assert(titles?.includes(ALIVE_TITLE) === true, 'the control row must carry its own title')
       assert(titles?.includes(DOOMED_TITLE) === true, 'the gray row must carry its own title')
+      // Ticket 123: the dead-cwd GROUP sinks below every live group — the
+      // doomed project's section must render BELOW the alive control's
+      // section (the liveness bucket over every sort; the default Updated
+      // order would otherwise tie them by the same backdated mtime).
+      const groupOrder = await measure<string[]>(
+        getWindow,
+        `[...document.querySelectorAll('.sb-group')].map((g) => g.dataset['cwd'] ?? '')`
+      )
+      const aliveGroupIdx = groupOrder?.indexOf(aliveCwd) ?? -1
+      const doomedGroupIdx = groupOrder?.indexOf(doomedCwd) ?? -1
+      assert(
+        doomedGroupIdx !== -1 && aliveGroupIdx !== -1 && doomedGroupIdx > aliveGroupIdx,
+        `the dead-cwd group must render below the alive group (order: ${groupOrder?.join(',')})`
+      )
       await capture(win, 'cwd1-dimmed-row')
 
       // Right-click the gray row: exactly the four harmless entries.

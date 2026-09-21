@@ -18,14 +18,19 @@
  * Pure: no I/O, no time; inputs are never mutated.
  */
 import type { GroupedSessions, ManualSidebarOrder } from './group.ts'
+import { isDeadCwdGroup } from './group.ts'
 
 /** Capture the CURRENT rendered arrangement (the Sidebar's grouped result)
  * as the starting manual order. The pinned section is deliberately absent —
- * pins never drag, so they never enter the arrangement. */
+ * pins never drag, so they never enter the arrangement. Ticket 123: dead-cwd
+ * groups never enter the GROUP array — the sink is a live projection, not a
+ * stored position (a revived group must return to its natural sort place,
+ * never a baked tail); their ROW order still snapshots, because gray rows
+ * keep dragging inside a dead group (ticket 84's semantics). */
 export function snapshotManualOrder(grouped: GroupedSessions): ManualSidebarOrder {
   const sessions: Record<string, string[]> = {}
   for (const group of grouped.groups) sessions[group.cwd] = group.sessions.map((s) => s.id)
-  return { sessions, groups: grouped.groups.map((g) => g.cwd) }
+  return { sessions, groups: grouped.groups.filter((group) => !isDeadCwdGroup(group)).map((g) => g.cwd) }
 }
 
 /** Move one session right before `beforeId` within its cwd's manual list

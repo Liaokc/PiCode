@@ -46,6 +46,20 @@ export interface SessionProjectGroup {
   sessions: SessionSummary[]
 }
 
+/** True when one project group's cwd is dead (ticket 123): every row of a
+ * group shares the file-header cwd, so ANY row's ticket-54 `cwdMissing`
+ * flag reports the folder's physical fact. Dead groups sink below every
+ * live group under ALL three sorts — the operator's rule (a folder that
+ * no longer exists never outranks one that does) outranks every sort key,
+ * Manual included. The live-host exemption (ticket 54's warning state) is
+ * a ROW affordance, not a folder fact: the group sinks while the session
+ * view's CWD banner explains the situation. Purely derived — the flag
+ * clears on the next index scan when the directory reappears, and the
+ * projection follows with no stored state. */
+export function isDeadCwdGroup(group: { sessions: readonly { cwdMissing?: boolean }[] }): boolean {
+  return group.sessions.some((session) => session.cwdMissing === true)
+}
+
 export interface GroupedSessions {
   pinned: SessionSummary[]
   groups: SessionProjectGroup[]
@@ -100,7 +114,9 @@ function pinnedSorted(
  * section, every group's rows, and the groups themselves. Under `manual`
  * (ticket 84) the pinned section stays Updated-sorted (pins never drag) and
  * the stored arrangement orders groups and rows; unknowns fall back to the
- * Updated arrangement at the tail, so an empty order renders like Updated. */
+ * Updated arrangement at the tail, so an empty order renders like Updated.
+ * Ticket 123: a dead-cwd group (its directory gone from disk) sinks below
+ * every live group under ALL three sorts — see isDeadCwdGroup. */
 export function groupSessions(
   sessions: SessionSummary[],
   pinnedIds: ReadonlySet<string>,
@@ -123,40 +139,65 @@ export function groupSessions(
   if (sort === 'manual') return { pinned, groups: manualOrderedGroups(byCwd, manual) }
 
   const order = bySortOrder(sort)
-  const groups: SessionProjectGroup[] = [...byCwd.entries()]
+  const built: SessionProjectGroup[] = [...byCwd.entries()]
     .map(([cwd, list]) => ({ cwd, project: projectLabel(cwd), sessions: list.sort(order) }))
     // Newest group first, judged by its most recent session under the SAME
     // sort key (group order legitimately flips between Updated and Created).
     .sort((a, b) => sortKey(b.sessions[0] ?? a.sessions[0], sort) - sortKey(a.sessions[0] ?? b.sessions[0], sort))
-
-  return { pinned, groups }
+  // Ticket 123 liveness bucket: dead-cwd groups sink below every live group
+  // under every sort — the filter preserves each bucket's sort-key relative
+  // order (the sunk groups still age-order among themselves).
+  return {
+    pinned,
+    groups: [...built.filter((group) => !isDeadCwdGroup(group)), ...built.filter((group) => isDeadCwdGroup(group))]
+  }
 }
 
 /** The manual render's group sequence: stored cwds first (skipping cwds with
  * no live sessions), then the unknown cwds — newest group first, judged by
  * each group's most recent session mtime, the Updated baseline. Rows inside
- * every group follow the stored id order, unknown ids appended newest-first. */
+ * every group follow the stored id order, unknown ids appended newest-first.
+ * Ticket 123: a dead-cwd group NEVER rides the manual order — stored or
+ * unknown, it diverts to the sunk tail (ordered by the Updated baseline,
+ * the manual path's own fallback key), so the drag arrangement can never
+ * resurrect a dead group above a live one. */
 function manualOrderedGroups(
   byCwd: ReadonlyMap<string, SessionSummary[]>,
   manual: ManualSidebarOrder
 ): SessionProjectGroup[] {
-  const stored: SessionProjectGroup[] = []
-  const unknown: SessionProjectGroup[] = []
+  const storedLive: SessionProjectGroup[] = []
+  const unknownLive: SessionProjectGroup[] = []
+  const dead: SessionProjectGroup[] = []
   for (const cwd of manual.groups) {
     const list = byCwd.get(cwd)
     if (list === undefined) continue
-    stored.push({ cwd, project: projectLabel(cwd), sessions: manualOrderedRows(list, manual.sessions[cwd]) })
+    const group: SessionProjectGroup = {
+      cwd,
+      project: projectLabel(cwd),
+      sessions: manualOrderedRows(list, manual.sessions[cwd])
+    }
+    if (isDeadCwdGroup(group)) dead.push(group)
+    else storedLive.push(group)
   }
-  const updatedOrder = bySortOrder('updated')
   for (const [cwd, list] of byCwd) {
     if (manual.groups.includes(cwd)) continue
-    unknown.push({ cwd, project: projectLabel(cwd), sessions: [...list].sort(updatedOrder) })
+    const group: SessionProjectGroup = {
+      cwd,
+      project: projectLabel(cwd),
+      // Stored row order applies to unknown groups too (an id list can
+      // exist without the cwd being arranged — a dead group excluded from
+      // the groups array at snapshot time, or a row drag in a group born
+      // after the stored order); undefined degrades to the Updated order.
+      sessions: manualOrderedRows(list, manual.sessions[cwd])
+    }
+    if (isDeadCwdGroup(group)) dead.push(group)
+    else unknownLive.push(group)
   }
-  unknown.sort(
-    (a, b) =>
-      sortKey(b.sessions[0] ?? a.sessions[0], 'updated') - sortKey(a.sessions[0] ?? b.sessions[0], 'updated')
-  )
-  return [...stored, ...unknown]
+  const groupRecency = (a: SessionProjectGroup, b: SessionProjectGroup): number =>
+    sortKey(b.sessions[0] ?? a.sessions[0], 'updated') - sortKey(a.sessions[0] ?? b.sessions[0], 'updated')
+  unknownLive.sort(groupRecency)
+  dead.sort(groupRecency)
+  return [...storedLive, ...unknownLive, ...dead]
 }
 
 /** One group's rows under manual order: stored ids first (only ids with live

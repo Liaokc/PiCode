@@ -4648,6 +4648,220 @@ export function startSmokeIfEnabled(
     }
     log('dead_cwd_done')
 
+    // ---- ticket 123: dead-cwd group sink — the liveness bucket over every sort ----
+    // Two seeded project groups drive the bucket end to end. The doomed
+    // group seeds with the NEWEST mtime (it renders ABOVE its live sibling
+    // before death under both automatic sorts); deleting its directory
+    // sinks it below EVERY live group — under Updated, Created, AND Manual
+    // (the operator's rule outranks every sort key, Manual included). Under
+    // Manual the live sibling's grip still reorders while the dead group's
+    // grip cannot drag, and a drop aimed into the dead bucket lands at the
+    // live/dead boundary. The directory reappearing restores the group (a
+    // pure re-projection — nothing was baked into the manual order). The
+    // live/dead boundary is computed MAIN-side (which group cwds exist on
+    // disk right now), so dead groups left behind by earlier stages never
+    // make the assertion ambiguous.
+    log('dead_group_sink_start')
+    const sinkStore = process.env['PICODE_SESSION_DIR']
+    if (!sinkStore) fail('ticket-123 stage: PICODE_SESSION_DIR is not set')
+    const sinkLiveDir = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-sink123-live-'))
+    const sinkDoomDir = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-sink123-doom-'))
+    try {
+      // The live sibling seeds FIRST (older birthtime), the doomed group
+      // second with the newest mtime — before death it renders above the
+      // sibling under BOTH automatic sorts (updated = mtime, created =
+      // birthtime), so the sink is a real position flip, not a no-op.
+      const seed123 = (id: string, cwd: string, ageMin: number): void => {
+        const stamp = new Date().toISOString()
+        const file = path.join(sinkStore, `${id}.jsonl`)
+        writeFileSync(
+          file,
+          [
+            JSON.stringify({ type: 'session', version: 3, id, timestamp: stamp, cwd }),
+            JSON.stringify({
+              type: 'message',
+              id: `${id}-u1`,
+              parentId: null,
+              timestamp: stamp,
+              message: { role: 'user', content: [{ type: 'text', text: `PICODE_123 task ${id}` }] }
+            })
+          ].join('\n') + '\n'
+        )
+        const mtime = new Date(Date.now() - ageMin * 60_000)
+        utimesSync(file, mtime, mtime)
+      }
+      seed123('sink123-live', sinkLiveDir, 2)
+      seed123('sink123-doom', sinkDoomDir, 0)
+
+      await withWindow(getWindow, async (win) => {
+        const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+        // The earlier stage may have left the sidebar closed — open with ⌘B.
+        const sidebarPresent = `(document.querySelector('.sidebar') !== null)`
+        if (!((await js(sidebarPresent)) as boolean)) {
+          await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', metaKey: true, bubbles: true })); true`)
+          await waitForProbe(win, sidebarPresent, 5_000)
+        }
+
+        const groupCwdsJs = `[...document.querySelectorAll('.sb-group')].map((g) => g.dataset['cwd'] ?? '')`
+        const doomIdxJs = `(${groupCwdsJs}).indexOf(${JSON.stringify(sinkDoomDir)})`
+        const liveIdxJs = `(${groupCwdsJs}).indexOf(${JSON.stringify(sinkLiveDir)})`
+        const doomRow = `[data-file$="sink123-doom.jsonl"]`
+
+        /** One synthetic HTML5 drag (the ticket-84 pattern): dragstart on
+          * the source, dragover + drop on the target's top/bottom half,
+          * dragend on the source. */
+        const dragJs = (fromSel: string, toSel: string, half: 'top' | 'bottom'): string =>
+          `(() => {
+            const from = document.querySelector(${JSON.stringify(fromSel)})
+            const to = document.querySelector(${JSON.stringify(toSel)})
+            if (!(from instanceof HTMLElement) || !(to instanceof HTMLElement)) return 'missing'
+            const dt = new DataTransfer()
+            const rect = to.getBoundingClientRect()
+            const y = ${half === 'top' ? 'rect.top + 2' : 'rect.bottom - 2'}
+            const opts = { bubbles: true, cancelable: true, dataTransfer: dt, clientY: y }
+            from.dispatchEvent(new DragEvent('dragstart', opts))
+            to.dispatchEvent(new DragEvent('dragover', opts))
+            to.dispatchEvent(new DragEvent('drop', opts))
+            from.dispatchEvent(new DragEvent('dragend', opts))
+            return 'ok'
+          })()`
+
+        const openFilterJs = `(() => { const b = document.querySelector('button[aria-label="Filter tasks"]'); if (b instanceof HTMLElement) { b.dispatchEvent(new MouseEvent('click', { bubbles: true })); return true } return false })()`
+        const clickSortJs = (label: string): string =>
+          `(() => { const item = [...document.querySelectorAll('.sb-filter-menu .sb-filter-menu-item')].find((n) => n.querySelector('span')?.textContent === '${label}'); if (item instanceof HTMLElement) { item.dispatchEvent(new MouseEvent('click', { bubbles: true })); return true } return false })()`
+        const switchSort = async (label: 'Updated' | 'Created' | 'Manual'): Promise<void> => {
+          await js(openFilterJs)
+          if (!(await waitForProbe(win, `document.querySelector('.sb-filter-menu') !== null`, 5_000))) {
+            fail(`ticket-123 stage: the filter dropdown never opened for the ${label} switch`)
+          }
+          if (!((await js(clickSortJs(label))) as boolean)) {
+            fail(`ticket-123 stage: the ${label} sort item never clicked`)
+          }
+          if (!(await waitForProbe(win, `document.querySelector('.sb-filter-menu') === null`, 5_000))) {
+            fail(`ticket-123 stage: the ${label} switch never closed the dropdown`)
+          }
+        }
+
+        /** Main-side liveness boundary: every group whose cwd exists on
+          * disk RIGHT NOW must render above the doomed group. */
+        const assertDoomSunk = async (sortLabel: string): Promise<void> => {
+          const cwds = (await js(groupCwdsJs)) as string[]
+          const doomIdx = cwds.indexOf(sinkDoomDir)
+          if (doomIdx === -1) {
+            fail(`ticket-123 stage (${sortLabel}): the doomed group vanished from the list (order: ${cwds.join(',')})`)
+          }
+          for (const [i, cwd] of cwds.entries()) {
+            if (cwd === sinkDoomDir) continue
+            let liveDir = false
+            try {
+              liveDir = statSync(cwd).isDirectory()
+            } catch {
+              liveDir = false
+            }
+            if (liveDir && i > doomIdx) {
+              fail(
+                `ticket-123 stage (${sortLabel}): a live group renders below the dead one — ${cwd} at ${i}, doom at ${doomIdx} (order: ${cwds.join(',')})`
+              )
+            }
+          }
+          const liveIdx = cwds.indexOf(sinkLiveDir)
+          if (liveIdx === -1 || liveIdx > doomIdx) {
+            fail(`ticket-123 stage (${sortLabel}): the live sibling must render above the doomed group (order: ${cwds.join(',')})`)
+          }
+        }
+
+        // Index pickup: both groups render; under Updated the doomed group
+        // (newest mtime) renders ABOVE its live sibling — the pre-sink state.
+        if (!(await waitForProbe(win, `${doomIdxJs} !== -1 && ${liveIdxJs} !== -1 && ${doomIdxJs} < ${liveIdxJs}`, 20_000))) {
+          fail(`ticket-123 stage: the seeded groups never rendered with doom above live (order: ${String(await js(groupCwdsJs))})`)
+        }
+        log('dead_group_sink_seeded_ok')
+
+        // Delete the doomed directory: the next index tick sinks the group
+        // (Updated sort) — the row dims (ticket 54) but stays listed.
+        rmSync(sinkDoomDir, { recursive: true, force: true })
+        if (!(await waitForProbe(win, `document.querySelector('${doomRow}.sb-task-dimmed') !== null`, 20_000))) {
+          fail('ticket-123 stage: the doomed session never dimmed after its directory died')
+        }
+        await assertDoomSunk('updated')
+        log('dead_group_sink_updated_ok')
+
+        // Created sort: the same sink (a different sort key, the same bucket).
+        await switchSort('Created')
+        await assertDoomSunk('created')
+        log('dead_group_sink_created_ok')
+
+        // Manual sort: the same sink, plus the drag rules.
+        await switchSort('Manual')
+        await assertDoomSunk('manual')
+
+        // The dead group's grip never drags: not drag-enabled, and a full
+        // synthetic drag (dragstart on the grip, drop on its own section)
+        // commits NOTHING.
+        const doomGripDraggable = (await js(
+          `document.querySelector('[data-cwd="${sinkDoomDir}"] .sb-grip-handle')?.getAttribute('draggable')`
+        )) as string | null
+        if (doomGripDraggable === 'true') {
+          fail('ticket-123 stage: the dead group\'s grip must not be drag-enabled')
+        }
+        const orderBeforeDeadDrag = (await js(groupCwdsJs)) as string[]
+        if ((await js(dragJs(`[data-cwd="${sinkDoomDir}"] .sb-grip-handle`, `[data-cwd="${sinkDoomDir}"]`, 'top'))) !== 'ok') {
+          fail('ticket-123 stage: the dead-group drag probe went missing')
+        }
+        await new Promise((r) => setTimeout(r, 300))
+        const orderAfterDeadDrag = (await js(groupCwdsJs)) as string[]
+        if (JSON.stringify(orderAfterDeadDrag) !== JSON.stringify(orderBeforeDeadDrag)) {
+          fail(`ticket-123 stage: dragging a dead group changed the order (${orderBeforeDeadDrag.join(',')} → ${orderAfterDeadDrag.join(',')})`)
+        }
+        log('dead_group_sink_grip_frozen_ok')
+
+        // The live sibling's grip still drags (ticket 84 regression guard):
+        // drag it above the FIRST rendered group → it becomes the top group.
+        const firstCwd = ((await js(groupCwdsJs)) as string[])[0]
+        if (firstCwd === undefined) fail('ticket-123 stage: no rendered group to drag against')
+        if ((await js(dragJs(`[data-cwd="${sinkLiveDir}"] .sb-grip-handle`, `[data-cwd="${firstCwd}"]`, 'top'))) !== 'ok') {
+          fail('ticket-123 stage: the live-group drag probe went missing')
+        }
+        if (!(await waitForProbe(win, `${liveIdxJs} === 0`, 5_000))) {
+          fail(`ticket-123 stage: the live group\'s grip drag never moved it to the top (order: ${String(await js(groupCwdsJs))})`)
+        }
+        log('dead_group_sink_live_drag_ok')
+
+        // A drop aimed into the dead bucket (the doomed group's top half)
+        // commits at the live/dead boundary: the sibling becomes the LAST
+        // live group — directly above the doomed group (the bucket's first
+        // entry under Manual's Updated baseline, its mtime being newest).
+        if ((await js(dragJs(`[data-cwd="${sinkLiveDir}"] .sb-grip-handle`, `[data-cwd="${sinkDoomDir}"]`, 'top'))) !== 'ok') {
+          fail('ticket-123 stage: the dead-bucket drop probe went missing')
+        }
+        if (!(await waitForProbe(win, `${liveIdxJs} === ${doomIdxJs} - 1`, 5_000))) {
+          fail(`ticket-123 stage: the dead-bucket drop never landed at the live/dead boundary (order: ${String(await js(groupCwdsJs))})`)
+        }
+        log('dead_group_sink_boundary_drop_ok')
+
+        // RECOVERY: the directory reappears — the row un-dims (the flag
+        // flips on the next scan) and, back under Updated, the group returns
+        // ABOVE its live sibling (its mtime is the newest) — the exact
+        // inverse of the sunk state, with nothing baked into any order.
+        mkdirSync(sinkDoomDir, { recursive: true })
+        if (!(await waitForProbe(win, `(() => { const row = document.querySelector('${doomRow}'); return row !== null && !row.classList.contains('sb-task-dimmed') })()`, 20_000))) {
+          fail('ticket-123 stage: the doomed session never restored when its directory reappeared')
+        }
+        await switchSort('Updated')
+        if (!(await waitForProbe(win, `${doomIdxJs} !== -1 && ${doomIdxJs} < ${liveIdxJs}`, 10_000))) {
+          fail(`ticket-123 stage: the revived group never returned above its live sibling (order: ${String(await js(groupCwdsJs))})`)
+        }
+        log('dead_group_sink_recovered_ok')
+
+        // Hygiene: the sort already returned to Updated above (the
+        // ticket-84 courtesy — later stages expect the auto arrangement).
+      })
+    } finally {
+      rmSync(sinkLiveDir, { recursive: true, force: true })
+      rmSync(sinkDoomDir, { recursive: true, force: true })
+    }
+    log('dead_group_sink_done')
+
     // ---- ticket 43: history tree restyle — jump + fork don't regress ----
     // A seeded branched session (user → assistant+toolCall → toolResult →
     // assistant text, plus a second assistant branch off the user) drives
