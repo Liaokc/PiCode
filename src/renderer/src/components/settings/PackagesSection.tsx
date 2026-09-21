@@ -75,8 +75,13 @@ export default function PackagesSection({ cwd, onNotify }: PackagesSectionProps)
     []
   )
 
+  // Every mount force-refreshes (ticket 110): the per-dir cache in main has
+  // no TTL and only PiCode's OWN ops clear it, so a cached mount would hide
+  // packages another writer — the TUI's `pi install`, the same settings.json
+  // landing zone — added since the last look. Mounting the section is a
+  // fresh look; it must show the file truth, not the last snapshot.
   useEffect(() => {
-    refresh(false, cwd)
+    refresh(true, cwd)
   }, [refresh, cwd])
 
   /** A successful op/toggle changes the settings files the probe reads —
@@ -198,7 +203,10 @@ function PackageList({
     try {
       const outcome = await window.picode.settings.installPackage(trimmed, scope === 'project', requestCwd)
       if (!outcome.ok) onNotify(outcome.error, 'error')
-      else onNotify(`Installed ${trimmed}.`, 'info')
+      // Ticket 110, honest semantics: sessions load packages at startup —
+      // the running ones (here and in the TUI, where /reload is the
+      // equivalent) never hot-load. The toast says exactly that.
+      else onNotify(`Installed ${trimmed}. Takes effect in new sessions.`, 'info')
     } catch {
       onNotify('The package operation failed before it could report.', 'error')
     } finally {

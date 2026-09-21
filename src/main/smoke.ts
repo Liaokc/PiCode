@@ -9109,6 +9109,27 @@ export function startSmokeIfEnabled(
       )
       mkdirSync(path.join(projectDir, '.pi'), { recursive: true })
       writeFileSync(path.join(projectDir, '.pi', 'settings.json'), JSON.stringify({ packages: [projectPkgRoot] }))
+      // Ticket 110: the REAL packages are the dual-end test objects — the
+      // operator's installed pi-mcp-adapter + pi-subagents are symlinked
+      // into the sandbox npm root (the ticket-89 adapter precedent; deps
+      // resolve through the real paths). The settings ENTRIES reach the
+      // sandbox only in the TUI-side step (⑦) — until then the list stays
+      // empty so the ticket-64 flow is untouched.
+      const realAdapter110 = path.join(homedir(), '.pi', 'agent', 'npm', 'node_modules', 'pi-mcp-adapter')
+      const realSubagents110 = path.join(homedir(), '.pi', 'agent', 'npm', 'node_modules', 'pi-subagents')
+      for (const real of [realAdapter110, realSubagents110]) {
+        if (!existsSync(path.join(real, 'package.json'))) {
+          fail(
+            `ticket-110 step: ${path.basename(real)} is not installed at ${real} — install it (pi install npm:${path.basename(real)}) and rerun`
+          )
+        }
+      }
+      const sandboxNpmRoot110 = path.join(agentDir, 'npm', 'node_modules')
+      mkdirSync(sandboxNpmRoot110, { recursive: true })
+      for (const real of [realAdapter110, realSubagents110]) {
+        const link = path.join(sandboxNpmRoot110, path.basename(real))
+        if (!existsSync(link)) symlinkSync(real, link)
+      }
       // The canonical settings form of the installed local package: pi
       // relativizes local sources against the settings file's directory
       // (the agent dir for user scope) — the row and the file carry THAT
@@ -9185,11 +9206,28 @@ export function startSmokeIfEnabled(
           })()`
           type PkgRowSig = { present: boolean; enabled: string | null; badges: string[]; counts: string | null } | null
           let pkgRow: PkgRowSig = null
-          for (let waited = 0; waited < 20_000 && pkgRow === null; waited += 250) {
-            pkgRow = (await js(rowFor(relPkg)).catch(() => null)) as PkgRowSig
-            if (pkgRow === null) await new Promise((r) => setTimeout(r, 250))
+          // Ticket 110: the success toast must carry the honest new-session
+          // semantics — packages load at session startup, never hot-loaded
+          // into running ones. The toast and the row land together (the
+          // notify precedes the op-settled refresh), so the same wait window
+          // polls both.
+          const installToastSeen = (): Promise<boolean> =>
+            js(
+              `[...document.querySelectorAll('.toast-message')].some((n) => (n.textContent ?? '').includes('Takes effect in new sessions'))`
+            ).catch(() => false) as Promise<boolean>
+          let toasted110 = false
+          for (let waited = 0; waited < 20_000 && (pkgRow === null || !toasted110); waited += 250) {
+            if (pkgRow === null) pkgRow = (await js(rowFor(relPkg)).catch(() => null)) as PkgRowSig
+            if (!toasted110) toasted110 = await installToastSeen()
+            if (pkgRow === null || !toasted110) await new Promise((r) => setTimeout(r, 250))
           }
           if (pkgRow === null) fail(`ticket-64 stage: the installed package row never appeared (${pkgRoot} as ${relPkg})`)
+          if (!toasted110) {
+            const diag = (await js(
+              `[...document.querySelectorAll('.toast-message')].map((n) => n.textContent ?? '')`
+            ).catch(() => 'diag unavailable')) as unknown
+            fail(`ticket-110 step: the install success toast never noted the new-session semantics — toasts: ${JSON.stringify(diag)}`)
+          }
           if (!pkgRow!.badges.some((b) => b.toLowerCase() === 'local')) fail('ticket-64 stage: the local install is not badged Local')
           if (!pkgRow!.counts?.includes('1 extension') || !pkgRow!.counts?.includes('1 skill') || !pkgRow!.counts?.includes('1 prompt')) {
             fail(`ticket-64 stage: the package component counts are wrong (${String(pkgRow!.counts)})`)
@@ -9275,10 +9313,57 @@ export function startSmokeIfEnabled(
           if (!removed) fail('ticket-64 stage: the package never left the list and the settings file')
           log('packages_remove_ok')
 
-          // ⑦ The PROJECT layer: the sandbox project's row renders, the
+          // ⑦ Ticket 110: the TUI side installs. `pi install` lands exactly
+          // one thing this app reads — an entry in the SAME settings.json
+          // (the installed files the pre-seeded symlinks stand for) — so the
+          // stage writes it EXTERNALLY, out-of-band of every cache-clearing
+          // op. Then the section REMOUNTS (nav away, nav back): the mount
+          // must force-refresh the per-dir cache — the blind spot: the
+          // cache has no TTL and only PiCode's own ops cleared it, so a
+          // cached mount used to serve a list that never heard about the
+          // TUI's install. Both real packages must appear WITHOUT a manual
+          // Refresh click, resolved (NPM badge + component counts).
+          writeFileSync(
+            sandboxSettings,
+            JSON.stringify({ packages: ['npm:pi-mcp-adapter', 'npm:pi-subagents'] }, null, 2)
+          )
+          const clickNav110 = (label: string): string => `(() => {
+            const item = [...document.querySelectorAll('.settings-item')].find((el) => el.textContent?.trim() === ${JSON.stringify(label)})
+            if (!(item instanceof HTMLElement)) return false
+            item.click()
+            return true
+          })()`
+          if (!(await js(clickNav110('Skills')).catch(() => false))) fail('ticket-110 step: the Skills nav item is missing')
+          if (!(await waitForProbe(win, `document.querySelector('.packages-install-input') === null`, 5_000))) {
+            fail('ticket-110 step: the Packages section never unmounted on nav-away')
+          }
+          if (!(await js(clickNav110('Packages')).catch(() => false))) fail('ticket-110 step: the Packages nav item is missing')
+          if (!(await waitForProbe(win, `document.querySelector('.packages-install-input') !== null`, 5_000))) {
+            fail('ticket-110 step: the Packages section never remounted')
+          }
+          for (const realSource of ['npm:pi-mcp-adapter', 'npm:pi-subagents']) {
+            let realRow: PkgRowSig = null
+            for (let waited = 0; waited < 10_000 && realRow === null; waited += 250) {
+              realRow = (await js(rowFor(realSource)).catch(() => null)) as PkgRowSig
+              if (realRow === null) await new Promise((r) => setTimeout(r, 250))
+            }
+            if (realRow === null) {
+              fail(`ticket-110 step: the TUI-side install never reached the remounted list (${realSource})`)
+            }
+            if (!realRow!.badges.some((b) => b.toLowerCase() === 'npm')) {
+              fail(`ticket-110 step: the real package is not badged NPM (${realSource}: ${JSON.stringify(realRow!.badges)})`)
+            }
+            if (realRow!.counts === null || realRow!.counts.includes('Not installed')) {
+              fail(`ticket-110 step: the real package did not resolve component counts (${realSource}: ${String(realRow!.counts)})`)
+            }
+          }
+          log('packages_tui_side_reflected_ok')
+
+          // ⑧ The PROJECT layer: the sandbox project's row renders, the
           // banner states Pi is not loading the project's resources, and
           // every project action is LOCKED (untrusted → the gate pi itself
-          // applies to project writes).
+          // applies to project writes). ⑧ continues the ticket-64 flow —
+          // the ticket-110 global rows above must not disturb it.
           const projectRowSel = `.skill-row[data-package-source="${projectPkgRoot}"]`
           if (!(await waitForProbe(win, `document.querySelector('${projectRowSel}') !== null`, 20_000))) {
             fail(`ticket-64 stage: the project package row never appeared (${projectPkgRoot})`)
@@ -9308,7 +9393,7 @@ export function startSmokeIfEnabled(
           }
           log('packages_project_untrusted_ok')
 
-          // ⑧ Escape closes the settings window.
+          // ⑨ Escape closes the settings window.
           await js(`(() => {
             window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
             return true
@@ -9328,10 +9413,12 @@ export function startSmokeIfEnabled(
         log('packages_trust_json_untouched_ok')
       } finally {
         // Sandbox hygiene: everything this stage created lives in throwaway
-        // dirs (the wrapper deletes the agent dir on exit).
+        // dirs (the wrapper deletes the agent dir on exit). The npm-root
+        // SYMLINKS (ticket 110) go too — the MCP stage re-seeds its own.
         rmSync(pkgRoot, { recursive: true, force: true })
         rmSync(projectDir, { recursive: true, force: true })
         rmSync(projectPkgRoot, { recursive: true, force: true })
+        rmSync(sandboxNpmRoot110, { recursive: true, force: true })
         rmSync(sandboxSettings, { force: true })
       }
       log('packages_stage_done')
