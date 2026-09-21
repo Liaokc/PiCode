@@ -61,6 +61,7 @@
     "visual:fb107": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_FB107=1 electron .",
     "visual:skill-card": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_SKILL_CARD=1 electron .",
     "visual:context-ring": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_CONTEXT_RING=1 electron .",
+    "visual:menu-geometry": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_MENU_GEOMETRY=1 electron .",
     "visual:tree": "npm run build && PICODE_VISUAL=1 PICODE_VISUAL_TREE=1 electron .",
     "visual:layout": "npm run build && node scripts/smoke/layout-captures.mjs",
     "visual:pane-motion": "npm run build && node scripts/smoke/pane-motion-captures.mjs",

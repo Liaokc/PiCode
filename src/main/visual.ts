@@ -64,6 +64,7 @@ import { mermaidVisualEnabled } from './visual-mermaid'
 import { expandVisualEnabled } from './visual-expand'
 import { composerLayoutVisualEnabled } from './visual-composer-layout'
 import { imagePreviewVisualEnabled } from './visual-image-preview'
+import { menuGeometryVisualEnabled } from './visual-menu-geometry'
 import { focusVisualEnabled } from './visual-focus'
 import { terminalFocusVisualEnabled } from './visual-terminal-focus'
 import { skillCardVisualEnabled } from './visual-skill-card'
@@ -263,6 +264,8 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
   if (process.env['PICODE_VISUAL_RAIL_ANCHOR'] === '1') return
   // And for the context-ring harness (ticket 77).
   if (process.env['PICODE_VISUAL_CONTEXT_RING'] === '1') return
+  // And for the menu-geometry harness (ticket 122).
+  if (menuGeometryVisualEnabled()) return
   // And for the subagent-directory harness (ticket 90).
   if (process.env['PICODE_VISUAL_SUBAGENTS'] === '1') return
   // And for the subagent conversation-tab harness (ticket 99).

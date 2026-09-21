@@ -27,7 +27,7 @@ import { AccessMenu, ModelMenu, ThinkingMenu, thinkingLabel } from './composer/m
 import { FileMenu, SlashMenu } from './composer/list-menus'
 import ContextRing from './ContextRing'
 import ImagePreviewOverlay from './ImagePreviewOverlay'
-import { ArrowUpIcon, CloseIcon, CubeIcon, FoldIcon, GaugeIcon, PlusIcon, ShieldCheckIcon, StopIcon, UnfoldIcon, WandIcon } from './icons'
+import { ArrowUpIcon, BrainIcon, CloseIcon, CubeIcon, FoldIcon, PlusIcon, ShieldCheckIcon, StopIcon, UnfoldIcon, WandIcon } from './icons'
 import QueuePanel from './QueuePanel'
 import Tooltip from './Tooltip'
 
@@ -893,7 +893,7 @@ export default function Composer({
             disabled={disabled || chat.availableLevels.length === 0}
             onClick={() => setMenu(menu === 'thinking' ? null : 'thinking')}
           >
-            <GaugeIcon />
+            <BrainIcon />
             {density === 'full' && <span>{chat.thinkingLevel ? thinkingLabel(chat.thinkingLevel) : 'Thinking'}</span>}
             {density === 'full' && chat.thinkingIsDefault && chat.thinkingLevel !== null && (
               <span className="cmp-chip-default">default</span>

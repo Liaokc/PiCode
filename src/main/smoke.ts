@@ -1489,6 +1489,260 @@ export function startSmokeIfEnabled(
       log('chip_toggle_done')
     })
 
+    // ---- ticket 122 (spec R4/R5): menu geometry — the cascade card's
+    // height belongs to the provider column alone (hovering providers with
+    // different model counts must never move the popover bounding box),
+    // the model/thinking cards anchor to their chip's viewport-left edge
+    // and clamp inside a narrow window, and the ticket-68/69 keyboard
+    // model + ticket-98 focus discipline ride through the new geometry
+    // untouched. ----
+    log('menu_geometry_122_start')
+    await withWindow(getWindow, async (win) => {
+      const js = (code: string): Promise<unknown> => win.webContents.executeJavaScript(code)
+      // Deterministic viewport: wide enough that the unclamped chip-left
+      // equality is observable (the model card is 380px wide). The original
+      // bounds are restored for the later stages.
+      const originalBounds = win.getBounds()
+      win.setSize(Math.max(originalBounds.width, 1440), originalBounds.height)
+      await new Promise((r) => setTimeout(r, 300))
+      // The trusted legs (hover + keys) only land when the window HOLDS
+      // focus (the ticket-98 harness-robustness class: re-steal per leg).
+      // An unfocusable desktop (operator active — macOS refuses the steal,
+      // the ticket-44 environmental class) degrades instead of dying: the
+      // geometry assertions below are page-internal (synthetic chip
+      // presses, executeJavaScript probes, document.activeElement) and
+      // carry the evidence; only the real-key leg depends on OS focus.
+      win.show()
+      win.focus()
+      app.focus({ steal: true })
+      const ensureFocus = async (): Promise<boolean> => {
+        for (let waited = 0; waited < 5_000; waited += 100) {
+          if ((await js('document.hasFocus()').catch(() => false)) === true) return true
+          if (!win.isFocused()) app.focus({ steal: true })
+          await new Promise((r) => setTimeout(r, 100))
+        }
+        return false
+      }
+      if (!(await ensureFocus())) {
+        log('menu_geometry_122_focus_degraded', 'OS focus unavailable — geometry legs proceed, the real-key leg may skip')
+      }
+
+      // ① Chip anchor (R5): open the model menu with a real press and
+      // assert the card's left edge = the chip's viewport-left edge and
+      // the card floats ABOVE the composer card (never on the input area).
+      if (!(await js(composerChipPressJs('Model:')).catch(() => false))) fail('ticket-122: the model chip is missing')
+      if (!(await waitForProbe(win, `document.querySelector('.cmp-popover .cmp-cascade') !== null`, 5_000))) {
+        fail('ticket-122: the model cascade never opened')
+      }
+      const geomJs = `(() => {
+        const card = document.querySelector('.cmp-popover')
+        const chip = document.querySelector('.cmp-chip[aria-label^="Model:"]')
+        const composer = document.querySelector('.composer')
+        if (!(card instanceof HTMLElement) || !(chip instanceof HTMLElement) || !(composer instanceof HTMLElement)) return null
+        const c = card.getBoundingClientRect()
+        const k = chip.getBoundingClientRect()
+        const m = composer.getBoundingClientRect()
+        return JSON.stringify({
+          cardLeft: c.left, cardRight: c.right, cardBottom: c.bottom, composerTop: m.top,
+          chipLeft: k.left, innerWidth: window.innerWidth
+        })
+      })()`
+      interface CardGeom {
+        cardLeft: number
+        cardRight: number
+        cardBottom: number
+        composerTop: number
+        chipLeft: number
+        innerWidth: number
+      }
+      const readGeom = async (): Promise<CardGeom | null> => {
+        const raw = (await js(geomJs).catch(() => null)) as string | null
+        return raw === null ? null : (JSON.parse(raw) as CardGeom)
+      }
+      const wide = await readGeom()
+      if (!wide) fail('ticket-122: the popover geometry probe could not read the DOM')
+      if (Math.abs(wide.cardLeft - wide.chipLeft) > 0.5) {
+        fail(`ticket-122 R5: the model card left ${wide.cardLeft.toFixed(1)} != chip left ${wide.chipLeft.toFixed(1)}`)
+      }
+      if (wide.cardBottom > wide.composerTop + 0.5) {
+        fail(`ticket-122 R5: the card overlaps the composer card (bottom ${wide.cardBottom.toFixed(1)} vs composer top ${wide.composerTop.toFixed(1)})`)
+      }
+      // The decoupling mechanism itself: the model column must sit OUT of
+      // the flow (absolute) and scroll internally — the tripwire that keeps
+      // the hover-oscillation from returning on single-provider machines.
+      const colShape = (await js(`(() => {
+        const col = document.querySelectorAll('.cmp-cascade-col')[1]
+        if (!(col instanceof HTMLElement)) return null
+        const s = getComputedStyle(col)
+        return JSON.stringify({ position: s.position, overflowY: s.overflowY })
+      })()`).catch(() => null)) as string | null
+      if (!colShape) fail('ticket-122: the model column is missing for the decoupling check')
+      const shape = JSON.parse(colShape) as { position: string; overflowY: string }
+      if (shape.position !== 'absolute' || shape.overflowY !== 'auto') {
+        fail(`ticket-122 R4: the model column left the decoupled shape (position ${shape.position}, overflow ${shape.overflowY})`)
+      }
+      log('menu_geometry_anchor_ok', `card left ${wide.cardLeft.toFixed(1)} == chip left, card above the composer`)
+
+      // ② Cascade stability (R4): hover the first, then the last provider —
+      // the popover bounding box must not move, while hover still drives
+      // the shared selection model.
+      const selectedProviderJs = `(() => {
+        const rows = [...(document.querySelectorAll('.cmp-popover .cmp-cascade-col')[0]?.querySelectorAll('.cmp-menu-row') ?? [])]
+        return rows.findIndex((r) => r.classList.contains('cmp-menu-row-selected'))
+      })()`
+      const bboxJs = `(() => {
+        const card = document.querySelector('.cmp-popover')
+        if (!(card instanceof HTMLElement)) return null
+        const r = card.getBoundingClientRect()
+        return JSON.stringify({ x: r.left, y: r.top, w: r.width, h: r.height })
+      })()`
+      interface Box {
+        x: number
+        y: number
+        w: number
+        h: number
+      }
+      const readBox = async (): Promise<Box> => {
+        const raw = (await js(bboxJs)) as string | null
+        if (!raw) fail('ticket-122: the popover disappeared while hovering the cascade')
+        return JSON.parse(raw) as Box
+      }
+      const hoverProvider = async (index: number): Promise<void> => {
+        const raw = (await js(`(() => {
+          const row = document.querySelectorAll('.cmp-popover .cmp-cascade-col')[0]?.querySelectorAll('.cmp-menu-row')[${index}]
+          if (!(row instanceof HTMLElement)) return null
+          row.scrollIntoView({ block: 'nearest' })
+          const r = row.getBoundingClientRect()
+          return JSON.stringify({ x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) })
+        })()`).catch(() => null)) as string | null
+        if (!raw) fail(`ticket-122: provider row ${index} is missing`)
+        const p = JSON.parse(raw) as { x: number; y: number }
+        // Two trusted moves (the ticket-35 hover shape) — the row's hover
+        // gate follows real pointer movement only.
+        for (let move = 0; move < 2; move++) {
+          win.webContents.sendInputEvent({ type: 'mouseMove', x: p.x, y: p.y })
+          await new Promise((r) => setTimeout(r, 120))
+        }
+      }
+      const providerCount = (await js(
+        `document.querySelectorAll('.cmp-popover .cmp-cascade-col')[0]?.querySelectorAll('.cmp-menu-row').length ?? 0`
+      )) as number
+      if (providerCount < 1) fail('ticket-122: the cascade lists no providers')
+      const box0 = await readBox()
+      await hoverProvider(0)
+      if (!(await waitForProbe(win, `${selectedProviderJs} === 0`, 3_000))) {
+        fail('ticket-122: hovering the first provider never selected it')
+      }
+      const boxA = await readBox()
+      await hoverProvider(providerCount - 1)
+      if (!(await waitForProbe(win, `${selectedProviderJs} === ${providerCount - 1}`, 3_000))) {
+        fail('ticket-122: hovering the last provider never selected it')
+      }
+      const boxB = await readBox()
+      const sameBox = (a: Box, b: Box): boolean =>
+        Math.abs(a.x - b.x) <= 0.5 && Math.abs(a.y - b.y) <= 0.5 && Math.abs(a.w - b.w) <= 0.5 && Math.abs(a.h - b.h) <= 0.5
+      if (!sameBox(box0, boxA) || !sameBox(box0, boxB)) {
+        fail(`ticket-122 R4: the popover bbox moved under provider hover (open ${JSON.stringify(box0)}, first ${JSON.stringify(boxA)}, last ${JSON.stringify(boxB)})`)
+      }
+      log(
+        'menu_geometry_cascade_stable_ok',
+        providerCount >= 2
+          ? `providers=${providerCount}, bbox fixed across hover`
+          : 'single-provider machine — hover parity trivially held'
+      )
+
+      // ③ Keyboard + focus ride through (68/69/98 not regressed): hover to
+      // the first provider with ≥2 models (machine catalogs vary), then a
+      // real ArrowDown into the captured focus moves the model selection by
+      // one (clamped at the end) and the focus STAYS on the selected row.
+      const modelCountNow = async (): Promise<number> =>
+        (await js(
+          `document.querySelectorAll('.cmp-popover .cmp-cascade-col')[1]?.querySelectorAll('.cmp-menu-row').length ?? 0`
+        )) as number
+      let keyboardProvider = -1
+      for (let provider = 0; provider < providerCount && keyboardProvider < 0; provider++) {
+        await hoverProvider(provider)
+        if (!(await waitForProbe(win, `${selectedProviderJs} === ${provider}`, 3_000))) {
+          fail(`ticket-122: hovering provider ${provider} never selected it`)
+        }
+        if ((await modelCountNow()) >= 2) keyboardProvider = provider
+      }
+      const focusOnSelectedJs = `(() => {
+        const el = document.activeElement
+        return el instanceof HTMLElement && el.classList.contains('cmp-menu-row') && el.getAttribute('aria-selected') === 'true'
+      })()`
+      const modelIndexJs = `(() => {
+        const rows = [...(document.querySelectorAll('.cmp-popover .cmp-cascade-col')[1]?.querySelectorAll('.cmp-menu-row') ?? [])]
+        return rows.findIndex((r) => r.classList.contains('cmp-menu-row-selected'))
+      })()`
+      const modelIndex0 = (await js(modelIndexJs)) as number
+      const modelCount = await modelCountNow()
+      if (keyboardProvider >= 0 && modelIndex0 >= 0) {
+        const focused = await ensureFocus()
+        if (focused) {
+          const expected = Math.min(modelIndex0 + 1, modelCount - 1)
+          win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Down' })
+          await new Promise((r) => setTimeout(r, 60))
+          win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Down' })
+          if (!(await waitForProbe(win, `${modelIndexJs} === ${expected}`, 3_000))) {
+            fail(`ticket-122: the real ArrowDown never moved the model selection ${modelIndex0} → ${expected} (the ticket-68/69 keyboard model regressed?)`)
+          }
+          if (!(await waitForProbe(win, focusOnSelectedJs, 3_000))) {
+            fail('ticket-122: after the keyboard move the focus left the selected row (the ticket-98 capture discipline regressed?)')
+          }
+          log('menu_geometry_keyboard_ok', `model ${modelIndex0} → ${expected}, focus on the selected row`)
+        } else {
+          log('menu_geometry_keyboard_skipped', 'OS focus unavailable — the keyboard model evidence rides the ticket-69 stage (green this run) and the unchanged shared keyboard path')
+        }
+      } else {
+        log('menu_geometry_keyboard_skipped', `models=${modelCount} selected=${modelIndex0} (too few rows on this machine)`)
+      }
+
+      // ④ Window clamp (R5): with the menu still open, shrink the window —
+      // the card must stay inside the viewport (the resize re-clamps).
+      win.setSize(520, Math.max(originalBounds.height, 700))
+      await new Promise((r) => setTimeout(r, 400))
+      const narrow = await readGeom()
+      if (!narrow) fail('ticket-122: the geometry probe died in the narrow window')
+      if (narrow.cardLeft < 4 || narrow.cardRight > narrow.innerWidth - 4) {
+        fail(`ticket-122 R5: the card escaped the narrow window (left ${narrow.cardLeft.toFixed(1)}, right ${narrow.cardRight.toFixed(1)}, innerWidth ${narrow.innerWidth})`)
+      }
+      log('menu_geometry_clamp_ok', `innerWidth=${narrow.innerWidth}, card ${narrow.cardLeft.toFixed(1)}..${narrow.cardRight.toFixed(1)}`)
+
+      // ⑤ The thinking menu anchors the same way — its narrow card stays
+      // chip-aligned and inside the window.
+      if (!(await js(composerChipPressJs('Thinking:')).catch(() => false))) fail('ticket-122: the thinking chip is missing')
+      if (!(await waitForProbe(win, `document.querySelector('.cmp-popover-thinking') !== null`, 5_000))) {
+        fail('ticket-122: the thinking menu never opened')
+      }
+      const thinkRaw = (await js(`(() => {
+        const card = document.querySelector('.cmp-popover-thinking')
+        const chip = document.querySelector('.cmp-chip[aria-label^="Thinking:"]')
+        if (!(card instanceof HTMLElement) || !(chip instanceof HTMLElement)) return null
+        const c = card.getBoundingClientRect()
+        const k = chip.getBoundingClientRect()
+        return JSON.stringify({ cardLeft: c.left, cardRight: c.right, chipLeft: k.left, innerWidth: window.innerWidth })
+      })()`).catch(() => null)) as string | null
+      if (!thinkRaw) fail('ticket-122: the thinking geometry probe could not read the DOM')
+      const think = JSON.parse(thinkRaw) as { cardLeft: number; cardRight: number; chipLeft: number; innerWidth: number }
+      if (Math.abs(think.cardLeft - think.chipLeft) > 0.5) {
+        fail(`ticket-122 R5: the thinking card left ${think.cardLeft.toFixed(1)} != chip left ${think.chipLeft.toFixed(1)}`)
+      }
+      if (think.cardRight > think.innerWidth - 4 || think.cardLeft < 4) {
+        fail(`ticket-122 R5: the thinking card escaped the narrow window (right ${think.cardRight.toFixed(1)}, innerWidth ${think.innerWidth})`)
+      }
+      log('menu_geometry_thinking_anchor_ok', `thinking card left ${think.cardLeft.toFixed(1)} == chip left`)
+
+      // ⑥ Restore the viewport and close the menu for the later stages.
+      win.setBounds(originalBounds)
+      await new Promise((r) => setTimeout(r, 200))
+      if (!(await js(composerChipPressJs('Thinking:')).catch(() => false))) fail('ticket-122: the thinking chip is missing for the closing toggle')
+      if (!(await waitForProbe(win, `document.querySelector('.cmp-popover') === null`, 5_000))) {
+        fail('ticket-122: the thinking menu never closed on the chip re-press')
+      }
+      log('menu_geometry_122_done')
+    })
+
     // Crash isolation: SIGKILL the host; supervisor must report it unclean —
     // and scoped to exactly the session that died (ticket 20).
     const pid = supervisor.hostPid
