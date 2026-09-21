@@ -164,7 +164,10 @@ export default function TurnContainer({
           expandable ? (open ? 'Hide this turn\u2019s work' : 'Show this turn\u2019s work') : undefined
         }
       >
-        {turn.live && <LoaderIcon size={13} className="turn-container-icon spin" />}
+        {/* Ticket 103: the live spinner is a status signal, not faint chrome
+            — larger diameter (13 → 16) and the brand accent (was --text-faint);
+            position unchanged, collapsed keeps this single header ring. */}
+        {turn.live && <LoaderIcon size={16} className="turn-container-icon spin" />}
         <span className="turn-container-label">{turn.live ? 'Working' : 'Worked'}</span>
         {timed && (
           <>
@@ -193,6 +196,17 @@ export default function TurnContainer({
             onApprove={onApprove}
             onDeny={onDeny}
           />
+          {/* Ticket 103: the expanded live body's foot ring — the same
+              spinner as the header's, left-aligned on the body's bottom
+              edge (the head-and-tail "still working" mirror). Live only:
+              at settle turn.live drops and both rings vanish; a folded or
+              zero-work live turn renders the header ring alone (the body
+              is not mounted there). */}
+          {turn.live && (
+            <div className="turn-container-live-foot">
+              <LoaderIcon size={16} className="turn-container-foot-icon spin" />
+            </div>
+          )}
         </div>
       )}
     </div>

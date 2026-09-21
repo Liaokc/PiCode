@@ -29,6 +29,14 @@
  *   wc1-worked-replayed  — replayed zero-work turn: bare inert "Worked" row
  *   wc2-worked-silent    — live silent period: bare inert "Working · 1s" row
  *   wc3-worked-settled   — settled streamed turn: "Worked · 1s" row persists
+ *
+ * Ticket 103 (working-spinner enhancement) adds the live with-work leg:
+ *   wc4-spinner-expanded — live expanded container: header ring + body-foot
+ *                          ring (the head-and-tail mirror), both enlarged and
+ *                          brand-accented — the calibration frame the operator
+ *                          reviews for the visibility enhancement
+ *   wc5-spinner-folded   — the same live turn folded: the header ring alone
+ *   wc6-spinner-settled  — settled: no ring anywhere
  */
 
 import { tmpdir } from 'node:os'
@@ -73,7 +81,25 @@ const SIG = `(() => ({
   durations: document.querySelectorAll('.turn-container-duration').length,
   labels: [...document.querySelectorAll('.turn-container-label')].map((el) => el.textContent ?? ''),
   inert: [...document.querySelectorAll('.turn-container-header')].map((el) => el.getAttribute('aria-disabled') === 'true'),
-  answers: document.querySelectorAll('.msg-assistant .md').length
+  answers: document.querySelectorAll('.msg-assistant .md').length,
+  spinners: document.querySelectorAll('.turn-container-icon.spin').length,
+  footSpinners: document.querySelectorAll('.turn-container-live-foot .spin').length,
+  spinnerColor: getComputedStyle(document.querySelector('.turn-container-icon') ?? document.body).color,
+  /* Layout width, NOT getBoundingClientRect: the spin rotation inflates a
+     rotated square's axis-aligned bounding box (16 → ~22.6px at 45°). */
+  spinnerPx: parseFloat(getComputedStyle(document.querySelector('.turn-container-icon') ?? document.body).width) || 0,
+  /* The brand accent resolved by the BROWSER (code-review: no hardcoded rgb
+     literal duplicating app.css's --accent-orange — a token change keeps the
+     assertion true). A probe span carries the var; computed color compares
+     equal to the ring's. */
+  accentColor: (() => {
+    const probe = document.createElement('span')
+    probe.style.color = 'var(--accent-orange)'
+    document.body.appendChild(probe)
+    const c = getComputedStyle(probe).color
+    probe.remove()
+    return c
+  })()
 }))()`
 
 interface WorkedSig {
@@ -84,6 +110,11 @@ interface WorkedSig {
   labels: string[]
   inert: boolean[]
   answers: number
+  spinners: number
+  footSpinners: number
+  spinnerColor: string
+  spinnerPx: number
+  accentColor: string
 }
 
 async function waitFor(win: BrowserWindow, probe: string, budgetMs: number): Promise<boolean> {
@@ -170,7 +201,8 @@ export function startWorkedVisualIfEnabled(getWindow: () => BrowserWindow | null
       const silentOk = await waitFor(
         win,
         `${SIG}.turns === 2 && ${SIG}.labels.join() === 'Worked,Working' && ${SIG}.open === 0 &&
-         ${SIG}.chevrons === 0 && ${SIG}.inert.join() === 'true,true'`,
+         ${SIG}.chevrons === 0 && ${SIG}.inert.join() === 'true,true' && ${SIG}.spinners === 1 &&
+         ${SIG}.footSpinners === 0`,
         10_000
       )
       if (!silentOk) {
@@ -201,7 +233,8 @@ export function startWorkedVisualIfEnabled(getWindow: () => BrowserWindow | null
       const settledOk = await waitFor(
         win,
         `${SIG}.turns === 2 && ${SIG}.labels.join() === 'Worked,Worked' && ${SIG}.durations === 1 &&
-         ${SIG}.open === 0 && ${SIG}.chevrons === 0 && ${SIG}.answers === 2 && ${SIG}.inert.join() === 'true,true'`,
+         ${SIG}.open === 0 && ${SIG}.chevrons === 0 && ${SIG}.answers === 2 && ${SIG}.inert.join() === 'true,true' &&
+         ${SIG}.spinners === 0 && ${SIG}.footSpinners === 0`,
         10_000
       )
       if (!settledOk) {
@@ -220,6 +253,87 @@ export function startWorkedVisualIfEnabled(getWindow: () => BrowserWindow | null
       )
       await sleep(300)
       await capture(win, 'wc3-worked-settled')
+
+      // ---- wc4/wc5/wc6 (ticket 103): the live with-work spinner legs ----
+      // A live turn with a thinking part streams: the container opens (the
+      // ticket-82 live auto-expand) and rings at BOTH ends — header ring +
+      // body-foot ring, enlarged and brand-accented. Fold it mid-run: the
+      // header ring alone. Settle: no ring anywhere. The wc4 frame is the
+      // visibility-calibration artifact the operator reviews.
+      emitContractEvent({ type: 'user_message', text: 'PICODE_WC_SPINNER_LIVE' })
+      emitContractEvent({ type: 'agent_start' })
+      emitContractEvent({ type: 'message_start' })
+      emitContractEvent({ type: 'thinking_delta', delta: 'PICODE_WC spinner-leg thinking' })
+      const liveExpandedOk = await waitFor(
+        win,
+        `${SIG}.turns === 3 && ${SIG}.open === 1 && ${SIG}.spinners === 1 && ${SIG}.footSpinners === 1`,
+        10_000
+      )
+      if (!liveExpandedOk) {
+        const state = (await win.webContents.executeJavaScript(SIG).catch(() => '?')) as string
+        throw new Error(`worked visual wc4: the live expanded turn lacks its head+foot rings (state: ${state})`)
+      }
+      const expanded = (await win.webContents.executeJavaScript(SIG)) as WorkedSig
+      // The enhancement must be ON SCREEN: the brand accent (compared
+      // against the browser-resolved var, not a hardcoded rgb), 16px.
+      if (expanded.spinnerColor !== expanded.accentColor) {
+        throw new Error(
+          `worked visual wc4: the spinner is not the brand accent (spinner: ${expanded.spinnerColor}, accent: ${expanded.accentColor})`
+        )
+      }
+      if (expanded.spinnerPx < 15 || expanded.spinnerPx > 17) {
+        throw new Error(`worked visual wc4: the spinner diameter is not the enhanced 16px (${expanded.spinnerPx}px)`)
+      }
+      console.log(`VISUAL probe wc4: ${JSON.stringify(expanded)}`)
+
+      await win.webContents.executeJavaScript(
+        `(() => {
+          const thread = document.querySelector('.chat-thread')
+          if (thread instanceof HTMLElement) thread.scrollTop = thread.scrollHeight
+          return true
+        })()`
+      )
+      await sleep(300)
+      await capture(win, 'wc4-spinner-expanded')
+
+      // Fold mid-run: the body (with its foot ring) unmounts — the header
+      // ring alone, same place as ever.
+      await win.webContents.executeJavaScript(
+        `(() => { const hs = document.querySelectorAll('.turn-container-header'); const el = hs[2]; if (el instanceof HTMLElement) el.click(); return true })()`
+      )
+      const foldedOk = await waitFor(
+        win,
+        `${SIG}.turns === 3 && ${SIG}.open === 0 && ${SIG}.spinners === 1 && ${SIG}.footSpinners === 0`,
+        10_000
+      )
+      if (!foldedOk) {
+        const state = (await win.webContents.executeJavaScript(SIG).catch(() => '?')) as string
+        throw new Error(`worked visual wc5: the folded live turn did not keep exactly the header ring (state: ${state})`)
+      }
+      console.log(`VISUAL probe wc5: ${JSON.stringify(await win.webContents.executeJavaScript(SIG))}`)
+
+      await sleep(300)
+      await capture(win, 'wc5-spinner-folded')
+
+      // Reopen for a clean settle: both rings return, then vanish at settle.
+      await win.webContents.executeJavaScript(
+        `(() => { const hs = document.querySelectorAll('.turn-container-header'); const el = hs[2]; if (el instanceof HTMLElement) el.click(); return true })()`
+      )
+      await waitFor(win, `${SIG}.open === 1 && ${SIG}.footSpinners === 1`, 10_000)
+      emitContractEvent({ type: 'thinking_end', durationMs: 1500 })
+      emitContractEvent({ type: 'message_end' })
+      emitContractEvent({ type: 'agent_end' })
+      const spinnerSettledOk = await waitFor(
+        win,
+        `${SIG}.turns === 3 && ${SIG}.open === 0 && ${SIG}.spinners === 0 && ${SIG}.footSpinners === 0`,
+        10_000
+      )
+      if (!spinnerSettledOk) {
+        const state = (await win.webContents.executeJavaScript(SIG).catch(() => '?')) as string
+        throw new Error(`worked visual wc6: a settled turn kept a live ring (state: ${state})`)
+      }
+      console.log(`VISUAL probe wc6: ${JSON.stringify(await win.webContents.executeJavaScript(SIG))}`)
+      await capture(win, 'wc6-spinner-settled')
 
       console.log('VISUAL worked-container done')
       app.exit(0)
