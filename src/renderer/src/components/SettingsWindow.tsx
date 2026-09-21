@@ -147,7 +147,6 @@ export default function SettingsWindow({
             trendRange={ui.trendRange}
             drillDown={ui.drillDown}
             dispatch={dispatch}
-            onOpenTask={() => dispatchShell({ type: 'back-to-workspace' })}
           />
         )}
       </main>

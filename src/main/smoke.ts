@@ -199,6 +199,7 @@ import { EDIT_RESEND_TOAST } from '../shared/edit-resend'
 import { checkerboardPaint, pngBase64 } from './png-fixture'
 import type { SessionContextActionService } from './sessions/context-actions'
 import { emitContractEvent } from './visual'
+import { FAKE_USAGE_TINY_MODEL, FAKE_USAGE_ZERO_MODEL } from '../shared/usage/fixture'
 import { chmodSync } from 'node:fs'
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -9564,7 +9565,13 @@ export function startSmokeIfEnabled(
     //    intersection dots + date · per-model tokens · total);
     // ③ leaving the chart hides the chrome again;
     // ④ hovering a donut arc pops its card (model · tokens · share);
-    // ⑤ the trend click STILL opens the drill-down (zero click regression).
+    // ⑤ the trend click STILL opens the drill-down (zero click regression);
+    // ⑥ ticket 124 (R9): the strict-zero fixture model is absent from both
+    //    legends while the tiny non-zero one stays (30d default range);
+    // ⑦ ticket 124 (R9): switching to 7d re-projects (x-axis 3 ticks) and
+    //    the same legend invariants hold; switching back to 30d restores 7;
+    // ⑧ ticket 124 (R15): the drill-down rows carry no Open task button and
+    //    the row layout (head + session/tokens/cost cells) survives.
     log('usage_hover_start')
     await withWindow(getWindow, async (win) => {
       const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
@@ -9663,6 +9670,65 @@ export function startSmokeIfEnabled(
       }
       log('usage_donut_hover_ok')
 
+      // ⑥ Ticket 124 (R9): the strict-zero fixture model must be absent from
+      // the trend legend AND the donut (sectors + legend), while the tiny
+      // non-zero model stays in both — and no donut token cell may read a
+      // bare '0 tokens' (exact match: '120 tokens' is legit, '0 tokens' is not).
+      const legendsZeroFree = (): Promise<boolean> =>
+        waitForProbe(
+          win,
+          `(() => {
+            const trend = [...document.querySelectorAll('.trend-legend-item')].map((el) => el.textContent ?? '')
+            const donut = [...document.querySelectorAll('.donut-legend-row')].map((el) => el.textContent ?? '')
+            const donutTokens = [...document.querySelectorAll('.donut-legend-tokens')].map((el) => el.textContent ?? '')
+            return trend.length > 0 && donut.length > 0
+              && !trend.some((t) => t.includes(${JSON.stringify(FAKE_USAGE_ZERO_MODEL)}))
+              && !donut.some((d) => d.includes(${JSON.stringify(FAKE_USAGE_ZERO_MODEL)}))
+              && trend.some((t) => t.includes(${JSON.stringify(FAKE_USAGE_TINY_MODEL)}))
+              && donut.some((d) => d.includes(${JSON.stringify(FAKE_USAGE_TINY_MODEL)}))
+              && donutTokens.length > 0
+              && donutTokens.every((t) => t !== '0 tokens')
+          })()`,
+          5_000
+        )
+      if (!(await legendsZeroFree())) {
+        fail('ticket-124 stage: the 30d legends still show the zero-token model (or lost the tiny one)')
+      }
+      log('usage_zero_filter_30d_ok')
+
+      // ⑦ Switch to 7 days: the trend re-projects (7 dates → 3 x-ticks) and
+      // the same legend invariants hold; back to 30 days restores 7 ticks.
+      const clickRange = async (label: string): Promise<void> => {
+        const clickedSeg = (await js(
+          `(() => {
+            const seg = [...document.querySelectorAll('.seg')].find((el) => el.getAttribute('aria-label') === 'Trend time range')
+            const btn = [...(seg?.querySelectorAll('.seg-btn') ?? [])].find((b) => b.textContent?.trim() === ${JSON.stringify(label)})
+            if (btn instanceof HTMLElement) {
+              btn.click()
+              return true
+            }
+            return false
+          })()`
+        )) as boolean
+        if (!clickedSeg) fail(`ticket-124 stage: the ${label} range button is missing`)
+      }
+      await clickRange('Last 7 days')
+      if (!(await waitForProbe(win, `document.querySelectorAll('.trend-x-label').length === 3`, 5_000))) {
+        fail('ticket-124 stage: the 7d switch never re-projected the trend axis')
+      }
+      if (!(await legendsZeroFree())) {
+        fail('ticket-124 stage: the 7d legends still show the zero-token model (or lost the tiny one)')
+      }
+      log('usage_zero_filter_7d_ok')
+      await clickRange('Last 30 days')
+      if (!(await waitForProbe(win, `document.querySelectorAll('.trend-x-label').length === 7`, 5_000))) {
+        fail('ticket-124 stage: the 30d switch never re-projected the trend axis')
+      }
+      if (!(await legendsZeroFree())) {
+        fail('ticket-124 stage: the returned-30d legends still show the zero-token model (or lost the tiny one)')
+      }
+      log('usage_zero_filter_back_30d_ok')
+
       // ⑤ Click regression: the trend click still opens the drill-down.
       const clicked = (await js(
         `(() => {
@@ -9682,6 +9748,27 @@ export function startSmokeIfEnabled(
         fail('ticket-65 stage: the trend click no longer opens the drill-down (regression)')
       }
       log('usage_drilldown_click_ok')
+
+      // ⑧ Ticket 124 (R15): the drill-down rows are pure display — no Open
+      // task button anywhere, and the row grid (head + session/tokens/cost
+      // cells) still renders.
+      const rowsIntact = (await js(
+        `(() => {
+          const open = document.querySelectorAll('.dd-open')
+          const rows = [...document.querySelectorAll('.dd-row')]
+          const head = document.querySelector('.dd-row-head')
+          return open.length === 0
+            && rows.length > 1
+            && head !== null
+            && (head.textContent ?? '').includes('Session')
+            && (head.textContent ?? '').includes('Tokens')
+            && rows.slice(1).every((row) => (row.textContent ?? '').includes('tokens'))
+        })()`
+      )) as boolean
+      if (!rowsIntact) {
+        fail('ticket-124 stage: the drill-down rows lost their layout (or an Open task button survived)')
+      }
+      log('usage_drilldown_rows_pure_ok')
 
       // Leave the shell clean: close the drill-down, back to the workspace.
       await js(

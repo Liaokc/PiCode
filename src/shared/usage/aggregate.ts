@@ -492,15 +492,24 @@ export function trendView(snapshot: UsageSnapshot, rangeDays: 7 | 30): TrendView
       rangeTokensByModel.set(model, (rangeTokensByModel.get(model) ?? 0) + tokens)
     }
   }
-  const series = [...rangeTokensByModel.entries()]
-    .filter(([, tokens]) => tokens > 0)
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .map(([model]) => ({
+  const series = excludeZeroTokenModels([...rangeTokensByModel.entries()].map(([model, tokens]) => ({ model, tokens })))
+    .sort((a, b) => b.tokens - a.tokens || a.model.localeCompare(b.model))
+    .map(({ model }) => ({
       model,
       tokens: filledDaily.map((row) => row?.byModel[model] ?? 0)
     }))
 
   return { rangeDays, dates, series }
+}
+
+/** Strict-zero model exclusion for the usage charts (ticket 124, R9): drop
+ * any model whose token total is exactly 0 — a model that spent nothing is
+ * chart noise (an all-zero usage event still creates a model cell), while
+ * tiny non-zero usage stays because used is used (Q3=A, data-source
+ * honesty). One rule shared by the trend series projection and the model
+ * usage donut so the two cannot drift. */
+export function excludeZeroTokenModels<T extends { tokens: number }>(models: T[]): T[] {
+  return models.filter((model) => model.tokens > 0)
 }
 
 export function foldSessionFile(text: string, opts?: FoldOptions): SessionFileUsage {

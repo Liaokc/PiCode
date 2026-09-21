@@ -12,6 +12,15 @@ import { buildUsageSnapshot, dayKeyFromMs, isEarlierSpelling, normalizeModelId, 
 
 export const FAKE_USAGE_MODELS = ['GLM-5.2', 'GLM-5.3', 'kimi-k3', 'deepseek-v4-pro'] as const
 
+/** Ticket 124 (R9) fixtures, both landing on a streak day so the 7-day and
+ * 30-day ranges see them alike: a model whose calls all returned zero tokens
+ * (the real failed-call shape — it still creates a model cell, so it reaches
+ * modelTotals with 0 tokens) and a model with tiny-but-real usage. The charts
+ * must drop the strict-zero model everywhere and keep the tiny one. */
+export const FAKE_USAGE_ZERO_MODEL = 'qwen3.8-27b'
+export const FAKE_USAGE_TINY_MODEL = 'glm-4.7-air'
+export const FAKE_USAGE_TINY_TOKENS = 10_000
+
 /** Deterministic 0..1 from an integer seed (no Math.random anywhere). */
 function unit(seed: number): number {
   let x = (seed | 0) * 2654435761
@@ -74,6 +83,23 @@ function foldFiles(opts: Required<Options>): SessionFileUsage[] {
         const spelling: ModelSpelling = { raw: model, firstTs: dayMs }
         const current = modelDisplay.get(key)
         if (!current || isEarlierSpelling(current, spelling)) modelDisplay.set(key, spelling)
+      }
+      // Ticket 124 fixtures (see FAKE_USAGE_ZERO_MODEL): the zero-token
+      // model's failed calls and the tiny model's one real call, on a
+      // streak day (back=2) so both ranges (7/30d) include them.
+      if (span.id === 'fixture-streak' && back === 2) {
+        byModel.set(FAKE_USAGE_ZERO_MODEL, { tokens: 0, costMicros: 0, events: 2 })
+        byModel.set(FAKE_USAGE_TINY_MODEL, {
+          tokens: FAKE_USAGE_TINY_TOKENS,
+          costMicros: Math.round((FAKE_USAGE_TINY_TOKENS / 1_000_000) * 2_500_000),
+          events: 1
+        })
+        for (const model of [FAKE_USAGE_ZERO_MODEL, FAKE_USAGE_TINY_MODEL]) {
+          const key = normalizeModelId(model)
+          const spelling: ModelSpelling = { raw: model, firstTs: dayMs }
+          const current = modelDisplay.get(key)
+          if (!current || isEarlierSpelling(current, spelling)) modelDisplay.set(key, spelling)
+        }
       }
       days.set(date, byModel)
 
