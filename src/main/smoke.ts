@@ -141,6 +141,14 @@
  * return the caret, a real Tab must match :focus-visible (the Q19 ring)
  * and mouse flows must never rest on a control.
  *
+ * Ticket 104 adds the rename-midrun stage right after the queue-repair
+ * stage: while a real count run streams, the topbar Rename editor commits a
+ * new name through the host's set_session_label — the host (settled guard
+ * removed, TUI /name parity) answers session_renamed, the topbar title and
+ * the sidebar row update immediately, no error toast rises, and the run
+ * keeps streaming through the rename. After the Stop the settled rename
+ * re-runs through the same path (no regression).
+ *
  * Any missed step times out and exits non-zero. Progress logs as
  * `SMOKE <step>` lines on stdout. Not part of `npm test`.
  */
@@ -12236,6 +12244,137 @@ export function startSmokeIfEnabled(
       await js(composerClearJs)
     })
     log('queue_repair_done')
+
+    // ---- ticket 104: renaming WHILE the agent runs (TUI /name parity).
+    // The chat topbar's Rename button opens the inline editor mid-run;
+    // Enter commits through the host's set_session_label, which must
+    // SUCCEED while the run is live — the host answers session_renamed
+    // (no session_command_error toast), the topbar title and the sidebar
+    // row update immediately, and the run keeps streaming through it. The
+    // settled path re-renames after the Stop (no regression). ----
+    log('rename_midrun_start')
+    const rename104Created = waitFor(
+      (e) => e.type === 'session_created',
+      'ticket-104 session_created'
+    ) as Promise<Extract<Scoped, { type: 'session_created' }>>
+    supervisor.createSession(cwd)
+    const rename104Session = await rename104Created
+    const rename104Id = rename104Session.sessionId
+    // Long enough to still be streaming through the whole rename choreography
+    // (the ticket-100 count precedent: the run must outlive the stage legs).
+    const COUNT_PROMPT_104 =
+      'PICODE_RENAME_104_HOST: Count from 1 to 800. Output each number on its own line, one number per line. Do not summarize and do not stop early. Do not use any tools — write the numbers directly in your reply text.\n' +
+      '\n'.repeat(100)
+    const NAME_RUNNING_104 = 'PICODE 104 midrun rename'
+    const NAME_SETTLED_104 = 'PICODE 104 settled rename'
+    await withWindow(getWindow, async (win) => {
+      const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+      // The topbar rename flow: the Rename button opens the inline editor,
+      // the native-setter input event feeds React's onChange, Enter commits.
+      const openTopbarRename104 = `(() => {
+        const btn = document.querySelector('.chat-topbar button[aria-label="Rename task"]')
+        if (!(btn instanceof HTMLElement)) return false
+        btn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        return true
+      })()`
+      const typeTopbarRename104 = (name: string): string => `(() => {
+        const input = document.querySelector('.chat-title-input')
+        if (!(input instanceof HTMLInputElement)) return false
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+        setter.call(input, ${JSON.stringify(name)})
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+        return true
+      })()`
+      const noErrorToast104 = `![...document.querySelectorAll('.toast-error')].some((n) => (n.textContent ?? '').includes('Cannot restructure'))`
+
+      if (!(await waitForProbe(win, `document.querySelector('.chat-view') !== null`, 10_000))) {
+        fail('ticket-104 stage: the fresh session never reached the chat view')
+      }
+      if (!(await waitForProbe(win, noErrorToast104, 2_000))) {
+        fail('ticket-104 stage: a pre-existing error toast would make the no-error assertion vacuous')
+      }
+      supervisor.handleParentCommand({
+        type: 'session_command',
+        sessionId: rename104Id,
+        command: { type: 'prompt', text: COUNT_PROMPT_104 }
+      })
+      await waitFor((e) => e.type === 'agent_start' && e.sessionId === rename104Id, 'ticket-104 agent_start')
+      await waitFor((e) => e.type === 'text_delta' && e.sessionId === rename104Id, 'ticket-104 first text_delta')
+
+      // Mid-run rename through the topbar (the /name parity path).
+      const renamedRunning104 = waitFor(
+        (e) => e.type === 'session_renamed' && e.sessionId === rename104Id,
+        'ticket-104 session_renamed while running'
+      ) as Promise<Extract<Scoped, { type: 'session_renamed' }>>
+      if (!((await js(openTopbarRename104)) as boolean)) {
+        fail('ticket-104 stage: the topbar Rename button is missing mid-run')
+      }
+      if (!(await waitForProbe(win, `document.querySelector('.chat-title-input') instanceof HTMLInputElement`, 10_000))) {
+        fail('ticket-104 stage: the rename editor never opened mid-run')
+      }
+      if (!((await js(typeTopbarRename104(NAME_RUNNING_104))) as boolean)) {
+        fail('ticket-104 stage: the rename editor lost its input mid-run')
+      }
+      const renameRunningAck = await renamedRunning104
+      if (renameRunningAck.name !== NAME_RUNNING_104) {
+        fail(`ticket-104 stage: the mid-run rename ack carried the wrong name, got ${renameRunningAck.name}`)
+      }
+      log('rename104_midrun_ack_ok')
+
+      // The title updates immediately (topbar via the tree refresh, sidebar
+      // via the optimistic row + the index refresh) and NO error toast rose.
+      if (!(await waitForProbe(win, `document.querySelector('.chat-topbar-title')?.textContent === ${JSON.stringify(NAME_RUNNING_104)}`, 10_000))) {
+        fail(`ticket-104 stage: the topbar title never showed the mid-run rename — got ${(await js(`document.querySelector('.chat-topbar-title')?.textContent ?? 'none'`).catch(() => 'n/a')) as string}`)
+      }
+      if (!(await waitForProbe(win, `document.querySelector('.sb-task-active .sb-task-title')?.textContent === ${JSON.stringify(NAME_RUNNING_104)}`, 10_000))) {
+        fail(`ticket-104 stage: the sidebar row title never showed the mid-run rename — got ${(await js(`document.querySelector('.sb-task-active .sb-task-title')?.textContent ?? 'none'`).catch(() => 'n/a')) as string}`)
+      }
+      if (!(await js(noErrorToast104))) {
+        fail('ticket-104 stage: the mid-run rename raised an error toast (the settled guard must NOT apply)')
+      }
+      log('rename104_midrun_ui_ok')
+
+      // The run survived the rename: streaming continues through it.
+      await waitFor((e) => e.type === 'text_delta' && e.sessionId === rename104Id, 'ticket-104 post-rename text_delta')
+      log('rename104_midrun_run_alive_ok')
+
+      // Settle the run, then the settled rename must not regress.
+      await js(`document.querySelector('.cmp-stop')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
+      await waitFor((e) => e.type === 'agent_end' && e.sessionId === rename104Id, 'ticket-104 stop agent_end')
+      if (!(await waitForProbe(win, `document.querySelector('.cmp-send') !== null`, 15_000))) {
+        fail('ticket-104 stage: the composer never left the busy state after the Stop')
+      }
+      const renamedSettled104 = waitFor(
+        (e) => e.type === 'session_renamed' && e.sessionId === rename104Id,
+        'ticket-104 session_renamed when settled'
+      ) as Promise<Extract<Scoped, { type: 'session_renamed' }>>
+      if (!((await js(openTopbarRename104)) as boolean)) {
+        fail('ticket-104 stage: the topbar Rename button is missing when settled')
+      }
+      if (!(await waitForProbe(win, `document.querySelector('.chat-title-input') instanceof HTMLInputElement`, 10_000))) {
+        fail('ticket-104 stage: the rename editor never opened when settled')
+      }
+      if (!((await js(typeTopbarRename104(NAME_SETTLED_104))) as boolean)) {
+        fail('ticket-104 stage: the rename editor lost its input when settled')
+      }
+      const renameSettledAck = await renamedSettled104
+      if (renameSettledAck.name !== NAME_SETTLED_104) {
+        fail(`ticket-104 stage: the settled rename ack carried the wrong name, got ${renameSettledAck.name}`)
+      }
+      if (!(await waitForProbe(win, `document.querySelector('.chat-topbar-title')?.textContent === ${JSON.stringify(NAME_SETTLED_104)}`, 10_000))) {
+        fail('ticket-104 stage: the topbar title never showed the settled rename')
+      }
+      if (!(await waitForProbe(win, `document.querySelector('.sb-task-active .sb-task-title')?.textContent === ${JSON.stringify(NAME_SETTLED_104)}`, 10_000))) {
+        fail('ticket-104 stage: the sidebar row title never showed the settled rename')
+      }
+      if (!(await js(noErrorToast104))) {
+        fail('ticket-104 stage: the settled rename raised an error toast (regression)')
+      }
+      log('rename104_settled_ok')
+      await js(composerClearJs)
+    })
+    log('rename_midrun_done')
 
     // Quit: EVERY remaining host must terminate — no orphans (ticket 20).
     const livePids = supervisor.hostPids

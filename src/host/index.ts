@@ -840,11 +840,18 @@ async function handleSubagentSteer(requestId: string, asyncId: string, text: str
   await subagentBridge.handleSteerRequest(requestId, asyncId, text)
 }
 
+/** Ticket 104: renaming works WHILE the agent runs (TUI `/name` parity —
+ * the SDK's setSessionName supports mid-run renames). Only the no-session
+ * path stays guarded; the restructure guard does NOT apply here. The
+ * success path is unchanged: session_renamed + the tree/index refresh. */
 function handleRename(name: string): void {
-  if (!requireSettledSession()) return
+  if (!runtime) {
+    send({ type: 'session_command_error', message: 'No session is open.' })
+    return
+  }
   try {
-    runtime!.session.setSessionName(name)
-    const finalName = runtime!.session.sessionManager.getSessionName() ?? null
+    runtime.session.setSessionName(name)
+    const finalName = runtime.session.sessionManager.getSessionName() ?? null
     send({ type: 'session_renamed', name: finalName })
     sendTree()
   } catch (err) {
