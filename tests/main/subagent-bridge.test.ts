@@ -248,6 +248,10 @@ describe('subagent_status handling', () => {
 })
 
 // ---- the steer command (ticket 99) ------------------------------------------
+// Ticket 111: the happy-path fixtures now carry the REAL 0.70.1 steer reply
+// shape (live-probe evidence): the steering receipt rides
+// data.details.steering (management-action result shape), not a top-level
+// deliveryStatus field. The top-level fallback stays covered below.
 
 describe('subagent_steer handling', () => {
   it('sends the acknowledged-delivery receipt (delivered) with the RPC params verbatim', async () => {
@@ -264,7 +268,7 @@ describe('subagent_steer handling', () => {
             const req = captured
             queueMicrotask(() => {
               for (const handler of handlers.get(`subagents:rpc:v1:reply:${req.requestId}`) ?? []) {
-                handler({ version: 1, requestId: req.requestId, success: true, data: { requestId: 'pi-r-1', state: 'delivered', deliveryStatus: 'delivered', sourceRunId: 'run-1' } })
+                handler({ version: 1, requestId: req.requestId, success: true, data: { content: [{ type: 'text', text: 'Steering delivered for async run run-1.' }], details: { mode: 'management', results: [], steering: { requestId: 'pi-r-1', state: 'delivered', deliveryStatus: 'delivered', sourceRunId: 'run-1', targets: [{ index: 0, state: 'pending' }] } } } })
               }
             })
           }
@@ -297,7 +301,7 @@ describe('subagent_steer handling', () => {
             const req = data as { requestId: string }
             queueMicrotask(() => {
               for (const handler of handlers.get(`subagents:rpc:v1:reply:${req.requestId}`) ?? []) {
-                handler({ version: 1, requestId: req.requestId, success: true, data: { deliveryStatus: 'queued', state: 'scheduled' } })
+                handler({ version: 1, requestId: req.requestId, success: true, data: { content: [{ type: 'text', text: 'Steering scheduled.' }], details: { mode: 'management', results: [], steering: { requestId: 'pi-r-2', state: 'scheduled', deliveryStatus: 'queued', sourceRunId: 'run-2', targets: [{ index: 0, state: 'scheduled' }] } } } })
               }
             })
           }
@@ -312,6 +316,36 @@ describe('subagent_steer handling', () => {
     await bridge.handleSteerRequest('req-s2', 'run-2', 'Also check the docs')
     expect(sent).toEqual([
       { type: 'subagent_steer_receipt', requestId: 'req-s2', asyncId: 'run-2', ok: true, deliveryStatus: 'queued' }
+    ])
+  })
+
+  it('a bare top-level deliveryStatus still lands (tolerant fallback, unknown-field rule)', async () => {
+    const sent: HostEvent[] = []
+    const bridge = new SubagentBridge((event) => sent.push(event), 100)
+    const { factory } = bridge.extension as unknown as FactoryExtension
+    const handlers = new Map<string, Array<(data: unknown) => void>>()
+    factory({
+      events: {
+        emit: (channel: string, data: unknown) => {
+          if (channel === 'subagents:rpc:v1:request') {
+            const req = data as { requestId: string }
+            queueMicrotask(() => {
+              for (const handler of handlers.get(`subagents:rpc:v1:reply:${req.requestId}`) ?? []) {
+                handler({ version: 1, requestId: req.requestId, success: true, data: { deliveryStatus: 'queued', state: 'scheduled' } })
+              }
+            })
+          }
+          for (const handler of handlers.get(channel) ?? []) handler(data)
+        },
+        on: (channel: string, handler: (data: unknown) => void) => {
+          handlers.set(channel, [...(handlers.get(channel) ?? []), handler])
+          return () => {}
+        }
+      }
+    } as never)
+    await bridge.handleSteerRequest('req-s2b', 'run-2b', 'Also check the docs')
+    expect(sent).toEqual([
+      { type: 'subagent_steer_receipt', requestId: 'req-s2b', asyncId: 'run-2b', ok: true, deliveryStatus: 'queued' }
     ])
   })
 

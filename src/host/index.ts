@@ -68,6 +68,7 @@ import { McpAuthBridge } from './mcp-auth-bridge'
 import { McpStatusBridge } from './mcp-status-bridge'
 import { parseSessionArgs } from './session-args'
 import { collectSessionAsyncDirs, SubagentBridge } from './subagent-bridge'
+import { ensureSubagentRunnerPackageRoot } from './subagent-runner-root'
 import { subagentInfoOfDetails } from '../shared/sessions/parse'
 
 /** Working directory / resume target / PiCode preference defaults (ticket 11),
@@ -457,6 +458,13 @@ function slashCommands(): Extract<HostToParent, { type: 'slash_commands' }> {
 
 async function createSession(): Promise<void> {
   const sdk = await import('@earendil-works/pi-coding-agent')
+  // Ticket 111 (pi-subagents 0.70.x adaptation): the ONLY lever the host has
+  // for async children in a bundled app layout — the override pi-subagents
+  // consults when argv-based discovery cannot identify the host. It points
+  // the detached runner at the exact SDK tree this host runs; set BEFORE the
+  // extension pipeline loads pi-subagents (it reads the env at import). See
+  // subagent-runner-root.ts.
+  ensureSubagentRunnerPackageRoot(sdk.getPackageDir())
   // Smoke isolation (ticket 13): when PICODE_SESSION_DIR is set, NEW sessions
   // are stored under that directory instead of the real ~/.pi/agent/sessions.
   // In-host forks follow the current manager's session dir, so every session
