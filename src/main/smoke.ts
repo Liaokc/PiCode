@@ -158,6 +158,13 @@
  * boot failure removes the placeholder with a verbatim error toast — no
  * ghost entries. The index polling mechanism is untouched.
  *
+ * Ticket 105 adds the terminal-focus stage right after the keymap stage:
+ * ⌘J and the titlebar terminal button must put the caret in the user shell
+ * immediately (activeElement = the xterm helper textarea) and a REAL
+ * trusted keystroke must echo through the pty; ⌘J open/close cycles keep
+ * refocusing, the bridge sibling never steals the shell's focus, and ⌘J
+ * switching back from the bridge refocuses it.
+ *
  * Any missed step times out and exits non-zero. Progress logs as
  * `SMOKE <step>` lines on stdout. Not part of `npm test`.
  */
@@ -2484,6 +2491,139 @@ export function startSmokeIfEnabled(
       log('keymap_pane_motion_ok', `sidebar=${motion.sidebar.size}px panel=${motion.panel.size}px dock=${motion.dock.size}px`)
     })
     log('keymap_done')
+
+    // ---- ticket 105: terminal focus — ⌘J / the titlebar terminal button
+    // put the caret in the user shell immediately (no extra click), a REAL
+    // keystroke rides that focus into the shell (echo round trip),
+    // open/close cycles keep refocusing, the bridge sibling never steals
+    // the shell's focus, and ⌘J semantics switch back AND refocus. The ⌘J
+    // presses are synthetic like the keymap stage above (the resolver only
+    // reads code+modifiers and the focus move is programmatic); the
+    // keystroke leg is a REAL sendInputEvent gated on window focus.
+    log('terminal_focus_105_start')
+    await withWindow(getWindow, async (win) => {
+      const js = (code: string): Promise<unknown> => win.webContents.executeJavaScript(code)
+      const pressJ = (alt: boolean): Promise<unknown> =>
+        win.webContents.executeJavaScript(
+          `window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyJ', altKey: ${alt}, metaKey: true, bubbles: true }))`
+        )
+      const DOCK_STATE = `(() => {
+        const dock = document.querySelector('.terminal-dock')
+        if (!dock || dock.hasAttribute('data-closed')) return 'closed'
+        const panels = Array.from(document.querySelectorAll('.dock-panel'))
+        if (panels[0]?.style.display !== 'none') return 'terminal'
+        if (panels[1]?.style.display !== 'none') return 'bridge'
+        return 'unknown'
+      })()`
+      const FOCUS_IN_TERM = `document.activeElement !== null && document.activeElement.classList.contains('xterm-helper-textarea')`
+      const rowsText = `(document.querySelector('.terminal-dock .xterm-rows')?.textContent ?? '')`
+      /** Wait for the dock to settle on a state, fail the stage otherwise. */
+      const ensureDockState = async (state: string, message: string): Promise<void> => {
+        if (!(await waitForProbe(win, `${DOCK_STATE} === '${state}'`, 5_000))) fail(message)
+      }
+      /** Wait for the shell to hold input focus, fail the stage otherwise. */
+      const ensureShellFocus = async (message: string): Promise<void> => {
+        if (!(await waitForProbe(win, FOCUS_IN_TERM, 5_000))) fail(message)
+      }
+
+      // Normalize: every leg below starts from the launch shape (closed).
+      // At most two presses: 'bridge' → terminal → closed.
+      const foundState = (await js(DOCK_STATE)) as string
+      for (let i = 0; i < 2 && ((await js(DOCK_STATE)) as string) !== 'closed'; i++) {
+        await pressJ(false)
+        await ensureDockState('closed', 'ticket 105: the dock never normalized to closed')
+      }
+      if (((await js(DOCK_STATE)) as string) !== 'closed') fail('ticket 105: the dock never normalized to closed')
+
+      // Leg 1: ⌘J opens the dock → focus lands in the user shell.
+      await pressJ(false)
+      await ensureDockState('terminal', 'ticket 105: ⌘J never opened the terminal dock')
+      await ensureShellFocus('ticket 105: ⌘J open did not focus the user shell (activeElement is not the xterm textarea)')
+      log('terminal_focus_105_cmdj_ok')
+
+      // Leg 2: keystrokes reach the shell through that focus — a REAL
+      // (trusted) keyDown on whatever holds focus must echo in the rows.
+      // Lowercase on purpose: xterm v6 defers A-Z keydowns to keypress.
+      for (let waited = 0; waited < 10_000; waited += 100) {
+        if ((await js('document.hasFocus()').catch(() => false)) === true) break
+        if (!win.isFocused()) app.focus({ steal: true })
+        await new Promise((r) => setTimeout(r, 100))
+      }
+      if ((await js('document.hasFocus()').catch(() => false)) !== true) {
+        fail('ticket 105: the smoke window never took focus for the trusted keystroke leg')
+      }
+      const before = ((await js(rowsText)) as string) ?? ''
+      let typedOk = false
+      for (let attempt = 0; attempt < 3 && !typedOk; attempt++) {
+        // The operator's machine can steal activation between legs (the
+        // ticket-44 environmental class) — re-steal before every keystroke;
+        // the ASSERTION stays the strict echo probe.
+        if ((await js('document.hasFocus()').catch(() => false)) !== true && !win.isFocused()) {
+          app.focus({ steal: true })
+        }
+        await win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'z' })
+        await win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'z' })
+        await new Promise((r) => setTimeout(r, 80))
+        if ((await js(FOCUS_IN_TERM).catch(() => false)) !== true) {
+          fail('ticket 105: focus left the shell before the keystroke probe')
+        }
+        typedOk =
+          (await js(`${rowsText}.length > ${before.length} && ${rowsText}.includes('z')`).catch(() => false)) === true
+        if (!typedOk) await new Promise((r) => setTimeout(r, 150))
+      }
+      if (!typedOk) fail('ticket 105: the trusted keystroke never echoed in the shell')
+      log('terminal_focus_105_typing_ok')
+
+      // Leg 3: the titlebar terminal button opens with the same focus.
+      await pressJ(false)
+      await ensureDockState('closed', 'ticket 105: the dock never closed before the titlebar leg')
+      const clicked =
+        (await js(
+          `(() => { const btn = document.querySelector('button[aria-label="Toggle terminal"]'); if (btn === null) return false; btn.click(); return true })()`
+        )) === true
+      if (!clicked) fail('ticket 105: the titlebar terminal toggle is missing')
+      await ensureDockState('terminal', 'ticket 105: the titlebar toggle never opened the terminal dock')
+      await ensureShellFocus('ticket 105: the titlebar open did not focus the user shell')
+      log('terminal_focus_105_titlebar_ok')
+
+      // Leg 4: open/close cycling keeps refocusing (the reported regression
+      // shape: the SECOND open losing the focus wiring).
+      await pressJ(false)
+      await ensureDockState('closed', 'ticket 105: the cycle leg never closed the dock')
+      await pressJ(false)
+      await ensureDockState('terminal', 'ticket 105: the cycle leg never reopened the dock')
+      await ensureShellFocus('ticket 105: the reopened dock did not focus the user shell')
+      log('terminal_focus_105_cycle_ok')
+
+      // Leg 5: sibling swap — the bridge never steals the shell's focus,
+      // and ⌘J switching back refocuses.
+      await pressJ(true)
+      await ensureDockState('bridge', 'ticket 105: ⌥⌘J never showed the bridge panel')
+      // Settle window: a wrong implementation would steal focus right
+      // around the swap; give any such attempt time to happen before the
+      // strict no-steal assert.
+      await new Promise((r) => setTimeout(r, 300))
+      if ((await js(FOCUS_IN_TERM)) === true) {
+        fail('ticket 105: the hidden terminal still holds focus while the bridge shows')
+      }
+      log('terminal_focus_105_bridge_no_steal_ok')
+      await pressJ(false)
+      await ensureDockState('terminal', 'ticket 105: ⌘J never switched back to the terminal')
+      await ensureShellFocus('ticket 105: switching back from the bridge did not focus the user shell')
+      log('terminal_focus_105_swap_back_ok')
+
+      // Leave the dock as found.
+      await pressJ(false)
+      await ensureDockState('closed', 'ticket 105: the dock never closed for restore')
+      if (foundState === 'terminal') {
+        await pressJ(false)
+        await ensureDockState('terminal', 'ticket 105: the restore never reopened the terminal')
+      } else if (foundState === 'bridge') {
+        await pressJ(true)
+        await ensureDockState('bridge', 'ticket 105: the restore never reopened the bridge')
+      }
+    })
+    log('terminal_focus_105_done')
 
     // ---- ticket 31: preview multi-tab — per-file tabs, the management
     // dropdown, and recently closed persistence across a renderer restart ----

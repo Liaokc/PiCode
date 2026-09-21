@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type Dispatch, type JSX, type PointerEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type Dispatch, type JSX, type PointerEvent, type RefObject } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
@@ -32,6 +32,10 @@ interface TerminalDockProps {
   /** Probe-resolved mono/Nerd-Font stack for the shell (starship glyphs). */
   fontStack: string
   dispatch: Dispatch<DockAction>
+  /** Focus-request sequence from the dock model (ticket 105): every bump
+   * means a dock action just made this panel the visible one (⌘J / titlebar
+   * toggle / bridge swap-in / +) and the shell must take input focus. */
+  focusSeq: number
 }
 
 export default function TerminalDock({
@@ -41,8 +45,36 @@ export default function TerminalDock({
   shellName,
   gen,
   fontStack,
-  dispatch
+  dispatch,
+  focusSeq
 }: TerminalDockProps): JSX.Element {
+  // TerminalWorkspace registers its live focus handle here on mount and
+  // clears it on unmount. The seq-diff lives in THIS component (the dock
+  // frame keeps it mounted across task switches) so a workspace remount
+  // without a bump — switching tasks while the dock shows — never steals
+  // focus; only dock actions do.
+  const focusTerminalRef = useRef<(() => void) | null>(null)
+  const lastFocusSeq = useRef(focusSeq)
+
+  useEffect(() => {
+    if (focusSeq === lastFocusSeq.current) return
+    lastFocusSeq.current = focusSeq
+    // xterm must be visible before focus lands: an open run flips the
+    // frame's visibility on the first animation frame (pane-motion
+    // transitions visibility) and a sibling swap just left display:none —
+    // a focus() into a stale-rendered element would silently miss. Double
+    // rAF = one painted frame with the host actually rendered, then focus
+    // (ticket 105: mount-timing discretion).
+    let inner = 0
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => focusTerminalRef.current?.())
+    })
+    return () => {
+      cancelAnimationFrame(outer)
+      cancelAnimationFrame(inner)
+    }
+  }, [focusSeq])
+
   return (
     <>
       <header className="terminal-dock-header">
@@ -92,7 +124,12 @@ export default function TerminalDock({
         ) : (
           // Keyed by workspace + generation: switching tasks replaces the
           // whole workspace (and its shell); + respawns a fresh shell in place.
-          <TerminalWorkspace key={`${workspaceCwd}:${gen}`} cwd={workspaceCwd} fontStack={fontStack} />
+          <TerminalWorkspace
+            key={`${workspaceCwd}:${gen}`}
+            cwd={workspaceCwd}
+            fontStack={fontStack}
+            focusRef={focusTerminalRef}
+          />
         )}
       </div>
     </>
@@ -135,7 +172,16 @@ interface TerminalKit {
   session: TerminalSession
 }
 
-function TerminalWorkspace({ cwd, fontStack }: { cwd: string; fontStack: string }): JSX.Element {
+interface TerminalWorkspaceProps {
+  cwd: string
+  fontStack: string
+  /** Registered with the live kit's focus and nulled on unmount (ticket
+   * 105): the parent's seq-diff calls it exactly when a dock action asks
+   * for shell focus. */
+  focusRef: RefObject<(() => void) | null>
+}
+
+function TerminalWorkspace({ cwd, fontStack, focusRef }: TerminalWorkspaceProps): JSX.Element {
   const rootRef = useRef<HTMLDivElement | null>(null)
   const userHostRef = useRef<HTMLDivElement | null>(null)
   const kitRef = useRef<TerminalKit | null>(null)
@@ -162,6 +208,7 @@ function TerminalWorkspace({ cwd, fontStack }: { cwd: string; fontStack: string 
     userTerm.onData((data) => session.handleInput(data))
     const kit: TerminalKit = { id, userTerm, userFit, session }
     kitRef.current = kit
+    focusRef.current = () => kit.userTerm.focus()
 
     fit()
     session.start({ cwd, cols: userTerm.cols, rows: userTerm.rows })
@@ -189,8 +236,11 @@ function TerminalWorkspace({ cwd, fontStack }: { cwd: string; fontStack: string 
       window.picode.terminal.kill(id)
       userTerm.dispose()
       kitRef.current = null
+      focusRef.current = null
     }
-  }, [cwd, fontStack])
+    // focusRef is a stable ref object handed down by TerminalDock; it is
+    // listed to satisfy the hooks lint and can never re-run this effect.
+  }, [cwd, fontStack, focusRef])
 
   const restart = useCallback((): void => {
     const kit = kitRef.current

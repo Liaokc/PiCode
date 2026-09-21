@@ -35,6 +35,12 @@ export interface DockState {
   tabOpen: boolean
   /** Bumped on "new session" — remounts the workspace with a fresh shell. */
   gen: number
+  /** Focus-request sequence (ticket 105): bumped ONLY by actions that leave
+   * the terminal as the visible panel — ⌘J/titlebar open, bridge→terminal
+   * swap-in, + respawn. The renderer focuses the xterm exactly when this
+   * counter moves, so every other path (bridge showing, hide, close, a plain
+   * task-switch remount that dispatches nothing) can never steal focus. */
+  focusSeq: number
 }
 
 export type DockAction =
@@ -56,7 +62,7 @@ export type DockAction =
 
 /** Launch state: dock hidden, terminal panel preselected, no shell (18f). */
 export function initialDockState(): DockState {
-  return { open: false, panel: 'terminal', height: DOCK_DEFAULT_HEIGHT_PX, tabOpen: false, gen: 0 }
+  return { open: false, panel: 'terminal', height: DOCK_DEFAULT_HEIGHT_PX, tabOpen: false, gen: 0, focusSeq: 0 }
 }
 
 /** Shared with the drag path (ticket 30): the rAF write and the reducer
@@ -70,8 +76,10 @@ export function dockReducer(state: DockState, action: DockAction): DockState {
   switch (action.type) {
     case 'toggle-terminal-panel': {
       if (state.open && state.panel === 'terminal') return { ...state, open: false }
-      // Showing the terminal implies its tab (first ⌘J spawns the shell).
-      return { ...state, open: true, panel: 'terminal', tabOpen: true }
+      // Showing the terminal implies its tab (first ⌘J spawns the shell) and
+      // requests shell focus (ticket 105): ⌘J means "type into the terminal",
+      // from every entry — key, titlebar button, bridge swap-in.
+      return { ...state, open: true, panel: 'terminal', tabOpen: true, focusSeq: state.focusSeq + 1 }
     }
     case 'toggle-bridge-panel': {
       if (state.open && state.panel === 'bridge') return { ...state, open: false }
@@ -84,8 +92,18 @@ export function dockReducer(state: DockState, action: DockAction): DockState {
     case 'close-terminal-tab':
       return state.tabOpen || state.open ? { ...state, tabOpen: false, open: false } : state
     case 'new-session':
-      // Always a fresh shell: repeating + respawns the workspace.
-      return { ...state, tabOpen: true, open: true, gen: state.gen + 1 }
+      // Always a fresh shell: repeating + respawns the workspace. Focus rides
+      // along (restart()'s userTerm.focus() precedent — spawn-to-type: the
+      // keystrokes must land in the new shell, not stay parked on +), but
+      // only when the terminal is the visible panel: a bridge-showing + (no
+      // UI path reaches it) must not focus a hidden shell.
+      return {
+        ...state,
+        tabOpen: true,
+        open: true,
+        gen: state.gen + 1,
+        focusSeq: state.panel === 'terminal' ? state.focusSeq + 1 : state.focusSeq
+      }
     case 'dock-for-new-task':
       return dockForNewTask(state)
     case 'set-height':
