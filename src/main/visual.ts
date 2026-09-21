@@ -1207,9 +1207,17 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
         })()`
       )
       emit({ type: 'agent_start' })
-      // Ticket 100: one row of EACH kind — the capture shows the inline
-      // Edit / × actions on both row shapes (and the ticket-100 inset: the
-      // row borders separated from the composer card's edge).
+      // Ticket 128: the queue panel frames — ONE row first (z 图6
+      // composition: grip + tag + text + Edit + trash), then a row of EACH
+      // kind (z 图7: the two-segment column; the inline actions on both row
+      // shapes and the ticket-100 inset: the row borders separated from the
+      // composer card's edge).
+      emit({ type: 'queue_update', steering: ['Steer the plan toward the cache-first variant'], followUp: [] })
+      await sleep(500)
+      await captureMenu(win, '5a-queue-single', {
+        queueItems: '.queue-item',
+        queueGrips: '.queue-item-grip'
+      })
       emit({ type: 'queue_update', steering: ['Steer the plan toward the cache-first variant'], followUp: ['Summarize the changes when done'] })
       emit({
         type: 'approval_required',

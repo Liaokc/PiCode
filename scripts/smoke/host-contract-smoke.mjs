@@ -22,7 +22,9 @@
  *   → prompt → steer (img) → queue_update → delivery → follow-up B → D
  *   (img) → C (img) → queue_update (order B,D,C) → remove B (ticket 100报备:
  *   the edit_queue_entry/remove_queue_entry dance — order preserved,
- *   queue_update shape frozen, malformed ops ignored) → edit C (reply
+ *   queue_update shape frozen, malformed ops ignored) → reorder D/C →
+ *   queue_update (order C,D — ticket 128报备: the additive
+ *   reorder_queue_entry op, same dance, new-order re-feed) → edit C (reply
  *   carries the raw text + image from the mirror) → re-fed D delivers
  *   (echo keeps the mirror image) → clear_queue → queue_update → agent_end
  *   → set_thinking_level → thinking_level_changed; set_model → model_changed
@@ -1296,6 +1298,11 @@ function onEvent(event) {
         child.send({ type: 'edit_queue_entry', kind: 'steering' })
         child.send({ type: 'edit_queue_entry', kind: 'bogus', index: 0, requestId: 'smoke-qedit-bogus' })
         child.send({ type: 'edit_queue_entry', kind: 'followUp', index: 'zero', requestId: 'smoke-qedit-bogus' })
+        // Ticket 128报备: the reorder op obeys the same discipline —
+        // malformed payloads ignored.
+        child.send({ type: 'reorder_queue_entry' })
+        child.send({ type: 'reorder_queue_entry', kind: 'bogus', from: 0, to: 1 })
+        child.send({ type: 'reorder_queue_entry', kind: 'followUp', from: 'zero', to: 1 })
         step = 'A queue removed'
         child.send({ type: 'remove_queue_entry', kind: 'followUp', index: 0 })
       }
@@ -1306,9 +1313,22 @@ function onEvent(event) {
       if (event.type === 'queue_update' && event.steering.length === 0 && event.followUp.length === 2 && event.followUp[0] === T100_D && event.followUp[1] === T100_C) {
         assertQueueShape(event)
         console.log('SMOKE remove_queue_entry ok (B out, D/C in place — order preserved)')
+        // Ticket 128报备: the additive reorder_queue_entry op — the dance
+        // with a reorder mutation: D moves after C, the survivors re-feed
+        // in the NEW order (越上越先注入), images ride the mirror.
+        step = 'A queue reordered'
+        child.send({ type: 'reorder_queue_entry', kind: 'followUp', from: 0, to: 1 })
+      }
+      return
+    }
+    case 'A queue reordered': {
+      if (event.type === 'queue_update' && event.steering.length === 0 && event.followUp.length === 2 && event.followUp[0] === T100_C && event.followUp[1] === T100_D) {
+        assertQueueShape(event)
+        console.log('SMOKE reorder_queue_entry ok (D/C swapped — new-order re-feed, queue_update shape unchanged)')
         step = 'A queue edited'
         edit100Reply = null
-        child.send({ type: 'edit_queue_entry', kind: 'followUp', index: 1, requestId: 'smoke-qedit-1' })
+        // C now sits FIRST — the edit targets index 0.
+        child.send({ type: 'edit_queue_entry', kind: 'followUp', index: 0, requestId: 'smoke-qedit-1' })
       }
       return
     }

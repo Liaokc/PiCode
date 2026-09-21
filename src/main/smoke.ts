@@ -14472,15 +14472,21 @@ export function startSmokeIfEnabled(
     }
     log('bubble_trio_done')
 
-    // ---- ticket 100: the queue panel repair — ① the row borders sit INSIDE
+    // ---- ticket 100 → 128: the queue panel — ① the row borders sit INSIDE
     // the composer card (row/card edge separation: horizontal inset + gaps
     // to the textarea and the footer), ② inline Edit (the host's
     // edit_queue_entry dance removes the entry; the composer prefills the
     // raw text and — via the host mirror — the PASTED IMAGE; the remaining
     // rows keep their order), ③ resend works (the prefilled text re-queues),
-    // ④ per-row × removes only that row, ⑤ the global Clear stays. A FRESH
-    // session drives a real long count turn; the three queued follow-ups
-    // ride the dance. ----
+    // ④ per-row trash discards only its own row, ⑤ the global Clear is GONE
+    // (ticket 128: the trash replaces it), ⑥ P20: the inline actions stretch
+    // to the row body's full height, ⑦ segment-internal drag reorder
+    // (ticket 128's additive reorder_queue_entry op): two follow-ups swapped
+    // keep their images on their OWN entries, and two steers swapped inject
+    // in the NEW order at the turn end (delivery echoes, arrival order
+    // recorded). A FRESH session drives a real long count turn; the queued
+    // entries ride the dances; the swapped steers + follow-ups deliver at
+    // the turn end in the swapped order. ----
     log('queue_repair_start')
     const queue100Created = waitFor(
       (e) => e.type === 'session_created',
@@ -14497,6 +14503,13 @@ export function startSmokeIfEnabled(
     const Q1_100 = 'PICODE_100_Q1 edit me with the shot'
     const Q2_100 = 'PICODE_100_Q2 middle row'
     const Q3_100 = 'PICODE_100_Q3 last row'
+    // Ticket 128: the reorder choreography — a second image-bearing
+    // follow-up (the image must follow ITS entry through the reorder
+    // dance's re-feed) and two steers (the swapped pair whose delivery
+    // order pins 越上越先注入).
+    const Q4_128 = 'PICODE_128_Q4 tail row with the second shot'
+    const S1_128 = 'PICODE_128_S1 steer one'
+    const S2_128 = 'PICODE_128_S2 steer two'
     const PNG_100 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
     await withWindow(getWindow, async (win) => {
       const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
@@ -14510,6 +14523,48 @@ export function startSmokeIfEnabled(
         const btn = row.querySelector('button[aria-label="${aria}"]')
         if (!(btn instanceof HTMLElement)) return false
         btn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        return true
+      })()`
+      // Ticket 128: one synthetic HTML5 drag on the queue rows (the
+      // ticket-84 drag form): dragstart on the source row's GRIP (the real
+      // handle), dragover + drop on the target row's top/bottom half,
+      // dragend on the grip. React's synthetic layer handles untrusted
+      // events fine; the constructed DataTransfer satisfies the handlers.
+      const dragQueueRow128 = (fromIndex: number, toIndex: number, half: 'top' | 'bottom'): string => `(() => {
+        const rows = [...document.querySelectorAll('.queue-item')]
+        const from = rows[${fromIndex}]
+        const to = rows[${toIndex}]
+        if (!(from instanceof HTMLElement) || !(to instanceof HTMLElement)) return 'missing'
+        const grip = from.querySelector('.queue-item-grip')
+        if (!(grip instanceof HTMLElement)) return 'no-grip'
+        const dt = new DataTransfer()
+        const rect = to.getBoundingClientRect()
+        const y = ${half === 'top' ? 'rect.top + 2' : 'rect.bottom - 2'}
+        const opts = { bubbles: true, cancelable: true, dataTransfer: dt, clientY: y }
+        grip.dispatchEvent(new DragEvent('dragstart', opts))
+        to.dispatchEvent(new DragEvent('dragover', opts))
+        to.dispatchEvent(new DragEvent('drop', opts))
+        grip.dispatchEvent(new DragEvent('dragend', opts))
+        return 'ok'
+      })()`
+      // The composer's queued-mode toggle (Steer / Follow-up): click the
+      // option whose label matches.
+      const pickQueuedMode128 = (label: 'Steer' | 'Follow-up'): string => `(() => {
+        const opts = [...document.querySelectorAll('.cmp-queued-opt')]
+        const opt = opts.find((n) => n.textContent?.trim() === '${label}')
+        if (!(opt instanceof HTMLElement)) return false
+        opt.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        return true
+      })()`
+      // The queued-mode toggle only renders while the agent is BUSY — the
+      // pick below asserts its own presence.
+      const pasteImage128 = (name: string): string => `(() => {
+        const ta = document.querySelector('.composer-input')
+        if (!(ta instanceof HTMLTextAreaElement)) return false
+        const bytes = Uint8Array.from(atob(${JSON.stringify(PNG_100)}), (c) => c.charCodeAt(0))
+        const dt = new DataTransfer()
+        dt.items.add(new File([bytes], '${name}', { type: 'image/png' }))
+        ta.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
         return true
       })()`
 
@@ -14633,8 +14688,14 @@ export function startSmokeIfEnabled(
       log('queue100_edit_with_image_ok')
 
       // Clean the composer so the restored draft cannot leak into later
-      // steps, then ⑥ per-row × removes ONLY that row (Q3, now first).
+      // steps, then ⑥ per-row trash removes ONLY that row (Q3, now first).
+      // The prefill also restored Q1's image into the attachment strip —
+      // clear it too (the composerClearJs only empties the text).
       await js(composerClearJs)
+      await js(`(() => { let n = 0; for (const btn of document.querySelectorAll('.composer-attachment-remove')) { if (btn instanceof HTMLElement) { btn.dispatchEvent(new MouseEvent('click', { bubbles: true })); n++ } } return n })()`)
+      if (!(await waitForProbe(win, `document.querySelectorAll('.composer-attachments figure').length === 0`, 5_000))) {
+        fail('ticket-128 stage: the restored Q1 attachment never cleared from the strip')
+      }
       if (!((await js(clickRowAction100(0, 'Remove queued message'))) as boolean)) {
         fail('ticket-100 stage: the row never rendered its × button')
       }
@@ -14643,18 +14704,141 @@ export function startSmokeIfEnabled(
       }
       log('queue100_row_remove_ok')
 
-      // ⑦ The global Clear stays: one click empties the panel.
-      await js(`document.querySelector('.queue-panel-clear')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
-      if (!(await waitForProbe(win, `${rowCount100()} === 0`, 10_000))) {
-        fail('ticket-100 stage: the global Clear never emptied the panel')
+      // ⑤ (ticket 128) The global Clear is GONE — the trash replaces it
+      // (Q6: 「这样也就不需要clear按钮了」). No .queue-panel-clear anywhere.
+      if (!((await js(`document.querySelector('.queue-panel-clear') === null`)) as boolean)) {
+        fail('ticket-128 stage: the retired global Clear button still renders')
       }
-      log('queue100_global_clear_ok')
+      log('queue128_clear_retired_ok')
 
-      // The run is no longer needed — stop it and let the turn settle.
-      await js(`document.querySelector('.cmp-stop')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
-      await waitFor((e) => e.type === 'agent_end' && e.sessionId === queue100Id, 'ticket-100 stop agent_end')
+      // ⑥ (ticket 128 P20) The inline actions stretch to the row body's
+      // full height — no more half-height action strip vs taller row. The
+      // action button's box equals the row's content box.
+      const p20 = JSON.parse(
+        (await js(`JSON.stringify((() => {
+          const row = document.querySelector('.queue-item')
+          const btn = row?.querySelector('.queue-item-action')
+          const grip = row?.querySelector('.queue-item-grip')
+          if (!(row instanceof HTMLElement) || !(btn instanceof HTMLElement) || !(grip instanceof HTMLElement)) return null
+          return {
+            rowH: row.getBoundingClientRect().height,
+            rowClient: row.clientHeight,
+            btnH: btn.getBoundingClientRect().height,
+            gripH: grip.getBoundingClientRect().height
+          }
+        })())`).catch(() => 'null')) as string
+      )
+      if (p20 === null) fail('ticket-128 stage: the P20 geometry probe found no row/action/grip')
+      if (Math.abs(p20.rowH - 28) > 1.5) fail(`ticket-128 stage: the queue row grew off the compact height (got ${p20.rowH}, want ~28)`)
+      if (Math.abs(p20.btnH - p20.rowClient) > 1.5) {
+        fail(`ticket-128 stage: P20 broken — the action button (${p20.btnH}) is not the row body's height (${p20.rowClient})`)
+      }
+      if (Math.abs(p20.gripH - p20.rowClient) > 1.5) {
+        fail(`ticket-128 stage: P20 broken — the grip (${p20.gripH}) is not the row body's height (${p20.rowClient})`)
+      }
+      log('queue128_p20_height_ok')
+
+      // ⑦ (ticket 128) Segment-internal drag reorder — follow-ups first.
+      // Queue Q4 WITH a pasted image (the mirror's image leg on the
+      // reorder dance), then drag Q2 (row 0) BELOW Q4 (row 1): the rows
+      // swap and the image must stay on Q4's entry through the re-feed.
+      if (!((await js(pasteImage128('picode128-q4.png'))) as boolean)) {
+        fail('ticket-128 stage: the composer textarea is missing for the Q4 paste')
+      }
+      if (!(await waitForProbe(win, `document.querySelectorAll('.composer-attachments figure').length === 1`, 10_000))) {
+        fail('ticket-128 stage: the Q4 paste never rendered an attachment card')
+      }
+      if (!(await js(composerTypeJs(Q4_128)).catch(() => false))) fail('ticket-128 stage: composer missing for Q4')
+      await js(composerKeyJs('Enter'))
+      if (!(await waitForProbe(win, `${rowCount100()} === 2 && (${rows100()}) === ${JSON.stringify([Q2_100, Q4_128].join('|'))}`, 10_000))) {
+        fail('ticket-128 stage: Q4 never showed after Q2')
+      }
+      if ((await js(dragQueueRow128(0, 1, 'bottom'))) !== 'ok') fail('ticket-128 stage: the follow-up drag targets went missing')
+      if (!(await waitForProbe(win, `${rowCount100()} === 2 && (${rows100()}) === ${JSON.stringify([Q4_128, Q2_100].join('|'))}`, 10_000))) {
+        fail(`ticket-128 stage: the follow-up drag never swapped the rows — rows: ${(await js(rows100()).catch(() => 'n/a')) as string}`)
+      }
+      log('queue128_followup_swap_ok')
+
+      // ⑧ (ticket 128) The steer segment: queue S1, S2 (the toggle flips to
+      // Steer), then drag S1 (row 0) BELOW S2 (row 1). The panel renders
+      // steering rows first, so the rows read [S2, S1, Q4, Q2] after.
+      if (!((await js(pickQueuedMode128('Steer'))) as boolean)) {
+        fail('ticket-128 stage: the queued-mode toggle never rendered the Steer option (busy state lost?)')
+      }
+      for (const text of [S1_128, S2_128]) {
+        if (!(await js(composerTypeJs(text)).catch(() => false))) fail(`ticket-128 stage: composer missing for ${text}`)
+        await js(composerKeyJs('Enter'))
+      }
+      if (!(await waitForProbe(win, `${rowCount100()} === 4 && (${rows100()}) === ${JSON.stringify([S1_128, S2_128, Q4_128, Q2_100].join('|'))}`, 10_000))) {
+        fail(`ticket-128 stage: the two steers never joined the panel head — rows: ${(await js(rows100()).catch(() => 'n/a')) as string}`)
+      }
+      if ((await js(dragQueueRow128(0, 1, 'bottom'))) !== 'ok') fail('ticket-128 stage: the steer drag targets went missing')
+      if (!(await waitForProbe(win, `${rowCount100()} === 4 && (${rows100()}) === ${JSON.stringify([S2_128, S1_128, Q4_128, Q2_100].join('|'))}`, 10_000))) {
+        fail(`ticket-128 stage: the steer drag never swapped the rows — rows: ${(await js(rows100()).catch(() => 'n/a')) as string}`)
+      }
+      log('queue128_steer_swap_ok')
+
+      // ⑨ (ticket 128) Delivery order = the NEW order (越上越先注入). The
+      // count turn is one giant model call, so the SDK holds both queues
+      // until its end — no mid-run injection point can race the swaps.
+      // At the turn end the steering queue injects first (S2, S1 — new
+      // order), then the follow-up queue delivers (Q4, Q2 — new order,
+      // Q4's echo must still carry ITS pasted image). The waits are armed
+      // together and each records its arrival — the ORDER of arrivals is
+      // the assertion, not the absolute timing.
+      const echoOrder128: string[] = []
+      const armEcho128 = (label: string, text: string): void => {
+        void waitFor(
+          (e) => e.type === 'user_message' && e.sessionId === queue100Id && e.text.includes(text),
+          `ticket-128 ${label} delivery echo`
+        ).then(() => {
+          echoOrder128.push(label)
+        })
+      }
+      armEcho128('S2', S2_128)
+      armEcho128('S1', S1_128)
+      armEcho128('Q4', Q4_128)
+      armEcho128('Q2', Q2_100)
+      const echoQ4Image128 = waitFor(
+        (e) => e.type === 'user_message' && e.sessionId === queue100Id && e.text.includes(Q4_128),
+        'ticket-128 Q4 echo (for the image assert)'
+      ).then((e) => {
+        const images = (e as Extract<Scoped, { type: 'user_message' }>).images
+        if (!Array.isArray(images) || images.length !== 1 || images[0]?.data !== PNG_100) {
+          fail(`ticket-128 stage: the reordered Q4's delivery echo lost its own image (re-feed order-preserving broken), got ${JSON.stringify(images)}`)
+        }
+        return true
+      })
+      const echoQ2NoImage128 = waitFor(
+        (e) => e.type === 'user_message' && e.sessionId === queue100Id && e.text.includes(Q2_100),
+        'ticket-128 Q2 echo (for the no-image assert)'
+      ).then((e) => {
+        const images = (e as Extract<Scoped, { type: 'user_message' }>).images
+        if (Array.isArray(images) && images.length > 0) {
+          fail(`ticket-128 stage: the reordered Q2's delivery echo grew an image that belongs to Q4 (mirror cross-attach), got ${JSON.stringify(images)}`)
+        }
+        return true
+      })
+      await waitFor((e) => e.type === 'agent_end' && e.sessionId === queue100Id, 'ticket-128 count turn agent_end')
+      await echoQ4Image128
+      await echoQ2NoImage128
+      await waitForProbe(win, `(${rowCount100()}) === 0`, 30_000)
+      await new Promise((r) => setTimeout(r, 1_000)) // small tail margin for the last armed waiter
+      if (echoOrder128.join(',') !== ['S2', 'S1', 'Q4', 'Q2'].join(',')) {
+        fail(`ticket-128 stage: the swapped queues injected in the wrong order — got [${echoOrder128.join(', ')}], want [S2, S1, Q4, Q2]`)
+      }
+      log('queue128_delivery_order_ok')
+
+      // The last delivery turn may still be streaming — stop it and let
+      // the session settle (it may also have finished on its own in the
+      // probe window; then there is nothing to stop and no agent_end to
+      // wait for).
+      if ((await js(`document.querySelector('.cmp-stop') !== null`)) as boolean) {
+        await js(`document.querySelector('.cmp-stop')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
+        await waitFor((e) => e.type === 'agent_end' && e.sessionId === queue100Id, 'ticket-128 stop agent_end')
+      }
       if (!(await waitForProbe(win, `document.querySelector('.cmp-send') !== null`, 15_000))) {
-        fail('ticket-100 stage: the composer never left the busy state after the Stop')
+        fail('ticket-128 stage: the composer never left the busy state after the deliveries')
       }
       await js(composerClearJs)
     })

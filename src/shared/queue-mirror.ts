@@ -150,6 +150,36 @@ export function removeQueueEntryAt(
   return { mirror: { ...mirror, [kind]: mirror[kind].filter((_, i) => i !== index) }, removed }
 }
 
+/** Move one entry WITHIN its own queue (ticket 128, the segment-internal
+ * drag): `from` → `to` are ordinals into that queue; the moved entry takes
+ * the `to` slot and the entries between shift by one (a standard splice
+ * move). The queue is FIFO by injection — the top row injects first — so
+ * the drag's 越上越先注入 is exactly this ordering. Out-of-range or
+ * non-integer indexes, or from === to, return the mirror untouched — the
+ * honest no-op when a race delivery shifted the rows or the drop landed on
+ * the dragged row itself. Images and raw texts ride their entries. */
+export function reorderQueueEntry(mirror: QueueMirror, kind: QueueKind, from: number, to: number): QueueMirror {
+  const entries = mirror[kind]
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from === to) return mirror
+  if (from < 0 || from >= entries.length || to < 0 || to >= entries.length) return mirror
+  const moved = [...entries]
+  const [entry] = moved.splice(from, 1)
+  moved.splice(to, 0, entry!)
+  return { ...mirror, [kind]: moved }
+}
+
+/** The final index a queue drop produces (ticket 128): the renderer's
+ * half-row geometry (drop above/below the hovered row `rowIndex`) resolved
+ * to a post-move ordinal for `reorderQueueEntry`'s splice move — above a
+ * row that sits before the dragged one keeps its index, the entries between
+ * the dragged row and the drop shift by one. `null` = the drop landed on
+ * the dragged row itself (either half): the honest no-op. */
+export function queueReorderTarget(from: number, rowIndex: number, above: boolean): number | null {
+  if (!Number.isInteger(from) || !Number.isInteger(rowIndex) || rowIndex === from) return null
+  if (above) return rowIndex < from ? rowIndex : rowIndex - 1
+  return rowIndex < from ? rowIndex + 1 : rowIndex
+}
+
 /** The re-feed plan for the dance's survivors: steering entries first, then
  * followUp entries, each in its own queue order, images from the mirror.
  * The host executes the plan through the SDK's own steer/followUp — the

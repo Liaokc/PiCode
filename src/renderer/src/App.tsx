@@ -869,10 +869,6 @@ export default function App(): JSX.Element {
     sendFocused({ type: 'follow_up_prompt', text, images: images.length > 0 ? images : undefined })
   }
 
-  function handleClearQueue(): void {
-    sendFocused({ type: 'clear_queue' })
-  }
-
   /** Ticket 100: inline Edit on one queue row — the host's dance removes the
    * entry; the `queue_entry_edited` reply (requestId-correlated below)
    * dispatches the composer prefill with the entry's raw text + images. */
@@ -886,6 +882,13 @@ export default function App(): JSX.Element {
    * re-feed's queue_update events are the ack. */
   function handleRemoveQueueEntry(kind: QueueKind, index: number): void {
     sendFocused({ type: 'remove_queue_entry', kind, index })
+  }
+
+  /** Ticket 128: drag-reorder one queue row within its own segment — the
+   * same dance with a reorder mutation; the re-feed's queue_update events
+   * are the ack. */
+  function handleReorderQueueEntry(kind: QueueKind, from: number, to: number): void {
+    sendFocused({ type: 'reorder_queue_entry', kind, from, to })
   }
 
   function handleSetAccessMode(mode: AccessMode): void {
@@ -967,9 +970,9 @@ export default function App(): JSX.Element {
     onSetAccessMode: handleSetAccessMode,
     onSetModel: handleSetModel,
     onSetThinkingLevel: handleSetThinkingLevel,
-    onClearQueue: handleClearQueue,
     onEditQueueEntry: handleEditQueueEntry,
     onRemoveQueueEntry: handleRemoveQueueEntry,
+    onReorderQueueEntry: handleReorderQueueEntry,
     onListFiles: handleListFiles,
     onPickImages: () => handlePickImages(),
     onBuiltinCommand: handleBuiltinCommand,

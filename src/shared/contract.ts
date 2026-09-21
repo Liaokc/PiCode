@@ -118,7 +118,7 @@ export interface SlashCommandItem {
  * most recently announced session). */
 export type SessionCommand = Extract<
   ParentToHost,
-  { type: 'prompt' | 'abort_turn' | 'steer_prompt' | 'follow_up_prompt' | 'clear_queue' | 'edit_queue_entry' | 'remove_queue_entry' | 'set_model' | 'set_thinking_level' | 'set_access_mode' | 'approve_tool' | 'deny_tool' | 'compact_session' | 'list_files' | 'navigate_tree' | 'fork_session' | 'set_session_label' | 'request_tree' | 'get_branch' | 'mcp_auth_start' | 'mcp_auth_input_resolve' | 'subagent_status' | 'subagent_steer' | 'subagent_stop' }
+  { type: 'prompt' | 'abort_turn' | 'steer_prompt' | 'follow_up_prompt' | 'clear_queue' | 'edit_queue_entry' | 'remove_queue_entry' | 'reorder_queue_entry' | 'set_model' | 'set_thinking_level' | 'set_access_mode' | 'approve_tool' | 'deny_tool' | 'compact_session' | 'list_files' | 'navigate_tree' | 'fork_session' | 'set_session_label' | 'request_tree' | 'get_branch' | 'mcp_auth_start' | 'mcp_auth_input_resolve' | 'subagent_status' | 'subagent_steer' | 'subagent_stop' }
 >
 
 /** Renderer → agent host system. */
@@ -162,6 +162,13 @@ export type ParentToHost =
   /** Per-row × removal (ticket 100, additive): the same dance minus the
    * prefill reply — the re-feed's queue_update events are the ack. */
   | { type: 'remove_queue_entry'; kind: QueueKind; index: number }
+  /** Drag-reorder one queued entry WITHIN its own segment (ticket 128,
+   * additive): the host runs the ticket-100 dance with a reorder mutation
+   * (clearQueue → reconcile → move `from`→`to` → re-feed in the new order,
+   * images from the mirror, 保序). `from`/`to` are ordinals into the LAST
+   * queue_update arrays for `kind`; out-of-range or from === to is the
+   * honest no-op. The re-feed's queue_update events are the ack. */
+  | { type: 'reorder_queue_entry'; kind: QueueKind; from: number; to: number }
   /** Switch the session model (provider→model cascade menu). */
   | { type: 'set_model'; providerId: string; modelId: string }
   /** Switch the session thinking level (composer dropdown). */
