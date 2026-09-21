@@ -26,6 +26,22 @@ export type { SubagentCallInfo, SubagentFleetDTO, SubagentRunState }
 export type { QueueKind }
 export type { McpRuntimeStatus, McpServerStatusData, McpStatusSnapshotData }
 
+// ---- ticket 106: the supervisor's provisional binding id (boot failures) ----
+
+/** Prefix of the supervisor-local provisional session id a host binding
+ * carries from spawn until the host announces its real session id
+ * (host-supervisor.ts). Events that arrive that early — boot failures —
+ * reach the renderer scoped to one of these, which is exactly how the
+ * pending-create reconciliation tells a failed NEW task apart from a crash
+ * of an already-announced session. Optimistic renderer-side pending-create
+ * ids use a different prefix (`pending-create-…`) and never match. */
+export const PROVISIONAL_SESSION_ID_PREFIX = 'pending-'
+
+/** True when `id` is a supervisor provisional binding id (`pending-<integer>`). */
+export function isProvisionalSessionId(id: string): boolean {
+  return /^pending-\d+$/.test(id)
+}
+
 // ---- ticket 05: composer + approval gate shared vocabulary ----
 
 /** Pi thinking levels (mirrors the SDK union; re-declared so the renderer
