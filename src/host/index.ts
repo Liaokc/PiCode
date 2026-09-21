@@ -35,7 +35,7 @@ import type {
 import { FILE_LIST_TRUNCATED } from '../shared/contract'
 import type { SessionDefaults } from '../shared/preferences'
 import { assistantUsageOfMessage, lastAssistantUsage } from '../shared/context-ring'
-import { buildSessionTree, extractTranscriptItems, userImageParts, type RawSessionEntry } from '../shared/sessions/parse'
+import { buildSessionTree, extractTranscriptItems, forkAutoName, userImageParts, type RawSessionEntry } from '../shared/sessions/parse'
 import type { SessionTreePayload, TranscriptImagePart } from '../shared/sessions/types'
 import { toolResultText } from '../shared/tool-format'
 import { isPackagesOpDescriptor, packagesOpRefusal, type PackagesOpDescriptor } from '../shared/packages-management'
@@ -806,6 +806,11 @@ async function handleNavigateTree(entryId: string): Promise<void> {
 async function handleFork(entryId: string): Promise<void> {
   if (!requireSettledSession()) return
   try {
+    // Ticket 130: capture the SOURCE's identity before the fork swaps the
+    // session — its explicit name, or (unnamed, Q7 ruling) the same
+    // first-user title projection the sidebar's index scanner shows for it.
+    const sourceManager = runtime!.session.sessionManager
+    const autoName = forkAutoName(sourceManager.getSessionName() ?? null, rawEntries(sourceManager))
     // position 'at': continue from exactly the chosen entry. The runtime
     // clones the session file (path root→entry) and swaps to a fresh
     // AgentSession — Pi's own fork semantics, identical to the TUI.
@@ -815,7 +820,16 @@ async function handleFork(entryId: string): Promise<void> {
       return
     }
     wireSessionEvents(runtime!.session)
+    // Ticket 130: name the fork the moment it lands. setSessionName appends
+    // the session_info entry to the FORK's own file — the same write face a
+    // rename uses — so the source file is never touched, and the name stays
+    // a normal session name the user can rename over at any time.
+    runtime!.session.setSessionName(autoName)
     announceCurrentSession(true)
+    // The rename chain exactly as it already exists (zero new links): the
+    // announcement's tree payload carries the name to the topbar, and
+    // session_renamed triggers the sidebar index refresh in the renderer.
+    send({ type: 'session_renamed', name: runtime!.session.sessionManager.getSessionName() ?? null })
   } catch (err) {
     send({ type: 'session_command_error', message: errorText(err) })
   }
