@@ -17,6 +17,7 @@ import { HostSupervisor, defaultHostEntryPath } from './host-supervisor'
 import { createApprovalNotifier, parseApprovalNotice } from './notifications'
 import { collectReview } from './review/collect'
 import { readPreview } from './preview/read'
+import { fsPreviewWatchFactory, PreviewWatchService } from './preview/watch'
 import { addServeRoot, installPreviewServe, previewServeSchemePrivileges } from './preview/serve'
 import { SessionIndexService, type FollowUpdate } from './sessions/index-service'
 import type { TracePayload } from '../shared/sessions/trace'
@@ -62,6 +63,7 @@ import { startFocusVisualIfEnabled, isolateFocusUserData, focusVisualEnabled } f
 import { startTerminalFocusVisualIfEnabled, isolateTerminalFocusUserData } from './visual-terminal-focus'
 import { startBubbleVisualIfEnabled, isolateBubbleUserData } from './visual-bubble'
 import { startPreviewVisualIfEnabled, isolatePreviewUserData } from './visual-preview'
+import { startFb107VisualIfEnabled, isolateFb107UserData } from './visual-fb107'
 import { startSkillCardVisualIfEnabled, isolateSkillCardUserData } from './visual-skill-card'
 import { startContextRingVisualIfEnabled, isolateContextRingUserData } from './visual-context-ring'
 import { startTreeVisualIfEnabled, isolateTreeUserData } from './visual-tree'
@@ -142,6 +144,9 @@ isolateBubbleUserData()
 // Ticket-88 preview dual-view harness — same throwaway-userData rule (no-op
 // unless PICODE_VISUAL_PREVIEW=1).
 isolatePreviewUserData()
+// Ticket-107 file-browser harness — same throwaway-userData rule (no-op
+// unless PICODE_VISUAL_FB107=1).
+isolateFb107UserData()
 // Ticket-72 command-card harness — same throwaway-userData rule (no-op
 // unless PICODE_VISUAL_SKILL_CARD=1).
 isolateSkillCardUserData()
@@ -549,6 +554,7 @@ app.whenReady().then(() => {
   // sidebar row lands in the isolated store before the index reads it; its
   // cwd is the real fixture directory the harness writes).
   startPreviewVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
+  startFb107VisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
   // Ticket-72 command-card harness — same seeding constraint (the seeded
   // session lands in the isolated store before the index reads it).
   startSkillCardVisualIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
@@ -656,6 +662,22 @@ app.whenReady().then(() => {
       return result
     })
   })
+
+  // Sidebar file browser real-time refresh (ticket 107, additive IPC): ONE
+  // recursive watcher for the browsed cwd, coalesced invalidation events
+  // pushed over preview:watch-changed. The renderer re-reads through the
+  // preview:load channel above — the watch event is a hint, never data.
+  // Read-only guard: every channel validates types before touching the
+  // service, same discipline as preview:load.
+  const previewWatch = new PreviewWatchService(fsPreviewWatchFactory, {
+    onWatchEvent: (event) => broadcastChannel('preview:watch-changed', event)
+  })
+  ipcMain.handle('preview:watch', (_event, cwd: unknown): boolean => {
+    if (typeof cwd !== 'string' || cwd.length === 0) return false
+    previewWatch.start(cwd)
+    return true
+  })
+  ipcMain.on('preview:unwatch', () => previewWatch.stop())
   // Terminal tab (ticket 08, Seam-3): the REAL pty lives here, behind the
   // node-pty factory adapter; bytes flow over terminal-dedicated batched
   // channels, never the chat contract stream (ADR-0004). Read-only guard:

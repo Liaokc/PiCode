@@ -74,3 +74,21 @@ export type PreviewResult =
       reason: 'not-found' | 'not-readable' | 'too-large' | 'failed'
       message: string
     }
+
+/** Ticket 107 (additive IPC, main → renderer): one coalesced file-watch
+ * invalidation for the sidebar file browser. A HINT, never data — the
+ * renderer re-reads affected listings through the existing preview:load
+ * channel, so the read path stays the tree's only truth. JSON-safe, free of
+ * Node/browser types like every member of this seam (ADR-0003). */
+export interface PreviewWatchEvent {
+  /** The browsed cwd the watcher serves; the renderer drops events whose
+   * cwd is not the one its browser has open. */
+  cwd: string
+  /** Directories RELATIVE to cwd (posix, '' = the root) whose listings may
+   * have changed — the parent of each coalesced change. */
+  dirs: string[]
+  /** True when the window's change set could not be bounded (unnamed
+   * platform change, event/dir cap breach): the renderer must treat EVERY
+   * loaded listing as stale. `dirs` is empty when set. */
+  overflow: boolean
+}

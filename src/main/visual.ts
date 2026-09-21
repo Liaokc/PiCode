@@ -74,6 +74,7 @@ import { sendPinVisualEnabled } from './visual-send-pin'
 import { thinkingVisualEnabled } from './visual-thinking'
 import { filebarVisualEnabled } from './visual-filebar'
 import { previewVisualEnabled } from './visual-preview'
+import { fb107VisualEnabled } from './visual-fb107'
 import { ensureVisualProjectDir, ensureVisualStore, writeVisualSession } from './visual-store'
 import type { HostToParent, ParentToHost } from '../shared/contract'
 
@@ -252,6 +253,8 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
   if (filebarVisualEnabled()) return
   // And for the preview dual-view harness (ticket 88).
   if (previewVisualEnabled()) return
+  // And for the file-browser harness (ticket 107).
+  if (fb107VisualEnabled()) return
   // And for the ghost-cwd harness (ticket 54).
   if (process.env['PICODE_VISUAL_CWD'] === '1') return
   // And for the rail-stacking harness (ticket 62).

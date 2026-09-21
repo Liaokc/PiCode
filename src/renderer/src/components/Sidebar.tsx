@@ -197,6 +197,7 @@ function TaskItem({
   onDraftChange,
   onArchive,
   onContextMenu,
+  onViewFiles,
   drag,
   dropMark
 }: {
@@ -236,6 +237,12 @@ function TaskItem({
    * temporarily takes the dot slot. */
   onArchive: () => void
   onContextMenu: (x: number, y: number) => void
+  /** Pinned rows only (ticket 107): the hover View files entry — swaps the
+   * whole sidebar to this session's project file browser (the same
+   * setBrowserTarget path the group header's button rides, ticket 26).
+   * Undefined on group/timeline rows: their View files lives in the group
+   * header's three-button hover cluster. */
+  onViewFiles?: () => void
   /** Project-group rows only (ticket 84): the row body drags within its own
    * group. Pinned and timeline rows never receive handlers — no drag. */
   drag?: TaskRowDrag
@@ -343,6 +350,27 @@ function TaskItem({
           <PinIcon size={13} />
         </button>
       </Tooltip>
+      {/* Pinned-row View files entry (ticket 107): absolutely positioned over
+          the time slot — on hover the time text fades out (ticket 34's own
+          rule) and this button fades in over the vacated space, so the row
+          grid never shifts (the dot-slot↔archive content-swap pattern,
+          ticket 35). Timeline view has no group headers, so pinned rows are
+          the only always-headerless rows that need it. */}
+      {onViewFiles !== undefined && (
+        <Tooltip label="View files">
+          <button
+            type="button"
+            className="sb-files-btn"
+            aria-label={`View files in ${projectLabel(session.cwd)}`}
+            onClick={(e) => {
+              e.stopPropagation()
+              onViewFiles()
+            }}
+          >
+            <FilesListIcon size={13} />
+          </button>
+        </Tooltip>
+      )}
     </div>
   )
 }
@@ -900,7 +928,12 @@ export default function Sidebar({
 
       <div className="sb-scroll">
         {/* Pinned section (ticket 33): kept on top in BOTH views — the
-            timeline flattens the body below it, never the pins. */}
+            timeline flattens the body below it, never the pins. Pinned rows
+            carry the View files hover entry (ticket 107): session → cwd
+            mapping (projectLabel), NOT the group render — the entry works
+            even when the session's group is hidden/empty (the archived and
+            hidden-group pipelines above are untouched: this is a pure view
+            over `s.cwd`). */}
         {grouped.pinned.length > 0 && (
           <>
             <div className="sb-section-label">Pinned</div>
@@ -924,6 +957,9 @@ export default function Sidebar({
                 onDraftChange={setRenameDraft}
                 onArchive={() => onSessionAction(s, 'archive')}
                 onContextMenu={(x, y) => openSessionMenu(s, x, y)}
+                onViewFiles={() =>
+                  setBrowserTarget({ cwd: s.cwd, project: projectLabel(s.cwd) })
+                }
               />
             ))}
           </>
