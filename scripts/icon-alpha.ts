@@ -29,9 +29,10 @@
  *
  * Codec scope: 8-bit non-interlaced PNG, color types 0/2/4/6 (decode),
  * RGBA color type 6 (encode) with per-row min-sum adaptive filtering —
- * everything qlmanage/sips/iconutil produce and consume. Requires Node ≥ 22.2
- * (zlib.crc32), consistent with the repo's Node ≥ 22.18 type-stripping
- * baseline (scripts/usage-scan.ts precedent).
+ * everything qlmanage/sips/iconutil produce and consume. Encoding needs
+ * zlib.crc32 (Node ≥ 22.2); the repo's toolchain already runs on Node 22.19
+ * and its usage-scan.ts precedent already requires type-stripping (Node
+ * ≥ 22.18), so no additional floor is imposed.
  */
 
 import { crc32, deflateSync, inflateSync } from 'node:zlib'
@@ -124,6 +125,14 @@ export function stripEdgeWhiteMatte(img: PngImage, opts: { dryRun?: boolean } = 
   return cleared
 }
 
+function paeth(a: number, b: number, c: number): number {
+  const p = a + b - c
+  const pa = Math.abs(p - a)
+  const pb = Math.abs(p - b)
+  const pc = Math.abs(p - c)
+  return pa <= pb && pa <= pc ? a : pb <= pc ? b : c
+}
+
 /** Decode an 8-bit non-interlaced PNG (color types 0/2/4/6) into RGBA8888. */
 export function decodePng(buf: Buffer): PngImage {
   if (buf.length < 8 + 12 || !buf.subarray(0, 8).equals(PNG_SIGNATURE)) {
@@ -177,11 +186,7 @@ export function decodePng(buf: Buffer): PngImage {
       else if (filter === 2) line[i] = (line[i] + b) & 0xff
       else if (filter === 3) line[i] = (line[i] + ((a + b) >> 1)) & 0xff
       else if (filter === 4) {
-        const p = a + b - c
-        const pa = Math.abs(p - a)
-        const pb = Math.abs(p - b)
-        const pc = Math.abs(p - c)
-        line[i] = (line[i] + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c)) & 0xff
+        line[i] = (line[i] + paeth(a, b, c)) & 0xff
       } else if (filter !== 0) {
         throw new Error(`decodePng: unknown row filter ${filter}`)
       }
@@ -215,14 +220,6 @@ function chunk(type: string, data: Buffer): Buffer {
   const crc = Buffer.alloc(4)
   crc.writeUInt32BE(crc32(Buffer.concat([head.subarray(4), data])) >>> 0, 0)
   return Buffer.concat([head, data, crc])
-}
-
-function paeth(a: number, b: number, c: number): number {
-  const p = a + b - c
-  const pa = Math.abs(p - a)
-  const pb = Math.abs(p - b)
-  const pc = Math.abs(p - c)
-  return pa <= pb && pa <= pc ? a : pb <= pc ? b : c
 }
 
 /** Encode RGBA8888 as an 8-bit color-type-6 PNG (adaptive min-sum filtering). */
