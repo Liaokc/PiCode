@@ -7,7 +7,8 @@
  * additive `mcp_status` contract event, and the renderer projects it onto
  * the config rows.
  *
- * Adapter fidelity (pi-mcp-adapter 2.34.0, README "Runtime status
+ * Adapter fidelity (pi-mcp-adapter 2.35.0, re-verified for ticket 115;
+ * README "Runtime status
  * snapshots" + mcp-status.ts):
  * - the snapshot is READ-ONLY machine-readable data: reading it never
  *   connects a lazy server, starts authentication, or exposes SDK clients,

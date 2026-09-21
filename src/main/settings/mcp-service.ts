@@ -24,9 +24,9 @@
  * else ~/.pi/agent).
  */
 
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { mkdir, rename, writeFile } from 'node:fs/promises'
+import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import {
   buildMcpLayerDescriptors,
@@ -280,11 +280,24 @@ export class McpService {
   }
 
   /** Atomic write (temp + rename), 2-space JSON + trailing newline — the
-   * exact serialization shape the adapter's own writer produces. */
+   * exact serialization shape the adapter's own writer produces, and the
+   * adapter's 2.35 writeConfigText contract: an existing file resolves
+   * through symlinks (the alias survives; its TARGET is atomically
+   * replaced) and keeps its file mode; a missing file is created at the
+   * literal canonical path. The returned/report path stays canonical. */
   private async writeRawDoc(file: string, doc: Record<string, unknown>): Promise<void> {
-    await mkdir(path.dirname(file), { recursive: true })
-    const temp = `${file}.picode-tmp`
-    await writeFile(temp, `${JSON.stringify(doc, null, 2)}\n`, 'utf-8')
-    await rename(temp, file)
+    let target = file
+    let mode: number | undefined
+    try {
+      target = realpathSync(file)
+      mode = statSync(target).mode & 0o777
+    } catch {
+      // Missing file → write at the literal path with default mode.
+    }
+    await mkdir(path.dirname(target), { recursive: true })
+    const temp = `${target}.picode-tmp`
+    await rm(temp, { force: true })
+    await writeFile(temp, `${JSON.stringify(doc, null, 2)}\n`, mode === undefined ? { encoding: 'utf-8' } : { encoding: 'utf-8', mode })
+    await rename(temp, target)
   }
 }

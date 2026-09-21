@@ -6,11 +6,16 @@
  * an add/edit into a `/mcp setup` target write, and a delete into a
  * remove-from-the-owning-layer action.
  *
- * Adapter fidelity (pi-mcp-adapter 2.34.0):
+ * Adapter fidelity (pi-mcp-adapter 2.35.0, re-verified for ticket 115):
  * - Layer precedence (lowest → highest): user-global shared
  *   (`~/.config/mcp/mcp.json`) → `~/.agents` shared files → Pi global
  *   override (`<agentDir>/mcp.json`) → project shared (`.mcp.json`) →
  *   Pi project override (`<cwd>/.pi/mcp.json`). Later layers win.
+ *   2.35 leaves every write target in place (README: "/mcp setup write
+ *   targets and project-local /mcp disable and /mcp enable overrides are
+ *   unchanged"); the only 2.35 writer change — symlink-target-preserving
+ *   atomic replace + file-mode retention — lives in the service's writer
+ *   (mcp-service.ts), which mirrors the adapter's writeConfigText.
  * - The merge is per-field with URL-bound auth security: a higher layer
  *   that repoints a server at another transport or url must not inherit
  *   the lower layer's auth material (credential-exfiltration guard).
