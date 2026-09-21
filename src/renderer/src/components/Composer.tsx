@@ -10,7 +10,7 @@ import { accessModeLabel } from '../../../shared/composer/access'
 import { gateSlashCommand } from '../../../shared/composer/slash-gate'
 import { imageDataUrl } from '../../../shared/composer/image-preview'
 import { textMenuSurface } from '../../../shared/composer/menu-surface'
-import { filterCommands, pickCommand, composeCommandText, type ComposerCommandCard } from '../../../shared/composer/commands'
+import { filterCommands, pickCommand, composeCommandText, stripTriggerToken, type ComposerCommandCard } from '../../../shared/composer/commands'
 import { clampIndex, flatMenuKey } from '../../../shared/composer/menu-keys'
 import { composerDensity, thinkingBarFraction, thinkingBarShimmers, type ComposerDensity } from '../../../shared/composer/density'
 import {
@@ -497,13 +497,19 @@ export default function Composer({
       if (!row) return
       const decision = pickCommand(row)
       if (decision.kind === 'card') {
-        // Ticket 72: the row stages the command card — the single slot
-        // fills (a re-pick REPLACES the card, the args were the `/query`
-        // token and are consumed by the pick). The trigger surface rules
-        // the args text, so the menu could only be open while the value
-        // was exactly that token.
+        // Ticket 118: the row stages the command card — the single slot
+        // fills (a re-pick REPLACES the card). The pick strips ONLY the
+        // trigger token (`/` + the query, which by the trigger surface's
+        // own definition ends at the caret, plus the separator whitespace
+        // after it): a draft typed before the operator went back to the
+        // start of the line survives whole as the card's args — the old
+        // pick cleared the entire value. The caret lands at the remaining
+        // text's head; images are independent state and never touch this
+        // path; composeCommandText(card, value) recombines the invocation
+        // byte-identically (zero change, ticket 72).
         setCard(decision.card)
-        updateValue('')
+        const kept = stripTriggerToken(value, caret)
+        updateValue(kept.value, kept.caret)
       } else {
         // Built-ins execute immediately (the /compact path is untouched):
         // the whole composer resets — a staged card included.

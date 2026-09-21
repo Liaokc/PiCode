@@ -6,6 +6,7 @@ import {
   filterCommands,
   pickCommand,
   stripSkillQuery,
+  stripTriggerToken,
   type ComposerCommandCard
 } from '../../src/shared/composer/commands'
 import { fuzzyScore } from '../../src/shared/composer/fuzzy'
@@ -141,5 +142,68 @@ describe('pickCommand (what executing a row does)', () => {
 
   it('built-ins execute as PiCode actions (the immediate path is untouched)', () => {
     expect(pickCommand(cmd('compact', 'builtin'))).toEqual({ kind: 'builtin', name: 'compact' })
+  })
+})
+
+describe('stripTriggerToken (ticket 118: picking keeps the pre-existing text)', () => {
+  // The trigger surface guarantees the menu can only be open while the
+  // caret sits inside the first-line leading token (no whitespace before
+  // it), so at pick time the token is the `/` + query up to the caret.
+  // The images are NOT a dimension here: they are independent composer
+  // state the pick never touches (the electron smoke asserts their
+  // survival end to end) — this table locks the text transition only.
+  const CASES: Array<{ text: string; caret: number; want: string; note: string }> = [
+    // 无前导文本：the whole value IS the trigger token — the pick leaves
+    // the ticket-72 empty-args form (token runs to the string's end).
+    { text: '/grill', caret: 6, want: '', note: 'bare token' },
+    { text: '/g', caret: 2, want: '', note: 'one-char query' },
+    // 有前导文本，粘接（the operator repro: draft first, then `/` typed at
+    // the very start）：everything after the typed query survives whole.
+    { text: '/grillfix the bug', caret: 6, want: 'fix the bug', note: 'glued draft kept whole' },
+    { text: '/grill帮我修这个 bug', caret: 6, want: '帮我修这个 bug', note: 'CJK draft kept whole' },
+    // 有前导文本，分隔（query typed, separator, args — the caret re-entered
+    // the token to pick）：the separator whitespace is consumed with the
+    // token so the recomposed send stays byte-identical (single space).
+    { text: '/grill fix the bug', caret: 6, want: 'fix the bug', note: 'space separator consumed' },
+    { text: '/grill\nfix the bug', caret: 6, want: 'fix the bug', note: 'newline separator consumed' },
+    { text: '/grill  fix', caret: 6, want: 'fix', note: 'separator run consumed to the first word' },
+    { text: '/grill\tfix', caret: 6, want: 'fix', note: 'tab separator consumed' },
+    // caret 位 inside the token：the strip ends at the caret — text after
+    // the caret is pre-existing by the surface's own query definition
+    // (query = text.slice(1, caret)); nothing beyond the caret is eaten.
+    { text: '/grillfix the bug', caret: 3, want: 'illfix the bug', note: 'mid-token caret keeps the tail' },
+    { text: '/grill fix the bug', caret: 1, want: 'grill fix the bug', note: 'caret just after the slash' },
+    // 全空白尾：the separator runs to the string's end — args empty.
+    { text: '/grill   ', caret: 6, want: '', note: 'only separator whitespace remains' }
+  ]
+
+  it('strips exactly the trigger token and lands the caret at the remaining head', () => {
+    for (const c of CASES) {
+      expect(stripTriggerToken(c.text, c.caret), `${c.note}: text=${JSON.stringify(c.text)} caret=${c.caret}`).toEqual({
+        value: c.want,
+        caret: 0
+      })
+    }
+  })
+
+  it('out-of-domain carets clamp without eating text', () => {
+    // Beyond the end: nothing follows the token — empty args.
+    expect(stripTriggerToken('/grill', 99)).toEqual({ value: '', caret: 0 })
+    // Before the token (caret 0 cannot open the menu): the strip cannot
+    // prove anything is the token, so the whole text survives.
+    expect(stripTriggerToken('/grill fix', 0)).toEqual({ value: '/grill fix', caret: 0 })
+    expect(stripTriggerToken('/grill fix', -3)).toEqual({ value: '/grill fix', caret: 0 })
+  })
+
+  it('the kept text recombines byte-identically through composeCommandText', () => {
+    // The full pick → send pipeline over the table's operator-repro rows:
+    // the card plus the KEPT draft must equal the invocation form the
+    // raw-text composer would have sent for the same intent.
+    const skill: ComposerCommandCard = { source: 'skill', name: 'grill-me' }
+    for (const c of CASES.filter((row) => row.want !== '')) {
+      expect(composeCommandText(skill, stripTriggerToken(c.text, c.caret).value).trim()).toBe(
+        `/skill:grill-me ${c.want}`
+      )
+    }
   })
 })

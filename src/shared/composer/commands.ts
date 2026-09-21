@@ -53,6 +53,31 @@ export function composeCommandText(card: ComposerCommandCard | null, args: strin
   return card === null ? args : `${cardInvocation(card)} ${args}`
 }
 
+/** Ticket 118: the composer text a menu pick leaves behind. The trigger
+ * token is the `/` plus the query — which, by the trigger surface's own
+ * definition (menu-surface.ts), ends at the caret — plus the separator
+ * whitespace run right after it (the first whitespace when one follows
+ * the caret, the string's end when the caret already sits there). A pick
+ * strips exactly that and nothing more: text typed BEFORE the operator
+ * went back to the start of the line survives whole as the card's args
+ * (the old pick cleared the entire composer — only the images, an
+ * independent state this seam never sees, survived). The caret lands at
+ * the remaining text's head — its original place between the consumed
+ * token and the kept text. Out-of-domain carets clamp: the strip never
+ * eats text it cannot prove is part of the token. */
+export interface CommandPickText {
+  /** The args that follow the staged card. */
+  value: string
+  /** Where the caret lands: the head of the remaining text. */
+  caret: number
+}
+
+/** Strip the trigger token from the composer value at pick time. Pure. */
+export function stripTriggerToken(text: string, caret: number): CommandPickText {
+  const end = Math.min(Math.max(caret, 0), text.length)
+  return { value: text.slice(end).replace(/^\s+/, ''), caret: 0 }
+}
+
 /** What executing a picked menu row does. */
 export type CommandPick =
   /** Stage the row as the composer's command card (ticket 72): the card
