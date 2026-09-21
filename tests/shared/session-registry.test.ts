@@ -686,6 +686,116 @@ describe('registryReducer — the subagent bridge live state (ticket 90)', () =>
       scoped('s-a', { type: 'session_created', sessionId: 's-a', cwd: '/tmp/a2', model: 'm3', resumed: true })
     )
     const a = state.sessions.find((s) => s.id === 's-a')
-    expect(a?.subagents).toEqual({ runs: {}, fleet: null })
+    expect(a?.subagents).toEqual({ runs: {}, fleet: null, stopping: new Set() })
+  })
+})
+
+// ---- ticket 101: the stop receipt's Stopping marker -------------------------
+
+describe('registryReducer — the stop receipt fold (ticket 101)', () => {
+  const STATUS_RUN = scoped('s-a', {
+    type: 'subagent_status',
+    requestId: 'req-0',
+    available: true,
+    runs: [{ runId: 'run-1', state: 'running', startedAt: 5 }],
+    fleet: null
+  })
+
+  it('an accepted stop (ok:true) marks the run Stopping', () => {
+    const state = run(
+      initialRegistryState(),
+      CREATED_A,
+      STATUS_RUN,
+      scoped('s-a', { type: 'subagent_stop_receipt', requestId: 'stop-1', asyncId: 'run-1', ok: true, state: 'stopping' })
+    )
+    const a = state.sessions.find((s) => s.id === 's-a')
+    expect(a?.subagents.stopping.has('run-1')).toBe(true)
+    // The run itself keeps its live state — the terminal evidence hasn't
+    // landed yet.
+    expect(a?.subagents.runs['run-1']).toMatchObject({ state: 'running' })
+  })
+
+  it('a failed receipt changes nothing (the row keeps its live state)', () => {
+    const state = run(
+      initialRegistryState(),
+      CREATED_A,
+      STATUS_RUN,
+      scoped('s-a', { type: 'subagent_stop_receipt', requestId: 'stop-1', asyncId: 'run-1', ok: false, error: 'Async run not found' })
+    )
+    const a = state.sessions.find((s) => s.id === 's-a')
+    expect(a?.subagents.stopping.size).toBe(0)
+  })
+
+  it('a lifecycle completion clears the marker (terminal evidence landed)', () => {
+    const state = run(
+      initialRegistryState(),
+      CREATED_A,
+      STATUS_RUN,
+      scoped('s-a', { type: 'subagent_stop_receipt', requestId: 'stop-1', asyncId: 'run-1', ok: true, state: 'stopping' }),
+      scoped('s-a', { type: 'subagent_async_completed', runId: 'run-1', state: 'stopped' })
+    )
+    const a = state.sessions.find((s) => s.id === 's-a')
+    expect(a?.subagents.stopping.has('run-1')).toBe(false)
+    expect(a?.subagents.runs['run-1']).toMatchObject({ state: 'stopped' })
+  })
+
+  it('a status snapshot that sees the run terminal clears the marker too', () => {
+    const state = run(
+      initialRegistryState(),
+      CREATED_A,
+      STATUS_RUN,
+      scoped('s-a', { type: 'subagent_stop_receipt', requestId: 'stop-1', asyncId: 'run-1', ok: true, state: 'stopping' }),
+      scoped('s-a', {
+        type: 'subagent_status',
+        requestId: 'req-2',
+        available: true,
+        runs: [{ runId: 'run-1', state: 'stopped', endedAt: 99 }],
+        fleet: null
+      })
+    )
+    const a = state.sessions.find((s) => s.id === 's-a')
+    expect(a?.subagents.stopping.has('run-1')).toBe(false)
+  })
+
+  it('a status snapshot that still sees the run live keeps the marker', () => {
+    const state = run(
+      initialRegistryState(),
+      CREATED_A,
+      STATUS_RUN,
+      scoped('s-a', { type: 'subagent_stop_receipt', requestId: 'stop-1', asyncId: 'run-1', ok: true, state: 'stopping' }),
+      scoped('s-a', {
+        type: 'subagent_status',
+        requestId: 'req-2',
+        available: true,
+        runs: [{ runId: 'run-1', state: 'running', startedAt: 5 }],
+        fleet: null
+      })
+    )
+    const a = state.sessions.find((s) => s.id === 's-a')
+    expect(a?.subagents.stopping.has('run-1')).toBe(true)
+  })
+
+  it('unavailable snapshots never touch the marker (no information, no change)', () => {
+    const state = run(
+      initialRegistryState(),
+      CREATED_A,
+      STATUS_RUN,
+      scoped('s-a', { type: 'subagent_stop_receipt', requestId: 'stop-1', asyncId: 'run-1', ok: true, state: 'stopping' }),
+      scoped('s-a', { type: 'subagent_status', requestId: 'req-2', available: false, runs: [], fleet: null })
+    )
+    const a = state.sessions.find((s) => s.id === 's-a')
+    expect(a?.subagents.stopping.has('run-1')).toBe(true)
+  })
+
+  it('the marker is per-session (session B never sees a stop of session A)', () => {
+    const state = run(
+      initialRegistryState(),
+      CREATED_A,
+      CREATED_B,
+      STATUS_RUN,
+      scoped('s-a', { type: 'subagent_stop_receipt', requestId: 'stop-1', asyncId: 'run-1', ok: true, state: 'stopping' })
+    )
+    const b = state.sessions.find((s) => s.id === 's-b')
+    expect(b?.subagents.stopping.size).toBe(0)
   })
 })

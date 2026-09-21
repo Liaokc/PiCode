@@ -8,6 +8,8 @@
  *
  * Surface (all additive, reported into the host-contract smoke):
  *   subagent_status command            → subagent_status reply event
+ *   subagent_steer command             → subagent_steer_receipt event
+ *   subagent_stop command              → subagent_stop_receipt event
  *   pi `subagent:async-started`        → subagent_async_started
  *   pi `subagent:async-complete`       → subagent_async_completed
  *   pi `subagent:foreground-complete`  → subagent_foreground_completed
@@ -216,6 +218,29 @@ export class SubagentBridge {
    * ownership, no bridge, timeout, empty message) carry ok:false. The
    * conversation tab never hangs and never invents a delivery claim.
    */
+  /** The shared failure leg of the two receipt flows (steer ticket 99, stop
+   * ticket 101): the RPC envelope's null/timeout/error paths map to ONE
+   * ok:false receipt with the failure verbatim. null = the RPC succeeded —
+ * the caller maps its success payload (deliveryStatus / stopping state).
+   * `what` names the flow inside the timeout/fallback copy. */
+  private rpcFailureReceipt(reply: Awaited<ReturnType<SubagentBridge['requestRpc']>>, requestId: string, asyncId: string, what: 'steer' | 'stop'): HostEvent | null {
+    const type = what === 'stop' ? 'subagent_stop_receipt' : 'subagent_steer_receipt'
+    if (reply === null) {
+      return { type, requestId, asyncId, ok: false, error: 'the subagent bridge is unavailable (no session bus)' }
+    }
+    if (reply.kind === 'timeout') {
+      return { type, requestId, asyncId, ok: false, error: `the ${what} request timed out (pi-subagents did not answer)` }
+    }
+    if (reply.success === false) {
+      const code = reply.error.code
+      const failure = reply.error.message
+      const errorText =
+        failure !== undefined && failure !== '' ? failure : code !== undefined ? `RPC error: ${code}` : `the ${what} request failed`
+      return { type, requestId, asyncId, ok: false, error: errorText }
+    }
+    return null
+  }
+
   async handleSteerRequest(requestId: string, asyncId: string, text: string): Promise<void> {
     const message = text.trim()
     if (message === '') {
@@ -223,38 +248,17 @@ export class SubagentBridge {
       return
     }
     const reply = await this.requestRpc('steer', { id: asyncId, message }, this.steerTimeoutMs)
-    if (reply === null) {
-      this.send({
-        type: 'subagent_steer_receipt',
-        requestId,
-        asyncId,
-        ok: false,
-        error: 'the subagent bridge is unavailable (no session bus)'
-      })
+    const failure = this.rpcFailureReceipt(reply, requestId, asyncId, 'steer')
+    if (failure !== null) {
+      this.send(failure)
       return
     }
-    if (reply.kind === 'timeout') {
-      this.send({
-        type: 'subagent_steer_receipt',
-        requestId,
-        asyncId,
-        ok: false,
-        error: 'the steer request timed out (pi-subagents did not answer)'
-      })
-      return
-    }
-    if (reply.success === false) {
-      const code = reply.error.code
-      const failure = reply.error.message
-      const errorText =
-        failure !== undefined && failure !== '' ? failure : code !== undefined ? `RPC error: ${code}` : 'the steer request failed'
-      this.send({ type: 'subagent_steer_receipt', requestId, asyncId, ok: false, error: errorText })
-      return
-    }
-    const deliveryStatus = isRecord(reply.data) ? reply.data['deliveryStatus'] : undefined
-    if (deliveryStatus === 'delivered' || deliveryStatus === 'queued') {
-      this.send({ type: 'subagent_steer_receipt', requestId, asyncId, ok: true, deliveryStatus })
-      return
+    if (reply !== null && reply.kind === 'reply' && reply.success === true) {
+      const deliveryStatus = isRecord(reply.data) ? reply.data['deliveryStatus'] : undefined
+      if (deliveryStatus === 'delivered' || deliveryStatus === 'queued') {
+        this.send({ type: 'subagent_steer_receipt', requestId, asyncId, ok: true, deliveryStatus })
+        return
+      }
     }
     // The acknowledged-delivery contract guarantees the field on steer
     // replies — its absence is a broken reply, never a claim we invent.
@@ -264,6 +268,39 @@ export class SubagentBridge {
       asyncId,
       ok: false,
       error: 'the steer reply carried no delivery status'
+    })
+  }
+
+  /** Stop ONE running async subagent run (ticket 101): pi-subagents' RPC
+   * `stop` — top-level async runs ride the stop control channel and record
+   * a stopped lifecycle instead of reporting a timeout. The receipt is
+   * answered in EVERY path (the steer precedent): ok:true carries the RPC's
+   * `stopping` state (terminal evidence lands afterwards via the normal
+   * lifecycle/status stream); errors (unknown run, ended run, foreign-session
+   * ownership, no bridge, timeout) carry ok:false verbatim. The stop UI
+   * never hangs and never claims a stop the RPC did not accept. */
+  async handleStopRequest(requestId: string, asyncId: string): Promise<void> {
+    const reply = await this.requestRpc('stop', { id: asyncId }, this.steerTimeoutMs)
+    const failure = this.rpcFailureReceipt(reply, requestId, asyncId, 'stop')
+    if (failure !== null) {
+      this.send(failure)
+      return
+    }
+    if (reply !== null && reply.kind === 'reply' && reply.success === true) {
+      // The stop contract guarantees `state: "stopping"` on an accepted stop —
+      // its absence is a broken reply, never a claim we invent.
+      const state = isRecord(reply.data) ? reply.data['state'] : undefined
+      if (state === 'stopping') {
+        this.send({ type: 'subagent_stop_receipt', requestId, asyncId, ok: true, state })
+        return
+      }
+    }
+    this.send({
+      type: 'subagent_stop_receipt',
+      requestId,
+      asyncId,
+      ok: false,
+      error: 'the stop reply carried no stopping state'
     })
   }
 

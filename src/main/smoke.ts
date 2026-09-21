@@ -9891,6 +9891,7 @@ export function startSmokeIfEnabled(
       log('settings_mcp_done')
     }
 
+
     // ---- ticket 90: the subagent directory — the seeded session's runs
     // render in the ZCode subagentDirectory composition (Running/Ended
     // sections + the seven-state badges + Show 20 more); the runs' LIVE
@@ -10442,6 +10443,352 @@ export function startSmokeIfEnabled(
       }
       log('subagent_chat_done')
     }
+
+    // ---- ticket 101: the subagent stop + the panel-toggle running badge.
+    // The directory/conversation stop button opens a CONFIRM popover (the
+    // operator's decision point); Esc/outside-pointerdown cancel, only the
+    // Stop button confirms. An async run stops through the REAL pi-subagents
+    // RPC `stop` (the receipt's ok:true state:'stopping' shows the honest
+    // Stopping overlay; the artifact's terminal state lands as Cancelled);
+    // a FOREGROUND run has no RPC stop — stopping it dispatches the owning
+    // session's abort (abort/dispose semantics, observability.md), asserted
+    // by capturing the renderer's outgoing session_command. The collapsed
+    // panel's toggle carries the focused session's running count as an
+    // orange badge (zero runs → no badge); a badge click opens the panel
+    // STRAIGHT onto the Subagents directory tab. Seeded fixtures + one
+    // injected live foreground tool call (the visual-harness contract-event
+    // seam) — zero model calls. ----
+    log('subagent_stop_start')
+    {
+      const store101 = process.env['PICODE_SESSION_DIR']
+      if (!store101) fail('ticket-101 stage: PICODE_SESSION_DIR is not set')
+      const subRoot101 = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-subagent101-'))
+      const runDirA101 = path.join(subRoot101, 'async-subagent-runs', 'sub101-run-a')
+      const runDirB101 = path.join(subRoot101, 'async-subagent-runs', 'sub101-run-b')
+      const seedDir101 = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-seed101-'))
+      const seedFile101 = path.join(store101, 'subagent101-seeded.jsonl')
+      const stamp101 = new Date().toISOString()
+      /** One live async artifact; sessionId = the seed file so the REAL RPC
+       * stop passes its session-ownership check. */
+      const writeArtifact101 = (runDir: string, runId: string, state: 'running' | 'stopped'): void => {
+        mkdirSync(runDir, { recursive: true })
+        writeFileSync(
+          path.join(runDir, 'status.json'),
+          JSON.stringify({
+            lifecycleArtifactVersion: 1,
+            runId,
+            mode: 'single',
+            state,
+            startedAt: Date.now() - 60_000,
+            ...(state === 'stopped' ? { endedAt: Date.now() - 1_000 } : {}),
+            lastUpdate: Date.now(),
+            sessionId: seedFile101,
+            agents: ['scout']
+          })
+        )
+      }
+      /** One async launch as TWO chained entries — the parent chain must be
+       * LINEAR (each launch continues the previous result): the resume
+       * replays the SDK's LEAF PATH (buildContextEntries), so a sibling
+       * branch would never reach the directory. */
+      const asyncLaunch101 = (callId: string, runId: string, runDir: string, task: string, parentOfAssistant: string): unknown[] => [
+        JSON.stringify({
+          type: 'message', id: `${callId}-a`, parentId: parentOfAssistant, timestamp: stamp101,
+          message: { role: 'assistant', content: [{ type: 'toolCall', id: callId, name: 'subagent', arguments: { agent: 'scout', task, async: true } }] }
+        }),
+        JSON.stringify({
+          type: 'message', id: `${callId}-r`, parentId: `${callId}-a`, timestamp: stamp101,
+          message: {
+            role: 'toolResult', toolCallId: callId, toolName: 'subagent',
+            content: [{ type: 'text', text: `Async: scout [${runId}]` }],
+            isError: false,
+            details: { mode: 'single', runId, asyncId: runId, asyncDir: runDir, results: [] }
+          }
+        })
+      ]
+      writeFileSync(
+        seedFile101,
+        [
+          JSON.stringify({ type: 'session', version: 3, id: 'sub101-seeded-id', timestamp: stamp101, cwd: seedDir101 }),
+          JSON.stringify({
+            type: 'message', id: 's101-u1', parentId: null, timestamp: stamp101,
+            message: { role: 'user', content: [{ type: 'text', text: 'PICODE_SUB101 fan out the work' }] }
+          }),
+          ...asyncLaunch101('s101-call-a', 'sub101-run-a', runDirA101, 'PICODE_SUB101 scout the routing', 's101-u1'),
+          ...asyncLaunch101('s101-call-b', 'sub101-run-b', runDirB101, 'PICODE_SUB101 map the middleware', 's101-call-a-r'),
+          // A launch whose artifact never exists — the Lost row (never live).
+          ...asyncLaunch101('s101-call-lost', 'sub101-run-lost', path.join(subRoot101, 'never-existed'), 'PICODE_SUB101 audit the budgets', 's101-call-b-r'),
+          // A foreground call with a recorded completed child — terminal, never live.
+          JSON.stringify({
+            type: 'message', id: 's101-call-fg-done-a', parentId: 's101-call-lost-r', timestamp: stamp101,
+            message: { role: 'assistant', content: [{ type: 'toolCall', id: 's101-call-fg-done', name: 'subagent', arguments: { agent: 'auditor', task: 'PICODE_SUB101 settle the books' } }] }
+          }),
+          JSON.stringify({
+            type: 'message', id: 's101-call-fg-done-r', parentId: 's101-call-fg-done-a', timestamp: stamp101,
+            message: {
+              role: 'toolResult', toolCallId: 's101-call-fg-done', toolName: 'subagent',
+              content: [{ type: 'text', text: 'Done.' }],
+              isError: false,
+              details: { mode: 'single', runId: 'fg-done-1', results: [{ agent: 'auditor', exitCode: 0, finalOutput: 'Done.' }] }
+            }
+          })
+        ].join('\n') + '\n'
+      )
+
+      // The renderer→host capture: the foreground stop's abort semantics is
+      // proven by the OUTGOING session_command (no model turn needed). The
+      // original is BOUND — it's a prototype method and the wrapper would
+      // otherwise call it with `this` undefined.
+      const sent101: Array<{ commandType: string; sessionId: string; asyncId?: string }> = []
+      const supervisorPatchable = supervisor as unknown as { handleParentCommand?: unknown }
+      const originalHandle101 = (supervisorPatchable.handleParentCommand as (this: HostSupervisor, message: unknown) => void).bind(supervisor)
+      supervisorPatchable.handleParentCommand = (message: unknown): void => {
+        if (
+          typeof message === 'object' && message !== null &&
+          (message as Record<string, unknown>).type === 'session_command'
+        ) {
+          const m = message as { sessionId: string; command: { type: string; asyncId?: string } }
+          if (m.command.type === 'subagent_stop' || m.command.type === 'abort_turn') {
+            sent101.push({ commandType: m.command.type, sessionId: m.sessionId, ...(m.command.asyncId !== undefined ? { asyncId: m.command.asyncId } : {}) })
+          }
+        }
+        originalHandle101(message)
+      }
+
+      const previousTempRoot101 = process.env['PI_SUBAGENTS_TEMP_ROOT']
+      try {
+        // The stop RPC resolves its target under pi-subagents' async root —
+        // point PI_SUBAGENTS_TEMP_ROOT at the stage's root (the ticket-90
+        // stage's established pattern) so the seeded live artifacts at
+        // <root>/async-subagent-runs/<runId> are exactly where the RPC looks.
+        process.env['PI_SUBAGENTS_TEMP_ROOT'] = subRoot101
+        await withWindow(getWindow, async (win) => {
+          const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+          // Resume the seeded file (a real Handoff — fresh host, fresh replay).
+          const resumed101 = waitFor((e) => e.type === 'session_created' && e.sessionFile === seedFile101, 'subagent101 resume session_created')
+          supervisor.createSession(seedDir101, seedFile101)
+          const created101 = (await resumed101) as Extract<Scoped, { type: 'session_created' }>
+          await waitFor((e) => e.type === 'history_loaded' && e.sessionId === created101.sessionId, 'subagent101 history_loaded')
+          log('subagent101_resumed_ok', created101.sessionId)
+
+          // Normalize: collapse the panel (close tabs first — the last-tab
+          // close auto-collapses; the chord only backs it up).
+          await js(`(() => {
+            const panel = document.querySelector('.side-panel')
+            if (panel && !panel.hasAttribute('data-closed')) {
+              for (const btn of document.querySelectorAll('.panel-tab .panel-tab-close')) {
+                if (btn instanceof HTMLElement) btn.click()
+              }
+            }
+            return true
+          })()`)
+          await new Promise((r) => setTimeout(r, 400))
+          if (!(await waitForProbe(win, `document.querySelector('.side-panel')?.hasAttribute('data-closed') === true`, 5_000))) {
+            await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', altKey: true, metaKey: true, bubbles: true })); true`)
+            if (!(await waitForProbe(win, `document.querySelector('.side-panel')?.hasAttribute('data-closed') === true`, 5_000))) {
+              fail('ticket-101 stage: the side panel never collapsed')
+            }
+          }
+
+          // ① Zero live runs (artifacts absent → Lost; the foreground call is
+          // completed) → the collapsed toggle carries NO badge.
+          if (!(await waitForProbe(win, `document.querySelector('.tb-btn-badge') === null`, 8_000))) {
+            fail('ticket-101 stage: the toggle must carry NO badge while zero runs are live')
+          }
+          log('subagent101_badge_zero_ok')
+
+          // ② The two live artifacts land → status pull → the badge shows 2.
+          writeArtifact101(runDirA101, 'sub101-run-a', 'running')
+          writeArtifact101(runDirB101, 'sub101-run-b', 'running')
+          const statusRtA = waitFor((e) => e.type === 'subagent_status' && e.sessionId === created101.sessionId && e.runs.some((r) => r.runId === 'sub101-run-a' && r.state === 'running'), 'subagent101 status roundtrip A')
+          const statusRtB = waitFor((e) => e.type === 'subagent_status' && e.sessionId === created101.sessionId && e.runs.some((r) => r.runId === 'sub101-run-b' && r.state === 'running'), 'subagent101 status roundtrip B')
+          supervisor.handleParentCommand({ type: 'session_command', sessionId: created101.sessionId, command: { type: 'subagent_status', requestId: 'stage-101-1' } })
+          const [rtA, rtB] = await Promise.all([statusRtA, statusRtB]) as Array<Extract<Scoped, { type: 'subagent_status' }>>
+          log('subagent101_pull', `A.available=${String(rtA.available)} A.runs=${rtA.runs.length} B.available=${String(rtB.available)} B.runs=${rtB.runs.length}`)
+          if (!(await waitForProbe(win, `document.querySelector('.tb-btn-badge')?.textContent === '2'`, 8_000))) {
+            // Diagnostic: dump the toggle + panel state AS THE PROBE SAW IT,
+            // then open the panel and dump the directory rows (the badge
+            // count's raw material).
+            const diagPre101 = (await js(`(() => ({
+              badge: document.querySelector('.tb-btn-badge')?.textContent ?? null,
+              panelClosed: document.querySelector('.side-panel')?.hasAttribute('data-closed') ?? null,
+              tabLabels: [...document.querySelectorAll('.panel-tab-label span')].map((el) => el.textContent),
+              toggleAria: document.querySelector('button[aria-label*="side panel"]')?.getAttribute('aria-label') ?? null,
+              toggleCount: document.querySelector('button[data-subagent-count]')?.getAttribute('data-subagent-count') ?? null
+            }))()`)) as unknown
+            await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', altKey: true, metaKey: true, bubbles: true })); true`)
+            await new Promise((r) => setTimeout(r, 600))
+            // Open the Subagents tab through the picker (the ticket-99 path).
+            await js(`(() => {
+              const card = document.querySelector('.panel-tab-card[aria-label="Open Subagents tab"]')
+              if (card instanceof HTMLElement) card.click()
+              return true
+            })()`)
+            await new Promise((r) => setTimeout(r, 600))
+            const diag101 = (await js(`(() => ({
+              badges: [...document.querySelectorAll('[data-subagent-badge]')].map((el) => el.textContent),
+              sections: [...document.querySelectorAll('.subagents-section-title')].map((el) => el.textContent),
+              tabLabels: [...document.querySelectorAll('.panel-tab-label span')].map((el) => el.textContent)
+            }))()`)) as unknown
+            fail(`ticket-101 stage: the toggle badge must show 2 while two runs are live, pre=${JSON.stringify(diagPre101)} post=${JSON.stringify(diag101)}`)
+          }
+          log('subagent101_badge_two_ok')
+
+          // ③ A badge click opens the panel STRAIGHT onto the Subagents tab.
+          await js(`(document.querySelector('.tb-btn-badge')?.closest('button'))?.click(); true`)
+          if (!(await waitForProbe(win, `document.querySelector('.side-panel:not([data-closed])') !== null && document.querySelector('.panel-tab-active[data-panel-tab="subagents"]') !== null`, 8_000))) {
+            fail('ticket-101 stage: the badge click never opened the panel onto the Subagents tab')
+          }
+          if (!(await waitForProbe(win, `document.querySelector('[data-subagent-row="s101-call-a"] .subagents-badge-running') !== null`, 8_000))) {
+            fail('ticket-101 stage: the live row A never showed its Running badge')
+          }
+          log('subagent101_badge_click_ok')
+
+          // ④ The confirm popover: Cancel does NOT stop.
+          await js(`document.querySelector('[data-subagent-row="s101-call-a"] .subagent-stop-btn')?.click(); true`)
+          if (!(await waitForProbe(win, `document.querySelector('.subagent-stop-confirm') !== null`, 5_000))) {
+            fail('ticket-101 stage: the stop confirm popover never opened')
+          }
+          await js(`document.querySelector('.subagent-stop-confirm-cancel')?.click(); true`)
+          if (!(await waitForProbe(win, `document.querySelector('.subagent-stop-confirm') === null`, 5_000))) {
+            fail('ticket-101 stage: the Cancel button never dismissed the confirm popover')
+          }
+          await new Promise((r) => setTimeout(r, 300))
+          if (sent101.length !== 0) fail(`ticket-101 stage: Cancel must not stop, got ${JSON.stringify(sent101)}`)
+          if (!(await waitForProbe(win, `document.querySelector('[data-subagent-row="s101-call-a"] .subagents-badge-running') !== null`, 3_000))) {
+            fail('ticket-101 stage: the row lost its Running badge after Cancel')
+          }
+          log('subagent101_cancel_ok')
+
+          // ⑤ Escape cancels too — and so does a pointer outside the popover.
+          await js(`document.querySelector('[data-subagent-row="s101-call-a"] .subagent-stop-btn')?.click(); true`)
+          if (!(await waitForProbe(win, `document.querySelector('.subagent-stop-confirm') !== null`, 5_000))) {
+            fail('ticket-101 stage: the confirm popover never reopened')
+          }
+          await js(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`)
+          if (!(await waitForProbe(win, `document.querySelector('.subagent-stop-confirm') === null`, 5_000))) {
+            fail('ticket-101 stage: Escape never cancelled the confirm popover')
+          }
+          await js(`document.querySelector('[data-subagent-row="s101-call-a"] .subagent-stop-btn')?.click(); true`)
+          if (!(await waitForProbe(win, `document.querySelector('.subagent-stop-confirm') !== null`, 5_000))) {
+            fail('ticket-101 stage: the confirm popover never reopened for the outside-click leg')
+          }
+          await js(`document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); true`)
+          if (!(await waitForProbe(win, `document.querySelector('.subagent-stop-confirm') === null`, 5_000))) {
+            fail('ticket-101 stage: an outside pointer never cancelled the confirm popover')
+          }
+          await new Promise((r) => setTimeout(r, 300))
+          if (sent101.length !== 0) fail(`ticket-101 stage: Esc/outside must not stop, got ${JSON.stringify(sent101)}`)
+          log('subagent101_esc_outside_ok')
+
+          // ⑥ Confirm → the REAL RPC stop accepts → the Stopping overlay.
+          await js(`document.querySelector('[data-subagent-row="s101-call-a"] .subagent-stop-btn')?.click(); true`)
+          if (!(await waitForProbe(win, `document.querySelector('.subagent-stop-confirm') !== null`, 5_000))) {
+            fail('ticket-101 stage: the confirm popover never opened for the confirm leg')
+          }
+          await js(`document.querySelector('.subagent-stop-confirm-stop')?.click(); true`)
+          const receiptA = waitFor((e) => e.type === 'subagent_stop_receipt' && e.sessionId === created101.sessionId && e.asyncId === 'sub101-run-a', 'subagent101 stop receipt A')
+          const receiptAEvent = (await receiptA) as Extract<Scoped, { type: 'subagent_stop_receipt' }>
+          if (receiptAEvent.ok !== true || receiptAEvent.state !== 'stopping') {
+            fail(`ticket-101 stage: the seeded live run must stop through the real RPC, got ${JSON.stringify(receiptAEvent)}`)
+          }
+          if (
+            !sent101.some((c) => c.commandType === 'subagent_stop' && c.sessionId === created101.sessionId && c.asyncId === 'sub101-run-a')
+          ) {
+            fail(`ticket-101 stage: the outgoing subagent_stop command was never sent, got ${JSON.stringify(sent101)}`)
+          }
+          if (!(await waitForProbe(win, `document.querySelector('[data-subagent-row="s101-call-a"] .subagents-badge-stopping') !== null`, 8_000))) {
+            fail('ticket-101 stage: the accepted stop never showed the Stopping overlay')
+          }
+          log('subagent101_stopping_ok')
+
+          // ⑦ The terminal evidence lands (artifact → stopped) → Cancelled,
+          // the overlay clears, the badge count drops to 1 (visible only on
+          // the COLLAPSED panel — collapse, probe, re-expand for ⑧).
+          writeArtifact101(runDirA101, 'sub101-run-a', 'stopped')
+          const statusRtA2 = waitFor((e) => e.type === 'subagent_status' && e.sessionId === created101.sessionId && e.runs.some((r) => r.runId === 'sub101-run-a' && r.state === 'stopped'), 'subagent101 status roundtrip A terminal')
+          supervisor.handleParentCommand({ type: 'session_command', sessionId: created101.sessionId, command: { type: 'subagent_status', requestId: 'stage-101-2' } })
+          await statusRtA2
+          if (!(await waitForProbe(win, `document.querySelector('[data-subagent-row="s101-call-a"] .subagents-badge-cancelled') !== null`, 8_000))) {
+            fail('ticket-101 stage: the stopped run never showed its Cancelled badge')
+          }
+          await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', altKey: true, metaKey: true, bubbles: true })); true`)
+          if (!(await waitForProbe(win, `document.querySelector('.side-panel')?.hasAttribute('data-closed') === true && document.querySelector('.tb-btn-badge')?.textContent === '1'`, 8_000))) {
+            fail('ticket-101 stage: the toggle badge must drop to 1 after one run stopped')
+          }
+          await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', altKey: true, metaKey: true, bubbles: true })); true`)
+          if (!(await waitForProbe(win, `document.querySelector('.side-panel:not([data-closed])') !== null`, 8_000))) {
+            fail('ticket-101 stage: the panel never re-expanded after the badge probe')
+          }
+          log('subagent101_stopped_ok')
+
+          // ⑧ The conversation tab's head stop: open B's chat tab, stop from
+          // there (the same confirm → RPC path, second surface).
+          await js(`document.querySelector('[data-subagent-row="s101-call-b"]')?.click(); true`)
+          if (!(await waitForProbe(win, `document.querySelector('[data-testid="subagent-chat-tab"]') !== null`, 8_000))) {
+            fail('ticket-101 stage: row B never opened its conversation tab')
+          }
+          await js(`document.querySelector('[data-testid="subagent-chat-tab"] .subagent-stop-btn')?.click(); true`)
+          if (!(await waitForProbe(win, `document.querySelector('.subagent-stop-confirm') !== null`, 5_000))) {
+            fail('ticket-101 stage: the conversation tab stop never opened its confirm popover')
+          }
+          await js(`document.querySelector('.subagent-stop-confirm-stop')?.click(); true`)
+          const receiptB = waitFor((e) => e.type === 'subagent_stop_receipt' && e.sessionId === created101.sessionId && e.asyncId === 'sub101-run-b' && e.ok === true, 'subagent101 stop receipt B')
+          await receiptB
+          if (!(await waitForProbe(win, `document.querySelector('[data-subchat-state="s101-call-b"]')?.textContent === 'stopping'`, 8_000))) {
+            fail('ticket-101 stage: the conversation tab head never flipped to stopping')
+          }
+          log('subagent101_chat_stop_ok')
+
+          // ⑨ B settles → both runs terminal → ZERO badge (panel closed).
+          writeArtifact101(runDirB101, 'sub101-run-b', 'stopped')
+          const statusRtB2 = waitFor((e) => e.type === 'subagent_status' && e.sessionId === created101.sessionId && e.runs.some((r) => r.runId === 'sub101-run-b' && r.state === 'stopped'), 'subagent101 status roundtrip B terminal')
+          supervisor.handleParentCommand({ type: 'session_command', sessionId: created101.sessionId, command: { type: 'subagent_status', requestId: 'stage-101-3' } })
+          await statusRtB2
+          await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', altKey: true, metaKey: true, bubbles: true })); true`)
+          if (!(await waitForProbe(win, `document.querySelector('.side-panel')?.hasAttribute('data-closed') === true && document.querySelector('.tb-btn-badge') === null`, 8_000))) {
+            fail('ticket-101 stage: with zero live runs the collapsed toggle must carry NO badge')
+          }
+          log('subagent101_badge_zero_again_ok')
+
+          // ⑩ The foreground stop: an injected LIVE foreground tool call
+          // (the contract-event seam the visual harnesses use) shows the
+          // stop button; confirming it dispatches the session's abort —
+          // foreground runs have no RPC stop (abort/dispose semantics).
+          emitContractEvent({
+            type: 'session_event',
+            sessionId: created101.sessionId,
+            event: { type: 'tool_start', toolCallId: 's101-call-fg', name: 'subagent', args: { agent: 'scout', task: 'PICODE_SUB101 live foreground child' } }
+          })
+          if (!(await waitForProbe(win, `document.querySelector('.tb-btn-badge')?.textContent === '1'`, 8_000))) {
+            fail('ticket-101 stage: the injected foreground run never lit the badge')
+          }
+          await js(`(document.querySelector('.tb-btn-badge')?.closest('button'))?.click(); true`)
+          if (!(await waitForProbe(win, `document.querySelector('[data-subagent-row="s101-call-fg"] .subagent-stop-btn') !== null`, 8_000))) {
+            fail('ticket-101 stage: the foreground row never showed its stop button')
+          }
+          await js(`document.querySelector('[data-subagent-row="s101-call-fg"] .subagent-stop-btn')?.click(); true`)
+          if (!(await waitForProbe(win, `document.querySelector('.subagent-stop-confirm') !== null`, 5_000))) {
+            fail('ticket-101 stage: the foreground stop never opened its confirm popover')
+          }
+          await js(`document.querySelector('.subagent-stop-confirm-stop')?.click(); true`)
+          if (
+            !sent101.some((c) => c.commandType === 'abort_turn' && c.sessionId === created101.sessionId)
+          ) {
+            fail(`ticket-101 stage: the foreground stop must dispatch the session abort, got ${JSON.stringify(sent101)}`)
+          }
+          log('subagent101_foreground_abort_ok', JSON.stringify(sent101))
+        })
+      } finally {
+        if (previousTempRoot101 === undefined) delete process.env['PI_SUBAGENTS_TEMP_ROOT']
+        else process.env['PI_SUBAGENTS_TEMP_ROOT'] = previousTempRoot101
+        delete supervisorPatchable.handleParentCommand
+        rmSync(subRoot101, { recursive: true, force: true })
+        rmSync(seedDir101, { recursive: true, force: true })
+      }
+      log('subagent_stop_done')
+    }
+
 
     // ---- ticket 73: the New Task dead-end fix — from the new-task empty
     // state, ANY openable session-row click must land the main zone on the

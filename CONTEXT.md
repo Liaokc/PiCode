@@ -59,7 +59,7 @@ _Avoid_: 右侧栏、抽屉
 _Avoid_: 调用日志（含义过宽）、执行历史（与 Branch history 混淆）、trace 面板（中英混用）
 
 **子智能体目录（Subagents Directory）**：
-侧边面板的固定 Subagents tab（票 90，ZCode subagentDirectory 同构）：当前聚焦会话的子智能体运行一览——Running（Running/Waiting/Blocked）与 Ended（Completed/Failed/Cancelled/Lost）两段各带计数；行 = 七态徽标 + 任务标题 + 相对时间 + 结果一行预览，Show 20 more 每次展开 20 条；嵌套子代理不展开（行上折叠计数「+N nested」）。数据按 ADR-0002 精神分层：父会话记录中的 subagent 工具调用重放是唯一历史源（重开会话可重建）；host 桥转发的 async 工件状态（status.json）是 live 增补——tmpdir 工件会被清理，不作历史源，无工件且无完成记录的运行如实显 Lost（绝不臆造）。live 刷新零轮询（事件驱动 + tab 打开时一次拉取）。状态词 = ZCode 七态词汇的 Pi 运行态映射（表在票内定稿留档）；detached 子代理让行保持 Running（live 工作不得谎称 Completed）。
+侧边面板的固定 Subagents tab（票 90，ZCode subagentDirectory 同构）：当前聚焦会话的子智能体运行一览——Running（Running/Waiting/Blocked）与 Ended（Completed/Failed/Cancelled/Lost）两段各带计数；行 = 七态徽标 + 任务标题 + 相对时间 + 结果一行预览，Show 20 more 每次展开 20 条；嵌套子代理不展开（行上折叠计数「+N nested」）。数据按 ADR-0002 精神分层：父会话记录中的 subagent 工具调用重放是唯一历史源（重开会话可重建）；host 桥转发的 async 工件状态（status.json）是 live 增补——tmpdir 工件会被清理，不作历史源，无工件且无完成记录的运行如实显 Lost（绝不臆造）。live 刷新零轮询（事件驱动 + tab 打开时一次拉取）。状态词 = ZCode 七态词汇的 Pi 运行态映射（表在票内定稿留档）；detached 子代理让行保持 Running（live 工作不得谎称 Completed）。停止流（票 101）在七态之上加一个**过渡覆盖词**：Stopping = 停止请求已被控制通道接受、终结证据未落——非第八个终态，终结时如实训回 Cancelled。
 _Avoid_: 仪表盘（无聚合统计语义）；监控（含义过宽）；fleet（pi-subagents 的 TUI 术语，非本面板名）
 
 **最近关闭的标签页（Recently Closed Tabs）**：

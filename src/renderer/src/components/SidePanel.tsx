@@ -23,10 +23,13 @@ import { ChevronDownIcon, CloseIcon, FileTextIcon, PlusIcon } from './icons'
 import type { SubagentDirectoryRow } from '../../../shared/subagents/directory'
 
 /** Ticket 99: how the panel resolves one open subagent-chat tab against the
- * session registry (the row context) and sends its steers. */
+ * session registry (the row context) and sends its steers. Ticket 101 adds
+ * the stop flow's dispatch (async → the stop RPC; foreground → abort). */
 export interface SubagentChatBridge {
   resolve: (tab: Extract<PanelTabId, { kind: 'subagent-chat' }>) => { sessionId: string; row: SubagentDirectoryRow | null } | null
   onSteer: (sessionId: string, asyncId: string, requestId: string, text: string) => void
+  /** Stop one run: the conversation tab's head stop button → confirm → this. */
+  onStop: (sessionId: string, row: SubagentDirectoryRow) => void
   /** Open one run's conversation tab (the directory row click). */
   onOpenChat: (row: SubagentDirectoryRow) => void
 }
@@ -49,7 +52,10 @@ interface SidePanelProps {
   /** Ticket 90: the FOCUSED session's subagent directory data — transcript
    * entries + the bridge's live run states. null while no session view is
    * focused (the tab renders its empty state). */
-  subagentsDirectory?: { sessionId: string; entries: readonly ChatEntry[]; runs: Readonly<Record<string, import('../../../shared/subagents/types').SubagentRunState>> } | null
+  subagentsDirectory?: { sessionId: string; entries: readonly ChatEntry[]; runs: Readonly<Record<string, import('../../../shared/subagents/types').SubagentRunState>>; stopping?: ReadonlySet<string> } | null
+  /** Ticket 101: stop one running run (the directory row's stop button →
+   * its confirm popover → the App's dispatch). Absent → no stop affordance. */
+  onStopSubagent?: (row: SubagentDirectoryRow) => void
   /** Ticket 99: the subagent conversation tabs' resolver + steer sender +
    * the directory row click handler. */
   subagentChat?: SubagentChatBridge
@@ -86,6 +92,7 @@ export default function SidePanel({
   onPreviewNavigate,
   resolveTurnChanges,
   subagentsDirectory,
+  onStopSubagent,
   subagentChat
 }: SidePanelProps): JSX.Element {
   const drag = useRef<{ startX: number; startWidth: number; width: number; raf: number } | null>(null)
@@ -184,7 +191,9 @@ export default function SidePanel({
             sessionId={subagentsDirectory.sessionId}
             entries={subagentsDirectory.entries}
             runs={subagentsDirectory.runs}
+            stopping={subagentsDirectory.stopping}
             onOpenChat={subagentChat?.onOpenChat}
+            onStop={onStopSubagent}
           />
         ) : (
           <div className="subagents-view subagents-view-idle">
@@ -211,6 +220,7 @@ export default function SidePanel({
             sessionId={tab.sessionId}
             row={resolved?.row ?? null}
             onSteer={subagentChat.onSteer}
+            onStop={subagentChat.onStop}
           />
         )
       }

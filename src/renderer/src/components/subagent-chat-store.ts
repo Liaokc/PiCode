@@ -37,10 +37,12 @@ export class SubagentChatStore {
    * pending forever). The counter never resets or reuses. */
   private seq = 0
 
-  /** The next deterministic, collision-free requestId for one steer. */
-  nextRequestId(sessionId: string, asyncId: string): string {
+  /** The next deterministic, collision-free requestId. `kind` separates the
+   * command families in logs (steer vs stop, ticket 101) — the shared
+   * monotonic counter guarantees uniqueness across both. */
+  nextRequestId(sessionId: string, asyncId: string, kind: 'steer' | 'stop' = 'steer'): string {
     this.seq += 1
-    return `steer-${sessionId}-${asyncId}-${this.seq}`
+    return `${kind}-${sessionId}-${asyncId}-${this.seq}`
   }
 
   /** The receipts for ONE run (the tab selects its own). */

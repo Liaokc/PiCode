@@ -16,6 +16,14 @@ interface TitleBarProps {
   dispatch: Dispatch<ShellUiAction>
   /** Bottom dock dispatch (ticket 18): ⌘J terminal + ⌥⌘J bridge panels. */
   dispatchDock: Dispatch<DockAction>
+  /** Ticket 101: the FOCUSED session's live subagent run count — the
+   * collapsed side panel's toggle badge (the sidebar's orange badge
+   * precedent). Zero renders no badge. */
+  subagentRunningCount?: number
+  /** Ticket 101: the badge click's open action — the panel opens straight
+   * onto the Subagents directory tab (the badge's promise: the count the
+   * directory will show). Absent → the toggle behaves as before. */
+  onOpenSubagents?: () => void
 }
 
 /**
@@ -31,8 +39,11 @@ interface TitleBarProps {
  * ⌘, settings (ticket 63: the gear toggles the settings window, open from
  * the workspace and close from it — the ⌘, chord does the same).
  */
-export default function TitleBar({ ui, dispatch, dispatchDock }: TitleBarProps): JSX.Element {
+export default function TitleBar({ ui, dispatch, dispatchDock, subagentRunningCount = 0, onOpenSubagents }: TitleBarProps): JSX.Element {
   const settings = ui.view === 'settings'
+  // The badge lives ONLY on the collapsed panel (an open panel shows its
+  // own directory — the count would be redundant); zero runs, no badge.
+  const panelBadge = !ui.sidePanelOpen && subagentRunningCount > 0 ? subagentRunningCount : null
   return (
     <header className="titlebar">
       {!settings && (
@@ -84,10 +95,29 @@ export default function TitleBar({ ui, dispatch, dispatchDock }: TitleBarProps):
             <button
               type="button"
               className="tb-btn"
-              aria-label={ui.sidePanelOpen ? 'Close side panel' : 'Open side panel'}
-              onClick={() => dispatch({ type: 'toggle-side-panel' })}
+              aria-label={
+                panelBadge !== null
+                  ? `Open side panel — ${panelBadge} running subagent${panelBadge === 1 ? '' : 's'}`
+                  : ui.sidePanelOpen
+                    ? 'Close side panel'
+                    : 'Open side panel'
+              }
+              data-subagent-count={subagentRunningCount}
+              onClick={() => {
+                // Ticket 101: a badge click is a promise — the panel opens
+                // STRAIGHT onto the Subagents directory tab, whose Running
+                // section is exactly what the count counted. Every other
+                // click stays the plain toggle.
+                if (panelBadge !== null && onOpenSubagents !== undefined) onOpenSubagents()
+                else dispatch({ type: 'toggle-side-panel' })
+              }}
             >
               <PanelRightIcon />
+              {panelBadge !== null && (
+                <span className="tb-btn-badge" aria-hidden="true" data-testid="panel-badge">
+                  {panelBadge > 9 ? '9+' : panelBadge}
+                </span>
+              )}
             </button>
           </Tooltip>
         )}

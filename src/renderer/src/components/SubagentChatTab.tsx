@@ -11,6 +11,7 @@ import {
 } from '../../../shared/subagents/chat-model'
 import type { SubagentDirectoryRow } from '../../../shared/subagents/directory'
 import { subagentChatStore } from './subagent-chat-store'
+import { StopFlow, stopConfirmLabels } from './StopConfirm'
 import TurnContainer from './TurnContainer'
 import AnswerBlock from './AnswerBlock'
 import UserBubble from './UserBubble'
@@ -27,6 +28,10 @@ interface SubagentChatTabProps {
   /** Send one steer through the run's own session host (the App targets
    * `session_command` and seeds the pending receipt). */
   onSteer: (sessionId: string, asyncId: string, requestId: string, text: string) => void
+  /** Stop this run (ticket 101): the head's square stop button → the confirm
+   * popover → the App dispatches (async → the stop RPC; foreground → the
+   * parent turn's abort). */
+  onStop: (sessionId: string, row: SubagentDirectoryRow) => void
 }
 
 /**
@@ -51,9 +56,10 @@ interface SubagentChatTabProps {
 
 const STEER_PLACEHOLDER = 'Steer this subagent…'
 
-export default function SubagentChatTab({ sessionId, row, onSteer }: SubagentChatTabProps): JSX.Element {
+export default function SubagentChatTab({ sessionId, row, onSteer, onStop }: SubagentChatTabProps): JSX.Element {
   const asyncDir = row?.asyncDir ?? null
   const live = row !== null && rowIsLive(row.state)
+  const stopping = row?.stopping === true
   const [payload, setPayload] = useState<SubagentTranscriptPayload | null>(null)
   const [draft, setDraft] = useState('')
   const [receipts, setReceipts] = useState<SteerReceipt[]>([])
@@ -222,9 +228,26 @@ export default function SubagentChatTab({ sessionId, row, onSteer }: SubagentCha
   return (
     <div className="subchat-view" data-testid="subagent-chat-tab" data-subagent-chat={row.id}>
       <div className="subchat-head">
-        <span className={`subchat-head-state subchat-head-state-${row.state}`}>{row.state}</span>
+        <span
+          className={`subchat-head-state subchat-head-state-${stopping ? 'stopping' : row.state}`}
+          data-subchat-state={row.id}
+        >
+          {stopping ? 'stopping' : row.state}
+        </span>
         <span className="subchat-head-agent">{row.agent}</span>
         {row.childCount > 1 && <span className="subchat-head-note">first of {row.childCount} children</span>}
+        {/* Running rows only (ticket 101) — the stop RPC rejects
+            queued/paused runs, and a stopping run hides the button. The
+            StopFlow owns its confirm state. */}
+        {live && !stopping && row.state === 'running' && (
+          <span className="subchat-head-stop">
+            <StopFlow
+              label={`Stop ${row.title}`}
+              labels={stopConfirmLabels(row.title, row.asyncId === null)}
+              onConfirm={() => onStop(sessionId, row)}
+            />
+          </span>
+        )}
       </div>
       {error !== null ? (
         <div className="review-empty">
@@ -299,7 +322,7 @@ export default function SubagentChatTab({ sessionId, row, onSteer }: SubagentCha
             >
               <ChevronDownIcon size={14} />
             </button>
-            {live ? (
+            {live && !stopping ? (
               <div className="subchat-composer">
                 <textarea
                   className="subchat-composer-input"
@@ -322,7 +345,7 @@ export default function SubagentChatTab({ sessionId, row, onSteer }: SubagentCha
               </div>
             ) : (
               <div className="subchat-readonly" data-subchat-readonly="true">
-                This run has ended — the transcript is read-only.
+                {stopping ? 'This run is being stopped — the transcript stays live until it settles.' : 'This run has ended — the transcript is read-only.'}
               </div>
             )}
           </div>

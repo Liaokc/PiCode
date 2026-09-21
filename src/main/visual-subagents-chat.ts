@@ -317,6 +317,79 @@ export function startSubagentChatVisualIfEnabled(getWindow: () => BrowserWindow 
       }
       await capture(win, 's99-4-readonly')
 
+      // ---- ticket 101 frames: the stop flow + the collapsed-panel badge ----
+      // Revive the run to running (a fresh available snapshot replaces the
+      // settled record — the same fold the real bridge's status replies use).
+      emit({
+        type: 'session_event',
+        sessionId: SESSION_ID,
+        event: {
+          type: 'subagent_status',
+          requestId: 'visual-101-0',
+          available: true,
+          runs: [{ runId: LIVE_RUN, state: 'running', startedAt: Date.now() - 60_000, currentTool: 'grep' }],
+          fleet: { entries: [], totalActive: 1, omitted: 0 }
+        }
+      })
+      if (!(await waitFor(getWindow, `(() => {
+        const view = document.querySelector('[data-testid="subagent-chat-tab"]')
+        return view !== null && view.querySelector('.subchat-composer') !== null && view.querySelector('[data-subchat-state="${LIVE_CALL}"]')?.textContent === 'running'
+      })()`, 10_000))) {
+        throw new Error('subagent-chat visual: the revived run never showed the live composer again')
+      }
+
+      // s101-1: the head's square stop button opens the CONFIRM popover —
+      // the operator's decision point (ZCode terminates directly; PiCode
+      // asks, and the copy carries the irreversible semantics). Escape
+      // cancels (no dispatch — the harness session has no host).
+      await js(`document.querySelector('[data-testid="subagent-chat-tab"] .subagent-stop-btn')?.click(); true`)
+      if (!(await waitFor(getWindow, `document.querySelector('.subagent-stop-confirm') !== null`, 8_000))) {
+        throw new Error('subagent-chat visual: the stop confirm popover never opened')
+      }
+      const confirmCopy101 = (await js(`(() => ({
+        question: document.querySelector('.subagent-stop-confirm-question')?.textContent ?? '',
+        copy: document.querySelector('.subagent-stop-confirm-copy')?.textContent ?? '',
+        stop: document.querySelector('.subagent-stop-confirm-stop')?.textContent ?? '',
+        cancel: document.querySelector('.subagent-stop-confirm-cancel')?.textContent ?? ''
+      }))()`)) as { question: string; copy: string; stop: string; cancel: string }
+      assert(confirmCopy101.question.includes('Stop'), `the confirm question must ask to stop, got ${confirmCopy101.question}`)
+      assert(confirmCopy101.copy.includes('cannot be undone'), `the confirm copy must carry the irreversible semantics, got ${confirmCopy101.copy}`)
+      assert(confirmCopy101.stop === 'Stop run' && confirmCopy101.cancel === 'Cancel', `the confirm buttons must read Stop run / Cancel, got ${confirmCopy101.stop} / ${confirmCopy101.cancel}`)
+      await capture(win, 's101-1-stop-confirm')
+      await js(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`)
+      if (!(await waitFor(getWindow, `document.querySelector('.subagent-stop-confirm') === null`, 8_000))) {
+        throw new Error('subagent-chat visual: Escape never cancelled the confirm popover')
+      }
+
+      // s101-2: the accepted stop → the honest Stopping overlay in the head
+      // (the receipt injected — the harness session has no host to answer;
+      // the REAL click→receipt path is the electron smoke's job).
+      emit({
+        type: 'session_event',
+        sessionId: SESSION_ID,
+        event: { type: 'subagent_stop_receipt', requestId: 'visual-101-1', asyncId: LIVE_RUN, ok: true, state: 'stopping' }
+      })
+      if (!(await waitFor(getWindow, `(() => {
+        const view = document.querySelector('[data-testid="subagent-chat-tab"]')
+        return view !== null && view.querySelector('[data-subchat-state="${LIVE_CALL}"]')?.textContent === 'stopping' && view.querySelector('.subchat-composer') === null
+      })()`, 10_000))) {
+        throw new Error('subagent-chat visual: the accepted stop never flipped the tab to stopping')
+      }
+      await capture(win, 's101-2-stopping')
+
+      // s101-3: the collapsed panel's toggle badge — the focused session's
+      // live run count (a stopping run still counts; it is not terminal).
+      await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', altKey: true, metaKey: true, bubbles: true })); true`)
+      if (!(await waitFor(getWindow, `document.querySelector('.side-panel')?.hasAttribute('data-closed') === true && document.querySelector('.tb-btn-badge')?.textContent === '1'`, 10_000))) {
+        throw new Error('subagent-chat visual: the collapsed toggle never showed the running badge')
+      }
+      await capture(win, 's101-3-badge')
+      // Restore: a badge click opens the panel onto the Subagents directory.
+      await js(`(document.querySelector('.tb-btn-badge')?.closest('button'))?.click(); true`)
+      if (!(await waitFor(getWindow, `document.querySelector('.panel-tab-active[data-panel-tab="subagents"]') !== null`, 8_000))) {
+        throw new Error('subagent-chat visual: the badge click never opened the directory tab')
+      }
+
       console.log('subagent-chat visual: all frames captured')
       app.exit(0)
     } catch (err) {

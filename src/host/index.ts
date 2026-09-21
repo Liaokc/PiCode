@@ -846,6 +846,14 @@ async function handleSubagentSteer(requestId: string, asyncId: string, text: str
   await subagentBridge.handleSteerRequest(requestId, asyncId, text)
 }
 
+/** Ticket 101: stop one running async subagent run — pi-subagents' RPC
+ * `stop` (the stop control channel records a stopped lifecycle) with the
+ * receipt answered in every path. Foreground runs never reach here: the
+ * renderer aborts the owning session's turn instead (abort/dispose). */
+async function handleSubagentStop(requestId: string, asyncId: string): Promise<void> {
+  await subagentBridge.handleStopRequest(requestId, asyncId)
+}
+
 /** Ticket 104: renaming works WHILE the agent runs (TUI `/name` parity —
  * the SDK's setSessionName supports mid-run renames). Only the no-session
  * path stays guarded; the restructure guard does NOT apply here. The
@@ -960,6 +968,11 @@ process.on('message', (message: unknown) => {
         typeof message.text === 'string'
       ) {
         void handleSubagentSteer(message.requestId, message.asyncId, message.text)
+      }
+      break
+    case 'subagent_stop':
+      if (typeof message.requestId === 'string' && typeof message.asyncId === 'string') {
+        void handleSubagentStop(message.requestId, message.asyncId)
       }
       break
     case 'abort_turn':

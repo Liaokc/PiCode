@@ -60,6 +60,16 @@ export interface SubagentLiveState {
   /** pi-subagents' bounded fleet DTO from the last status reply; null while
    * never answered or the package is unavailable. */
   fleet: SubagentFleetDTO | null
+  /** Ticket 101: run ids with an ACCEPTED stop request (ok:true receipt)
+   * whose terminal evidence hasn't landed yet — the directory overlays the
+   * honest "Stopping" state on those rows. Cleared by any terminal evidence
+   * (a lifecycle completion, or a status snapshot that sees the run
+   * terminal); a failed receipt never touches it. */
+  stopping: ReadonlySet<string>
+}
+
+export function initialSubagentLiveState(): SubagentLiveState {
+  return { runs: {}, fleet: null, stopping: new Set() }
 }
 
 export interface SessionRegistryState {
@@ -67,10 +77,6 @@ export interface SessionRegistryState {
   sessions: RegistrySession[]
   /** The session whose view the main zone renders; null = empty state. */
   focusedId: string | null
-}
-
-export function initialSubagentLiveState(): SubagentLiveState {
-  return { runs: {}, fleet: null }
 }
 
 export function initialRegistryState(): SessionRegistryState {
@@ -242,7 +248,22 @@ function foldSubagentStatus(live: SubagentLiveState, runs: SubagentRunState[], f
     if (seen.has(runId)) continue
     if (PRESERVED_SNAPSHOT_STATES.has(previous.state)) next[runId] = previous
   }
-  return { runs: next, fleet }
+  // Ticket 101: a stopping marker drops as soon as the snapshot sees the
+  // run terminal — the honest transition ended. Runs the snapshot doesn't
+  // see keep the marker (the artifact may merely be mid-cleanup; the
+  // lifecycle completion is the authoritative clear).
+  const stopping = new Set([...live.stopping].filter((runId) => {
+    const run = next[runId]
+    return run === undefined || !isTerminalArtifactState(run.state)
+  }))
+  return { runs: next, fleet, stopping }
+}
+
+/** The artifact states that end a run. Membership coincides with the
+ * preserved-snapshot set (terminal evidence is exactly what survives a
+ * snapshot that no longer sees the run) — one set, two honest names. */
+function isTerminalArtifactState(state: SubagentRunState['state']): boolean {
+  return PRESERVED_SNAPSHOT_STATES.has(state)
 }
 
 /** Lifecycle events fold as deltas onto the last snapshot — a started run
@@ -285,7 +306,24 @@ function foldSubagentLifecycle(
     state: known ?? (previous !== undefined ? previous.state : 'failed'),
     ...(event.summary !== undefined ? { summary: event.summary } : previous?.summary !== undefined ? { summary: previous.summary } : {})
   }
-  return { ...live, runs: { ...live.runs, [event.runId]: derived } }
+  // Ticket 101: this is the completion branch (started runs returned above)
+  // — terminal evidence clears the run's stopping marker.
+  const stopping = new Set([...live.stopping].filter((id) => id !== event.runId))
+  return { ...live, runs: { ...live.runs, [event.runId]: derived }, stopping }
+}
+
+/**
+ * Ticket 101: fold one `subagent_stop_receipt`. An accepted stop (ok:true,
+ * pi-subagents' `stopping` state) marks the run Stopping — the badge
+ * overlay the stop flow shows while the terminal evidence is in flight.
+ * A failed receipt changes nothing: the row keeps its live state and the
+ * App surfaces the error verbatim.
+ */
+function foldSubagentStopReceipt(live: SubagentLiveState, event: Extract<HostToParent, { type: 'subagent_stop_receipt' }>): SubagentLiveState {
+  if (!event.ok) return live
+  const stopping = new Set(live.stopping)
+  stopping.add(event.asyncId)
+  return { ...live, stopping }
 }
 
 function detach(state: SessionRegistryState, id: string): SessionRegistryState {
@@ -349,6 +387,16 @@ function foldEvent(state: SessionRegistryState, event: HostToParent): SessionReg
         ...withEntry,
         sessions: withEntry.sessions.map((s) =>
           s.id === sessionId ? { ...s, subagents: foldSubagentLifecycle(s.subagents, scoped) } : s
+        )
+      }
+    }
+    // Ticket 101: the stop receipt marks the run Stopping (ok:true) — the
+    // registry-level view state the directory's badge overlay reads.
+    if (scoped.type === 'subagent_stop_receipt') {
+      return {
+        ...withEntry,
+        sessions: withEntry.sessions.map((s) =>
+          s.id === sessionId ? { ...s, subagents: foldSubagentStopReceipt(s.subagents, scoped) } : s
         )
       }
     }

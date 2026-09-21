@@ -11,7 +11,7 @@ import { initialChatState, type ChatAction } from '../../shared/chat-reducer'
 import { isMcpAuthEvent, mcpAuthStore } from './components/settings/mcp-auth-store'
 import { isMcpStatusEvent, mcpStatusStore } from './components/settings/mcp-status-store'
 import { isSteerReceiptEvent, subagentChatStore } from './components/subagent-chat-store'
-import { subagentDirectoryFromEntries, type SubagentDirectoryRow } from '../../shared/subagents/directory'
+import { subagentDirectoryFromEntries, ENDED_VISIBLE_INITIAL, type SubagentDirectoryRow } from '../../shared/subagents/directory'
 import { groupTurns } from '../../shared/turn-collapse'
 import type { HostToParent, SessionCommand, SessionScopedEvent } from '../../shared/contract'
 import type { PanelTabId } from '../../shared/panel-model'
@@ -514,6 +514,15 @@ export default function App(): JSX.Element {
             window.picode.chat.sendToHost({ type: 'session_command', sessionId: scopeId, command: { type: 'subagent_status', requestId: `evt-${scopeId}` } })
           }
           break
+        case 'subagent_stop_receipt': {
+          // Ticket 101: an accepted stop is visible through the registry's
+          // Stopping badge — no toast. A FAILED stop must be audible: the
+          // row keeps its live state, so the error rides the toast verbatim
+          // (the steer receipt's honesty rule, app level).
+          const receipt = scopeEvent
+          if (!receipt.ok) notify(`Stop failed — ${receipt.error ?? 'the stop request failed'}`, 'error')
+          break
+        }
         case 'session_command_error':
           // A failed fork will never announce — drop the pending ack so no
           // later unrelated announcement can toast a success that didn't
@@ -648,7 +657,7 @@ export default function App(): JSX.Element {
     function onKeyDown(event: KeyboardEvent): void {
       if (event.key !== 'Escape' || event.defaultPrevented) return
       const target = event.target
-      if (target instanceof Element && target.closest('.composer, .newtask-pop, .palette-overlay, .skill-confirm')) return
+      if (target instanceof Element && target.closest('.composer, .newtask-pop, .palette-overlay, .skill-confirm, .subagent-stop-confirm')) return
       if (ui.view === 'settings') {
         // Ticket 74: back to the workspace — the view that remounts reads
         // its slot; the park is a stale-idempotent no-op from the settings
@@ -1412,6 +1421,30 @@ export default function App(): JSX.Element {
 
   const handlePreviewNavigate = openPreview
 
+  /** Ticket 101: dispatch one subagent stop. Async runs ride the stop RPC
+   * (the receipt lands as the Stopping badge); foreground runs have no RPC
+   * stop — they die with their parent's turn (abort/dispose semantics,
+   * observability.md), so the owning session gets its abort command. */
+  const handleSubagentStopRun = useCallback((sessionId: string, row: SubagentDirectoryRow): void => {
+    if (row.asyncId !== null) {
+      window.picode.chat.sendToHost({
+        type: 'session_command',
+        sessionId,
+        command: { type: 'subagent_stop', requestId: subagentChatStore.nextRequestId(sessionId, row.asyncId, 'stop'), asyncId: row.asyncId }
+      })
+      return
+    }
+    window.picode.chat.sendToHost({ type: 'session_command', sessionId, command: { type: 'abort_turn' } })
+  }, [])
+
+  /** Ticket 101: the collapsed panel's badge click — open the panel STRAIGHT
+   * onto the Subagents directory tab (the count the badge showed is exactly
+   * the Running section the operator lands on). */
+  const handleOpenSubagentsPanel = useCallback((): void => {
+    panelDispatch({ type: 'open-tab', tab: { kind: 'subagents' } })
+    dispatch({ type: 'open-side-panel' })
+  }, [panelDispatch, dispatch])
+
   /** Ticket 99: the subagent conversation tabs' bridge. The row click opens
    * a task-named tab (one per parent tool call); the resolver re-projects
    * the directory row for that call against the registry on every render
@@ -1422,7 +1455,7 @@ export default function App(): JSX.Element {
       resolve: (tab: Extract<PanelTabId, { kind: 'subagent-chat' }>): { sessionId: string; row: SubagentDirectoryRow | null } | null => {
         const session = registryRef.current.sessions.find((s) => s.id === tab.sessionId)
         if (session === undefined) return null
-        const model = subagentDirectoryFromEntries(session.chat.entries, session.subagents.runs)
+        const model = subagentDirectoryFromEntries(session.chat.entries, session.subagents.runs, ENDED_VISIBLE_INITIAL, session.subagents.stopping)
         return { sessionId: tab.sessionId, row: model.rows.find((row) => row.id === tab.callId) ?? null }
       },
       onSteer: (sessionId: string, asyncId: string, requestId: string, text: string): void => {
@@ -1432,6 +1465,7 @@ export default function App(): JSX.Element {
           command: { type: 'subagent_steer', requestId, asyncId, text }
         })
       },
+      onStop: handleSubagentStopRun,
       onOpenChat: (row: SubagentDirectoryRow): void => {
         const id = focusedIdRef.current
         if (id === null) return
@@ -1441,7 +1475,30 @@ export default function App(): JSX.Element {
         })
       }
     }),
-    [panelDispatch]
+    [panelDispatch, handleSubagentStopRun]
+  )
+
+  /** Ticket 101: the directory tab's stop dispatch targets the FOCUSED
+   * session (the directory always shows the focused session's runs). */
+  const handleStopFocusedSubagent = useCallback(
+    (row: SubagentDirectoryRow): void => {
+      const id = focusedIdRef.current
+      if (id === null) return
+      handleSubagentStopRun(id, row)
+    },
+    [handleSubagentStopRun]
+  )
+
+  /** Ticket 101: the focused session's live subagent run count — the
+   * collapsed panel's toggle badge (zero → no badge). The same directory
+   * projection the Subagents tab renders, so the badge never promises a
+   * count the directory won't show. */
+  const subagentRunningCount = useMemo(
+    () =>
+      focused !== null
+        ? subagentDirectoryFromEntries(focused.chat.entries, focused.subagents.runs, 0, focused.subagents.stopping).running.length
+        : 0,
+    [focused]
   )
 
   /** Recently closed persistence (ticket 31): every change to the panel's
@@ -1636,7 +1693,13 @@ export default function App(): JSX.Element {
         } as CSSProperties
       }
     >
-      <TitleBar ui={ui} dispatch={dispatchShellParking} dispatchDock={dockDispatch} />
+      <TitleBar
+        ui={ui}
+        dispatch={dispatchShellParking}
+        dispatchDock={dockDispatch}
+        subagentRunningCount={subagentRunningCount}
+        onOpenSubagents={handleOpenSubagentsPanel}
+      />
       <Sidebar
         open={ui.sidebarOpen}
         width={ui.sidebarWidth}
@@ -1755,9 +1818,15 @@ export default function App(): JSX.Element {
             resolveTurnChanges={resolveTurnChanges}
             subagentsDirectory={
               focused !== null
-                ? { sessionId: focused.id, entries: focused.chat.entries, runs: focused.subagents.runs }
+                ? {
+                    sessionId: focused.id,
+                    entries: focused.chat.entries,
+                    runs: focused.subagents.runs,
+                    stopping: focused.subagents.stopping
+                  }
                 : null
             }
+            onStopSubagent={handleStopFocusedSubagent}
             subagentChat={subagentChatBridge}
           />
         </div>
