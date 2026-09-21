@@ -12260,6 +12260,7 @@ export function startSmokeIfEnabled(
     supervisor.createSession(cwd)
     const rename104Session = await rename104Created
     const rename104Id = rename104Session.sessionId
+    log('ticket-104 session_created', `id=${rename104Id} file=${rename104Session.sessionFile ?? 'null'} cwd=${rename104Session.cwd}`)
     // Long enough to still be streaming through the whole rename choreography
     // (the ticket-100 count precedent: the run must outlive the stage legs).
     const COUNT_PROMPT_104 =
@@ -12297,6 +12298,95 @@ export function startSmokeIfEnabled(
       supervisor.handleParentCommand({
         type: 'session_command',
         sessionId: rename104Id,
+        command: { type: 'prompt', text: 'PICODE_RENAME_104_WARM: Reply with exactly READY and nothing else.' }
+      })
+      // The SDK creates the session FILE only when the first ASSISTANT
+      // message persists (the session header + user message buffer in memory
+      // until then) — and the sidebar row needs the file. A short warm turn
+      // guarantees the file exists before the row probe and the mid-run
+      // rename choreography.
+      await waitFor((e) => e.type === 'agent_end' && e.sessionId === rename104Id, 'ticket-104 warm agent_end')
+      if (!(await waitForProbe(win, `document.querySelector('.cmp-send') !== null`, 15_000))) {
+        fail('ticket-104 stage: the composer never left the busy state after the warm turn')
+      }
+
+      // The sidebar may be closed or the session's project group folded when
+      // this (last) stage runs — every earlier row-touching stage uses the
+      // press-until-present ⌘B pattern + a group-unfold fallback. The row
+      // probe happens after the WARM turn: the SDK creates the session file
+      // only when the first assistant message persists, so a never-settled
+      // fresh session is invisible to the index.
+      // The row must be VISIBLE for the title assertion: the ticket-84 drag
+      // stage persists sort=manual (a fresh session lands at the group tail)
+      // and the default page cuts at 5 — so reveal the row the way a user
+      // would: unfold the group if it renders no rows, else click Show more
+      // (data-cwd locates the group — the ticket-84 selector precedent).
+      const sidebarPresent104 = `(document.querySelector('.sidebar') !== null)`
+      if (!((await js(sidebarPresent104)) as boolean)) {
+        await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', metaKey: true, bubbles: true })); true`)
+        await waitForProbe(win, sidebarPresent104, 5_000)
+      }
+      const row104 = `document.querySelector('.sb-task[data-file="${rename104Session.sessionFile}"]')`
+      const revealRow104 = `(() => {
+        const g = document.querySelector('[data-cwd="${cwd}"]')
+        if (!(g instanceof HTMLElement)) return 'no-group'
+        if (g.querySelector('.sb-task[data-file="${rename104Session.sessionFile}"]')) return 'ok'
+        if (g.querySelectorAll('.sb-task').length === 0) {
+          const header = g.querySelector('.sb-group-header')
+          if (header instanceof HTMLElement) { header.dispatchEvent(new MouseEvent('click', { bubbles: true })); return 'unfolded' }
+          return 'no-header'
+        }
+        const more = g.querySelector('.sb-show-more')
+        if (more instanceof HTMLElement && more.textContent === 'Show more') { more.dispatchEvent(new MouseEvent('click', { bubbles: true })); return 'show-more' }
+        return 'no-more'
+      })()`
+      if (!(await waitForProbe(win, `${row104} !== null`, 6_000))) {
+        let reveal = ''
+        for (let attempt = 0; attempt < 8; attempt++) {
+          reveal = (await js(revealRow104)) as string
+          if (reveal === 'ok') break
+          await new Promise((r) => setTimeout(r, 400))
+        }
+        if (!((await js(`${row104} !== null`)) as boolean)) {
+          const diag104 = (await js(
+            `window.picode.sessions.list().then((list) => JSON.stringify({
+              total: list.length,
+              mine: list.filter((s) => s.file === ${JSON.stringify(rename104Session.sessionFile)}).length,
+              byId: list.filter((s) => s.file.includes(${JSON.stringify(rename104Id)})).map((s) => s.file),
+              myCwdCount: list.filter((s) => s.cwd === ${JSON.stringify(cwd)}).length,
+              groupRows: document.querySelectorAll('[data-cwd="${cwd}"] .sb-task').length,
+              sample: [...document.querySelectorAll('[data-cwd="${cwd}"] .sb-task')].slice(0, 3).map((r) => (r.dataset['file'] ?? '').split('/').pop())
+            }))`
+          ).catch(() => 'diag-failed')) as string
+          const diskDiag104 = ((): string => {
+            try {
+              const store = process.env['PICODE_SESSION_DIR'] ?? ''
+              const base = path.basename(rename104Session.sessionFile ?? '___none')
+              const find = (dir: string): string | null => {
+                for (const entry of readdirSync(dir, { withFileTypes: true })) {
+                  const p = path.join(dir, entry.name)
+                  if (entry.isDirectory()) {
+                    const hit = find(p)
+                    if (hit !== null) return hit
+                  } else if (entry.name === base) return p
+                }
+                return null
+              }
+              const hit = find(store)
+              return hit !== null ? `on-disk head=${JSON.stringify(readFileSync(hit, 'utf8').slice(0, 100))}` : `NOT-on-disk (base=${base})`
+            } catch (err) {
+              return `disk-diag-failed: ${String(err)}`
+            }
+          })()
+          fail(`ticket-104 stage: the session row never rendered in the sidebar (last reveal: ${reveal}) — rows: ${String(await js(`document.querySelectorAll('.sb-task').length`).catch(() => 'n/a'))}, groups: ${String(await js(`document.querySelectorAll('.sb-group').length`).catch(() => 'n/a'))}, diag: ${diag104}, disk: ${diskDiag104}`)
+        }
+      }
+      const sidebarTitle104 = `${row104}?.querySelector('.sb-task-title')?.textContent`
+
+      // Now start the LONG run — the rename happens while IT streams.
+      supervisor.handleParentCommand({
+        type: 'session_command',
+        sessionId: rename104Id,
         command: { type: 'prompt', text: COUNT_PROMPT_104 }
       })
       await waitFor((e) => e.type === 'agent_start' && e.sessionId === rename104Id, 'ticket-104 agent_start')
@@ -12327,8 +12417,8 @@ export function startSmokeIfEnabled(
       if (!(await waitForProbe(win, `document.querySelector('.chat-topbar-title')?.textContent === ${JSON.stringify(NAME_RUNNING_104)}`, 10_000))) {
         fail(`ticket-104 stage: the topbar title never showed the mid-run rename — got ${(await js(`document.querySelector('.chat-topbar-title')?.textContent ?? 'none'`).catch(() => 'n/a')) as string}`)
       }
-      if (!(await waitForProbe(win, `document.querySelector('.sb-task-active .sb-task-title')?.textContent === ${JSON.stringify(NAME_RUNNING_104)}`, 10_000))) {
-        fail(`ticket-104 stage: the sidebar row title never showed the mid-run rename — got ${(await js(`document.querySelector('.sb-task-active .sb-task-title')?.textContent ?? 'none'`).catch(() => 'n/a')) as string}`)
+      if (!(await waitForProbe(win, `document.querySelector('.sb-task-active') === ${row104} && ${sidebarTitle104} === ${JSON.stringify(NAME_RUNNING_104)}`, 10_000))) {
+        fail(`ticket-104 stage: the sidebar row title never showed the mid-run rename — got ${String(await js(`${sidebarTitle104} ?? 'none'`).catch(() => 'n/a'))}`)
       }
       if (!(await js(noErrorToast104))) {
         fail('ticket-104 stage: the mid-run rename raised an error toast (the settled guard must NOT apply)')
@@ -12365,8 +12455,8 @@ export function startSmokeIfEnabled(
       if (!(await waitForProbe(win, `document.querySelector('.chat-topbar-title')?.textContent === ${JSON.stringify(NAME_SETTLED_104)}`, 10_000))) {
         fail('ticket-104 stage: the topbar title never showed the settled rename')
       }
-      if (!(await waitForProbe(win, `document.querySelector('.sb-task-active .sb-task-title')?.textContent === ${JSON.stringify(NAME_SETTLED_104)}`, 10_000))) {
-        fail('ticket-104 stage: the sidebar row title never showed the settled rename')
+      if (!(await waitForProbe(win, `document.querySelector('.sb-task-active') === ${row104} && ${sidebarTitle104} === ${JSON.stringify(NAME_SETTLED_104)}`, 10_000))) {
+        fail(`ticket-104 stage: the sidebar row title never showed the settled rename — got ${String(await js(`${sidebarTitle104} ?? 'none'`).catch(() => 'n/a'))}`)
       }
       if (!(await js(noErrorToast104))) {
         fail('ticket-104 stage: the settled rename raised an error toast (regression)')
