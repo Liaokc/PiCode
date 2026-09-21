@@ -16,6 +16,7 @@ import { composerDensity, thinkingBarFraction, thinkingBarShimmers, type Compose
 import {
   COMPOSER_EXPAND_ANIM_SETTLE_MS,
   composerAutoGrowHeight,
+  composerCaretLineTop,
   composerCaretReveal,
   composerExpandHeight,
   composerTypingHeight,
@@ -367,6 +368,10 @@ export default function Composer({
   // composer replaces whatever draft is in place with the original text and
   // the message's restored image attachments, then takes focus with the
   // caret at the end (menu surfaces close; the expand state is untouched).
+  // Ticket 117 (spec R12): after the caret lands, the viewport FOLLOWS it —
+  // the reveal scrolls the input to the caret's line so a long prefilled
+  // draft opens showing its end (the message the operator is about to
+  // continue), not the top it happened to rest at.
   useEffect(() => {
     function prefill(event: Event): void {
       const detail = (event as CustomEvent<EditResendPrefill>).detail
@@ -382,6 +387,7 @@ export default function Composer({
         if (el) {
           el.selectionStart = el.selectionEnd = detail.text.length
           el.focus()
+          revealComposerCaret(el)
         }
       })
     }
@@ -1015,22 +1021,73 @@ function applyExpandHeight(el: HTMLTextAreaElement | null): void {
   if (el) el.style.height = `${composerExpandHeight(mainRegionHeight(el))}px`
 }
 
-/** Ticket 81 R7: guarantee the caret's line sits fully inside the scrolled
- * view. Pure geometry over the live measurement (Seam-1 owns the decision —
- * composerCaretReveal); null means already visible, no write. A detached
- * element (unmount mid-glide) measures NaN and never moves. */
+/** Ticket 81 R7 + ticket 117 (spec R12): guarantee the caret's VISUAL line
+ * sits fully inside the scrolled view. The ticket-81 line was derived from
+ * the hard-line count, which cannot see soft wrap — a soft-wrapped draft
+ * (every CJK draft) computed a ghost line near the top, the reveal scrolled
+ * the view to it on every keystroke, and on IME composition updates that
+ * write fought the browser's own caret scroll (the operator's 舞步抖动:
+ * typing at the bottom jumped the view to the top). The line is now
+ * MEASURED: a hidden clone of the input holds the text up to the caret
+ * and its scrollHeight gives the caret's visual line; Seam-1 owns every
+ * decision (composerCaretLineTop → composerCaretReveal). A box that shows
+ * all its content skips the measurement entirely (nothing can be out of
+ * view — the common below-cap typing path pays nothing), and junk
+ * readings never move the view (the ticket-81 defense, unchanged). */
 function revealComposerCaret(el: HTMLTextAreaElement | null): void {
   if (!el) return
+  if (el.scrollHeight <= el.clientHeight) return
   const cs = getComputedStyle(el)
   const lineHeight = parseFloat(cs.lineHeight)
   const padTop = parseFloat(cs.paddingTop)
+  const lineTop = composerCaretLineTop({
+    caretTopPx: measureCaretLineTopPx(el),
+    padTopPx: padTop,
+    lineHeightPx: lineHeight
+  })
+  if (lineTop === null) return
   const reveal = composerCaretReveal({
-    lineTopPx: padTop + (el.value.slice(0, el.selectionStart ?? el.value.length).split('\n').length - 1) * lineHeight,
+    lineTopPx: lineTop,
     lineHeightPx: lineHeight,
     scrollTopPx: el.scrollTop,
     clientHeightPx: el.clientHeight
   })
   if (reveal !== null) el.scrollTop = reveal
+}
+
+/** Ticket 117 (spec R12): the caret's visual-line top in flow coordinates,
+ * measured on a hidden mirror of the input — the measureCollapsedHeight
+ * precedent (a clone in the same insertion context). The mirror is a
+ * TEXTAREA clone, not a div: only a textarea wraps text exactly like the
+ * input (a styled div's word wrap can diverge from the input's by a word —
+ * at boundary widths a whole line — which once measured the caret one line
+ * low). The clone carries the input's exact styles and width, holds the
+ * text up to the caret, and its scrollHeight gives the prefix's line
+ * count; the caret sits on the prefix's last line. A minimal height keeps
+ * the report unclamped (a taller box would report its own client height
+ * for short prefixes). Returns NaN when the reading is unavailable
+ * (detached element, junk numbers) — composerCaretLineTop's junk cue, so
+ * a broken reading never moves the view. */
+function measureCaretLineTopPx(el: HTMLTextAreaElement): number {
+  const parent = el.parentNode
+  if (parent === null) return Number.NaN
+  const cs = getComputedStyle(el)
+  const lineHeight = parseFloat(cs.lineHeight)
+  const padTop = parseFloat(cs.paddingTop)
+  const padBottom = parseFloat(cs.paddingBottom)
+  if (lineHeight <= 0 || ![lineHeight, padTop, padBottom].every((n) => Number.isFinite(n))) return Number.NaN
+  const mirror = el.cloneNode(false) as HTMLTextAreaElement
+  mirror.removeAttribute('data-expand-anim')
+  mirror.style.position = 'absolute'
+  mirror.style.visibility = 'hidden'
+  mirror.style.height = '0px'
+  mirror.style.minHeight = '0px'
+  mirror.style.transition = 'none'
+  mirror.value = el.value.slice(0, el.selectionEnd ?? el.value.length)
+  parent.insertBefore(mirror, el.nextSibling)
+  const lines = Math.max(1, Math.round((mirror.scrollHeight - padTop - padBottom) / lineHeight))
+  mirror.remove()
+  return padTop + (lines - 1) * lineHeight
 }
 
 /** Ticket 81 R10: the collapsed-height measurement for a toggle commit —
