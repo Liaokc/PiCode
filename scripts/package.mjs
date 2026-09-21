@@ -128,7 +128,11 @@ let failure = null
 try {
   execFileSync('open', openLaunchArgs({ appPath, sessionDir, piAgentDir, stdoutLog, stderrLog }), {
     stdio: 'inherit',
-    timeout: 5 * 60_000
+    // 20 min (ticket-100-era suite length): `open -W` waits for the packaged
+    // app to EXIT, and the full in-app smoke has grown well past the 102-era
+    // 5-minute budget (model stages + 108/110/111 stages) — a healthy run
+    // now legitimately needs longer than the old ceiling.
+    timeout: 20 * 60_000
   })
   const stdout = readFileSync(stdoutLog, 'utf8')
   const stderr = readFileSync(stderrLog, 'utf8')
