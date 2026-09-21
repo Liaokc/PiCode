@@ -69,10 +69,10 @@ cd ~/PiCode && bash scripts/merge-ticket.sh <NN>
 | | **107** 文件浏览器实时刷新 + 置顶行 View files | Sidebar 置顶行 + FileBrowser（watch 通路则契约增量） | **84** |
 | **W10** | **108** 计时不丢 | 容器 header 锚点派生（票 61 口径迁移） | **94** |
 | | **110** 双端包安装互通 | PackagesSection force 刷新 + 验证矩阵 | **89** |
-| | **111** pi-subagents 0.70.0 适配 | 90/99/101 集成面重验 | **101** |
+| | **111** pi-subagents 0.70.1 适配 | 90/99/101 集成面重验 | **101** + **112**（跑在其 SDK 上） |
 | | **115** pi-mcp-adapter 2.35.0 适配 | 89/96/110 消费面重验 | **96** |
 | **W11** | **114** 图标白边修复 | make-icons alpha 修复步 | 无 |
-| | **112** pi 0.86.0 升级适配 | SDK 升级 + 会话格式兼容冒烟 | 无（宜在 110/111 后） |
+| | **112** pi 0.86.1 升级适配 | SDK 升级 + 会话格式兼容冒烟 | 无 |
 
 > 群分：A（composer 群 81→91→98）/ B（转录群 82→92→94→97→103→108）/ C（侧栏群 84→95→106；107 文件浏览器 W9）/ D（子代理 90→99→101）/ 独立快线 83/85/86/87/88/89→96/93/100→104/105/110（110 = 包互通，同设置窗文件群随 89 后；109 visual fixture 修缮已撤销——87 顺带交付，票内注记）。
 > **防冲突纪律**（同 v1.1–v1.6，三件事）：
@@ -745,7 +745,7 @@ cd .worktrees/wt-110-packages-cross && npm install
 
 ---
 
-## T111 — pi-subagents 0.70.0 适配（W10，Blocked by 101）
+## T111 — pi-subagents 0.70.1 适配（W10，Blocked by 101 + 112）
 
 ```bash
 cd ~/PiCode
@@ -756,7 +756,9 @@ cd .worktrees/wt-111-subagents-070 && npm install
 ```text
 /implement .scratch/picode-1-7/issues/111-subagents-070-adaptation.md
 
-规矩：同 T81（分支 t111-subagents-070）。开工前 rebase main 拿 101 的基座。
+规矩：同 T81（分支 t111-subagents-070）。开工前 rebase main 拿 101 的基座；
+**且必须在 112（SDK 0.86.1）合入后开工**——0.70.1 明确支持 Pi 0.86.1，
+在旧 SDK 上重验无意义。
 
 核心：pi-subagents 已 0.68.0→0.70.0（核心集成面文档核对无 breaking）。在
 0.70.0 上重验 90/99/101 全部集成面（RPC 回复形状/status.json 字段/事件/
@@ -767,7 +769,7 @@ cd .worktrees/wt-111-subagents-070 && npm install
 
 ---
 
-## T112 — pi 0.86.1 升级适配（无阻塞 · 宜在 110/111 后）
+## T112 — pi 0.86.1 升级适配（W10，无阻塞——111 排其后）
 
 ```bash
 cd ~/PiCode
@@ -778,7 +780,7 @@ cd .worktrees/wt-112-pi-086 && npm install
 ```text
 /implement .scratch/picode-1-7/issues/112-pi-086-adaptation.md
 
-规矩：同 T81（分支 t112-pi-086）。宜在 110/111 合入后跑（全量回归一次收口）。
+规矩：同 T81（分支 t112-pi-086）。无阻塞；合入后 111（0.70.1 重验）随即开工。
 
 核心：①内嵌 SDK 0.85.1→0.86.1（TUI 已实测 0.86.1——ADR-0005 首次漂移收口）；
 ②会话格式兼容冒烟——TUI 0.86 写的会话（新 entry 类型）PiCode 能开、优雅降级；

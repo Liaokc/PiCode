@@ -4,7 +4,7 @@
 
 **背景（取证）：** 核心集成面文档核对**无 breaking**——RPC 通道/方法面、fleetStatus DTO、工件路径与字段、事件族在 0.70.x docs 全部在位（0.70.1 复核：RPC v1 通道/fleetStatus/async 工件零变化）。0.70.x 变更 = 新能力 + 修复（0.70.0：detached 子代理可见性、tool_budget_exhausted 报告、usage 对账、FleetView 分组/着色；0.70.1：委派任务完成判定改进、runtime agent 模型偏好、**Pi 0.86.1 支持**、前台子代理跨 npm 布局启动修复；唯一 Removed = completionGuard 设置/PI_SUBAGENTS_LLM_INTENT_ARBITER 开关——PiCode 未消费）。但 90/99/101 的实现以 0.68.0 文档为基准且**尚未在 0.70.x 上跑过**——适配验证在合入前完成。0.70.1 的 Pi 0.86.1 支持与本批票 112（SDK 0.86.1 升级）正相衔接。
 
-**Blocked by:** 101（子代理停止+徽标——重验对象是其交付面；随其合入后进行）.
+**Blocked by:** 101（子代理停止+徽标——重验对象是其交付面）+ 112（SDK 0.86.1——0.70.1 明确支持 Pi 0.86.1，重验必须跑在新 SDK 上，旧 SDK 上重验无意义）.
 
 **Status:** ready-for-agent
 

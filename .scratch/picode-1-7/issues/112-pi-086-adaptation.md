@@ -4,7 +4,7 @@
 
 **背景（取证，intake 交叉核对 0.86.0/0.86.1 changelog × PiCode 集成面）：** 0.86.0 三条 breaking **均不命中**（0.86.1 无新增 breaking——仅 provider 增补/启动提速/修复）——①pi-ai `Context`→`TranscriptContext` 是自定义 provider 流 API（PiCode 零自定义 provider，直通 SDK 内建流）；②`ToolCall.arguments`/`ToolResultMessage.details` 收紧为 JSON 兼容值（PiCode 消费的 details.diff/images/async 信息本就是 JSON 值——收紧不破坏读取）；③`user_bash` fail-closed（PiCode/gate-extension 不用 user_bash）。用面签名全在位（createAgentSessionServices/FromServices/Runtime、SessionManager.open/create、steer/followUp/clearQueue/setSessionName、queue_update 事件形态不变）。可选项：`pi.on()` 现返回退订函数（gate-extension 可选采纳，不强制）。相关新行为：strict-prefer JSON sampling 默认化、per-model compaction overrides——投影/门行为无依赖，回归验证收口。
 
-**Blocked by:** None (can start immediately，但宜在 110/111 之后跑全量回归以一次收口).
+**Blocked by:** None (can start immediately——合入后 111 的 0.70.1 重验随即开工).
 
 **Status:** ready-for-agent
 
