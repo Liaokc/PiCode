@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { fakeUsageSnapshot, FAKE_USAGE_MODELS } from '../../src/shared/usage/fixture'
+import {
+  fakeUsageSnapshot,
+  FAKE_USAGE_MODELS,
+  FAKE_USAGE_TINY_MODEL,
+  FAKE_USAGE_TINY_TOKENS,
+  FAKE_USAGE_ZERO_MODEL
+} from '../../src/shared/usage/fixture'
 import { trendView } from '../../src/shared/usage/aggregate'
 
 describe('fakeUsageSnapshot (visual-QA fixture, Seam-2 shape)', () => {
@@ -53,6 +59,19 @@ describe('fakeUsageSnapshot (visual-QA fixture, Seam-2 shape)', () => {
     for (const row of snap.sessionDays) {
       expect(row.tokens).toBeGreaterThan(0)
       expect(row.cost.estimated).toBe(true)
+    }
+  })
+
+  it('carries the ticket-124 models: a strict-zero one and a tiny non-zero one (both ranges see them)', () => {
+    const snap = fakeUsageSnapshot({ now: NOW, timeZone: 'UTC' })
+    // The zero model reaches modelTotals (failed calls still create cells)…
+    expect(snap.modelTotals.find((s) => s.model === FAKE_USAGE_ZERO_MODEL)?.tokens).toBe(0)
+    expect(snap.modelTotals.find((s) => s.model === FAKE_USAGE_TINY_MODEL)?.tokens).toBe(FAKE_USAGE_TINY_TOKENS)
+    // …but never a trend legend, while the tiny model stays in every range.
+    for (const range of [7, 30] as const) {
+      const models = trendView(snap, range).series.map((s) => s.model)
+      expect(models).toContain(FAKE_USAGE_TINY_MODEL)
+      expect(models).not.toContain(FAKE_USAGE_ZERO_MODEL)
     }
   })
 })

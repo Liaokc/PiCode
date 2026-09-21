@@ -8,8 +8,6 @@ interface DrillDownPanelProps {
   drillDown: DrillDownSelection
   snapshot: UsageSnapshot
   dispatch: Dispatch<SettingsUiAction>
-  /** Jump back to the workspace where the Task lives. */
-  onOpenTask: () => void
 }
 
 interface Row {
@@ -21,10 +19,11 @@ interface Row {
 
 /**
  * Session-level drill-down for any picked data point (day, week span, or
- * model). Lists the underlying session×day rows from the aggregated cache and
- * offers the jump back to the originating task.
+ * model). Lists the underlying session×day rows from the aggregated cache;
+ * rows are pure display (the Open task jump was retired with ticket 124,
+ * R15 — the settings Back button already returns to the workspace).
  */
-export default function DrillDownPanel({ drillDown, snapshot, dispatch, onOpenTask }: DrillDownPanelProps): JSX.Element {
+export default function DrillDownPanel({ drillDown, snapshot, dispatch }: DrillDownPanelProps): JSX.Element {
   const rows: Row[] = snapshot.sessionDays
     .filter((row) => {
       if (drillDown.date && (row.date < drillDown.date || (drillDown.dateTo !== null && row.date > drillDown.dateTo))) return false
@@ -69,7 +68,6 @@ export default function DrillDownPanel({ drillDown, snapshot, dispatch, onOpenTa
             <span>Session</span>
             <span className="dd-right">Tokens</span>
             {!modelScoped && <span className="dd-right">Cost</span>}
-            <span />
           </div>
           {rows.map((row, i) => (
             <div key={`${row.sessionId ?? 'none'}-${row.date}-${i}`} className="dd-row">
@@ -78,16 +76,6 @@ export default function DrillDownPanel({ drillDown, snapshot, dispatch, onOpenTa
               </span>
               <span className="dd-right dd-tokens">{formatTokenCount(row.tokens)}</span>
               {!modelScoped && <span className="dd-right dd-cost">{formatCostUsd(row.costUsd)} est.</span>}
-              <button
-                type="button"
-                className="dd-open"
-                onClick={() => {
-                  onOpenTask()
-                  dispatch({ type: 'close-drilldown' })
-                }}
-              >
-                Open task
-              </button>
             </div>
           ))}
         </div>

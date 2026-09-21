@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildUsageSnapshot, foldSessionFile, trendView } from '../../src/shared/usage/aggregate.ts'
+import { buildUsageSnapshot, excludeZeroTokenModels, foldSessionFile, trendView, type ModelUsageSlice } from '../../src/shared/usage/aggregate.ts'
 
 const headerLine = (id: string) =>
   JSON.stringify({ type: 'session', version: 3, id, timestamp: '2026-08-25T00:00:00.000Z', cwd: '/tmp/proj' })
@@ -118,5 +118,79 @@ describe('trendView', () => {
     expect(view.dates).toHaveLength(7)
     expect(view.dates[6]).toBe('2026-08-28')
     expect(view.series).toEqual([])
+  })
+
+  it('drops a model whose events all carried zero tokens, in every range (ticket 124, R9)', () => {
+    // The real failed-call shape: usage events exist (the model gets cells)
+    // but every total is 0 — it must never reach a legend.
+    const zeroModel = foldSessionFile(
+      [
+        headerLine('s-zero'),
+        assistant('z1', '2026-08-27T09:00:00.000Z', 0, 'zero-model'),
+        assistant('z2', '2026-08-28T09:00:00.000Z', 0, 'zero-model'),
+        assistant('a1', '2026-08-28T10:00:00.000Z', 100, 'm1'),
+        ''
+      ].join('\n'),
+      { timeZone: 'UTC' }
+    )
+    const snap = buildUsageSnapshot([zeroModel], { timeZone: 'UTC', now: '2026-08-28T12:00:00.000Z' })
+    // the zero-token model still reaches the snapshot's model totals (it has cells)
+    expect(snap.modelTotals.find((s) => s.model === 'zero-model')?.tokens).toBe(0)
+    for (const range of [7, 30] as const) {
+      expect(trendView(snap, range).series.map((s) => s.model)).toEqual(['m1'])
+    }
+  })
+
+  it('re-projects when the range switches: a model quiet inside 7d stays in the 30d legend', () => {
+    // m-quiet spent 20 days ago only; m-recent is active today. The 7-day
+    // window drops m-quiet, the 30-day one keeps it — switching the Time
+    // Range re-derives the legend from the range's own totals.
+    const snap = buildUsageSnapshot(
+      [
+        foldSessionFile(
+          [
+            headerLine('s-quiet'),
+            assistant('q1', '2026-08-08T09:00:00.000Z', 400, 'm-quiet'),
+            ''
+          ].join('\n'),
+          { timeZone: 'UTC' }
+        ),
+        foldSessionFile(
+          [headerLine('s-recent'), assistant('r1', '2026-08-28T09:00:00.000Z', 100, 'm-recent'), ''].join('\n'),
+          { timeZone: 'UTC' }
+        )
+      ],
+      { timeZone: 'UTC', now: '2026-08-28T12:00:00.000Z' }
+    )
+    expect(trendView(snap, 7).series.map((s) => s.model)).toEqual(['m-recent'])
+    expect(trendView(snap, 30).series.map((s) => s.model)).toEqual(['m-quiet', 'm-recent'])
+  })
+})
+
+describe('excludeZeroTokenModels (ticket 124, R9 — strict-zero chart filter)', () => {
+  const slice = (model: string, tokens: number): ModelUsageSlice => ({
+    model,
+    tokens,
+    cost: { amountUsd: 0, estimated: true },
+    share: 0
+  })
+
+  it('drops strictly-zero models and keeps the rest in order', () => {
+    expect(excludeZeroTokenModels([slice('a', 0), slice('b', 500), slice('c', 0), slice('d', 2_000)])).toEqual([
+      slice('b', 500),
+      slice('d', 2_000)
+    ])
+  })
+
+  it('keeps tiny non-zero usage (Q3=A: used is used)', () => {
+    expect(excludeZeroTokenModels([slice('tiny', 1), slice('zero', 0)])).toEqual([slice('tiny', 1)])
+  })
+
+  it('degrades to an empty projection when every model is zero — the empty chart state, not fabricated data', () => {
+    expect(excludeZeroTokenModels([slice('a', 0), slice('b', 0)])).toEqual([])
+  })
+
+  it('passes an empty list through', () => {
+    expect(excludeZeroTokenModels([])).toEqual([])
   })
 })

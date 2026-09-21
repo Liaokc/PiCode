@@ -2,7 +2,7 @@ import type { Dispatch, JSX } from 'react'
 import type { DrillDownSelection, TrendRange, SettingsUiAction } from '../../../shared/settings-model'
 import type { HeatmapMode, TrendView, UsageSnapshot } from '../../../shared/usage/charts'
 import { modelColor, statCards } from '../../../shared/usage/charts'
-import { trendView } from '../../../shared/usage/aggregate'
+import { excludeZeroTokenModels, trendView } from '../../../shared/usage/aggregate'
 import { formatCostUsd } from '../../../shared/usage/format'
 import HeatmapView from './HeatmapView'
 import TrendChart from './TrendChart'
@@ -17,7 +17,6 @@ interface UsagePageProps {
   trendRange: TrendRange
   drillDown: DrillDownSelection | null
   dispatch: Dispatch<SettingsUiAction>
-  onOpenTask: () => void
 }
 
 const DONUT_SLICES = 6
@@ -29,7 +28,7 @@ const DONUT_SLICES = 6
  * drill-down. Every figure comes from the aggregated snapshot.
  */
 export default function UsagePage(props: UsagePageProps): JSX.Element {
-  const { snapshot, error, heatmapMode, trendRange, drillDown, dispatch, onOpenTask } = props
+  const { snapshot, error, heatmapMode, trendRange, drillDown, dispatch } = props
 
   if (error) {
     return (
@@ -54,7 +53,12 @@ export default function UsagePage(props: UsagePageProps): JSX.Element {
   // transforms it applies itself (passing pre-cumulative cells would double-count).
   const heatCells = snapshot.heatmap.daily
   const trend = trendView(snapshot, trendRange)
-  const donut = snapshot.modelTotals.slice(0, DONUT_SLICES)
+  // Zero-token models never reach the donut (ticket 124, R9) — filtered
+  // before the top-slices cut so they cannot occupy a slot either. The two
+  // charts' measurement windows are deliberately different: the donut
+  // projects ALL-TIME modelTotals (reference-09 semantics) while the trend
+  // above follows the selected Time Range — do not unify them.
+  const donut = excludeZeroTokenModels(snapshot.modelTotals).slice(0, DONUT_SLICES)
 
   return (
     <div className="usage-page">
@@ -117,7 +121,7 @@ export default function UsagePage(props: UsagePageProps): JSX.Element {
         )}
       </section>
 
-      {drillDown && <DrillDownPanel drillDown={drillDown} snapshot={snapshot} dispatch={dispatch} onOpenTask={onOpenTask} />}
+      {drillDown && <DrillDownPanel drillDown={drillDown} snapshot={snapshot} dispatch={dispatch} />}
     </div>
   )
 }
