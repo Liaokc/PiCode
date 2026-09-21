@@ -54,8 +54,10 @@ export function readRunStateFromArtifact(asyncDir: string): SubagentRunState | n
 }
 
 /** What the extension may send: one session's scoped events (the supervisor
- * tags and relays; `host_exit` is supervisor-only). */
-type HostEvent = Exclude<SessionScopedEvent, { type: 'host_exit' }>
+ * tags and relays; `host_exit` is supervisor-only). Exported for the
+ * ticket-111 live probe (scripts/smoke/subagents-070-probe.ts) — the type
+ * only, zero runtime surface. */
+export type HostEvent = Exclude<SessionScopedEvent, { type: 'host_exit' }>
 
 const RPC_REQUEST_EVENT = 'subagents:rpc:v1:request'
 const RPC_REPLY_PREFIX = 'subagents:rpc:v1:reply:'
@@ -254,7 +256,16 @@ export class SubagentBridge {
       return
     }
     if (reply !== null && reply.kind === 'reply' && reply.success === true) {
-      const deliveryStatus = isRecord(reply.data) ? reply.data['deliveryStatus'] : undefined
+      // Ticket 111 (0.70.x re-verification drift fix): the steer action's
+      // acknowledged-delivery receipt rides the management-action result
+      // shape — data.details.steering.deliveryStatus (steering receipt:
+      // { requestId, state, deliveryStatus, ... }); the bare top-level field
+      // the first implementation read never existed on a real reply. The
+      // top-level read stays as a tolerant fallback (unknown-field rule).
+      const data = isRecord(reply.data) ? reply.data : {}
+      const details = isRecord(data['details']) ? (data['details'] as Record<string, unknown>) : {}
+      const steering = isRecord(details['steering']) ? (details['steering'] as Record<string, unknown>) : {}
+      const deliveryStatus = steering['deliveryStatus'] ?? data['deliveryStatus']
       if (deliveryStatus === 'delivered' || deliveryStatus === 'queued') {
         this.send({ type: 'subagent_steer_receipt', requestId, asyncId, ok: true, deliveryStatus })
         return
