@@ -188,6 +188,24 @@ export const IDLE_BOTTOM_SEQUENCE_IDLE: IdleBottomSequence = { clientHeightStart
  * frames). */
 export const USER_SCROLL_QUIET_MS = 250
 
+/** Ticket 119, edge ② (the main agent’s adjudication): close the idle
+ * sequence on an unambiguous leave-the-bottom gesture — a wheel-up input
+ * (deltaY < 0), which no engine move can produce. The reader’s gesture
+ * always outranks the compensation (the ticket-75 law), so the close is
+ * immediate even inside the cumulative-shrink bound, where an observation
+ * alone could not tell the gesture from the engine’s pre-pin revert; once
+ * closed, later shrinks of the burst write nothing until the reader
+ * returns to the bottom (回底 re-arms a fresh sequence). This lands on the
+ * SAME disarmed state the bound-break transition inside nextIdleBottomPin
+ * uses — no new sequence state, just the gesture’s entry into the existing
+ * close. (Known boundary, recorded in the ticket: a scrollbar drag-up
+ * carries no direction signal at pointerdown and does not close the
+ * sequence; once the drag leaves the bottom past the bound, the
+ * bound-break closes it — the same coverage class as ticket 75 itself.) */
+export function closeIdleBottomSequence(): IdleBottomSequence {
+  return IDLE_BOTTOM_SEQUENCE_IDLE
+}
+
 /** One observation of the scroll container's geometry, plus the agent gate. */
 export interface IdlePinInput {
   readonly snapshot: ScrollSnapshot

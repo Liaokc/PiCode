@@ -3,6 +3,7 @@ import type { ChatEntry, ChatState } from '../../../shared/chat-reducer'
 import {
   IDLE_BOTTOM_SEQUENCE_IDLE,
   USER_SCROLL_QUIET_MS,
+  closeIdleBottomSequence,
   isNearBottom,
   nextHeldAway,
   nextIdleBottomPin,
@@ -314,17 +315,27 @@ export default function ChatView({
   // Ticket 119: listen for the user’s own scroll inputs (wheel over the
   // transcript, pointer down on it — the scrollbar drag) so the
   // scroll-event re-pin arm can tell a reader gesture from an
-  // engine-driven move (the ticket-75 law, idle edition).
+  // engine-driven move (the ticket-75 law, idle edition). A wheel-UP is
+  // stronger still (edge ②, the main agent’s adjudication): it is an
+  // unambiguous leave-the-bottom gesture no engine move can produce, so
+  // it closes the idle sequence immediately — even inside the
+  // cumulative-shrink bound, where an observation alone would re-pin —
+  // and the reader’s position then stands until they return to the
+  // bottom (回底 re-arms, as ever).
   useEffect(() => {
     const el = scrollRef.current
     if (!el) return
     const mark = (): void => {
       lastUserScrollAtRef.current = performance.now()
     }
-    el.addEventListener('wheel', mark, { passive: true })
+    const markWheel = (e: WheelEvent): void => {
+      mark()
+      if (e.deltaY < 0) idleBottomSeqRef.current = closeIdleBottomSequence()
+    }
+    el.addEventListener('wheel', markWheel, { passive: true })
     el.addEventListener('pointerdown', mark, { passive: true })
     return () => {
-      el.removeEventListener('wheel', mark)
+      el.removeEventListener('wheel', markWheel)
       el.removeEventListener('pointerdown', mark)
     }
   }, [])

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   IDLE_BOTTOM_SEQUENCE_IDLE,
   STICK_THRESHOLD_PX,
+  closeIdleBottomSequence,
   distanceFromBottom,
   isAtBottom,
   isNearBottom,
@@ -246,6 +247,36 @@ describe('nextIdleBottomPin (ticket 119: the idle viewport-shrink re-pin — a b
       scrollTopPx: null,
       next: IDLE_BOTTOM_SEQUENCE_IDLE
     })
+  })
+
+  it('a wheel-up gesture closes the sequence even inside the cumulative-shrink bound (edge ②, the main agent’s adjudication: the wheel always wins)', () => {
+    // Armed {500} with 80px of accumulated shrink (cell 420): the reader
+    // wheels up 50px from the pinned bottom — distance 50 stays INSIDE
+    // the bound (50 ≤ 80+1), so an observation alone would re-pin them
+    // down to the bottom. The gesture close (the wheel listener’s
+    // deltaY<0 entry into the existing close transition) disarms first;
+    // the next shrink observation then finds no sequence, writes
+    // nothing, and the reader’s position stands.
+    const wheeled = closeIdleBottomSequence()
+    expect(nextIdleBottomPin(obs(420, 1530), wheeled)).toEqual({
+      scrollTopPx: null,
+      next: IDLE_BOTTOM_SEQUENCE_IDLE
+    })
+    // Contrast: the SAME observation with the sequence still armed
+    // re-pins to the bottom (2000−420 = 1580) — the pull-back the
+    // adjudicated close exists to prevent.
+    expect(nextIdleBottomPin(obs(420, 1530), armed).scrollTopPx).toBe(1580)
+  })
+
+  it('after the gesture close, returning to the bottom re-arms (the existing invariant holds — return-to-bottom starts the next burst)', () => {
+    // Closed by the wheel-up; the reader scrolls back to the bottom at
+    // the shrunken height 420: the next observation arms {420}, and the
+    // FOLLOWING shrink (420→350) re-pins again — the close costs nothing
+    // beyond the gesture itself.
+    const closed = closeIdleBottomSequence()
+    const reArmed = nextIdleBottomPin(obs(420, 1580), closed)
+    expect(reArmed).toEqual({ scrollTopPx: null, next: { clientHeightStartPx: 420 } })
+    expect(nextIdleBottomPin(obs(350, 1580), reArmed.next).scrollTopPx).toBe(1650)
   })
 
   it('stands down entirely while the agent runs (ticket-93/94/75 semantics own the view — zero regression)', () => {
