@@ -20,6 +20,11 @@ export function thinkingLabel(level: ThinkingLevel): string {
   return THINKING_LABELS[level] ?? level
 }
 
+/** The card-to-chip air gap of the button-hug anchor (ticket 138): the
+ * ZCode frames (z19-menu-1/2) sit the open card's bottom edge ≈2px above
+ * the opening chip's top edge — touching, not floating. */
+const CHIP_HUG_GAP = 2
+
 /** Floating card docked above the composer (screenshot 06's menu shape). */
 export function ComposerPopover({
   children,
@@ -33,9 +38,10 @@ export function ComposerPopover({
   children: JSX.Element
   /** 'left'/'right' dock the card to the composer's edges; 'chip' (ticket
    * 122, spec R5) left-aligns the card with the OPENING CHIP's viewport
-   * left edge — the ZCode composition (the card points at what opened it,
-   * floating above the input area) — clamped so a narrow window never
-   * pushes it out. */
+   * left edge — clamped so a narrow window never pushes it out. Ticket
+   * 138 (z19-menu-* rework) completes the anchor: the card also HUGS the
+   * chip — its bottom edge rides the chip's top edge — instead of
+   * floating above the input area. */
   align?: 'left' | 'right' | 'chip'
   onClose: () => void
   label: string
@@ -52,13 +58,20 @@ export function ComposerPopover({
 }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
 
-  // Ticket 122 (spec R5): chip-anchored x. The card is steered onto the
-  // chip's viewport-left edge by measuring its OWN rendered position and
-  // applying the delta (clamped so a narrow window never pushes it out).
-  // This self-correcting shape is immune to which ancestor ends up the
-  // containing block — composer borders, padding or transforms cannot
-  // skew it. The y anchor stays the CSS bottom: calc(100% + 8px) — the
-  // card floats above the input area, never on it.
+  // Ticket 122 (spec R5) + 138: chip-anchored x AND y. The card is
+  // steered onto the chip — left edge onto the chip's left edge, bottom
+  // edge CHIP_HUG_GAP above the chip's top edge (the z19-menu-* hug) —
+  // by measuring its OWN rendered position and applying the delta
+  // (clamped so a narrow window never pushes it out). This self-correcting
+  // shape is immune to which ancestor ends up the containing block —
+  // composer borders, padding or transforms cannot skew it. The base rule
+  // for chip cards is bottom: 0 (a finite px the delta math can read; the
+  // old calc(100% + 8px) parsed to NaN), and the steer lands before paint.
+  //
+  // The x clamp spans the WHOLE cascade, not just the wrapper: the model
+  // card (ticket 138) hangs OUTSIDE the wrapper box (left: 196px + its own
+  // 190px), so an unspanned clamp would let it cross the window edge
+  // while the wrapper itself sits legal.
   //
   // The anchor is TRACKED, not snapshotted: the chip's own box moves while
   // the menu is open (its label settles as the auth-probe report joins,
@@ -69,7 +82,7 @@ export function ComposerPopover({
   // render), and the window resize listener (viewport clamp). The effect
   // is intentionally dep-less: the popover re-renders on every hover/
   // pick/state tick, and each run re-measures.
-  const [chipLeft, setChipLeft] = useState<number | null>(null)
+  const [chipPos, setChipPos] = useState<{ left: number; bottom: number } | null>(null)
   useLayoutEffect(() => {
     if (align !== 'chip') return
     function measure(): void {
@@ -78,16 +91,26 @@ export function ComposerPopover({
       if (!chip || !card) return
       const rect = card.getBoundingClientRect()
       if (rect.width === 0) return
+      const chipRect = chip.getBoundingClientRect()
+      // The clamp spans the cascade's full painted width (wrapper + any
+      // out-of-flow second card), not the wrapper box alone.
+      const models = card.querySelector('.cmp-cascade-models')
+      const spanRight = models instanceof HTMLElement ? models.getBoundingClientRect().right : rect.right
+      const spanWidth = Math.max(rect.width, spanRight - rect.left)
       const min = 8
-      const max = Math.max(min, window.innerWidth - 8 - rect.width)
-      const target = Math.min(Math.max(chip.getBoundingClientRect().left, min), max)
-      const delta = target - rect.left
-      if (Math.abs(delta) < 0.5) return
-      // The current applied `left` (the base rule's 0 or a previous
+      const max = Math.max(min, window.innerWidth - 8 - spanWidth)
+      const targetLeft = Math.min(Math.max(chipRect.left, min), max)
+      const targetBottom = chipRect.top - CHIP_HUG_GAP
+      const deltaX = targetLeft - rect.left
+      const deltaY = targetBottom - rect.bottom
+      if (Math.abs(deltaX) < 0.5 && Math.abs(deltaY) < 0.5) return
+      // The current applied left/bottom (the base rules' 0 or a previous
       // inline value); 'auto' means there is nothing to steer.
-      const current = Number.parseFloat(getComputedStyle(card).left)
-      if (!Number.isFinite(current)) return
-      setChipLeft(current + delta)
+      const computed = getComputedStyle(card)
+      const currentLeft = Number.parseFloat(computed.left)
+      const currentBottom = Number.parseFloat(computed.bottom)
+      if (!Number.isFinite(currentLeft) || !Number.isFinite(currentBottom)) return
+      setChipPos({ left: currentLeft + deltaX, bottom: currentBottom - deltaY })
     }
     measure()
     const chip = anchorRef?.current
@@ -146,7 +169,7 @@ export function ComposerPopover({
       aria-label={label}
       tabIndex={captureKeys ? -1 : undefined}
       autoFocus={captureKeys || undefined}
-      style={chipLeft !== null ? { left: chipLeft, right: 'auto' } : undefined}
+      style={chipPos !== null ? { left: chipPos.left, bottom: chipPos.bottom, right: 'auto' } : undefined}
       // Ticket 98: a captureKeys popover owns its focus lifecycle (the
       // capture sits on the selected row until the close path hands it
       // back) — the document-level click discipline must not reclaim the
@@ -338,6 +361,8 @@ export function ModelMenu({
   const [providerIndex, setProviderIndex] = useState(activeProvider)
   const group = providers[providerIndex]
   const [modelIndex, setModelIndex] = useState(0)
+  const providersRef = useRef<HTMLDivElement | null>(null)
+  const modelsRef = useRef<HTMLDivElement | null>(null)
 
   // Keep the highlighted model inside the active provider's list.
   const modelCount = group?.models.length ?? 0
@@ -361,6 +386,38 @@ export function ModelMenu({
     onClose()
   }
 
+  // Ticket 138 (z19-menu-* composition): the model card is a SEPARATE
+  // panel that hangs off the HOVERED provider row — its top edge rides
+  // that row's top edge (z19-menu-2: the open submenu aligns to the
+  // highlighted row, z19-menu-1: the first row) — and it never dangles
+  // past the window's bottom edge. Measured viewport-relative (this
+  // file's dep-less idiom) so a scrolled provider column keeps the
+  // alignment honest; written imperatively (no state churn — the values
+  // are pure geometry). The scroll listener re-syncs after the selected
+  // row's scrollIntoView (MenuRow, passive) moves rows inside the
+  // provider column; resize re-clamps the viewport cap.
+  useLayoutEffect(() => {
+    const providersPanel = providersRef.current
+    const modelsPanel = modelsRef.current
+    if (!providersPanel || !modelsPanel) return
+    const place = (): void => {
+      const row = providersPanel.querySelectorAll<HTMLElement>('.cmp-menu-row')[providerIndex]
+      const panelRect = providersPanel.getBoundingClientRect()
+      if (!(row instanceof HTMLElement) || panelRect.height === 0) return
+      modelsPanel.style.top = `${row.getBoundingClientRect().top - panelRect.top}px`
+      const modelsRect = modelsPanel.getBoundingClientRect()
+      const available = window.innerHeight - 8 - modelsRect.top
+      modelsPanel.style.maxHeight = `${Math.max(96, Math.min(320, available))}px`
+    }
+    place()
+    window.addEventListener('resize', place)
+    providersPanel.addEventListener('scroll', place, { passive: true })
+    return () => {
+      window.removeEventListener('resize', place)
+      providersPanel.removeEventListener('scroll', place)
+    }
+  })
+
   if (providers.length === 0) {
     return (
       <ComposerPopover label="Select model" align="chip" onClose={onClose} captureKeys anchorRef={chipRef}>
@@ -372,9 +429,9 @@ export function ModelMenu({
   }
 
   return (
-    <ComposerPopover label="Select model" align="chip" onClose={onClose} captureKeys anchorRef={chipRef}>
+    <ComposerPopover label="Select model" align="chip" onClose={onClose} captureKeys className="cmp-popover-cascade" anchorRef={chipRef}>
       <div className="cmp-cascade" role="listbox" aria-label="Select model" onKeyDown={onKey}>
-        <div className="cmp-cascade-col">
+        <div ref={providersRef} className="cmp-cascade-col cmp-cascade-providers">
           {providers.map((provider, i) => (
             <MenuRow
               key={provider.providerId}
@@ -395,7 +452,7 @@ export function ModelMenu({
             </MenuRow>
           ))}
         </div>
-        <div className="cmp-cascade-col">
+        <div ref={modelsRef} className="cmp-cascade-col cmp-cascade-models">
           {group?.models.map((model, i) => (
             <MenuRow
               key={model.modelId}

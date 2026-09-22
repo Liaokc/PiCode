@@ -2726,13 +2726,16 @@ export function startSmokeIfEnabled(
       log('chip_toggle_done')
     })
 
-    // ---- ticket 122 (spec R4/R5): menu geometry — the cascade card's
-    // height belongs to the provider column alone (hovering providers with
+    // ---- ticket 122 (spec R4/R5) + 138: menu geometry — the cascade is
+    // TWO SEPARATE CARDS (ticket 138, the z19-menu-* rework: each column
+    // its own border/radius/height, a real groove between them) whose
+    // height belongs to the provider card alone (hovering providers with
     // different model counts must never move the popover bounding box),
-    // the model/thinking cards anchor to their chip's viewport-left edge
-    // and clamp inside a narrow window, and the ticket-68/69 keyboard
-    // model + ticket-98 focus discipline ride through the new geometry
-    // untouched. ----
+    // the model/thinking cards HUG their chip (left edge = chip left,
+    // bottom edge ≈2px above the chip's top edge — no longer floating
+    // above the input area) and clamp inside a narrow window, and the
+    // ticket-68/69 keyboard model + ticket-98 focus discipline ride
+    // through the new geometry untouched. ----
     log('menu_geometry_122_start')
     await withWindow(getWindow, async (win) => {
       const js = (code: string): Promise<unknown> => win.webContents.executeJavaScript(code)
@@ -2764,9 +2767,13 @@ export function startSmokeIfEnabled(
         log('menu_geometry_122_focus_degraded', 'OS focus unavailable — geometry legs proceed, the real-key leg may skip')
       }
 
-      // ① Chip anchor (R5): open the model menu with a real press and
-      // assert the card's left edge = the chip's viewport-left edge and
-      // the card floats ABOVE the composer card (never on the input area).
+      // ① Chip anchor (122 R5 + 138 hug/separation): open the model menu
+      // with a real press and assert the card's left edge = the chip's
+      // viewport-left edge, the card's bottom edge TOUCHES the chip's top
+      // edge (the ≈2px hug — no longer floating above the input area),
+      // and the two columns are separate cards (own border/radius each,
+      // a real groove between them, wrapper chrome stripped, model card
+      // top riding the hovered/selected provider row).
       if (!(await js(composerChipPressJs('Model:')).catch(() => false))) fail('ticket-122: the model chip is missing')
       if (!(await waitForProbe(win, `document.querySelector('.cmp-popover .cmp-cascade') !== null`, 5_000))) {
         fail('ticket-122: the model cascade never opened')
@@ -2779,9 +2786,24 @@ export function startSmokeIfEnabled(
         const c = card.getBoundingClientRect()
         const k = chip.getBoundingClientRect()
         const m = composer.getBoundingClientRect()
+        const cols = [...document.querySelectorAll('.cmp-popover .cmp-cascade-col')]
+        const colRects = cols.map((col) => {
+          const r = col.getBoundingClientRect()
+          return { left: r.left, right: r.right, top: r.top, height: r.height }
+        })
+        const providerRows = cols[0]?.querySelectorAll('.cmp-menu-row') ?? []
+        const selectedRow = [...providerRows].find((r) => r.classList.contains('cmp-menu-row-selected'))
         return JSON.stringify({
           cardLeft: c.left, cardRight: c.right, cardBottom: c.bottom, composerTop: m.top,
-          chipLeft: k.left, innerWidth: window.innerWidth
+          chipLeft: k.left, chipTop: k.top, innerWidth: window.innerWidth,
+          colRects,
+          selectedRowTop: selectedRow ? selectedRow.getBoundingClientRect().top : null,
+          wrapperBg: getComputedStyle(card).backgroundColor,
+          wrapperBorderTop: getComputedStyle(card).borderTopWidth,
+          colStyles: cols.map((col) => {
+            const s = getComputedStyle(col)
+            return { radius: s.borderTopLeftRadius, borderTop: s.borderTopWidth }
+          })
         })
       })()`
       interface CardGeom {
@@ -2790,7 +2812,13 @@ export function startSmokeIfEnabled(
         cardBottom: number
         composerTop: number
         chipLeft: number
+        chipTop: number
         innerWidth: number
+        colRects: { left: number; right: number; top: number; height: number }[]
+        selectedRowTop: number | null
+        wrapperBg: string
+        wrapperBorderTop: string
+        colStyles: { radius: string; borderTop: string }[]
       }
       const readGeom = async (): Promise<CardGeom | null> => {
         const raw = (await js(geomJs).catch(() => null)) as string | null
@@ -2801,8 +2829,33 @@ export function startSmokeIfEnabled(
       if (Math.abs(wide.cardLeft - wide.chipLeft) > 0.5) {
         fail(`ticket-122 R5: the model card left ${wide.cardLeft.toFixed(1)} != chip left ${wide.chipLeft.toFixed(1)}`)
       }
-      if (wide.cardBottom > wide.composerTop + 0.5) {
-        fail(`ticket-122 R5: the card overlaps the composer card (bottom ${wide.cardBottom.toFixed(1)} vs composer top ${wide.composerTop.toFixed(1)})`)
+      // Ticket 138: the card HUGS the chip — bottom edge ≈2px above the
+      // chip's top edge (the z19-menu-* composition), not floating above
+      // the input area (the pre-138 anchor).
+      const hug = wide.chipTop - wide.cardBottom
+      if (hug < 1 || hug > 3) {
+        fail(`ticket-138: the card does not hug the chip (bottom ${wide.cardBottom.toFixed(1)} vs chip top ${wide.chipTop.toFixed(1)}, gap ${hug.toFixed(1)}, want ≈2)`)
+      }
+      // Ticket 138 ①: two SEPARATE cards — each column its own boundary,
+      // a real groove between them, the wrapper painting nothing.
+      if (wide.colRects.length !== 2) fail(`ticket-138: the cascade renders ${wide.colRects.length} columns, want 2`)
+      if (wide.wrapperBg !== 'rgba(0, 0, 0, 0)' || wide.wrapperBorderTop !== '0px') {
+        fail(`ticket-138: the cascade wrapper still paints chrome (bg ${wide.wrapperBg}, border ${wide.wrapperBorderTop}) — the columns are not separate cards`)
+      }
+      for (const [i, style] of wide.colStyles.entries()) {
+        if (style.borderTop !== '1px' || style.radius === '0px') {
+          fail(`ticket-138: cascade column ${i} has no own boundary (border ${style.borderTop}, radius ${style.radius})`)
+        }
+      }
+      if (wide.colRects.length === 2 && wide.colRects[1]!.left - wide.colRects[0]!.right < 3) {
+        fail(`ticket-138: the two columns are not separated (gap ${(wide.colRects[1]!.left - wide.colRects[0]!.right).toFixed(1)}, want ≥3)`)
+      }
+      // The model card hangs off the hovered (selected) provider row — the
+      // z19-menu-2 alignment — measured from the same probe.
+      if (wide.selectedRowTop !== null && wide.colRects.length === 2) {
+        if (Math.abs(wide.colRects[1]!.top - wide.selectedRowTop) > 1.5) {
+          fail(`ticket-138: the model card top ${wide.colRects[1]!.top.toFixed(1)} != the selected provider row top ${wide.selectedRowTop.toFixed(1)}`)
+        }
       }
       // The decoupling mechanism itself: the model column must sit OUT of
       // the flow (absolute) and scroll internally — the tripwire that keeps
@@ -2818,7 +2871,10 @@ export function startSmokeIfEnabled(
       if (shape.position !== 'absolute' || shape.overflowY !== 'auto') {
         fail(`ticket-122 R4: the model column left the decoupled shape (position ${shape.position}, overflow ${shape.overflowY})`)
       }
-      log('menu_geometry_anchor_ok', `card left ${wide.cardLeft.toFixed(1)} == chip left, card above the composer`)
+      log(
+        'menu_geometry_anchor_ok',
+        `card left ${wide.cardLeft.toFixed(1)} == chip left, hug gap ${hug.toFixed(1)}, columns separate (gap ${(wide.colRects.length === 2 ? wide.colRects[1]!.left - wide.colRects[0]!.right : 0).toFixed(1)})`
+      )
 
       // ② Cascade stability (R4): hover the first, then the last provider —
       // the popover bounding box must not move, while hover still drives
@@ -2935,8 +2991,10 @@ export function startSmokeIfEnabled(
         log('menu_geometry_keyboard_skipped', `models=${modelCount} selected=${modelIndex0} (too few rows on this machine)`)
       }
 
-      // ④ Window clamp (R5): with the menu still open, shrink the window —
-      // the card must stay inside the viewport (the resize re-clamps).
+      // ④ Window clamp (R5 + 138 span): with the menu still open, shrink
+      // the window — the card AND its out-of-flow model card must stay
+      // inside the viewport (the resize re-clamps; the clamp spans the
+      // cascade's full painted width, not just the wrapper).
       win.setSize(520, Math.max(originalBounds.height, 700))
       await new Promise((r) => setTimeout(r, 400))
       const narrow = await readGeom()
@@ -2944,10 +3002,17 @@ export function startSmokeIfEnabled(
       if (narrow.cardLeft < 4 || narrow.cardRight > narrow.innerWidth - 4) {
         fail(`ticket-122 R5: the card escaped the narrow window (left ${narrow.cardLeft.toFixed(1)}, right ${narrow.cardRight.toFixed(1)}, innerWidth ${narrow.innerWidth})`)
       }
-      log('menu_geometry_clamp_ok', `innerWidth=${narrow.innerWidth}, card ${narrow.cardLeft.toFixed(1)}..${narrow.cardRight.toFixed(1)}`)
+      if (narrow.colRects.length === 2 && narrow.colRects[1]!.right > narrow.innerWidth - 4) {
+        fail(`ticket-138: the model card escaped the narrow window (right ${narrow.colRects[1]!.right.toFixed(1)}, innerWidth ${narrow.innerWidth})`)
+      }
+      log(
+        'menu_geometry_clamp_ok',
+        `innerWidth=${narrow.innerWidth}, card ${narrow.cardLeft.toFixed(1)}..${narrow.cardRight.toFixed(1)}${narrow.colRects.length === 2 ? `, models right ${narrow.colRects[1]!.right.toFixed(1)}` : ''}`
+      )
 
-      // ⑤ The thinking menu anchors the same way — its narrow card stays
-      // chip-aligned and inside the window.
+      // ⑤ The thinking menu anchors the same way (122 R5 + 138 hug) — its
+      // narrow card stays chip-aligned, HUGS the chip's top edge and stays
+      // inside the window.
       if (!(await js(composerChipPressJs('Thinking:')).catch(() => false))) fail('ticket-122: the thinking chip is missing')
       if (!(await waitForProbe(win, `document.querySelector('.cmp-popover-thinking') !== null`, 5_000))) {
         fail('ticket-122: the thinking menu never opened')
@@ -2958,17 +3023,21 @@ export function startSmokeIfEnabled(
         if (!(card instanceof HTMLElement) || !(chip instanceof HTMLElement)) return null
         const c = card.getBoundingClientRect()
         const k = chip.getBoundingClientRect()
-        return JSON.stringify({ cardLeft: c.left, cardRight: c.right, chipLeft: k.left, innerWidth: window.innerWidth })
+        return JSON.stringify({ cardLeft: c.left, cardRight: c.right, cardBottom: c.bottom, chipLeft: k.left, chipTop: k.top, innerWidth: window.innerWidth })
       })()`).catch(() => null)) as string | null
       if (!thinkRaw) fail('ticket-122: the thinking geometry probe could not read the DOM')
-      const think = JSON.parse(thinkRaw) as { cardLeft: number; cardRight: number; chipLeft: number; innerWidth: number }
+      const think = JSON.parse(thinkRaw) as { cardLeft: number; cardRight: number; cardBottom: number; chipLeft: number; chipTop: number; innerWidth: number }
       if (Math.abs(think.cardLeft - think.chipLeft) > 0.5) {
         fail(`ticket-122 R5: the thinking card left ${think.cardLeft.toFixed(1)} != chip left ${think.chipLeft.toFixed(1)}`)
+      }
+      const thinkHug = think.chipTop - think.cardBottom
+      if (thinkHug < 1 || thinkHug > 3) {
+        fail(`ticket-138: the thinking card does not hug the chip (bottom ${think.cardBottom.toFixed(1)} vs chip top ${think.chipTop.toFixed(1)}, gap ${thinkHug.toFixed(1)}, want ≈2)`)
       }
       if (think.cardRight > think.innerWidth - 4 || think.cardLeft < 4) {
         fail(`ticket-122 R5: the thinking card escaped the narrow window (right ${think.cardRight.toFixed(1)}, innerWidth ${think.innerWidth})`)
       }
-      log('menu_geometry_thinking_anchor_ok', `thinking card left ${think.cardLeft.toFixed(1)} == chip left`)
+      log('menu_geometry_thinking_anchor_ok', `thinking card left ${think.cardLeft.toFixed(1)} == chip left, hug gap ${thinkHug.toFixed(1)}`)
 
       // ⑥ Restore the viewport and close the menu for the later stages.
       win.setBounds(originalBounds)

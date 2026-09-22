@@ -1,24 +1,29 @@
 /**
- * Menu-geometry visual-QA harness (ticket 122, spec R4/R5). Enabled with
+ * Menu-geometry visual-QA harness (ticket 122, spec R4/R5; reworked by
+ * ticket 138 against the delivered ZCode frames). Enabled with
  * PICODE_VISUAL=1 plus PICODE_VISUAL_MENU_GEOMETRY=1. Like the context-ring
  * harness it ASSERTS its probe results (exit 1 on any violation) and
- * captures the review frames (ZCode comparison frames z18-zcode-provider-
- * card.png / z18-zcode-thinking-brain.png were never delivered to
- * .scratch/compare/ — the frames are captioned for the operator's eyeball
- * pass; the ticket Comments record the missing-reference caveat):
+ * captures the review frames (the z19-menu-1/2 reference frames live in
+ * .scratch/picode-1-8/reference/ — the frames below are captioned for the
+ * operator's eyeball pass against them):
  *
  *   mg1-cascade-provider-first — the model cascade open, first provider
- *                                hovered (the frame pair's base geometry)
- *   mg2-cascade-provider-last  — the LAST provider hovered: same bounding
- *                                box (R4 — the model column no longer
- *                                drives the popover height), models inside
- *                                scroll instead
+ *                                hovered: TWO SEPARATE CARDS (each column
+ *                                its own border/radius/height, a real
+ *                                groove between them), model card top
+ *                                riding the hovered row, the provider
+ *                                card hugging the chip
+ *   mg2-cascade-provider-last  — the LAST provider hovered: same provider
+ *                                card bbox (R4 — the model column no longer
+ *                                drives the popover height), the model
+ *                                card's top riding the new row instead
  *   mg3-anchor-chip            — the card's left edge = the model chip's
- *                                viewport-left edge, floating ABOVE the
- *                                composer card (R5, the ZCode composition)
+ *                                viewport-left edge, bottom edge ≈2px above
+ *                                the chip's top edge (R5 + the 138 hug)
  *   mg4-thinking-brain         — the thinking menu open on its chip: the
  *                                Lucide-form brain icon (t137) on the chip
- *                                + the narrow card chip-anchored (R5, z 图7)
+ *                                + the narrow card chip-anchored AND
+ *                                chip-hugging (R5, z 图7 form)
  *   mg5-narrow-clamp           — a 520px window: the open card stays
  *                                inside the viewport (R5 clamping)
  *
@@ -75,9 +80,23 @@ const GEOM_JS = `(() => {
   const c = card.getBoundingClientRect()
   const k = chip.getBoundingClientRect()
   const m = composer.getBoundingClientRect()
+  const cols = [...document.querySelectorAll('.cmp-popover .cmp-cascade-col')]
+  const colRects = cols.map((col) => {
+    const r = col.getBoundingClientRect()
+    return { left: r.left, right: r.right, top: r.top, height: r.height }
+  })
+  const providerRows = cols[0]?.querySelectorAll('.cmp-menu-row') ?? []
+  const selectedRow = [...providerRows].find((r) => r.classList.contains('cmp-menu-row-selected'))
   return JSON.stringify({
     left: c.left, top: c.top, width: c.width, height: c.height, right: c.right, bottom: c.bottom,
-    chipLeft: k.left, composerTop: m.top, innerWidth: window.innerWidth
+    chipLeft: k.left, chipTop: k.top, composerTop: m.top, innerWidth: window.innerWidth,
+    colRects,
+    selectedRowTop: selectedRow ? selectedRow.getBoundingClientRect().top : null,
+    wrapperBg: getComputedStyle(card).backgroundColor,
+    colStyles: cols.map((col) => {
+      const s = getComputedStyle(col)
+      return { radius: s.borderTopLeftRadius, borderTop: s.borderTopWidth }
+    })
   })
 })()`
 
@@ -89,8 +108,13 @@ interface CardGeom {
   right: number
   bottom: number
   chipLeft: number
+  chipTop: number
   composerTop: number
   innerWidth: number
+  colRects: { left: number; right: number; top: number; height: number }[]
+  selectedRowTop: number | null
+  wrapperBg: string
+  colStyles: { radius: string; borderTop: string }[]
 }
 
 export function startMenuGeometryVisualIfEnabled(getWindow: () => BrowserWindow | null): void {
@@ -191,8 +215,25 @@ export function startMenuGeometryVisualIfEnabled(getWindow: () => BrowserWindow 
       }
       const base = await readGeom()
       console.log(`VISUAL probe mg1: ${JSON.stringify(base)}`)
+      // Ticket 138 ①: the two columns are SEPARATE cards — each its own
+      // boundary, a real groove between them, the wrapper painting nothing,
+      // the model card's top riding the hovered row (z19-menu-1/2).
+      if (base.colRects.length !== 2) throw new Error(`menu-geometry visual 138: the cascade renders ${base.colRects.length} columns, want 2`)
+      if (base.wrapperBg !== 'rgba(0, 0, 0, 0)') {
+        throw new Error(`menu-geometry visual 138: the cascade wrapper still paints chrome (bg ${base.wrapperBg})`)
+      }
+      for (const [i, style] of base.colStyles.entries()) {
+        if (style.borderTop !== '1px' || style.radius === '0px') {
+          throw new Error(`menu-geometry visual 138: cascade column ${i} has no own boundary (border ${style.borderTop}, radius ${style.radius})`)
+        }
+      }
+      const groove = base.colRects[1]!.left - base.colRects[0]!.right
+      if (groove < 3) throw new Error(`menu-geometry visual 138: the two cards are not separated (groove ${groove.toFixed(1)}, want ≥3)`)
+      if (base.selectedRowTop !== null && Math.abs(base.colRects[1]!.top - base.selectedRowTop) > 1.5) {
+        throw new Error(`menu-geometry visual 138: the model card top ${base.colRects[1]!.top.toFixed(1)} != the hovered row top ${base.selectedRowTop.toFixed(1)}`)
+      }
       await sleep(300)
-      await capture(win, 'mg1-cascade-provider-first', 'cascade open, first provider hovered')
+      await capture(win, 'mg1-cascade-provider-first', 'cascade open, first provider hovered — two separate cards, model card top on the hovered row, provider card hugging the chip')
 
       // ---- mg2: last provider hovered — the bbox must be UNCHANGED (R4) ----
       await hoverProvider(providerCount - 1)
@@ -202,13 +243,15 @@ export function startMenuGeometryVisualIfEnabled(getWindow: () => BrowserWindow 
       const last = await readGeom()
       // R4 compared on drift-invariant quantities: the chip itself may
       // legitimately move between probes (auth-report label settle), and
-      // the card tracks it — what hover must never change is the card's
-      // SIZE, its offset from the chip, and its offset above the composer.
-      const drift = (g: CardGeom): { w: number; h: number; anchor: number; above: number } => ({
+      // the card tracks it — what hover must never change is the provider
+      // card's SIZE, its offset from the chip, and its hug of the chip
+      // (the model card's own height/top legitimately ride the hovered
+      // row's model list — the two cards are separate, ticket 138).
+      const drift = (g: CardGeom): { w: number; h: number; anchor: number; hug: number } => ({
         w: g.width,
         h: g.height,
         anchor: g.left - g.chipLeft,
-        above: g.composerTop - g.bottom
+        hug: g.chipTop - g.bottom
       })
       const d0 = drift(base)
       const d1 = drift(last)
@@ -216,7 +259,7 @@ export function startMenuGeometryVisualIfEnabled(getWindow: () => BrowserWindow 
         Math.abs(d0.w - d1.w) <= 0.5 &&
         Math.abs(d0.h - d1.h) <= 0.5 &&
         Math.abs(d0.anchor - d1.anchor) <= 0.5 &&
-        Math.abs(d0.above - d1.above) <= 0.5
+        Math.abs(d0.hug - d1.hug) <= 0.5
       if (!stable) {
         const diag = (await js(
           `(() => {
@@ -238,11 +281,11 @@ export function startMenuGeometryVisualIfEnabled(getWindow: () => BrowserWindow 
           `menu-geometry visual R4: the card moved across provider hover (first ${JSON.stringify(base)} vs last ${JSON.stringify(last)}); DOM: ${diag}`
         )
       }
-      console.log(`VISUAL probe mg2: bbox identical across ${providerCount} providers' hover`)
+      console.log(`VISUAL probe mg2: provider card identical across ${providerCount} providers' hover`)
       await sleep(300)
-      await capture(win, 'mg2-cascade-provider-last', `cascade open, last provider hovered — identical bbox (R4)`)
+      await capture(win, 'mg2-cascade-provider-last', `cascade open, last provider hovered — provider card bbox identical (R4), model card re-hung on the new row`)
 
-      // ---- mg3: the anchor composition — card left = chip left, above ----
+      // ---- mg3: the anchor composition — card left = chip left, hug ----
       if (Math.abs(last.left - last.chipLeft) > 0.5) {
         const diag = (await js(
           `(() => {
@@ -271,10 +314,14 @@ export function startMenuGeometryVisualIfEnabled(getWindow: () => BrowserWindow 
           `menu-geometry visual R5: card left ${last.left.toFixed(1)} != chip left ${last.chipLeft.toFixed(1)}; DOM: ${diag}`
         )
       }
-      if (last.bottom > last.composerTop + 0.5) {
-        throw new Error(`menu-geometry visual R5: the card overlaps the composer (bottom ${last.bottom.toFixed(1)} vs top ${last.composerTop.toFixed(1)})`)
+      // The hug (ticket 138): the card's bottom edge sits ≈2px above the
+      // chip's top edge — touching the trigger, not floating above the
+      // input area (the pre-138 anchor).
+      const hug = last.chipTop - last.bottom
+      if (hug < 1 || hug > 3) {
+        throw new Error(`menu-geometry visual 138: the card does not hug the chip (bottom ${last.bottom.toFixed(1)} vs chip top ${last.chipTop.toFixed(1)}, gap ${hug.toFixed(1)}, want ≈2)`)
       }
-      await capture(win, 'mg3-anchor-chip', 'card left-aligned to the model chip, floating above the composer (R5)')
+      await capture(win, 'mg3-anchor-chip', 'card left-aligned to the model chip, bottom edge hugging the chip top (R5 + 138)')
 
       // ---- mg4: the thinking menu + the brain icon chip (z 图7 form) ----
       // A model pick first: the thinking levels resolve against the SHOWN
@@ -337,16 +384,24 @@ export function startMenuGeometryVisualIfEnabled(getWindow: () => BrowserWindow 
         const icon = chip.querySelector('svg path')?.getAttribute('d') ?? ''
         const c = card.getBoundingClientRect()
         const k = chip.getBoundingClientRect()
-        return JSON.stringify({ brainPath: icon.startsWith('M12 5a3 3 0 1 0-5.997.125'), cardLeft: c.left, chipLeft: k.left })
+        return JSON.stringify({
+          brainPath: icon.startsWith('M12 5a3 3 0 1 0-5.997.125'),
+          cardLeft: c.left, cardBottom: c.bottom, chipLeft: k.left, chipTop: k.top
+        })
       })()`).catch(() => null)) as string | null
       if (!brain) throw new Error('menu-geometry visual: the thinking chip / card probe failed')
-      const brainState = JSON.parse(brain) as { brainPath: boolean; cardLeft: number; chipLeft: number }
+      const brainState = JSON.parse(brain) as { brainPath: boolean; cardLeft: number; cardBottom: number; chipLeft: number; chipTop: number }
       if (!brainState.brainPath) throw new Error('menu-geometry visual R5: the thinking chip does not render the brain icon')
       if (Math.abs(brainState.cardLeft - brainState.chipLeft) > 0.5) {
         throw new Error(`menu-geometry visual R5: thinking card left ${brainState.cardLeft.toFixed(1)} != chip left ${brainState.chipLeft.toFixed(1)}`)
       }
+      // Ticket 138: the thinking card hugs its chip the same way.
+      const thinkHug = brainState.chipTop - brainState.cardBottom
+      if (thinkHug < 1 || thinkHug > 3) {
+        throw new Error(`menu-geometry visual 138: the thinking card does not hug the chip (bottom ${brainState.cardBottom.toFixed(1)} vs chip top ${brainState.chipTop.toFixed(1)}, gap ${thinkHug.toFixed(1)}, want ≈2)`)
+      }
       await sleep(300)
-      await capture(win, 'mg4-thinking-brain', 'brain icon on the thinking chip + chip-anchored thinking card (z 图7 form; t137 pixel-compared against the z19 reference crops)')
+      await capture(win, 'mg4-thinking-brain', 'brain icon on the thinking chip + chip-anchored, chip-hugging thinking card (z 图7 form; t137 pixel-compared against the z19 reference crops)')
 
       // ---- mg5: the narrow window clamps the open card inside (R5) ----
       // Ensure the thinking menu is still open (the same boot settle can
