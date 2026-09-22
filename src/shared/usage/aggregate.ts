@@ -175,6 +175,9 @@ export interface StreakInfo {
 export interface HeatCell {
   date: string
   tokens: number
+  /** Message entries recorded that day (the activity fold; ticket 139 card
+   * line 'N tokens · M messages' — z19 frame card shape). */
+  messages: number
 }
 
 export interface HeatmapView {
@@ -185,7 +188,6 @@ export interface HeatmapView {
   /** Running total through each day, ascending. */
   cumulative: HeatCell[]
 }
-
 /** Multi-line daily trend for the range switch (7/30 days). */
 export interface TrendView {
   rangeDays: number
@@ -420,22 +422,32 @@ export function buildUsageSnapshot(files: Iterable<SessionFileUsage>, opts?: Sna
     }))
     .sort((a, b) => b.tokens - a.tokens || a.model.localeCompare(b.model))
 
-  // heatmap views
+  // heatmap views (messages = the day's chat-activity message count, the
+  // card's second figure — z19 frames show 'N tokens · M messages')
+  const messagesByDay = new Map([...activityByDay].map(([date, span]) => [date, span.messages]))
+  const heatMessages = (date: string): number => messagesByDay.get(date) ?? 0
   const heatmap: HeatmapView = {
-    daily: daily.map((d) => ({ date: d.date, tokens: d.tokens })),
+    daily: daily.map((d) => ({ date: d.date, tokens: d.tokens, messages: heatMessages(d.date) })),
     weekly: [],
     cumulative: []
   }
   {
-    const weekly = new Map<string, number>()
-    let running = 0
+    const weekly = new Map<string, { tokens: number; messages: number }>()
+    let runningTokens = 0
+    let runningMessages = 0
     for (const cell of heatmap.daily) {
       const week = mondayOf(cell.date)
-      weekly.set(week, (weekly.get(week) ?? 0) + cell.tokens)
-      running += cell.tokens
-      heatmap.cumulative.push({ date: cell.date, tokens: running })
+      const acc = weekly.get(week) ?? { tokens: 0, messages: 0 }
+      acc.tokens += cell.tokens
+      acc.messages += cell.messages
+      weekly.set(week, acc)
+      runningTokens += cell.tokens
+      runningMessages += cell.messages
+      heatmap.cumulative.push({ date: cell.date, tokens: runningTokens, messages: runningMessages })
     }
-    heatmap.weekly = [...weekly.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([date, tokens]) => ({ date, tokens }))
+    heatmap.weekly = [...weekly.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([date, acc]) => ({ date, tokens: acc.tokens, messages: acc.messages }))
   }
 
   return {

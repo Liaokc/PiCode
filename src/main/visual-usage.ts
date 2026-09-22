@@ -5,10 +5,19 @@
  * Drives the real UI through the settings shell and captures:
  *
  *   u1-usage-overview  — headline cards + Token activity heatmap (daily)
- *   u2-usage-weekly    — heatmap toggled to Weekly: the current week's
- *                        seven day cells (ticket 125)
- *   u2b-usage-weekly-hover — real-input hover on the leftmost weekly cell:
- *                        white-card tooltip + complete (unclipped) outline
+ *   u1b-usage-heat-daily-hover — real-input hover on an active daily box:
+ *                        white card above the box (z19-heatmap-daily-2 form)
+ *   u2-usage-heat-weekly    — heatmap toggled to Weekly: the same 52×7
+ *                        contribution grid re-colored week-start-to-day
+ *                        (ticket 139, z19-heatmap-weekly-1)
+ *   u2b-usage-heat-weekly-hover — real-input hover on the current week's
+ *                        column: card above the column's topmost box + ring
+ *                        (z19-heatmap-weekly-2)
+ *   u2c-usage-heat-cumulative — Cumulative mode: term-start-to-day boxes
+ *                        (z19-heatmap-cumulative-1)
+ *   u2d-usage-heat-cumulative-hover — real-input hover, card above the
+ *                        current week's column ('Through … · This week',
+ *                        z19-heatmap-cumulative-2)
  *   u3-usage-trend     — time range + per-model daily trend chart (30d,
  *                        curves clamped into the plot band — ticket 65)
  *   u4-usage-donut     — model usage donut with legend shares
@@ -118,7 +127,24 @@ async function unhover(webContents: WebContents, selector: string): Promise<bool
   )
 }
 
-async function capture(win: BrowserWindow, name: string): Promise<void> {
+/** Capture one frame. When `expect` is given, settle-poll the renderer until
+ * the DOM holds the frame's expected state, then flush the compositor with a
+ * discarded capturePage before the real one: a backgrounded (or just
+ * changed) window otherwise hands back the PREVIOUSLY presented frame — the
+ * review round's one-state-lag root cause (u1≡u1b, u2≡u2b, u2c≡u2d were
+ * byte-identical pairs, each showing the prior state). Mirrors visual.ts's
+ * background-throttling opt-out plus the batch's settle-poll precedent. */
+async function capture(win: BrowserWindow, name: string, expect?: string): Promise<void> {
+  if (expect !== undefined) {
+    let ok = false
+    for (let waited = 0; waited < 8_000 && !ok; waited += 200) {
+      ok = await execute<boolean>(win.webContents, expect)
+      if (!ok) await sleep(200)
+    }
+    if (!ok) throw new Error(`usage visual: frame ${name} never reached its expected DOM state`)
+  }
+  await win.webContents.capturePage() // compositor flush — discarded
+  await sleep(150)
   const png = await win.webContents.capturePage()
   const file = path.join(outDir(), `${name}.png`)
   writeFileSync(file, png.toPNG())
@@ -137,6 +163,48 @@ async function capture(win: BrowserWindow, name: string): Promise<void> {
   )
   console.log(`VISUAL captured ${file} ${JSON.stringify(sig)}`)
 }
+
+// --- per-frame DOM expectations (the settle-poll probes) ----------------------
+
+/** The Heatmap-mode segment control's active label equals `label`. */
+const heatModeActive = (label: string): string =>
+  `(() => {
+    const seg = [...document.querySelectorAll('.seg')].find((el) => el.getAttribute('aria-label') === 'Heatmap mode')
+    return (seg?.querySelector('.seg-btn-active')?.textContent ?? '').trim() === ${JSON.stringify(label)}
+  })()`
+
+/** The heat card is up and its text carries every `must` and no `forbid`
+ * fragment (daily: date + 'tokens · messages'; weekly adds '· This week';
+ * cumulative reads 'Through … · This week'). */
+const heatCardShowing = (must: string[], forbid: string[] = []): string =>
+  `(() => {
+    const tip = document.querySelector('.heat-tooltip')
+    if (!tip) return false
+    const text = tip.textContent ?? ''
+    return ${JSON.stringify(must)}.every((m) => text.includes(m))
+      && ${JSON.stringify(forbid)}.every((m) => !text.includes(m))
+  })()`
+
+const noHeatCard = `document.querySelector('.heat-tooltip') === null`
+
+/** The hovered column's ring is up (weekly/cumulative hover state). */
+const heatColumnRing = `document.querySelector('.heatmap-col-hover') !== null`
+
+/** A section's top edge is inside the viewport (the scroll-to target landed). */
+const sectionInView = (selector: string): string =>
+  `(() => {
+    const el = document.querySelector(${JSON.stringify(selector)})
+    if (!el) return false
+    const r = el.getBoundingClientRect()
+    return r.top >= 0 && r.top < window.innerHeight && r.bottom > 0
+  })()`
+
+/** The trend-range segment control's active label equals `label`. */
+const trendRangeActive = (label: string): string =>
+  `(() => {
+    const seg = [...document.querySelectorAll('.seg')].find((el) => el.getAttribute('aria-label') === 'Trend time range')
+    return (seg?.querySelector('.seg-btn-active')?.textContent ?? '').trim() === ${JSON.stringify(label)}
+  })()`
 
 export function startUsageVisualIfEnabled(getWindow: () => BrowserWindow | null): void {
   if (!usageVisualEnabled()) return
@@ -157,6 +225,11 @@ export function startUsageVisualIfEnabled(getWindow: () => BrowserWindow | null)
       }
       if (!win) throw new Error('usage visual: no window')
       const wc = win.webContents
+      // The frames capture mode switches + hover cards — a backgrounded
+      // window's renderer is compositor-throttled and capturePage then hands
+      // back a stale presented frame (the one-state-lag review finding).
+      // Opt this harness window out, same as visual.ts.
+      win.webContents.setBackgroundThrottling(false)
 
       // Open the settings shell; the Usage section is the initial section.
       if (!(await click(wc, 'button[aria-label="Settings"]'))) throw new Error('usage visual: settings gear not found')
@@ -170,38 +243,123 @@ export function startUsageVisualIfEnabled(getWindow: () => BrowserWindow | null)
       }
       if (!usageReady) throw new Error('usage visual: usage page never rendered cards + heatmap')
       await sleep(400)
-      await capture(win, 'u1-usage-overview')
+      await capture(
+        win,
+        'u1-usage-overview',
+        `(${heatModeActive('Daily')}) && ${noHeatCard}`
+      )
 
-      // Heatmap mode toggles.
-      if (!(await clickSeg(wc, 'Heatmap mode', 'Weekly'))) throw new Error('usage visual: Weekly seg missing')
-      await sleep(400)
-      await capture(win, 'u2-usage-weekly')
-
-      // ticket 125: hover the leftmost weekly cell with REAL input (synthetic
-      // moves never light the CSS :hover outline) — the white-card tooltip
-      // and the complete, unclipped outline share the frame.
-      const leftPoint = await execute<{ x: number; y: number } | null>(
+      // ---- ticket 139: the six heat frames (three modes × normal/hover) ----
+      // Hover target: the LAST active box (the fixture's streak ends today,
+      // so the current week's column always carries activity — the z19
+      // frames' right-edge cluster). The grid scrolls horizontally, so the
+      // scroll box is driven to its right end before the box is located.
+      const todayBox = await execute<{ x: number; y: number } | null>(
         wc,
         `(() => {
-          const cell = document.querySelector('.heatmap-weekly .heat')
+          const scroll = document.querySelector('.heatmap-scroll')
+          if (scroll instanceof HTMLElement) scroll.scrollLeft = scroll.scrollWidth
+          const cells = [...document.querySelectorAll('button.heat')]
+          const cell = cells[cells.length - 1]
           if (!cell) return null
+          cell.scrollIntoView({ block: 'center' })
           const r = cell.getBoundingClientRect()
+          if (r.width === 0) return null
           return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
         })()`
       )
-      if (!leftPoint) throw new Error('usage visual: no weekly heat cell to hover')
-      win.webContents.sendInputEvent({ type: 'mouseMove', x: leftPoint.x, y: leftPoint.y })
-      let heatTip = false
-      for (let waited = 0; waited < 5_000 && !heatTip; waited += 200) {
-        heatTip = await execute<boolean>(wc, `document.querySelectorAll('.heat-tooltip').length > 0`)
-        if (!heatTip) await sleep(200)
+      if (!todayBox) throw new Error('usage visual: no active heat box to hover')
+      // The programmatic scroll flashes the overlay scrollbar — park the real
+      // cursor away and let the fade finish before any hover frame.
+      win.webContents.sendInputEvent({ type: 'mouseMove', x: 60, y: 60 })
+      await sleep(2_000)
+      const hoverBoxAndSettle = async (): Promise<void> => {
+        // React-driven hover: dispatch on the box itself (the card and the
+        // column ring are React state, not CSS), then a real-input move to
+        // the same point for the CSS :hover outline.
+        const opened = await execute<boolean>(
+          wc,
+          `(() => {
+            const cells = [...document.querySelectorAll('button.heat')]
+            const cell = cells[cells.length - 1]
+            if (!cell) return false
+            const r = cell.getBoundingClientRect()
+            cell.dispatchEvent(new MouseEvent('mousemove', {
+              bubbles: true,
+              clientX: r.left + r.width / 2,
+              clientY: r.top + r.height / 2
+            }))
+            return true
+          })()`
+        )
+        if (!opened) throw new Error('usage visual: no active heat box to hover')
+        win.webContents.sendInputEvent({ type: 'mouseMove', x: todayBox.x, y: todayBox.y })
+        let heatTip = false
+        for (let waited = 0; waited < 5_000 && !heatTip; waited += 200) {
+          heatTip = await execute<boolean>(wc, `document.querySelectorAll('.heat-tooltip').length > 0`)
+          if (!heatTip) await sleep(200)
+        }
+        if (!heatTip) throw new Error('usage visual: heat box hover never opened the white-card tooltip')
+        await sleep(300)
       }
-      if (!heatTip) throw new Error('usage visual: heat cell hover never opened the white-card tooltip')
-      await sleep(300)
-      await capture(win, 'u2b-usage-weekly-hover')
-      // Drop the hover so later frames stay clean.
-      win.webContents.sendInputEvent({ type: 'mouseMove', x: leftPoint.x + 240, y: leftPoint.y - 80 })
-      await sleep(300)
+      const unhoverBox = async (): Promise<void> => {
+        // The card clears on the WRAP's mouseleave — dispatch there (the
+        // trend/donut unhover recipe), plus a real move well outside the
+        // grid for the CSS :hover state.
+        await execute<boolean>(
+          wc,
+          `(() => {
+            const wrap = document.querySelector('.heatmap-wrap')
+            if (!wrap) return false
+            wrap.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }))
+            wrap.dispatchEvent(new MouseEvent('mouseleave', { relatedTarget: document.body }))
+            return true
+          })()`
+        )
+        win.webContents.sendInputEvent({ type: 'mouseMove', x: 60, y: 60 })
+        await sleep(300)
+      }
+
+      // Daily hover (u1b) — card above the hovered box.
+      await hoverBoxAndSettle()
+      await capture(
+        win,
+        'u1b-usage-heat-daily-hover',
+        `(${heatModeActive('Daily')}) && (${heatCardShowing(['tokens', 'messages'], ['This week'])})`
+      )
+      await unhoverBox()
+
+      // Weekly normal + hover (u2/u2b) — card above the column's topmost box.
+      if (!(await clickSeg(wc, 'Heatmap mode', 'Weekly'))) throw new Error('usage visual: Weekly seg missing')
+      await sleep(400)
+      await capture(
+        win,
+        'u2-usage-heat-weekly',
+        `(${heatModeActive('Weekly')}) && ${noHeatCard}`
+      )
+      await hoverBoxAndSettle()
+      await capture(
+        win,
+        'u2b-usage-heat-weekly-hover',
+        `(${heatModeActive('Weekly')}) && (${heatCardShowing(['This week'], ['Through'])}) && ${heatColumnRing}`
+      )
+      await unhoverBox()
+
+      // Cumulative normal + hover (u2c/u2d).
+      if (!(await clickSeg(wc, 'Heatmap mode', 'Cumulative'))) throw new Error('usage visual: Cumulative seg missing')
+      await sleep(400)
+      await capture(
+        win,
+        'u2c-usage-heat-cumulative',
+        `(${heatModeActive('Cumulative')}) && ${noHeatCard}`
+      )
+      await hoverBoxAndSettle()
+      await capture(
+        win,
+        'u2d-usage-heat-cumulative-hover',
+        `(${heatModeActive('Cumulative')}) && (${heatCardShowing(['Through', 'This week'])}) && ${heatColumnRing}`
+      )
+      await unhoverBox()
 
       if (!(await clickSeg(wc, 'Heatmap mode', 'Daily'))) throw new Error('usage visual: Daily seg missing')
       await sleep(300)
@@ -209,12 +367,16 @@ export function startUsageVisualIfEnabled(getWindow: () => BrowserWindow | null)
       // Trend section (default range 30 days, like the reference).
       await scrollTo(wc, '.range-row')
       await sleep(400)
-      await capture(win, 'u3-usage-trend')
+      await capture(
+        win,
+        'u3-usage-trend',
+        `(${trendRangeActive('Last 30 days')}) && (${sectionInView('.trend-svg')}) && document.querySelector('.trend-tooltip') === null`
+      )
 
       // Donut section.
       await scrollTo(wc, '.donut-row')
       await sleep(400)
-      await capture(win, 'u4-usage-donut')
+      await capture(win, 'u4-usage-donut', sectionInView('.donut-row'))
 
       // Drill-down: pick the last active day cell (most recent cluster).
       const picked = await execute<boolean>(
@@ -236,7 +398,7 @@ export function startUsageVisualIfEnabled(getWindow: () => BrowserWindow | null)
       }
       if (!drilldown) throw new Error('usage visual: drill-down panel never opened')
       await sleep(400)
-      await capture(win, 'u5-usage-drilldown')
+      await capture(win, 'u5-usage-drilldown', `document.querySelectorAll('.drilldown').length > 0`)
 
       // ---- ticket 65: hover frames (ZCode z13-usage-* anchors) -------------
       // Close the drill-down, then hover the trend chart: the white-card
@@ -257,7 +419,11 @@ export function startUsageVisualIfEnabled(getWindow: () => BrowserWindow | null)
       }
       if (!trendTip) throw new Error('usage visual: trend hover never opened the white-card tooltip')
       await sleep(300)
-      await capture(win, 'u6-usage-trend-hover')
+      await capture(
+        win,
+        'u6-usage-trend-hover',
+        `document.querySelectorAll('.trend-tooltip').length > 0 && document.querySelectorAll('.trend-guide').length > 0`
+      )
       await unhover(wc, '.trend-svg')
       await sleep(300)
 
@@ -265,7 +431,11 @@ export function startUsageVisualIfEnabled(getWindow: () => BrowserWindow | null)
       // interpolation + clamp) — captured for the side-by-side review.
       if (!(await clickSeg(wc, 'Trend time range', 'Last 7 days'))) throw new Error('usage visual: 7d seg missing')
       await sleep(400)
-      await capture(win, 'u7-usage-trend-7d')
+      await capture(
+        win,
+        'u7-usage-trend-7d',
+        `(${trendRangeActive('Last 7 days')}) && document.querySelector('.trend-tooltip') === null`
+      )
       if (!(await hoverAt(wc, '.trend-svg', 0.5, 0.5))) throw new Error('usage visual: trend svg missing for 7d hover')
       let trendTip7 = false
       for (let waited = 0; waited < 5_000 && !trendTip7; waited += 200) {
@@ -274,7 +444,7 @@ export function startUsageVisualIfEnabled(getWindow: () => BrowserWindow | null)
       }
       if (!trendTip7) throw new Error('usage visual: 7d trend hover never opened the tooltip')
       await sleep(300)
-      await capture(win, 'u8-usage-trend-7d-hover')
+      await capture(win, 'u8-usage-trend-7d-hover', `document.querySelectorAll('.trend-tooltip').length > 0`)
       await unhover(wc, '.trend-svg')
       await sleep(300)
 
@@ -305,7 +475,7 @@ export function startUsageVisualIfEnabled(getWindow: () => BrowserWindow | null)
       }
       if (!donutTip) throw new Error('usage visual: donut hover never opened the white-card tooltip')
       await sleep(300)
-      await capture(win, 'u9-usage-donut-hover')
+      await capture(win, 'u9-usage-donut-hover', `document.querySelectorAll('.donut-tooltip').length > 0`)
       await unhover(wc, '.donut-svg')
 
       console.log('VISUAL usage done')

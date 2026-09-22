@@ -16,3 +16,14 @@ export function mondayOf(dateStr: string): string {
   const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay() // 0 = Sunday
   return addDays(dateStr, -(dow + 6) % 7)
 }
+
+/** Sunday that starts the week containing dateStr (contribution-graph weeks,
+ * ticket 139 — the ZCode frames run Sunday-top … Saturday-bottom columns).
+ * Row-order forensics: the frames' current-week colored boxes sit on rows
+ * 5–6 with the hover card dated Saturday (the data end) — Sunday-first rows;
+ * a Monday-first reading would color a future day, which is impossible. */
+export function sundayOf(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay() // 0 = Sunday
+  return addDays(dateStr, -dow)
+}

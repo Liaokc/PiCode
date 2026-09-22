@@ -45,22 +45,23 @@ const twoFileSnapshot = buildUsageSnapshot(
 )
 
 describe('snapshot.heatmap', () => {
-  it('daily cells mirror the per-day tokens', () => {
+  it('daily cells mirror the per-day tokens and message counts', () => {
     expect(twoFileSnapshot.heatmap.daily).toEqual([
-      { date: '2026-08-25', tokens: 100 },
-      { date: '2026-08-26', tokens: 250 },
-      { date: '2026-08-27', tokens: 400 },
-      { date: '2026-08-28', tokens: 10 }
+      { date: '2026-08-25', tokens: 100, messages: 1 },
+      { date: '2026-08-26', tokens: 250, messages: 2 },
+      { date: '2026-08-27', tokens: 400, messages: 1 },
+      { date: '2026-08-28', tokens: 10, messages: 1 }
     ])
   })
 
   it('weekly cells bucket days into Monday-start weeks', () => {
     // 2026-08-25..28 are Tue..Fri of the week starting Monday 2026-08-24
-    expect(twoFileSnapshot.heatmap.weekly).toEqual([{ date: '2026-08-24', tokens: 760 }])
+    expect(twoFileSnapshot.heatmap.weekly).toEqual([{ date: '2026-08-24', tokens: 760, messages: 5 }])
   })
 
   it('cumulative cells run upward day by day', () => {
     expect(twoFileSnapshot.heatmap.cumulative.map((c) => c.tokens)).toEqual([100, 350, 750, 760])
+    expect(twoFileSnapshot.heatmap.cumulative.map((c) => c.messages)).toEqual([1, 3, 4, 5])
   })
 
   it('is empty when there is no activity', () => {

@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   donutHoverCard,
   donutSlices,
+  heatCard,
   heatmapGrid,
+  HEAT_CARD_ANCHORS_COLUMN,
   modelColor,
   niceCeil,
   statCards,
@@ -12,7 +14,7 @@ import {
   type ModelUsageSlice,
   type TrendView
 } from '../../src/shared/usage/charts.ts'
-import { addDays, mondayOf } from '../../src/shared/usage/dates.ts'
+import { addDays } from '../../src/shared/usage/dates.ts'
 import { buildUsageSnapshot, foldSessionFile } from '../../src/shared/usage/aggregate.ts'
 
 const headerLine = (id: string) =>
@@ -74,157 +76,233 @@ describe('statCards', () => {
   })
 })
 
-// --- heatmap grid ---------------------------------------------------------------
+// --- heatmap grid: the 52×7 contribution window (ticket 139) -------------------
 
-describe('heatmapGrid', () => {
+describe('heatmapGrid — the 52×7 contribution window', () => {
+  // 2026-08-25..28 are Tue..Fri; their Sunday-start week is 2026-08-23..29.
   const cells = [
-    { date: '2026-08-25', tokens: 100 },
-    { date: '2026-08-26', tokens: 250 },
-    { date: '2026-08-27', tokens: 400 },
-    { date: '2026-08-28', tokens: 10 }
+    { date: '2026-08-25', tokens: 100, messages: 3 },
+    { date: '2026-08-26', tokens: 250, messages: 4 },
+    { date: '2026-08-27', tokens: 400, messages: 5 },
+    { date: '2026-08-28', tokens: 10, messages: 1 }
   ]
 
-  it('aligns daily cells into Monday-start columns of seven slots', () => {
+  it('covers exactly 52 Sunday-start weeks ending at the data end', () => {
     const grid = heatmapGrid(cells, 'daily')
+    expect(grid.columns).toHaveLength(52)
+    expect(grid.columns[0].start).toBe('2025-08-31') // 51 weeks before Sun 2026-08-23
+    expect(grid.columns[51].start).toBe('2026-08-23')
+    expect(grid.columns.every((c) => c.slots.length === 7)).toBe(true)
+  })
+
+  it('lays seven Sunday..Saturday slots per column; the data days land on their weekday rows', () => {
+    const grid = heatmapGrid(cells, 'daily')
+    const last = grid.columns[51]
+    expect(last.slots.map((s) => s.date)).toEqual([
+      '2026-08-23', '2026-08-24', '2026-08-25', '2026-08-26', '2026-08-27', '2026-08-28', '2026-08-29'
+    ])
+    expect(last.slots.map((s) => s.value)).toEqual([0, 0, 100, 250, 400, 10, 0])
+    expect(last.slots.map((s) => s.level)).toEqual([0, 0, 1, 3, 4, 1, 0])
     expect(grid.max).toBe(400)
-    expect(grid.columns).toHaveLength(1)
-    const col = grid.columns[0]
-    expect(col.start).toBe('2026-08-24')
-    expect(col.monthLabel).toBe('Aug')
-    expect(col.slots.map((s) => s.date)).toEqual([
-      '2026-08-24', '2026-08-25', '2026-08-26', '2026-08-27', '2026-08-28', '2026-08-29', '2026-08-30'
-    ])
-    expect(col.slots.map((s) => s.value)).toEqual([0, 100, 250, 400, 10, 0, 0])
-    expect(col.slots.map((s) => s.level)).toEqual([0, 1, 3, 4, 1, 0, 0])
   })
 
-  it('spans multiple weeks and labels columns at month starts', () => {
-    const grid = heatmapGrid(
-      [
-        { date: '2026-08-27', tokens: 100 },
-        { date: '2026-09-02', tokens: 50 }
-      ],
-      'daily'
-    )
-    expect(grid.columns.map((c) => c.start)).toEqual(['2026-08-24', '2026-08-31'])
-    // The grid opens one week before the Sep boundary; the partial Aug label
-    // yields so the two adjacent labels can never paint over each other.
-    expect(grid.columns.map((c) => c.monthLabel)).toEqual([null, 'Sep'])
-    expect(grid.columns[1].slots.find((s) => s.date === '2026-09-02')?.value).toBe(50)
+  it('carries message counts on every slot', () => {
+    const grid = heatmapGrid(cells, 'daily')
+    const last = grid.columns[51]
+    expect(last.slots.map((s) => s.messages)).toEqual([0, 0, 3, 4, 5, 1, 0])
   })
 
-  it('fills gap days with zero slots — a day without usage still gets its box', () => {
-    // 2026-08-26 has no cell at all: it must still render as a level-0 slot.
-    const grid = heatmapGrid(
-      [
-        { date: '2026-08-25', tokens: 100 },
-        { date: '2026-08-27', tokens: 40 }
-      ],
-      'daily'
-    )
-    expect(grid.columns[0].slots.find((s) => s.date === '2026-08-26')).toEqual({
-      date: '2026-08-26',
-      value: 0,
-      level: 0
-    })
+  it('renders the pre-history weeks as empty-color boxes, never missing', () => {
+    const grid = heatmapGrid(cells, 'daily')
+    const first = grid.columns[0]
+    expect(first.slots.every((s) => s.value === 0 && s.level === 0)).toBe(true)
   })
 
-// --- heatmap weekly: the current week reads as seven days (ticket 125) ---------
-
-describe('heatmapGrid weekly — seven day cells for the current week', () => {
-  /** Monday..Sunday containing the anchor (the last cell = "today"). */
-  const weekDays = (anchor: string): string[] =>
-    Array.from({ length: 7 }, (_, i) => addDays(mondayOf(anchor), i))
-
-  // Anchor day (the last cell — snapshot daily cells are zero-filled through
-  // today) × expected Monday..Sunday sequence. Week start is Monday, the
-  // same week language as the daily grid's columns.
-  const anchorTable: Array<{ anchor: string; note: string }> = [
-    { anchor: '2026-09-02', note: 'mid-week anchor (Wed)' },
-    { anchor: '2026-08-31', note: 'Monday anchor — week opens on it' },
-    { anchor: '2026-09-06', note: 'Sunday anchor — same week as the Monday before' },
-    { anchor: '2026-12-28', note: 'year-start week spans Dec→Jan' },
-    { anchor: '2027-01-01', note: 'New Year day inside the week' }
-  ]
-
-  it.each(anchorTable)('spans seven weekday cells for $note', ({ anchor }) => {
-    const week = weekDays(anchor)
-    const grid = heatmapGrid([{ date: '2026-08-01', tokens: 10 }, { date: anchor, tokens: 20 }], 'weekly')
-    expect(grid.columns.map((c) => c.start)).toEqual(week)
-    expect(grid.columns.every((c) => c.slots.length === 1 && c.slots[0].date === c.start)).toBe(true)
-    // Only the anchor day carries tokens; every other day of the week still
-    // renders (empty color) — including the days after the anchor.
-    expect(grid.columns.map((c) => c.slots[0].value)).toEqual(week.map((d) => (d === anchor ? 20 : 0)))
-    expect(grid.columns.map((c) => c.slots[0].level)).toEqual(week.map((d) => (d === anchor ? 4 : 0)))
-    // A 30-day history shows ONLY the current week — week aggregation is gone.
-    expect(grid.columns).toHaveLength(7)
-  })
-
-  it('levels the week against its own maximum', () => {
-    const week = weekDays('2026-09-02') // Mon 08-31 .. Sun 09-06
-    const grid = heatmapGrid(
-      [
-        { date: '2026-09-01', tokens: 100 },
-        { date: '2026-09-02', tokens: 50 },
-        { date: '2026-09-04', tokens: 10 }
-      ],
-      'weekly'
-    )
-    expect(grid.max).toBe(100)
-    expect(grid.columns.map((c) => c.slots[0].level)).toEqual([
-      0, // Mon 08-31 — no usage, empty color
-      4, // Tue 09-01 — the week max
-      2, // Wed 09-02 — 50/100
-      0, // Thu 09-03
-      1, // Fri 09-04 — 10/100
-      0, // Sat 09-05
-      0 // Sun 09-06
-    ])
-    // The tooltip data of a cell is its slot: the day + token pair.
-    expect(grid.columns[1].slots[0]).toEqual({ date: week[1], value: 100, level: 4 })
-  })
-
-  it('renders an all-zero week as seven empty-color cells (never missing)', () => {
-    // History exists (last week was active); the snapshot's daily cells are
-    // zero-filled through today, and today carries no usage yet — the
-    // current week's seven boxes still render, all at level 0.
-    const grid = heatmapGrid(
-      [
-        { date: '2026-08-26', tokens: 400 },
-        { date: '2026-08-27', tokens: 10 },
-        { date: '2026-09-01', tokens: 0 }
-      ],
-      'weekly'
-    )
-    expect(grid.max).toBe(0)
-    expect(grid.columns).toHaveLength(7)
-    expect(grid.columns.every((c) => c.slots[0].value === 0 && c.slots[0].level === 0)).toBe(true)
-  })
-
-  it('labels the month-opening day and yields a colliding first label', () => {
-    // Week Mon 2026-08-31 .. Sun 2026-09-06: Sep 1 opens a month on the
-    // second day, so the first column's Aug label yields (the daily grid's
-    // adjacent-label rule) and Sep 1 carries the label.
-    const grid = heatmapGrid([{ date: '2026-09-01', tokens: 30 }], 'weekly')
-    expect(grid.columns.map((c) => c.monthLabel)).toEqual([null, 'Sep', null, null, null, null, null])
-  })
-
-  it('labels the year-opening day across the Dec→Jan week', () => {
-    // Week Mon 2025-12-29 .. Sun 2026-01-04: Jan 1 opens the year mid-week.
-    const grid = heatmapGrid([{ date: '2025-12-30', tokens: 30 }, { date: '2026-01-02', tokens: 30 }], 'weekly')
-    expect(grid.columns.map((c) => c.monthLabel)).toEqual(['Dec', null, null, 'Jan', null, null, null])
+  it('leaves the days after the data end empty in every mode', () => {
+    // Fri 08-28 is the data end; Sat 08-29 (and any later current-week day)
+    // must stay level-0 even though the week/term series could project.
+    for (const mode of ['daily', 'weekly', 'cumulative'] as const) {
+      const grid = heatmapGrid(cells, mode)
+      const sat = grid.columns[51].slots[6]
+      expect(sat).toEqual({ date: '2026-08-29', value: 0, messages: 0, level: 0 })
+    }
   })
 })
 
-  it('colors cumulative mode by the running total', () => {
-    const grid = heatmapGrid(cells, 'cumulative')
-    expect(grid.max).toBe(760)
-    expect(grid.columns[0].slots.map((s) => s.value)).toEqual([0, 100, 350, 750, 760, 760, 760])
-    expect(grid.columns[0].slots.map((s) => s.level)).toEqual([0, 1, 2, 4, 4, 4, 4])
+// --- heatmap weekly: the box reads the week's start through that day ------------
+
+describe('heatmapGrid weekly — week-start-to-day boxes', () => {
+  const cells = [
+    { date: '2026-08-20', tokens: 500, messages: 2 }, // Thu of the week Sun 08-16..Sat 08-22
+    { date: '2026-08-25', tokens: 100, messages: 3 },
+    { date: '2026-08-27', tokens: 400, messages: 5 },
+    { date: '2026-08-28', tokens: 10, messages: 1 }
+  ]
+
+  it('accumulates within the week and resets at the next Sunday', () => {
+    const grid = heatmapGrid(cells, 'weekly')
+    // Prior week (Sun 08-16): the Thursday spike carries through Fri/Sat —
+    // past days keep the week-to-date figure.
+    expect(grid.columns[50].slots.map((s) => s.value)).toEqual([0, 0, 0, 0, 500, 500, 500])
+    // Current week (Sun 08-23): the counter restarted — Mon 100, Wed 500+…
+    expect(grid.columns[51].slots.map((s) => s.value)).toEqual([0, 0, 100, 100, 500, 510, 0])
   })
 
-  it('handles an empty activity history', () => {
-    expect(heatmapGrid([], 'daily').columns).toEqual([])
+  it('is monotone non-decreasing down every column through its last active day', () => {
+    const grid = heatmapGrid(cells, 'weekly')
+    for (const col of grid.columns) {
+      const values = col.slots.map((s) => s.value)
+      // Trailing future days (after the data end) are exempt — they render
+      // empty; the week-to-date prefix itself never dips.
+      let lastActive = values.length - 1
+      while (lastActive >= 0 && values[lastActive] === 0) lastActive--
+      for (let i = 1; i <= lastActive; i++) {
+        expect(values[i]).toBeGreaterThanOrEqual(values[i - 1])
+      }
+    }
+  })
+
+  it('levels the week against the largest week-to-date figure', () => {
+    const grid = heatmapGrid(cells, 'weekly')
+    expect(grid.max).toBe(510)
+    expect(grid.columns[51].slots.map((s) => s.level)).toEqual([0, 0, 1, 1, 4, 4, 0])
+  })
+
+  it('handles the year-start week (Dec→Jan) without leaking across the boundary', () => {
+    const grid = heatmapGrid(
+      [
+        { date: '2025-12-30', tokens: 30, messages: 1 },
+        { date: '2026-01-02', tokens: 20, messages: 1 }
+      ],
+      'weekly'
+    )
+    const weekCol = grid.columns[51] // Sun 2025-12-28 .. Sat 2026-01-03
+    // Sat 01-03 is past the data end (Fri 01-02) — empty.
+    expect(weekCol.slots.map((s) => s.value)).toEqual([0, 0, 30, 30, 30, 50, 0])
+    expect(weekCol.monthLabel).toBe('Jan')
+  })
+})
+
+// --- heatmap cumulative: the box reads the term's start through that day --------
+
+describe('heatmapGrid cumulative — term-start-to-day boxes', () => {
+  const cells = [
+    { date: '2026-08-20', tokens: 500, messages: 2 },
+    { date: '2026-08-25', tokens: 100, messages: 3 },
+    { date: '2026-08-27', tokens: 400, messages: 5 },
+    { date: '2026-08-28', tokens: 10, messages: 1 }
+  ]
+
+  it('never resets: the running total crosses week boundaries', () => {
+    const grid = heatmapGrid(cells, 'cumulative')
+    expect(grid.columns[50].slots.map((s) => s.value)).toEqual([0, 0, 0, 0, 500, 500, 500])
+    expect(grid.columns[51].slots.map((s) => s.value)).toEqual([500, 500, 600, 600, 1000, 1010, 0])
+    expect(grid.max).toBe(1010)
+  })
+
+  it('is monotone across the whole grid in time order (the cumulative signature)', () => {
+    const grid = heatmapGrid(cells, 'cumulative')
+    const flat = grid.columns.flatMap((col) => col.slots.map((s) => s.value))
+    for (let i = 1; i < flat.length; i++) {
+      if (flat[i] > 0) expect(flat[i]).toBeGreaterThanOrEqual(flat[i - 1] ?? 0)
+    }
+  })
+
+  it('carries the pre-window total into the first visible column', () => {
+    // A term that started 400 days ago: the window clips the early weeks but
+    // the cumulative boxes at the window's left edge already stand at the
+    // carried total (期初 = the very first day, not the window's first day).
+    const early = addDays('2026-08-28', -400)
+    const grid = heatmapGrid([{ date: early, tokens: 900, messages: 1 }, ...cells], 'cumulative')
+    expect(grid.columns).toHaveLength(52)
+    const firstWeekTotals = grid.columns[0].slots.map((s) => s.value)
+    expect(firstWeekTotals[6]).toBeGreaterThan(0) // the carried total stands
+    expect(grid.columns[51].slots[5].value).toBe(900 + 1010) // + the visible term
+  })
+})
+
+// --- heatmap month labels -------------------------------------------------------
+
+describe('heatmapGrid month labels', () => {
+  const cells = [{ date: '2026-08-27', tokens: 100, messages: 1 }]
+
+  it('labels the column where a month opens, once per month', () => {
+    const grid = heatmapGrid(cells, 'daily')
+    const labeled = grid.columns
+      .map((c, i) => ({ label: c.monthLabel, i }))
+      .filter((c) => c.label !== null)
+    // Window Sun 2025-08-31 .. Sat 2026-08-29: the forced first-column label
+    // covers Aug 2025 (Sep 1 opens inside column 0's span), so 12 labels
+    // remain — one per month opening from Oct 2025 through Aug 2026.
+    expect(labeled.map((c) => c.label)).toEqual([
+      'Aug', 'Oct', 'Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'
+    ])
+    // The Oct 2025 opening (Wed Oct 1) sits on the column Sun 09-28..Sat 10-04.
+    expect(labeled[1]).toEqual({ label: 'Oct', i: 4 })
+  })
+
+  it('yields the first label when column 1 opens a month too', () => {
+    // Data end Sun 2026-10-11: the window opens Sun 2025-10-19 (forced 'Oct')
+    // and column 1 spans Oct 26 → Nov 1, so both adjacent columns claim a
+    // label — column 0's yields and Nov carries.
+    const grid = heatmapGrid([{ date: '2026-10-11', tokens: 10, messages: 1 }], 'daily')
+    expect(grid.columns[0].monthLabel).toBeNull()
+    expect(grid.columns[1].monthLabel).toBe('Nov')
+  })
+})
+
+// --- heatmap hover card: content + anchor tables (ticket 139) ------------------
+
+describe('heatCard — three-mode content table', () => {
+  // Week Sun 2026-08-23 .. Sat 2026-08-29, data end Thu 08-28.
+  const grid = heatmapGrid(
+    [
+      { date: '2026-08-25', tokens: 100, messages: 3 },
+      { date: '2026-08-27', tokens: 400, messages: 5 },
+      { date: '2026-08-28', tokens: 10, messages: 1 }
+    ],
+    'daily'
+  )
+  const col = grid.columns[51]
+  const wed = col.slots[4] // 2026-08-27
+
+  it('daily names the hovered day with its own totals', () => {
+    expect(heatCard('daily', wed, col)).toEqual({
+      title: 'Aug 27, 2026',
+      value: '400 tokens · 5 messages'
+    })
+  })
+
+  it('weekly names the week through its last visible day with week-to-date totals', () => {
+    // Saturday 08-29 is past the data end (Thu 08-28), so the card clamps to it.
+    expect(heatCard('weekly', wed, col)).toEqual({
+      title: 'Aug 28, 2026 · This week',
+      value: '510 tokens · 9 messages'
+    })
+  })
+
+  it('cumulative reads 期初 through the column week, current week included', () => {
+    expect(heatCard('cumulative', wed, col)).toEqual({
+      title: 'Through Aug 28, 2026 · This week',
+      value: '510 tokens · 9 messages'
+    })
+  })
+
+  it('a completed past week cards its full Saturday', () => {
+    const prior = grid.columns[50]
+    expect(prior.card.date).toBe('2026-08-22')
+    expect(heatCard('weekly', prior.slots[0], prior).title).toBe('Aug 22, 2026 · This week')
+  })
+
+  it('pluralizes the message count', () => {
+    const grid1 = heatmapGrid([{ date: '2026-08-27', tokens: 5, messages: 1 }], 'daily')
+    expect(heatCard('daily', grid1.columns[51].slots[4], grid1.columns[51]).value).toBe('5 tokens · 1 message')
+  })
+})
+
+describe('HEAT_CARD_ANCHORS_COLUMN — three-mode anchor table', () => {
+  it('anchors daily at the hovered box and weekly/cumulative at the column top', () => {
+    expect(HEAT_CARD_ANCHORS_COLUMN).toEqual({ daily: false, weekly: true, cumulative: true })
   })
 })
 
