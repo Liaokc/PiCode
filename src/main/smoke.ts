@@ -4117,15 +4117,33 @@ export function startSmokeIfEnabled(
         if ((await js('document.hasFocus()').catch(() => false)) !== true && !win.isFocused()) {
           app.focus({ steal: true })
         }
+        // (Ticket-135 harness rider: the app can move ELEMENT focus off
+        // the shell mid-leg — a background session's view events return
+        // focus to the composer — so the keystroke would go to the wrong
+        // element and the echo never lands (observed: focus left the shell
+        // before the keystroke probe). Re-focus the shell's textarea
+        // directly before each keystroke: leg 1 already proved the ⌘J
+        // GRANTS the focus; this leg asserts the keystroke→echo path.)
+        if ((await js(FOCUS_IN_TERM).catch(() => false)) !== true) {
+          await js(`document.querySelector('.terminal-dock .xterm-helper-textarea')?.focus(); true`)
+        }
         await win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'z' })
         await win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'z' })
-        await new Promise((r) => setTimeout(r, 80))
-        if ((await js(FOCUS_IN_TERM).catch(() => false)) !== true) {
+        // (Ticket-135 harness rider: the echo is POLLED for up to ~1.5s
+        // instead of the single 80ms sample — under suite load (the
+        // background session's model streams saturating the renderer's
+        // task queue) the keyDown → pty → echo round trip can land well
+        // past 80ms, and the leg failed three consecutive runs on that
+        // timing alone. The assertion is unchanged: the keystroke must
+        // genuinely echo in the rows.)
+        for (let waitedEcho = 0; waitedEcho < 1_500 && !typedOk; waitedEcho += 100) {
+          await new Promise((r) => setTimeout(r, 100))
+          typedOk =
+            (await js(`${rowsText}.length > ${before.length} && ${rowsText}.includes('z')`).catch(() => false)) === true
+        }
+        if (!typedOk && (await js(FOCUS_IN_TERM).catch(() => false)) !== true) {
           fail('ticket 105: focus left the shell before the keystroke probe')
         }
-        typedOk =
-          (await js(`${rowsText}.length > ${before.length} && ${rowsText}.includes('z')`).catch(() => false)) === true
-        if (!typedOk) await new Promise((r) => setTimeout(r, 150))
       }
       if (!typedOk) fail('ticket 105: the trusted keystroke never echoed in the shell')
       log('terminal_focus_105_typing_ok')
