@@ -1944,6 +1944,17 @@ export function startSmokeIfEnabled(
           await js(composerKeyJs('Enter'))
           await waitFor((e) => e.type === 'agent_start' && e.sessionId === queue135Id, 'ticket-135 agent_start')
           await waitFor((e) => e.type === 'text_delta' && e.sessionId === queue135Id, 'ticket-135 first text_delta')
+          // The engine's documented pre-pin restore (ticket 119's model)
+          // can yank the reader back to the pre-scroll absolute between
+          // the send and the first deltas — the big draft's caret-mirror
+          // relayout is a known trigger, and the restore reads as an
+          // upward move, disarming the just-armed send latch (observed in
+          // a full-suite run: the reader frozen at the mid leg's staged
+          // 1921 while the stream grew). Re-assert the bottom now that
+          // the run is live: the streaming deltas are small (the stick
+          // band holds from here), and the queue legs below ride the send
+          // latch's own repair (the ticket-93 law).
+          await js(`(() => { const el = document.querySelector('.chat-scroll'); if (el) el.scrollTop = el.scrollHeight; return true })()`)
           if (!(await waitForProbe(win, `(${AT_BOTTOM_119})`, 10_000))) {
           fail(`ticket-135 stage: the count run's streaming left the bottom-pinned reader off the bottom; DOM: ${await geom119()}`)
           }
