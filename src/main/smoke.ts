@@ -759,6 +759,38 @@ export function startSmokeIfEnabled(
       // the picks riding the defaults and the prompt riding the pending
       // chain. The smoke's pick-directory short-circuit answers the folder
       // picker (no chip project exists in the isolated store).
+      //
+      // Ticket 132 (boot-empty ⌘J leg, FIRST): press ⌘J NOW — at the boot
+      // empty state no session exists, so the dock opens on "No workspace
+      // yet" with NO shell to receive the focus request. The request must
+      // hold and land in the FIRST shell to mount — which is exactly the
+      // session the send below creates (pre-fix the request was consumed
+      // as a no-op and the caret stayed on <body>: the operator's reported
+      // 新开会话 + ⌘J recurrence).
+      {
+        const DOCK_STATE_T132 = `(() => {
+          const dock = document.querySelector('.terminal-dock')
+          if (!dock || dock.hasAttribute('data-closed')) return 'closed'
+          const panels = Array.from(document.querySelectorAll('.dock-panel'))
+          if (panels[0]?.style.display !== 'none') return 'terminal'
+          if (panels[1]?.style.display !== 'none') return 'bridge'
+          return 'unknown'
+        })()`
+        if ((await win.webContents.executeJavaScript(DOCK_STATE_T132).catch(() => 'probe-failed')) !== 'closed') {
+          fail('ticket 132 (boot empty): the dock did not start closed at the boot empty state')
+        }
+        await win.webContents.executeJavaScript(
+          `window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyJ', metaKey: true, bubbles: true }))`
+        )
+        if (!(await waitForProbe(win, `${DOCK_STATE_T132} === 'terminal'`, 5_000))) {
+          fail('ticket 132 (boot empty): ⌘J never opened the terminal dock at the boot empty state')
+        }
+        const noShell = await win.webContents.executeJavaScript(
+          `document.querySelector('.terminal-dock .review-empty') !== null && document.querySelector('.terminal-dock .xterm') === null`
+        ).catch(() => false)
+        if (noShell !== true) fail('ticket 132 (boot empty): the open dock must show the no-workspace empty state (no shell yet)')
+        log('terminal_focus_132_boot_empty_open_ok', 'dock open on the no-workspace empty state, focus request armed')
+      }
       if (!(await win.webContents.executeJavaScript(composerTypeJs('Count slowly from one to twenty, one number per sentence.')).catch(() => false))) {
         fail('composer textarea missing for the empty-state send')
       }
@@ -812,6 +844,37 @@ export function startSmokeIfEnabled(
       'empty_state_thinking_rides_ok',
       `thinking=${String(composer.thinkingLevel)} levels=${composer.availableLevels.join(',')}`
     )
+    // Ticket 132 (boot-empty ⌘J leg, SECOND): the session just created is
+    // the dock's FIRST shell — the armed ⌘J request must land in it the
+    // moment it mounts (no extra click), then the dock closes so the rest
+    // of the stage runs on the pre-⌘J baseline.
+    {
+      const shellMounted = await waitForProbe(
+        win,
+        `document.querySelector('.terminal-dock .xterm') !== null`,
+        20_000
+      )
+      if (!shellMounted) fail('ticket 132 (boot empty): the first shell never mounted after the session was announced')
+      const inShell = await waitForProbe(
+        win,
+        `document.activeElement !== null && document.activeElement.classList.contains('xterm-helper-textarea')`,
+        5_000
+      )
+      if (!inShell) {
+        fail('ticket 132 (boot empty): the ⌘J pressed at the boot empty state never focused the first shell (activeElement is not the xterm textarea)')
+      }
+      log('terminal_focus_132_boot_empty_focus_ok', 'the armed request landed in the first shell')
+      await win.webContents.executeJavaScript(
+        `window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyJ', metaKey: true, bubbles: true }))`
+      )
+      if (!(await waitForProbe(
+        win,
+        `(() => { const d = document.querySelector('.terminal-dock'); return d !== null && d.hasAttribute('data-closed') })()`,
+        5_000
+      ))) {
+        fail('ticket 132 (boot empty): the dock never closed to restore the stage baseline')
+      }
+    }
     // Ticket 80: the access pick rides create_session's defaults — the
     // created session's gate opens on the picked tier with NO
     // set_access_mode command ever sent.
@@ -3371,6 +3434,107 @@ export function startSmokeIfEnabled(
       }
     })
     log('terminal_focus_105_done')
+
+    // ---- ticket 132: the ⌘J focus firewall — every entry parameterized ----
+    // The 105 stage proved the mechanics in-session (a shell already
+    // mounted when ⌘J fired). This stage pins the entry the 105 smoke
+    // never covered — ⌘J while a create is STILL IN FLIGHT, where the
+    // bumped request must survive the announcement's workspace remount
+    // and land in the NEW session's shell (pre-fix the caret fell to
+    // <body>: the operator's 新开会话 + ⌘J recurrence) — and re-runs the
+    // classic in-session and bridge swap-back entries through the same
+    // leg assert. The boot-empty entry (⌘J with no session at all, the
+    // first shell arriving later) lives up in the empty_state stage — it
+    // needs the no-session boot window that only exists there.
+    log('terminal_focus_132_start')
+    await withWindow(getWindow, async (win) => {
+      const js = (code: string): Promise<unknown> => win.webContents.executeJavaScript(code)
+      const pressJ = (alt: boolean): Promise<unknown> =>
+        win.webContents.executeJavaScript(
+          `window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyJ', altKey: ${alt}, metaKey: true, bubbles: true }))`
+        )
+      const DOCK_STATE = `(() => {
+        const dock = document.querySelector('.terminal-dock')
+        if (!dock || dock.hasAttribute('data-closed')) return 'closed'
+        const panels = Array.from(document.querySelectorAll('.dock-panel'))
+        if (panels[0]?.style.display !== 'none') return 'terminal'
+        if (panels[1]?.style.display !== 'none') return 'bridge'
+        return 'unknown'
+      })()`
+      const FOCUS_IN_TERM = `document.activeElement !== null && document.activeElement.classList.contains('xterm-helper-textarea')`
+      const ensureDockState = async (state: string, message: string): Promise<void> => {
+        if (!(await waitForProbe(win, `${DOCK_STATE} === '${state}'`, 5_000))) fail(message)
+      }
+      /** The parameterized leg assert — one truth for every ⌘J entry:
+      * the dock shows the terminal AND the shell holds input focus. */
+      const ensureShellFocused = async (leg: string): Promise<void> => {
+        await ensureDockState('terminal', `ticket 132 (${leg}): the dock never showed the terminal panel`)
+        if (!(await waitForProbe(win, FOCUS_IN_TERM, 5_000))) {
+          fail(`ticket 132 (${leg}): the shell never took input focus (activeElement is not the xterm textarea)`)
+        }
+        log(`terminal_focus_132_${leg}_ok`)
+      }
+
+      // Normalize: every leg starts from the closed dock.
+      const foundState132 = (await js(DOCK_STATE)) as string
+      for (let i = 0; i < 2 && ((await js(DOCK_STATE)) as string) !== 'closed'; i++) {
+        await pressJ(false)
+        await ensureDockState('closed', 'ticket 132: the dock never normalized to closed')
+      }
+      if (((await js(DOCK_STATE)) as string) !== 'closed') fail('ticket 132: the dock never normalized to closed')
+
+      // Leg 1 (in-session): plain ⌘J with a focused session — the 105 leg-1
+      // shape, re-run through the parameterized assert.
+      await pressJ(false)
+      await ensureShellFocused('in_session')
+
+      // Leg 2 (new-session, create in flight): tag the CURRENT shell, then
+      // dispatch a real create in a FRESH cwd and press ⌘J immediately —
+      // while the host is still booting the session. The announcement
+      // remounts the workspace (a new, untagged xterm must appear), and the
+      // ⌘J request must land in the NEW shell — pre-fix the serve hit the
+      // old shell and the remount dropped the caret to <body>.
+      await pressJ(false)
+      await ensureDockState('closed', 'ticket 132: the dock never closed before the new-session leg')
+      await js(`(() => { const el = document.querySelector('.terminal-dock .xterm'); if (el instanceof HTMLElement) el.dataset.t132Old = '1'; return true })()`)
+      const t132Cwd = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-t132-'))
+      supervisor.createSession(t132Cwd)
+      await pressJ(false)
+      const remounted = await waitForProbe(
+        win,
+        `document.querySelector('.terminal-dock .xterm:not([data-t132-old])') !== null`,
+        20_000
+      )
+      if (!remounted) fail('ticket 132 (new-session): the announced session never remounted the workspace on its fresh cwd')
+      await ensureShellFocused('new_session')
+
+      // Leg 3 (bridge swap-back): ⌥⌘J shows the bridge — the hidden
+      // terminal must NOT hold focus (ticket 105 semantics) — and ⌘J swaps
+      // back with the shell focused.
+      await pressJ(false)
+      await ensureDockState('closed', 'ticket 132: the dock never closed before the bridge leg')
+      await pressJ(true)
+      await ensureDockState('bridge', 'ticket 132: ⌥⌘J never showed the bridge panel')
+      await new Promise((r) => setTimeout(r, 300))
+      if ((await js(FOCUS_IN_TERM)) === true) {
+        fail('ticket 132: the hidden terminal still holds focus while the bridge shows')
+      }
+      await pressJ(false)
+      await ensureShellFocused('bridge_swap_back')
+
+      // Restore the dock as found.
+      await pressJ(false)
+      await ensureDockState('closed', 'ticket 132: the dock never closed for restore')
+      if (foundState132 === 'terminal') {
+        await pressJ(false)
+        await ensureDockState('terminal', 'ticket 132: the restore never reopened the terminal')
+      } else if (foundState132 === 'bridge') {
+        await pressJ(true)
+        await ensureDockState('bridge', 'ticket 132: the restore never reopened the bridge')
+      }
+    })
+    log('terminal_focus_132_done')
+
 
     // ---- ticket 31: preview multi-tab — per-file tabs, the management
     // dropdown, and recently closed persistence across a renderer restart ----

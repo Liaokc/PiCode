@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState, type Dispatch, type JSX, type PointerEvent, type RefObject } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Dispatch, type JSX, type PointerEvent } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
-import type { DockAction } from '../../../shared/dock-model'
+import { terminalFocusServeDecision, type DockAction } from '../../../shared/dock-model'
+import { EDITABLE_FOCUS_SELECTOR } from '../../../shared/composer/focus-discipline'
 import type { PtyFactory, PtyHandle } from '../../../shared/terminal/pty'
 import { TerminalSession, type TerminalLifecycle } from '../../../shared/terminal/terminal-session'
 import { CloseIcon, PlusIcon, RefreshIcon, TerminalSquareIcon } from './icons'
@@ -36,6 +37,11 @@ interface TerminalDockProps {
    * means a dock action just made this panel the visible one (⌘J / titlebar
    * toggle / bridge swap-in / +) and the shell must take input focus. */
   focusSeq: number
+  /** Ticket 132: whether the terminal is the dock's VISIBLE panel right
+   * now (frame open + terminal selected). A focus request that cannot be
+   * served yet is cancelled the moment this goes false — close, bridge
+   * swap — so a hidden shell is never focused (the ticket-105 rule). */
+  visible: boolean
 }
 
 export default function TerminalDock({
@@ -46,7 +52,8 @@ export default function TerminalDock({
   gen,
   fontStack,
   dispatch,
-  focusSeq
+  focusSeq,
+  visible
 }: TerminalDockProps): JSX.Element {
   // TerminalWorkspace registers its live focus handle here on mount and
   // clears it on unmount. The seq-diff lives in THIS component (the dock
@@ -55,25 +62,84 @@ export default function TerminalDock({
   // focus; only dock actions do.
   const focusTerminalRef = useRef<(() => void) | null>(null)
   const lastFocusSeq = useRef(focusSeq)
+  // Ticket 132 (the recurrence this dock re-answers): a ⌘J-family bump can
+  // arrive while NO shell is mounted yet (boot empty state, a create still
+  // in flight) or right before the announcement remount replaces the
+  // serving shell. The request is therefore ARMED on the bump and served
+  // whenever a receiver can take it — including by a freshly mounted
+  // workspace — instead of being consumed by a double-rAF with nothing to
+  // focus (the reported recurrence: dock open, caret on <body>).
+  const focusArmedRef = useRef(false)
+  // The unmounting workspace reports whether it held the caret; its
+  // replacement restores it (a create announcement swapping the shell must
+  // not drop the caret the ⌘J just placed). Unrelated task switches never
+  // arm this: their click reclaims the composer first, so the shell does
+  // not hold focus at unmount.
+  const shellHeldFocusRef = useRef(false)
+
+  /** Serve an outstanding focus request after one painted frame (double
+   * rAF, the ticket-105 calibration: an open run flips the frame's
+   * visibility on the first animation frame and a sibling swap just left
+   * display:none — a focus() into a stale-rendered element would silently
+   * miss). The serve decision itself is the Seam-1 table
+   * (terminalFocusServeDecision): armed requests hold until a receiver
+   * registers; a replaced shell's caret is restored unless a live caret
+   * owner took it. */
+  const scheduleServe = useCallback((): void => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const active = document.activeElement
+        const decision = terminalFocusServeDecision({
+          armed: focusArmedRef.current,
+          receiver: focusTerminalRef.current !== null,
+          heldByReplaced: shellHeldFocusRef.current,
+          activeIsEditable: active instanceof HTMLElement && active.matches(EDITABLE_FOCUS_SELECTOR)
+        })
+        if (decision === 'serve') {
+          focusArmedRef.current = false
+          shellHeldFocusRef.current = false
+          focusTerminalRef.current?.()
+        } else if (decision === 'stand-down') {
+          shellHeldFocusRef.current = false
+        }
+        // 'hold': no receiver yet — the armed request stays for the next
+        // registration (the mounting race this fix exists for).
+      })
+    })
+  }, [])
 
   useEffect(() => {
     if (focusSeq === lastFocusSeq.current) return
     lastFocusSeq.current = focusSeq
-    // xterm must be visible before focus lands: an open run flips the
-    // frame's visibility on the first animation frame (pane-motion
-    // transitions visibility) and a sibling swap just left display:none —
-    // a focus() into a stale-rendered element would silently miss. Double
-    // rAF = one painted frame with the host actually rendered, then focus
-    // (ticket 105: mount-timing discretion).
-    let inner = 0
-    const outer = requestAnimationFrame(() => {
-      inner = requestAnimationFrame(() => focusTerminalRef.current?.())
-    })
-    return () => {
-      cancelAnimationFrame(outer)
-      cancelAnimationFrame(inner)
+    focusArmedRef.current = true
+    scheduleServe()
+  }, [focusSeq, scheduleServe])
+
+  // The panel stopped being the visible one (close / bridge swap): an
+  // unserved request is cancelled — a hidden shell is never focused
+  // (ticket 105: the bridge must not find the terminal holding focus).
+  useEffect(() => {
+    if (!visible) {
+      focusArmedRef.current = false
+      shellHeldFocusRef.current = false
     }
-  }, [focusSeq])
+  }, [visible])
+
+  /** The workspace's registration: a live focus handle on mount, null (with
+   * whether it held the caret) on unmount. A registration is also a serve
+   * opportunity — the armed request from a bump that raced the mount, or
+   * the replaced shell's caret, land here. */
+  const registerTerminalFocus = useCallback(
+    (focus: (() => void) | null, heldByReplaced = false): void => {
+      focusTerminalRef.current = focus
+      if (focus === null) {
+        shellHeldFocusRef.current = heldByReplaced
+      } else {
+        scheduleServe()
+      }
+    },
+    [scheduleServe]
+  )
 
   return (
     <>
@@ -128,7 +194,7 @@ export default function TerminalDock({
             key={`${workspaceCwd}:${gen}`}
             cwd={workspaceCwd}
             fontStack={fontStack}
-            focusRef={focusTerminalRef}
+            registerFocus={registerTerminalFocus}
           />
         )}
       </div>
@@ -175,13 +241,15 @@ interface TerminalKit {
 interface TerminalWorkspaceProps {
   cwd: string
   fontStack: string
-  /** Registered with the live kit's focus and nulled on unmount (ticket
-   * 105): the parent's seq-diff calls it exactly when a dock action asks
-   * for shell focus. */
-  focusRef: RefObject<(() => void) | null>
+  /** Registered with the live kit's focus on mount, and with null (plus
+   * whether the workspace held the caret) on unmount (ticket 105 + 132):
+   * the parent serves its focus-request state machine exactly when a dock
+   * action asks for shell focus — including when the ask raced this
+   * mount, or when a replacement workspace must restore the caret. */
+  registerFocus: (focus: (() => void) | null, heldByReplaced?: boolean) => void
 }
 
-function TerminalWorkspace({ cwd, fontStack, focusRef }: TerminalWorkspaceProps): JSX.Element {
+function TerminalWorkspace({ cwd, fontStack, registerFocus }: TerminalWorkspaceProps): JSX.Element {
   const rootRef = useRef<HTMLDivElement | null>(null)
   const userHostRef = useRef<HTMLDivElement | null>(null)
   const kitRef = useRef<TerminalKit | null>(null)
@@ -208,7 +276,7 @@ function TerminalWorkspace({ cwd, fontStack, focusRef }: TerminalWorkspaceProps)
     userTerm.onData((data) => session.handleInput(data))
     const kit: TerminalKit = { id, userTerm, userFit, session }
     kitRef.current = kit
-    focusRef.current = () => kit.userTerm.focus()
+    registerFocus(() => kit.userTerm.focus())
 
     fit()
     session.start({ cwd, cols: userTerm.cols, rows: userTerm.rows })
@@ -236,11 +304,27 @@ function TerminalWorkspace({ cwd, fontStack, focusRef }: TerminalWorkspaceProps)
       window.picode.terminal.kill(id)
       userTerm.dispose()
       kitRef.current = null
-      focusRef.current = null
     }
-    // focusRef is a stable ref object handed down by TerminalDock; it is
-    // listed to satisfy the hooks lint and can never re-run this effect.
-  }, [cwd, fontStack, focusRef])
+    // registerFocus is a stable callback handed down by TerminalDock; it
+    // is listed to satisfy the hooks lint and can never re-run this effect.
+  }, [cwd, fontStack, registerFocus])
+
+  // Ticket 132: capture whether this workspace held the caret as it is
+  // REPLACED (a create announcement remounting the workspace on a new cwd) —
+  // from a LAYOUT-effect cleanup, which runs while the DOM is still
+  // attached. A passive cleanup would be too late: the removal of the
+  // focused textarea has already reset focus to <body>, and the truthful
+  // answer would be lost. The kit is read through kitRef because the
+  // mount effect's own (passive) cleanup runs after this one and is the
+  // thing that nulls it.
+  useLayoutEffect(() => {
+    return () => {
+      const kit = kitRef.current
+      const heldByReplaced =
+        kit !== null && kit.userTerm.textarea !== undefined && document.activeElement === kit.userTerm.textarea
+      registerFocus(null, heldByReplaced)
+    }
+  }, [registerFocus])
 
   const restart = useCallback((): void => {
     const kit = kitRef.current

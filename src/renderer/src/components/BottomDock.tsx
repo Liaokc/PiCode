@@ -152,6 +152,7 @@ export default function BottomDock({
           fontStack={fontStack}
           dispatch={dispatch}
           focusSeq={dock.focusSeq}
+          visible={dock.open && showingTerminal}
         />
       </div>
       <div className="dock-panel" style={{ display: showingTerminal ? 'none' : 'flex' }}>
