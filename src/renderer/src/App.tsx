@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type JSX } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type JSX } from 'react'
 import {
   awaitingApprovalSessionIds,
   focusedSession,
@@ -16,9 +16,10 @@ import { groupTurns } from '../../shared/turn-collapse'
 import type { HostToParent, SessionCommand, SessionScopedEvent } from '../../shared/contract'
 import type { PanelTabId } from '../../shared/panel-model'
 import { resolvePreviewPath } from '../../shared/preview/policy'
-import { initialShellUiState, shellUiReducer, SIDEBAR_WIDTH_PX, SIDEBAR_MIN_WIDTH_PX, MAIN_ZONE_MIN_WIDTH_PX, clampSidebarWidth, shouldAutoCollapseSidePanel, type ShellUiAction } from '../../shared/layout-model'
+import { initialShellUiState, shellUiReducer, planRightPaneWidthSwap, SIDEBAR_WIDTH_PX, SIDEBAR_MIN_WIDTH_PX, MAIN_ZONE_MIN_WIDTH_PX, clampSidebarWidth, shouldAutoCollapseSidePanel, type ShellUiAction } from '../../shared/layout-model'
 import { resolveKeybinding } from '../../shared/keymap'
 import { initialPanelState, normalizeRecentlyClosed, panelReducer, PANEL_DEFAULT_WIDTH_PX, PANEL_MIN_WIDTH_PX, clampPanelWidth, type PanelAction } from '../../shared/panel-model'
+import { initialSubagentPanelState, subagentPanelReducer, SUBAGENT_PANEL_FIXED_TAB } from '../../shared/subagent-panel-model'
 import { initialDockState, dockReducer } from '../../shared/dock-model'
 import { projectPaneMotion } from '../../shared/pane-motion'
 import { initialBridgeFeedState, projectBridgeFeed } from '../../shared/bridge/feed'
@@ -65,6 +66,7 @@ import TitleBar from './components/TitleBar'
 import Sidebar from './components/Sidebar'
 import EmptyState from './components/EmptyState'
 import SidePanel from './components/SidePanel'
+import SubagentPanel, { type SubagentChatBridge } from './components/SubagentPanel'
 import BottomDock from './components/BottomDock'
 import ChatView, { RENAME_EVENT } from './components/ChatView'
 import { OPEN_MODEL_MENU_EVENT, OPEN_THINKING_MENU_EVENT, PREFILL_EVENT, TOGGLE_EXPAND_EVENT } from './components/Composer'
@@ -175,6 +177,10 @@ export default function App(): JSX.Element {
   }))
   /** Panel tab framework state (tabs, picker, dragged width) — ticket 06. */
   const [panel, panelDispatch] = useReducer(panelReducer, undefined, initialPanelState)
+  /** Subagent sidebar state (ticket 136): the fixed directory tab + the
+   * per-run conversation tabs + the dragged width. Same tab framework
+   * (PanelState) under the subagent-panel guards. */
+  const [subagentPanel, subagentPanelDispatch] = useReducer(subagentPanelReducer, undefined, initialSubagentPanelState)
   /** Bottom dock (ticket 18, sibling-panel revision): ONE frame hosting the
    * terminal (⌘J) and Agent Bridge (⌥⌘J) panels; launches collapsed (18f). */
   const [dock, dockDispatch] = useReducer(dockReducer, undefined, initialDockState)
@@ -354,6 +360,7 @@ export default function App(): JSX.Element {
         // through the RAW dispatches — seeding must not re-persist.
         dispatch({ type: 'set-sidebar-width', width: snapshot.preferences.sidebarWidth })
         panelDispatch({ type: 'set-width', width: snapshot.preferences.panelWidth })
+        subagentPanelDispatch({ type: 'set-width', width: snapshot.preferences.subagentPanelWidth })
         setSettingsLoaded(true)
         const closed = normalizeRecentlyClosed(snapshot.preferences.recentlyClosedTabs)
         panelDispatch({ type: 'hydrate-recently-closed', entries: closed })
@@ -392,11 +399,14 @@ export default function App(): JSX.Element {
     return window.picode.sessions.onIndexChanged(refreshSessions)
   }, [refreshSessions])
 
-  // Ticket 90: the Subagents directory's live refresh is EVENT-DRIVEN (the
-  // umbrella spec's zero-polling red line): lifecycle events and the
-  // session announcement re-pull the bridge snapshot; opening the tab adds
-  // one user-initiated pull. No interval ever runs.
-  const subagentsTabActive = panel.activeTab?.kind === 'subagents' && panel.openTabs.some((tab) => tab.kind === 'subagents')
+  // Ticket 90 (hosted in the subagent sidebar since ticket 136): the
+  // directory's live refresh is EVENT-DRIVEN (the umbrella spec's
+  // zero-polling red line): lifecycle events and the session announcement
+  // re-pull the bridge snapshot; opening the sidebar adds one
+  // user-initiated pull (the open flag is part of the gate so a reopen
+  // re-pulls too). No interval ever runs.
+  const subagentsTabActive =
+    ui.subagentPanelOpen && subagentPanel.activeTab?.kind === 'subagents' && subagentPanel.openTabs.some((tab) => tab.kind === 'subagents')
   useEffect(() => {
     const id = focusedIdRef.current
     if (!subagentsTabActive || id === null) return
@@ -1023,10 +1033,43 @@ export default function App(): JSX.Element {
   sidebarWidthRef.current = ui.sidebarWidth
   const panelWidthRef = useRef(panel.width)
   panelWidthRef.current = panel.width
+  const subagentPanelWidthRef = useRef(subagentPanel.width)
+  subagentPanelWidthRef.current = subagentPanel.width
   const sidebarOpenRef = useRef(ui.sidebarOpen)
   sidebarOpenRef.current = ui.sidebarOpen
   const panelOpenRef = useRef(ui.sidePanelOpen)
   panelOpenRef.current = ui.sidePanelOpen
+  const subagentPanelOpenRef = useRef(ui.subagentPanelOpen)
+  subagentPanelOpenRef.current = ui.subagentPanelOpen
+
+  // Ticket 136: the right-pane swap's width inheritance. The shell reducer
+  // folds the other pane's flag in the same commit as the open; this layout
+  // effect (pre-paint, so the swap never flickers) applies the pure swap
+  // plan — the opener takes the folded pane's width, which the fold never
+  // touched, so it is exactly the width the pane held open. The pane-range
+  // clamp only: the inherited width already held against the same sidebar
+  // and main floor, and the folded pane is gone in this same commit. The
+  // manual-collapse legs match no swap row and inherit nothing.
+  const paneSwapRef = useRef({ sidePanelOpen: false, subagentPanelOpen: false })
+  useLayoutEffect(() => {
+    const prev = paneSwapRef.current
+    const next = { sidePanelOpen: ui.sidePanelOpen, subagentPanelOpen: ui.subagentPanelOpen }
+    paneSwapRef.current = next
+    const plan = planRightPaneWidthSwap(prev, next)
+    if (plan === 'side-inherits-subagent') {
+      const inherited = clampPanelWidth(subagentPanelWidthRef.current)
+      if (inherited !== panel.width) {
+        panelDispatch({ type: 'set-width', width: inherited })
+        void handleSetPreferences({ panelWidth: inherited })
+      }
+    } else if (plan === 'subagent-inherits-side') {
+      const inherited = clampPanelWidth(panelWidthRef.current)
+      if (inherited !== subagentPanel.width) {
+        subagentPanelDispatch({ type: 'set-width', width: inherited })
+        void handleSetPreferences({ subagentPanelWidth: inherited })
+      }
+    }
+  }, [ui.sidePanelOpen, ui.subagentPanelOpen, panel.width, subagentPanel.width, handleSetPreferences])
 
   // Ticket 86: closing the LAST panel tab must collapse the panel — an open
   // shell showing only the "Open a Tab" picker is not a resting state. The
@@ -1053,7 +1096,10 @@ export default function App(): JSX.Element {
       if (action.type === 'set-sidebar-width') {
         const bound = Math.max(
           SIDEBAR_MIN_WIDTH_PX,
-          window.innerWidth - (panelOpenRef.current ? panelWidthRef.current : 0) - MAIN_ZONE_MIN_WIDTH_PX
+          window.innerWidth -
+            (panelOpenRef.current ? panelWidthRef.current : 0) -
+            (subagentPanelOpenRef.current ? subagentPanelWidthRef.current : 0) -
+            MAIN_ZONE_MIN_WIDTH_PX
         )
         const width = Math.min(clampSidebarWidth(action.width), bound)
         dispatch({ type: 'set-sidebar-width', width })
@@ -1075,7 +1121,10 @@ export default function App(): JSX.Element {
       if (action.type === 'set-width') {
         const bound = Math.max(
           PANEL_MIN_WIDTH_PX,
-          window.innerWidth - (sidebarOpenRef.current ? sidebarWidthRef.current : 0) - MAIN_ZONE_MIN_WIDTH_PX
+          window.innerWidth -
+            (sidebarOpenRef.current ? sidebarWidthRef.current : 0) -
+            (subagentPanelOpenRef.current ? subagentPanelWidthRef.current : 0) -
+            MAIN_ZONE_MIN_WIDTH_PX
         )
         const width = Math.min(clampPanelWidth(action.width), bound)
         panelDispatch({ type: 'set-width', width })
@@ -1088,6 +1137,33 @@ export default function App(): JSX.Element {
         return
       }
       panelDispatch(action)
+    },
+    [handleSetPreferences]
+  )
+
+  /** Ticket 136: the subagent sidebar's width commits — the same clamp and
+   * persistence contract as the side panel's (the shared width system). */
+  const dispatchSubagentPanelPersisting = useCallback(
+    (action: PanelAction): void => {
+      if (action.type === 'set-width') {
+        const bound = Math.max(
+          PANEL_MIN_WIDTH_PX,
+          window.innerWidth -
+            (sidebarOpenRef.current ? sidebarWidthRef.current : 0) -
+            (panelOpenRef.current ? panelWidthRef.current : 0) -
+            MAIN_ZONE_MIN_WIDTH_PX
+        )
+        const width = Math.min(clampPanelWidth(action.width), bound)
+        subagentPanelDispatch({ type: 'set-width', width })
+        if (width !== subagentPanelWidthRef.current) void handleSetPreferences({ subagentPanelWidth: width })
+        return
+      }
+      if (action.type === 'reset-width') {
+        subagentPanelDispatch(action)
+        if (subagentPanelWidthRef.current !== PANEL_DEFAULT_WIDTH_PX) void handleSetPreferences({ subagentPanelWidth: PANEL_DEFAULT_WIDTH_PX })
+        return
+      }
+      subagentPanelDispatch(action)
     },
     [handleSetPreferences]
   )
@@ -1559,20 +1635,29 @@ export default function App(): JSX.Element {
     window.picode.chat.sendToHost({ type: 'session_command', sessionId, command: { type: 'abort_turn' } })
   }, [])
 
-  /** Ticket 101: the collapsed panel's badge click — open the panel STRAIGHT
-   * onto the Subagents directory tab (the count the badge showed is exactly
-   * the Running section the operator lands on). */
-  const handleOpenSubagentsPanel = useCallback((): void => {
-    panelDispatch({ type: 'open-tab', tab: { kind: 'subagents' } })
-    dispatch({ type: 'open-side-panel' })
-  }, [panelDispatch, dispatch])
+  /** Ticket 136: the subagents titlebar entry's click. The opening leg
+   * lands on the FIXED directory tab (ticket 101's badge promise, kept: the
+   * count the badge showed is exactly the Running section the operator
+   * lands on) and opens the subagents sidebar — the shell reducer folds an
+   * open side panel and the swap plan inherits its width; the closing leg
+   * is the plain collapse and never opens the other pane. */
+  const handleToggleSubagents = useCallback((): void => {
+    if (subagentPanelOpenRef.current) {
+      dispatch({ type: 'close-subagent-panel' })
+      return
+    }
+    subagentPanelDispatch({ type: 'activate-tab', tab: SUBAGENT_PANEL_FIXED_TAB })
+    dispatch({ type: 'open-subagent-panel' })
+  }, [dispatch])
 
-  /** Ticket 99: the subagent conversation tabs' bridge. The row click opens
-   * a task-named tab (one per parent tool call); the resolver re-projects
-   * the directory row for that call against the registry on every render
+  /** Ticket 99 (hosted in the subagent sidebar since ticket 136): the
+   * subagent conversation tabs' bridge. The row click opens a task-named
+   * tab (one per parent tool call) in the subagents sidebar and opens the
+   * sidebar itself (the same mutex swap); the resolver re-projects the
+   * directory row for that call against the registry on every render
    * (live badge flips reach the tab without it owning state); steers
    * target the run's own session host. */
-  const subagentChatBridge = useMemo(
+  const subagentChatBridge = useMemo<SubagentChatBridge>(
     () => ({
       resolve: (tab: Extract<PanelTabId, { kind: 'subagent-chat' }>): { sessionId: string; row: SubagentDirectoryRow | null } | null => {
         const session = registryRef.current.sessions.find((s) => s.id === tab.sessionId)
@@ -1591,13 +1676,14 @@ export default function App(): JSX.Element {
       onOpenChat: (row: SubagentDirectoryRow): void => {
         const id = focusedIdRef.current
         if (id === null) return
-        panelDispatch({
+        subagentPanelDispatch({
           type: 'open-tab',
           tab: { kind: 'subagent-chat', sessionId: id, callId: row.id, title: row.title }
         })
+        dispatch({ type: 'open-subagent-panel' })
       }
     }),
-    [panelDispatch, handleSubagentStopRun]
+    [subagentPanelDispatch, dispatch, handleSubagentStopRun]
   )
 
   /** Ticket 101: the directory tab's stop dispatch targets the FOCUSED
@@ -1611,10 +1697,10 @@ export default function App(): JSX.Element {
     [handleSubagentStopRun]
   )
 
-  /** Ticket 101: the focused session's live subagent run count — the
-   * collapsed panel's toggle badge (zero → no badge). The same directory
-   * projection the Subagents tab renders, so the badge never promises a
-   * count the directory won't show. */
+  /** Ticket 101 (badge host moves to the subagents entry, ticket 136): the
+   * focused session's live subagent run count — the entry's badge (zero → no
+   * badge). The same directory projection the directory tab renders, so the
+   * badge never promises a count the directory won't show. */
   const subagentRunningCount = useMemo(
     () =>
       focused !== null
@@ -1809,6 +1895,7 @@ export default function App(): JSX.Element {
    * reflowing while the edge slides. */
   const sidebarMotion = projectPaneMotion(ui.sidebarOpen, ui.sidebarWidth)
   const panelMotion = projectPaneMotion(ui.sidePanelOpen, panel.width)
+  const subagentPanelMotion = projectPaneMotion(ui.subagentPanelOpen, subagentPanel.width)
   const dockMotion = projectPaneMotion(dock.open, dock.height)
 
   return (
@@ -1826,6 +1913,8 @@ export default function App(): JSX.Element {
           '--sidebar-content-w': sidebarMotion.content,
           '--panel-w': panelMotion.pane,
           '--panel-content-w': panelMotion.content,
+          '--subagent-panel-w': subagentPanelMotion.pane,
+          '--subagent-panel-content-w': subagentPanelMotion.content,
           '--dock-h': dockMotion.pane,
           '--dock-content-h': dockMotion.content
         } as CSSProperties
@@ -1836,7 +1925,7 @@ export default function App(): JSX.Element {
         dispatch={dispatchShellParking}
         dispatchDock={dockDispatch}
         subagentRunningCount={subagentRunningCount}
-        onOpenSubagents={handleOpenSubagentsPanel}
+        onToggleSubagents={handleToggleSubagents}
       />
       <Sidebar
         open={ui.sidebarOpen}
@@ -1956,6 +2045,16 @@ export default function App(): JSX.Element {
             workspaceCwd={chat.session?.cwd ?? null}
             onPreviewNavigate={handlePreviewNavigate}
             resolveTurnChanges={resolveTurnChanges}
+          />
+          {/* Ticket 136: the subagents' dedicated right sidebar — same
+              geometry and tab language as the side panel, hosting the fixed
+              directory tab + the per-run conversation tabs. Mutually
+              exclusive with the side panel (opening either folds the other
+              and inherits its width — the swap plan). */}
+          <SubagentPanel
+            open={ui.subagentPanelOpen}
+            panel={subagentPanel}
+            dispatch={dispatchSubagentPanelPersisting}
             subagentsDirectory={
               focused !== null
                 ? {

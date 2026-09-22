@@ -1,6 +1,5 @@
 import { useRef, useState, type Dispatch, type JSX, type PointerEvent } from 'react'
 import { PANEL_EMPTY_TABS } from '../../../shared/layout-model'
-import type { ChatEntry } from '../../../shared/chat-reducer'
 import type { TurnFileChange } from '../../../shared/turn-files'
 import {
   clampPanelWidth,
@@ -15,24 +14,9 @@ import ReviewTab from './ReviewTab'
 import PreviewTab from './PreviewTab'
 import TraceTab from './TraceTab'
 import TurnDiffTab from './TurnDiffTab'
-import SubagentsTab from './SubagentsTab'
-import SubagentChatTab from './SubagentChatTab'
 import PanelTabMenu, { panelTabGlyph } from './PanelTabMenu'
 import Tooltip from './Tooltip'
 import { ChevronDownIcon, CloseIcon, FileTextIcon, PlusIcon } from './icons'
-import type { SubagentDirectoryRow } from '../../../shared/subagents/directory'
-
-/** Ticket 99: how the panel resolves one open subagent-chat tab against the
- * session registry (the row context) and sends its steers. Ticket 101 adds
- * the stop flow's dispatch (async → the stop RPC; foreground → abort). */
-export interface SubagentChatBridge {
-  resolve: (tab: Extract<PanelTabId, { kind: 'subagent-chat' }>) => { sessionId: string; row: SubagentDirectoryRow | null } | null
-  onSteer: (sessionId: string, asyncId: string, requestId: string, text: string) => void
-  /** Stop one run: the conversation tab's head stop button → confirm → this. */
-  onStop: (sessionId: string, row: SubagentDirectoryRow) => void
-  /** Open one run's conversation tab (the directory row click). */
-  onOpenChat: (row: SubagentDirectoryRow) => void
-}
 
 interface SidePanelProps {
   /** Open/closed shell state (⌥⌘B / titlebar toggle, ticket 27). The panel
@@ -49,16 +33,6 @@ interface SidePanelProps {
    * changes for one turn, or null when the turn is not in view. The panel
    * re-resolves on every render so a live turn's tab grows with it. */
   resolveTurnChanges?: (turnId: string) => TurnFileChange[] | null
-  /** Ticket 90: the FOCUSED session's subagent directory data — transcript
-   * entries + the bridge's live run states. null while no session view is
-   * focused (the tab renders its empty state). */
-  subagentsDirectory?: { sessionId: string; entries: readonly ChatEntry[]; runs: Readonly<Record<string, import('../../../shared/subagents/types').SubagentRunState>>; stopping?: ReadonlySet<string> } | null
-  /** Ticket 101: stop one running run (the directory row's stop button →
-   * its confirm popover → the App's dispatch). Absent → no stop affordance. */
-  onStopSubagent?: (row: SubagentDirectoryRow) => void
-  /** Ticket 99: the subagent conversation tabs' resolver + steer sender +
-   * the directory row click handler. */
-  subagentChat?: SubagentChatBridge
 }
 
 /**
@@ -66,9 +40,12 @@ interface SidePanelProps {
  * draggable width, a per-file tab strip (every deep-linked file gets its own
  * tab; the call-trace slot rides the same framework), the ⌄ tab-management
  * dropdown, and the screenshot-03 "Open a Tab" picker whenever no tab
- * content is showing. Open tabs stay mounted (hidden with display:none)
- * while another tab is active — switching tabs must not kill Preview state.
- * Collapsing the panel lives in the titlebar toggle + ⌥⌘B (ticket 27).
+ * content is showing. Ticket 136 moved the Subagents directory and the
+ * subagent conversation tabs to their OWN right sidebar (the titlebar
+ * entry) — this panel hosts the preview/review/trace/diff tabs only. Open
+ * tabs stay mounted (hidden with display:none) while another tab is active
+ * — switching tabs must not kill Preview state. Collapsing the panel lives
+ * in the titlebar toggle + ⌥⌘B (ticket 27).
  *
  * Drag width (ticket 30): pointermove NEVER dispatches. The raw drag width is
  * rAF-coalesced and written straight to the aside's style — zero React renders
@@ -90,10 +67,7 @@ export default function SidePanel({
   dispatch,
   workspaceCwd,
   onPreviewNavigate,
-  resolveTurnChanges,
-  subagentsDirectory,
-  onStopSubagent,
-  subagentChat
+  resolveTurnChanges
 }: SidePanelProps): JSX.Element {
   const drag = useRef<{ startX: number; startWidth: number; width: number; raf: number } | null>(null)
   const frameRef = useRef<HTMLElement | null>(null)
@@ -152,7 +126,7 @@ export default function SidePanel({
 
   const showPicker = panel.pickerOpen || panel.openTabs.length === 0
 
-  function tabBody(tab: PanelTabId): JSX.Element {
+  function tabBody(tab: PanelTabId): JSX.Element | null {
     switch (tab.kind) {
       case 'review':
         return (
@@ -181,49 +155,10 @@ export default function SidePanel({
         // changes, rendered in the Review tab's diff language. Identity =
         // turn id; the body resolves against the active session's view.
         return <TurnDiffTab turnId={tab.turnId} changes={resolveTurnChanges?.(tab.turnId) ?? null} />
-      case 'subagents':
-        // The subagent directory (ticket 90): the FOCUSED session's runs in
-        // the ZCode subagentDirectory composition. Fixed identity — the
-        // body re-projects when the focus changes (keyed remount).
-        return subagentsDirectory != null ? (
-          <SubagentsTab
-            key={subagentsDirectory.sessionId}
-            sessionId={subagentsDirectory.sessionId}
-            entries={subagentsDirectory.entries}
-            runs={subagentsDirectory.runs}
-            stopping={subagentsDirectory.stopping}
-            onOpenChat={subagentChat?.onOpenChat}
-            onStop={onStopSubagent}
-          />
-        ) : (
-          <div className="subagents-view subagents-view-idle">
-            <p className="subagents-empty">No running subagents</p>
-          </div>
-        )
-      case 'subagent-chat': {
-        // One subagent's conversation (ticket 99, z17-subagent-chat): the
-        // child transcript + steer composer. The resolver re-projects the
-        // row on every render so live badge flips reach the tab; the tab
-        // is keyed by its identity (session + call), never by the row's
-        // state — closing other tabs or focus switches must not remount it.
-        if (subagentChat === undefined) {
-          return (
-            <div className="subchat-view subchat-view-idle">
-              <p className="subagents-empty">No subagent context</p>
-            </div>
-          )
-        }
-        const resolved = subagentChat.resolve(tab)
-        return (
-          <SubagentChatTab
-            key={`${tab.sessionId}:${tab.callId}`}
-            sessionId={tab.sessionId}
-            row={resolved?.row ?? null}
-            onSteer={subagentChat.onSteer}
-            onStop={subagentChat.onStop}
-          />
-        )
-      }
+      // Ticket 136: the subagent tab kinds moved to their own sidebar —
+      // this panel never opens them, and a stray one renders nothing.
+      default:
+        return null
     }
   }
 
@@ -323,13 +258,11 @@ export default function SidePanel({
                   key={tab}
                   type="button"
                   className="panel-tab-card"
-                  aria-label={`Open ${tab === 'review' ? 'Review' : 'Subagents'} tab`}
-                  onClick={() =>
-                    dispatch({ type: 'open-tab', tab: tab === 'review' ? { kind: 'review' } : { kind: 'subagents' } })
-                  }
+                  aria-label="Open Review tab"
+                  onClick={() => dispatch({ type: 'open-tab', tab: { kind: 'review' } })}
                 >
                   <FileTextIcon />
-                  <span>{tab === 'review' ? 'Review' : 'Subagents'}</span>
+                  <span>Review</span>
                 </button>
               ))}
             </div>

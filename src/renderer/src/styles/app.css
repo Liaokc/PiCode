@@ -231,6 +231,7 @@ kbd {
    direct-write feel); only opacity keeps its curve. */
 .sidebar[data-resizing],
 .side-panel[data-resizing],
+.subagent-panel[data-resizing],
 .terminal-dock[data-resizing] {
   transition: opacity var(--pane-motion-duration) ease-out;
 }
@@ -241,6 +242,7 @@ kbd {
    would animate the width restore — the app must not wiggle while loading. */
 .app-shell:not([data-pane-motion-armed]) .sidebar,
 .app-shell:not([data-pane-motion-armed]) .side-panel,
+.app-shell:not([data-pane-motion-armed]) .subagent-panel,
 .app-shell:not([data-pane-motion-armed]) .terminal-dock {
   transition: none;
 }
@@ -260,7 +262,9 @@ kbd {
   position: relative;
   flex-shrink: 0;
   width: var(--sidebar-w);
-  max-width: max(240px, calc(100% - var(--panel-w, 0px) - 420px));
+  /* Ticket 136: the sidebar yields to whichever RIGHT pane is open (the
+     two are mutually exclusive, so at most one term is non-zero). */
+  max-width: max(240px, calc(100% - var(--panel-w, 0px) - var(--subagent-panel-w, 0px) - 420px));
   z-index: 1;
   background: var(--bg-sidebar);
   padding-top: var(--titlebar-h);
@@ -3606,6 +3610,44 @@ button.heat:hover {
   border-left-width: 0;
 }
 
+/* ---------- subagents sidebar (ticket 136) ---------- */
+
+/* The subagents' dedicated right sidebar: the side panel's exact geometry
+   and visual language (same clamp/default width system, same pane-motion
+   open/close run, same left-edge resizer and closed end state) on its own
+   projected variables, so the two right panes — mutually exclusive, each
+   always mounted — never read each other's sizes. The tab strip and tab
+   bodies reuse the .panel-* classes wholesale. */
+.subagent-panel {
+  position: relative;
+  background: var(--bg-main);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: var(--subagent-panel-w);
+  max-width: max(280px, calc(100% - 420px));
+  z-index: 1;
+  transition:
+    width var(--pane-motion-duration) ease-out,
+    opacity var(--pane-motion-duration) ease-out,
+    visibility var(--pane-motion-duration) ease-out,
+    border-left-width var(--pane-motion-duration) ease-out;
+}
+
+.subagent-panel[data-closed] {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  border-left-width: 0;
+}
+
+/* The pinned content wrapper sizes by THIS pane's content variable (the
+   shared .panel-pin rule reads the side panel's). */
+.subagent-panel .panel-pin {
+  width: var(--subagent-panel-content-w);
+}
+
 .panel-clip {
   flex: 1;
   min-height: 0;
@@ -6719,8 +6761,10 @@ button.preview-crumb:hover {
 }
 
 /* Always-visible grip line so the drag affordance is discoverable.
- * Hover feedback comes from the wider .panel-resizer overlay on top. */
-.side-panel::before {
+ * Hover feedback comes from the wider .panel-resizer overlay on top.
+ * Ticket 136: the subagents sidebar carries the same grip on its edge. */
+.side-panel::before,
+.subagent-panel::before {
   content: '';
   position: absolute;
   top: 0;
@@ -6732,7 +6776,8 @@ button.preview-crumb:hover {
   cursor: col-resize;
 }
 
-.side-panel:hover::before {
+.side-panel:hover::before,
+.subagent-panel:hover::before {
   background: var(--border-strong);
 }
 
@@ -7426,11 +7471,12 @@ button.preview-crumb:hover {
 }
 
 /* Reduced motion cuts every pane's open/close to the instant end state.
-   Lives AFTER all three pane sections: same specificity as the base rules,
+   Lives AFTER all the pane sections: same specificity as the base rules,
    so source order decides — this must come last. */
 @media (prefers-reduced-motion: reduce) {
   .sidebar,
   .side-panel,
+  .subagent-panel,
   .terminal-dock {
     transition: none;
   }

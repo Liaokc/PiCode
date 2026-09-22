@@ -56,9 +56,11 @@ describe('SettingsService', () => {
       sidebarSort: 'updated',
       // Pre-ticket-84 documents have no drag arrangement — the empty order.
       sidebarManualOrder: { groups: [], sessions: {} },
-      // Pre-ticket-29 documents have no pane widths — the defaults apply.
+      // Pre-ticket-29 documents have no pane widths — the defaults apply
+      // (ticket 136 adds the subagents sidebar to the same contract).
       sidebarWidth: 320,
-      panelWidth: 420
+      panelWidth: 420,
+      subagentPanelWidth: 420
     })
     expect(snapshot.lastUsedDirectory).toBe('/Users/dev/projects/api-server')
   })

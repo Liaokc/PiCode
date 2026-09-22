@@ -3740,7 +3740,7 @@ export function startSmokeIfEnabled(
         }
 
         // Open the Review tab through the picker when it is not open.
-        const reviewInStrip = `( !!Array.from(document.querySelectorAll('.panel-tab-label span')).find((el) => el.textContent === 'Review') )`
+        const reviewInStrip = `( !!Array.from(document.querySelectorAll('.side-panel .panel-tab-label span')).find((el) => el.textContent === 'Review') )`
         if (!((await js(reviewInStrip)) as boolean)) {
           await js(`document.querySelector('.panel-add-tab')?.click(); true`)
           for (let waited = 0; waited < 5_000; waited += 100) {
@@ -3758,15 +3758,15 @@ export function startSmokeIfEnabled(
         const clickChip = (row: number): string =>
           `(() => { const rows = document.querySelectorAll('.review-tree-file'); const chip = rows[${row}]?.querySelector('.review-tree-open'); if (chip instanceof HTMLElement) { chip.click(); return true } return false })()`
         /** Number of tabs in the strip. */
-        const TAB_COUNT = `document.querySelectorAll('.panel-tab-label span').length`
+        const TAB_COUNT = `document.querySelectorAll('.side-panel .panel-tab-label span').length`
         const tabLabels = async (): Promise<string[]> =>
           JSON.parse((await js(
-            `JSON.stringify(Array.from(document.querySelectorAll('.panel-tab-label span')).map((el) => el.textContent))`
+            `JSON.stringify(Array.from(document.querySelectorAll('.side-panel .panel-tab-label span')).map((el) => el.textContent))`
           )) as string) as string[]
         /** Click the strip tab whose label matches, or its close button. */
         const tabWithLabel = (label: string, action: 'activate' | 'close'): string =>
           `(() => {
-            for (const tabEl of document.querySelectorAll('.panel-tab')) {
+            for (const tabEl of document.querySelectorAll('.side-panel .panel-tab')) {
               if (tabEl.querySelector('.panel-tab-label span')?.textContent !== '${label}') continue
               const target = tabEl.querySelector('${action === 'activate' ? '.panel-tab-label' : '.panel-tab-close'}')
               if (target instanceof HTMLElement) { target.click(); return true }
@@ -3787,11 +3787,11 @@ export function startSmokeIfEnabled(
         // The crumb lives in the ACTIVE tab's BODY (the strip tab carries no
         // content) — select via the body that is not hidden.
         await js(
-          `(() => { const crumb = document.querySelector('.panel-tab-body:not(.panel-tab-body-hidden) button.preview-crumb'); if (crumb instanceof HTMLElement) { crumb.click(); return true } return false })()`
+          `(() => { const crumb = document.querySelector('.side-panel .panel-tab-body:not(.panel-tab-body-hidden) button.preview-crumb'); if (crumb instanceof HTMLElement) { crumb.click(); return true } return false })()`
         )
         await waitForProbe(
           win,
-          `( (${TAB_COUNT}) === 2 && document.querySelector('.panel-tab-active .panel-tab-label span')?.textContent === '${dirLabel}' )`,
+          `( (${TAB_COUNT}) === 2 && document.querySelector('.side-panel .panel-tab-active .panel-tab-label span')?.textContent === '${dirLabel}' )`,
           8_000
         )
         log('panel_retarget_in_place_ok', dirLabel)
@@ -3810,7 +3810,7 @@ export function startSmokeIfEnabled(
         // disturb the other file tab.
         await waitForProbe(win, tabWithLabel(fileLabels[0]!, 'activate'), 5_000)
         const switched = (await js(
-          `document.querySelector('.panel-tab-active .panel-tab-label span')?.textContent`
+          `document.querySelector('.side-panel .panel-tab-active .panel-tab-label span')?.textContent`
         )) as string
         if (switched !== fileLabels[0]) fail(`activation went to '${switched}', expected '${fileLabels[0]}'`)
 
@@ -3904,7 +3904,7 @@ export function startSmokeIfEnabled(
         await waitForProbe(win, clickRecent, 5_000)
         await waitForProbe(
           win,
-          `( !!Array.from(document.querySelectorAll('.panel-tab-label span')).find((el) => el.textContent === '${fileLabels[0]}') )`,
+          `( !!Array.from(document.querySelectorAll('.side-panel .panel-tab-label span')).find((el) => el.textContent === '${fileLabels[0]}') )`,
           5_000
         )
         log('panel_reopen_after_restart_ok')
@@ -3965,7 +3965,7 @@ export function startSmokeIfEnabled(
         // attribute, not element absence.
         const PANEL_OPEN_86 = `(() => { const p = document.querySelector('.side-panel'); return p !== null && !p.hasAttribute('data-closed') })()`
         const PANEL_CLOSED_86 = `(() => { const p = document.querySelector('.side-panel'); return p !== null && p.hasAttribute('data-closed') })()`
-        const TAB_COUNT_86 = `document.querySelectorAll('.panel-tab-label span').length`
+        const TAB_COUNT_86 = `document.querySelectorAll('.side-panel .panel-tab-label span').length`
         // The picker page shown by an OPEN, actually-visible shell.
         // (getClientRects is useless here: a visibility:hidden pane keeps
         // its layout boxes, so rects stay non-empty — the computed shell
@@ -3979,7 +3979,7 @@ export function startSmokeIfEnabled(
           return cs.visibility === 'visible' && cs.opacity !== '0' && panel.offsetWidth > 0
         })()`
         const CLOSE_FIRST_TAB_86 = `(() => {
-          const closeBtn = document.querySelector('.panel-tab .panel-tab-close')
+          const closeBtn = document.querySelector('.side-panel .panel-tab .panel-tab-close')
           if (closeBtn instanceof HTMLElement) { closeBtn.click(); return true }
           return false
         })()`
@@ -4050,7 +4050,7 @@ export function startSmokeIfEnabled(
           fail('ticket-86 stage: the review deep link never opened its file tab')
         }
         const CLOSE_FILE_TAB_86 = `(() => {
-          for (const tabEl of document.querySelectorAll('.panel-tab')) {
+          for (const tabEl of document.querySelectorAll('.side-panel .panel-tab')) {
             if (tabEl.querySelector('.panel-tab-label span')?.textContent === 'Review') continue
             const target = tabEl.querySelector('.panel-tab-close')
             if (target instanceof HTMLElement) { target.click(); return true }
@@ -4192,9 +4192,11 @@ export function startSmokeIfEnabled(
 
         await withWindow(getWindow, async (win) => {
           const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
-          const ACTIVE = `.panel-tab-body:not(.panel-tab-body-hidden)`
+          // Ticket 136: the subagents sidebar's fixed tab body is also
+          // never hidden — scope every body lookup to the side panel.
+          const ACTIVE = `.side-panel .panel-tab-body:not(.panel-tab-body-hidden)`
           const tabOpen = (name: string): string =>
-            `[...document.querySelectorAll('.panel-tab-label span')].some((el) => el.textContent === '${name}')`
+            `[...document.querySelectorAll('.side-panel .panel-tab-label span')].some((el) => el.textContent === '${name}')`
           const clickSegment = (want: 'Rendered' | 'Source'): string =>
             `(() => {\n              const body = document.querySelector('${ACTIVE}')\n              for (const button of body?.querySelectorAll('.review-segmented button') ?? []) {\n                if (!(button.textContent ?? '').includes('${want}')) continue\n                if (button.getAttribute('aria-selected') !== 'true') button.click()\n                return true\n              }\n              return false\n            })()`
           /** The Review tab's preview chip for the fixture row with this
@@ -4216,7 +4218,7 @@ export function startSmokeIfEnabled(
           await js(`document.querySelector('.panel-tab-card[aria-label="Open Review tab"]')?.click(); true`)
           if (!(await waitForProbe(win, `document.querySelectorAll('.review-tree-file').length >= 5`, 20_000))) {
             const diag = (await js(
-              `JSON.stringify({\n                tabs: [...document.querySelectorAll('.panel-tab-label span')].map((el) => el.textContent),\n                reviewView: document.querySelector('.review-view') !== null,\n                reviewTreeRows: document.querySelectorAll('.review-tree-file').length,\n                reviewEmpty: document.querySelector('.review-empty')?.textContent ?? null,\n                reviewToolbar: document.querySelector('.review-toolbar')?.textContent?.slice(0, 80) ?? null\n              })`
+              `JSON.stringify({\n                tabs: [...document.querySelectorAll('.side-panel .panel-tab-label span')].map((el) => el.textContent),\n                reviewView: document.querySelector('.review-view') !== null,\n                reviewTreeRows: document.querySelectorAll('.review-tree-file').length,\n                reviewEmpty: document.querySelector('.review-empty')?.textContent ?? null,\n                reviewToolbar: document.querySelector('.review-toolbar')?.textContent?.slice(0, 80) ?? null\n              })`
             ).catch(() => 'unavailable')) as string
             fail(`ticket-88 stage: the Review tree never listed the untracked fixtures; review: ${diag}`)
           }
@@ -4369,9 +4371,12 @@ export function startSmokeIfEnabled(
           // tab (the stage's five file tabs and the Review tab alike — the
           // 86 stage re-opens the panel from zero itself).
           for (;;) {
-            const count = (await js(`document.querySelectorAll('.panel-tab-label span').length`)) as number
+            // Ticket 136: the subagents sidebar's strip shares these classes
+            // (its fixed tab has no close button) — drain the SIDE panel's
+            // tabs only.
+            const count = (await js(`document.querySelectorAll('.side-panel .panel-tab-label span').length`)) as number
             if (count === 0) break
-            if (!(await waitForProbe(win, `(() => { const b = document.querySelector('.panel-tab .panel-tab-close'); if (b instanceof HTMLElement) { b.click(); return true } return false })()`, 5_000))) {
+            if (!(await waitForProbe(win, `(() => { const b = document.querySelector('.side-panel .panel-tab .panel-tab-close'); if (b instanceof HTMLElement) { b.click(); return true } return false })()`, 5_000))) {
               break
             }
             await new Promise((r) => setTimeout(r, 200))
@@ -12970,25 +12975,22 @@ export function startSmokeIfEnabled(
           await waitFor((e) => e.type === 'history_loaded' && e.sessionId === created90.sessionId, 'subagent90 history_loaded')
           log('subagent90_resumed_ok', created90.sessionId)
 
-          // Open the Subagents tab via the empty picker card (⌥⌘B may be
-          // closed or showing other tabs — normalize to the picker first).
+          // Ticket 136: the directory lives in the subagents' OWN right
+          // sidebar — the always-present titlebar entry opens it (the side
+          // panel's picker no longer offers a Subagents card). Normalize
+          // first: a leftover OPEN sidebar (a chat tab from an earlier
+          // stage) is collapsed so the entry click below is the OPENING
+          // leg — which lands on the fixed directory tab.
           await js(`(() => {
-            const panel = document.querySelector('.side-panel')
-            if (panel && !panel.hasAttribute('data-closed')) {
-              for (const btn of document.querySelectorAll('.panel-tab .panel-tab-close')) {
-                if (btn instanceof HTMLElement) btn.click()
-              }
-            }
+            const sub = document.querySelector('.subagent-panel')
+            const entry = document.querySelector('[data-testid="subagent-panel-toggle"]')
+            if (sub instanceof Element && !sub.hasAttribute('data-closed') && entry instanceof HTMLElement) entry.click()
             return true
           })()`)
           await new Promise((r) => setTimeout(r, 300))
-          await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', altKey: true, metaKey: true, bubbles: true })); true`)
-          if (!(await waitForProbe(win, `document.querySelector('.panel-tab-card[aria-label="Open Subagents tab"]') !== null`, 10_000))) {
-            fail('ticket-90 stage: the picker never offered the Subagents card')
-          }
-          await js(`document.querySelector('.panel-tab-card[aria-label="Open Subagents tab"]')?.click(); true`)
-          if (!(await waitForProbe(win, `document.querySelector('[data-testid="subagents-tab"]') !== null`, 10_000))) {
-            fail('ticket-90 stage: the Subagents tab never rendered')
+          await js(`document.querySelector('[data-testid="subagent-panel-toggle"]')?.click(); true`)
+          if (!(await waitForProbe(win, `document.querySelector('.subagent-panel:not([data-closed])') !== null && document.querySelector('[data-testid="subagents-tab"]') !== null`, 10_000))) {
+            fail('ticket-90 stage: the subagents sidebar never opened onto its directory tab')
           }
 
           // ① The seeded directory: Ended totals 25 rows (24 foreground +
@@ -13215,25 +13217,20 @@ export function startSmokeIfEnabled(
           await waitFor((e) => e.type === 'history_loaded' && e.sessionId === created99.sessionId, 'subagent99 history_loaded')
           log('subagent99_resumed_ok', created99.sessionId)
 
-          // Normalize the panel: close every open tab, then open Subagents
-          // through the picker card (the ticket-90 stage precedent).
+          // Ticket 136: open the subagents sidebar through its titlebar
+          // entry (the ticket-90 stage precedent — the side panel's picker
+          // no longer offers a Subagents card). Normalize first so the
+          // click is the OPENING leg onto the fixed directory tab.
           await js(`(() => {
-            const panel = document.querySelector('.side-panel')
-            if (panel && !panel.hasAttribute('data-closed')) {
-              for (const btn of document.querySelectorAll('.panel-tab .panel-tab-close')) {
-                if (btn instanceof HTMLElement) btn.click()
-              }
-            }
+            const sub = document.querySelector('.subagent-panel')
+            const entry = document.querySelector('[data-testid="subagent-panel-toggle"]')
+            if (sub instanceof Element && !sub.hasAttribute('data-closed') && entry instanceof HTMLElement) entry.click()
             return true
           })()`)
           await new Promise((r) => setTimeout(r, 300))
-          await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', altKey: true, metaKey: true, bubbles: true })); true`)
-          if (!(await waitForProbe(win, `document.querySelector('.panel-tab-card[aria-label="Open Subagents tab"]') !== null`, 10_000))) {
-            fail('ticket-99 stage: the picker never offered the Subagents card')
-          }
-          await js(`document.querySelector('.panel-tab-card[aria-label="Open Subagents tab"]')?.click(); true`)
-          if (!(await waitForProbe(win, `document.querySelector('[data-testid="subagents-tab"]') !== null`, 10_000))) {
-            fail('ticket-99 stage: the Subagents tab never rendered')
+          await js(`document.querySelector('[data-testid="subagent-panel-toggle"]')?.click(); true`)
+          if (!(await waitForProbe(win, `document.querySelector('.subagent-panel:not([data-closed])') !== null && document.querySelector('[data-testid="subagents-tab"]') !== null`, 10_000))) {
+            fail('ticket-99 stage: the subagents sidebar never opened onto its directory tab')
           }
 
           // ① The live run drives the directory (artifact → status pull →
@@ -13252,7 +13249,7 @@ export function startSmokeIfEnabled(
           // composer (the run is live).
           await js(`document.querySelector('[data-subagent-row="s99-call-live"]')?.click(); true`)
           if (!(await waitForProbe(win, `(() => {
-            const named = [...document.querySelectorAll('.panel-tab .panel-tab-label span')].some((s) => s.textContent === 'PICODE_SUB99 live scout task')
+            const named = [...document.querySelectorAll('.subagent-panel .panel-tab .panel-tab-label span')].some((s) => s.textContent === 'PICODE_SUB99 live scout task')
             return named && document.querySelector('[data-testid="subagent-chat-tab"]') !== null
           })()`, 10_000))) {
             fail('ticket-99 stage: the row click never opened the task-named conversation tab')
@@ -13311,13 +13308,16 @@ export function startSmokeIfEnabled(
           // away, the row click re-opens it, and a fresh bridge pull still
           // reports the run running — the × never kills the child.
           const chatTabIndex99 = await js(`(() => {
-            const labels = [...document.querySelectorAll('.panel-tab .panel-tab-label span')]
-            const index = labels.findIndex((s) => s.textContent === 'PICODE_SUB99 live scout task')
-            const close = document.querySelectorAll('.panel-tab .panel-tab-close')[index]
+            // Ticket 136: the FIXED directory tab carries no ×, so the close
+            // button cannot be indexed against the tab labels — resolve the
+            // chat tab's OWN close button inside its tab element.
+            const tab = [...document.querySelectorAll('.subagent-panel .panel-tab')].find((el) =>
+              el.querySelector('.panel-tab-label span')?.textContent === 'PICODE_SUB99 live scout task')
+            const close = tab?.querySelector('.panel-tab-close')
             if (close instanceof HTMLElement) close.click()
-            return index
+            return tab !== undefined
           })()`)
-          if (typeof chatTabIndex99 !== 'number' || chatTabIndex99 < 0) fail('ticket-99 stage: the conversation tab vanished before its close')
+          if (chatTabIndex99 !== true) fail('ticket-99 stage: the conversation tab vanished before its close')
           if (!(await waitForProbe(win, `document.querySelector('[data-testid="subagent-chat-tab"]') === null`, 10_000))) {
             fail('ticket-99 stage: the × never closed the conversation tab')
           }
@@ -13327,7 +13327,7 @@ export function startSmokeIfEnabled(
           supervisor.handleParentCommand({ type: 'session_command', sessionId: created99.sessionId, command: { type: 'subagent_status', requestId: 'stage-99-3' } })
           await stillRunning99
           await js(`(() => {
-            const tab = [...document.querySelectorAll('.panel-tab-label')].find((el) => el.textContent?.includes('Subagents'))
+            const tab = [...document.querySelectorAll('.subagent-panel .panel-tab-label')].find((el) => el.textContent?.includes('Subagents'))
             if (tab instanceof HTMLElement) tab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
             return true
           })()`)
@@ -13361,7 +13361,7 @@ export function startSmokeIfEnabled(
 
           // ⑦ The lost run's tab: the honest error state (artifact gone).
           await js(`(() => {
-            const tab = [...document.querySelectorAll('.panel-tab-label')].find((el) => el.textContent?.includes('Subagents'))
+            const tab = [...document.querySelectorAll('.subagent-panel .panel-tab-label')].find((el) => el.textContent?.includes('Subagents'))
             if (tab instanceof HTMLElement) tab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
             return true
           })()`)
@@ -13508,15 +13508,20 @@ export function startSmokeIfEnabled(
           await waitFor((e) => e.type === 'history_loaded' && e.sessionId === created101.sessionId, 'subagent101 history_loaded')
           log('subagent101_resumed_ok', created101.sessionId)
 
-          // Normalize: collapse the panel (close tabs first — the last-tab
-          // close auto-collapses; the chord only backs it up).
+          // Normalize: collapse BOTH right panes — the side panel (close
+          // tabs first — the last-tab close auto-collapses; the chord only
+          // backs it up) and the subagents sidebar (a leftover chat tab from
+          // the ticket-99 stage keeps it open; its entry toggles it closed).
           await js(`(() => {
             const panel = document.querySelector('.side-panel')
             if (panel && !panel.hasAttribute('data-closed')) {
-              for (const btn of document.querySelectorAll('.panel-tab .panel-tab-close')) {
+              for (const btn of document.querySelectorAll('.side-panel .panel-tab .panel-tab-close')) {
                 if (btn instanceof HTMLElement) btn.click()
               }
             }
+            const sub = document.querySelector('.subagent-panel')
+            const entry = document.querySelector('[data-testid="subagent-panel-toggle"]')
+            if (sub instanceof Element && !sub.hasAttribute('data-closed') && entry instanceof HTMLElement) entry.click()
             return true
           })()`)
           await new Promise((r) => setTimeout(r, 400))
@@ -13526,11 +13531,14 @@ export function startSmokeIfEnabled(
               fail('ticket-101 stage: the side panel never collapsed')
             }
           }
+          if (!(await waitForProbe(win, `document.querySelector('.subagent-panel')?.hasAttribute('data-closed') === true`, 5_000))) {
+            fail('ticket-101 stage: the subagents sidebar never collapsed')
+          }
 
           // ① Zero live runs (artifacts absent → Lost; the foreground call is
-          // completed) → the collapsed toggle carries NO badge.
-          if (!(await waitForProbe(win, `document.querySelector('.tb-btn-badge') === null`, 8_000))) {
-            fail('ticket-101 stage: the toggle must carry NO badge while zero runs are live')
+          // completed) → the collapsed entry carries NO badge.
+          if (!(await waitForProbe(win, `document.querySelector('[data-testid="subagent-badge"]') === null`, 8_000))) {
+            fail('ticket-101 stage: the entry must carry NO badge while zero runs are live')
           }
           log('subagent101_badge_zero_ok')
 
@@ -13542,39 +13550,33 @@ export function startSmokeIfEnabled(
           supervisor.handleParentCommand({ type: 'session_command', sessionId: created101.sessionId, command: { type: 'subagent_status', requestId: 'stage-101-1' } })
           const [rtA, rtB] = await Promise.all([statusRtA, statusRtB]) as Array<Extract<Scoped, { type: 'subagent_status' }>>
           log('subagent101_pull', `A.available=${String(rtA.available)} A.runs=${rtA.runs.length} B.available=${String(rtB.available)} B.runs=${rtB.runs.length}`)
-          if (!(await waitForProbe(win, `document.querySelector('.tb-btn-badge')?.textContent === '2'`, 8_000))) {
-            // Diagnostic: dump the toggle + panel state AS THE PROBE SAW IT,
-            // then open the panel and dump the directory rows (the badge
+          if (!(await waitForProbe(win, `document.querySelector('[data-testid="subagent-badge"]')?.textContent === '2'`, 8_000))) {
+            // Diagnostic: dump the entry + sidebar state AS THE PROBE SAW IT,
+            // then open the sidebar and dump the directory rows (the badge
             // count's raw material).
             const diagPre101 = (await js(`(() => ({
-              badge: document.querySelector('.tb-btn-badge')?.textContent ?? null,
-              panelClosed: document.querySelector('.side-panel')?.hasAttribute('data-closed') ?? null,
-              tabLabels: [...document.querySelectorAll('.panel-tab-label span')].map((el) => el.textContent),
-              toggleAria: document.querySelector('button[aria-label*="side panel"]')?.getAttribute('aria-label') ?? null,
-              toggleCount: document.querySelector('button[data-subagent-count]')?.getAttribute('data-subagent-count') ?? null
+              badge: document.querySelector('[data-testid="subagent-badge"]')?.textContent ?? null,
+              sidebarClosed: document.querySelector('.subagent-panel')?.hasAttribute('data-closed') ?? null,
+              tabLabels: [...document.querySelectorAll('.subagent-panel .panel-tab-label span')].map((el) => el.textContent),
+              entryAria: document.querySelector('[data-testid="subagent-panel-toggle"]')?.getAttribute('aria-label') ?? null,
+              entryCount: document.querySelector('button[data-subagent-count]')?.getAttribute('data-subagent-count') ?? null
             }))()`)) as unknown
-            await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', altKey: true, metaKey: true, bubbles: true })); true`)
-            await new Promise((r) => setTimeout(r, 600))
-            // Open the Subagents tab through the picker (the ticket-99 path).
-            await js(`(() => {
-              const card = document.querySelector('.panel-tab-card[aria-label="Open Subagents tab"]')
-              if (card instanceof HTMLElement) card.click()
-              return true
-            })()`)
+            await js(`document.querySelector('[data-testid="subagent-panel-toggle"]')?.click(); true`)
             await new Promise((r) => setTimeout(r, 600))
             const diag101 = (await js(`(() => ({
               badges: [...document.querySelectorAll('[data-subagent-badge]')].map((el) => el.textContent),
               sections: [...document.querySelectorAll('.subagents-section-title')].map((el) => el.textContent),
-              tabLabels: [...document.querySelectorAll('.panel-tab-label span')].map((el) => el.textContent)
+              tabLabels: [...document.querySelectorAll('.subagent-panel .panel-tab-label span')].map((el) => el.textContent)
             }))()`)) as unknown
-            fail(`ticket-101 stage: the toggle badge must show 2 while two runs are live, pre=${JSON.stringify(diagPre101)} post=${JSON.stringify(diag101)}`)
+            fail(`ticket-101 stage: the entry badge must show 2 while two runs are live, pre=${JSON.stringify(diagPre101)} post=${JSON.stringify(diag101)}`)
           }
           log('subagent101_badge_two_ok')
 
-          // ③ A badge click opens the panel STRAIGHT onto the Subagents tab.
-          await js(`(document.querySelector('.tb-btn-badge')?.closest('button'))?.click(); true`)
-          if (!(await waitForProbe(win, `document.querySelector('.side-panel:not([data-closed])') !== null && document.querySelector('.panel-tab-active[data-panel-tab="subagents"]') !== null`, 8_000))) {
-            fail('ticket-101 stage: the badge click never opened the panel onto the Subagents tab')
+          // ③ A badge click opens the subagents sidebar STRAIGHT onto the
+          // fixed directory tab.
+          await js(`(document.querySelector('[data-testid="subagent-badge"]')?.closest('button'))?.click(); true`)
+          if (!(await waitForProbe(win, `document.querySelector('.subagent-panel:not([data-closed])') !== null && document.querySelector('.subagent-panel .panel-tab-active[data-panel-tab="subagents"]') !== null`, 8_000))) {
+            fail('ticket-101 stage: the badge click never opened the subagents sidebar onto its directory tab')
           }
           if (!(await waitForProbe(win, `document.querySelector('[data-subagent-row="s101-call-a"] .subagents-badge-running') !== null`, 8_000))) {
             fail('ticket-101 stage: the live row A never showed its Running badge')
@@ -13641,7 +13643,7 @@ export function startSmokeIfEnabled(
 
           // ⑦ The terminal evidence lands (artifact → stopped) → Cancelled,
           // the overlay clears, the badge count drops to 1 (visible only on
-          // the COLLAPSED panel — collapse, probe, re-expand for ⑧).
+          // the COLLAPSED sidebar — collapse, probe, re-expand for ⑧).
           writeArtifact101(runDirA101, 'sub101-run-a', 'stopped')
           const statusRtA2 = waitFor((e) => e.type === 'subagent_status' && e.sessionId === created101.sessionId && e.runs.some((r) => r.runId === 'sub101-run-a' && r.state === 'stopped'), 'subagent101 status roundtrip A terminal')
           supervisor.handleParentCommand({ type: 'session_command', sessionId: created101.sessionId, command: { type: 'subagent_status', requestId: 'stage-101-2' } })
@@ -13649,13 +13651,13 @@ export function startSmokeIfEnabled(
           if (!(await waitForProbe(win, `document.querySelector('[data-subagent-row="s101-call-a"] .subagents-badge-cancelled') !== null`, 8_000))) {
             fail('ticket-101 stage: the stopped run never showed its Cancelled badge')
           }
-          await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', altKey: true, metaKey: true, bubbles: true })); true`)
-          if (!(await waitForProbe(win, `document.querySelector('.side-panel')?.hasAttribute('data-closed') === true && document.querySelector('.tb-btn-badge')?.textContent === '1'`, 8_000))) {
-            fail('ticket-101 stage: the toggle badge must drop to 1 after one run stopped')
+          await js(`document.querySelector('[data-testid="subagent-panel-toggle"]')?.click(); true`)
+          if (!(await waitForProbe(win, `document.querySelector('.subagent-panel')?.hasAttribute('data-closed') === true && document.querySelector('[data-testid="subagent-badge"]')?.textContent === '1'`, 8_000))) {
+            fail('ticket-101 stage: the entry badge must drop to 1 after one run stopped')
           }
-          await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', altKey: true, metaKey: true, bubbles: true })); true`)
-          if (!(await waitForProbe(win, `document.querySelector('.side-panel:not([data-closed])') !== null`, 8_000))) {
-            fail('ticket-101 stage: the panel never re-expanded after the badge probe')
+          await js(`document.querySelector('[data-testid="subagent-panel-toggle"]')?.click(); true`)
+          if (!(await waitForProbe(win, `document.querySelector('.subagent-panel:not([data-closed])') !== null`, 8_000))) {
+            fail('ticket-101 stage: the sidebar never re-expanded after the badge probe')
           }
           log('subagent101_stopped_ok')
 
@@ -13677,14 +13679,14 @@ export function startSmokeIfEnabled(
           }
           log('subagent101_chat_stop_ok')
 
-          // ⑨ B settles → both runs terminal → ZERO badge (panel closed).
+          // ⑨ B settles → both runs terminal → ZERO badge (sidebar closed).
           writeArtifact101(runDirB101, 'sub101-run-b', 'stopped')
           const statusRtB2 = waitFor((e) => e.type === 'subagent_status' && e.sessionId === created101.sessionId && e.runs.some((r) => r.runId === 'sub101-run-b' && r.state === 'stopped'), 'subagent101 status roundtrip B terminal')
           supervisor.handleParentCommand({ type: 'session_command', sessionId: created101.sessionId, command: { type: 'subagent_status', requestId: 'stage-101-3' } })
           await statusRtB2
-          await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', altKey: true, metaKey: true, bubbles: true })); true`)
-          if (!(await waitForProbe(win, `document.querySelector('.side-panel')?.hasAttribute('data-closed') === true && document.querySelector('.tb-btn-badge') === null`, 8_000))) {
-            fail('ticket-101 stage: with zero live runs the collapsed toggle must carry NO badge')
+          await js(`document.querySelector('[data-testid="subagent-panel-toggle"]')?.click(); true`)
+          if (!(await waitForProbe(win, `document.querySelector('.subagent-panel')?.hasAttribute('data-closed') === true && document.querySelector('[data-testid="subagent-badge"]') === null`, 8_000))) {
+            fail('ticket-101 stage: with zero live runs the collapsed entry must carry NO badge')
           }
           log('subagent101_badge_zero_again_ok')
 
@@ -13697,10 +13699,10 @@ export function startSmokeIfEnabled(
             sessionId: created101.sessionId,
             event: { type: 'tool_start', toolCallId: 's101-call-fg', name: 'subagent', args: { agent: 'scout', task: 'PICODE_SUB101 live foreground child' } }
           })
-          if (!(await waitForProbe(win, `document.querySelector('.tb-btn-badge')?.textContent === '1'`, 8_000))) {
+          if (!(await waitForProbe(win, `document.querySelector('[data-testid="subagent-badge"]')?.textContent === '1'`, 8_000))) {
             fail('ticket-101 stage: the injected foreground run never lit the badge')
           }
-          await js(`(document.querySelector('.tb-btn-badge')?.closest('button'))?.click(); true`)
+          await js(`(document.querySelector('[data-testid="subagent-badge"]')?.closest('button'))?.click(); true`)
           if (!(await waitForProbe(win, `document.querySelector('[data-subagent-row="s101-call-fg"] .subagent-stop-btn') !== null`, 8_000))) {
             fail('ticket-101 stage: the foreground row never showed its stop button')
           }
@@ -13726,6 +13728,142 @@ export function startSmokeIfEnabled(
       log('subagent_stop_done')
     }
 
+    // ---- ticket 136: the subagents' dedicated right sidebar — the
+    // always-present titlebar entry (right of the side-panel toggle), the
+    // fixed directory tab, and the mutual exclusion with the preview side
+    // panel: opening one right pane while the other is open folds the
+    // other and the opener INHERITS its width; manually collapsing one
+    // never opens the other; a reopened pane remembers its width. Pure
+    // DOM probes (zero model calls, zero fixtures). ----
+    log('subagent_mutex_136_start')
+    {
+      await withWindow(getWindow, async (win) => {
+        const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+        /** One pane's rendered width in px (0 while closed), as a boolean
+         * probe against the expected value. */
+        const paneWidthIs = (selector: string, want: number): string =>
+          `(document.querySelector('${selector}')?.getBoundingClientRect().width ?? 0) === ${want}`
+        const SIDE_W_136 = 560
+        const SUB_W_136 = 640
+        /** Synthetic resizer drag: pointerdown at the handle, one move by
+         * `dx` (negative = wider), pointerup to commit — the ticket-30
+         * pattern commits synchronously on pointerup (the rAF write is a
+         * no-op once the drag ref is cleared). */
+        const dragPane = (selector: string, dx: number): Promise<unknown> =>
+          js(`(() => {
+            const resizer = document.querySelector('${selector} .panel-resizer')
+            if (!(resizer instanceof Element)) return false
+            const r = resizer.getBoundingClientRect()
+            const x = r.left + r.width / 2
+            const y = r.top + r.height / 2
+            resizer.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 7, clientX: x, clientY: y, bubbles: true, cancelable: true }))
+            resizer.dispatchEvent(new PointerEvent('pointermove', { pointerId: 7, clientX: x + (${dx}), clientY: y, bubbles: true, cancelable: true }))
+            resizer.dispatchEvent(new PointerEvent('pointerup', { pointerId: 7, clientX: x + (${dx}), clientY: y, bubbles: true, cancelable: true }))
+            return true
+          })()`)
+
+        // Normalize: both right panes collapsed (earlier stages may have
+        // left either open).
+        await js(`(() => {
+          const side = document.querySelector('.side-panel')
+          if (side instanceof Element && !side.hasAttribute('data-closed')) {
+            window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', altKey: true, metaKey: true, bubbles: true }))
+          }
+          const sub = document.querySelector('.subagent-panel')
+          const entry = document.querySelector('[data-testid="subagent-panel-toggle"]')
+          if (sub instanceof Element && !sub.hasAttribute('data-closed') && entry instanceof HTMLElement) entry.click()
+          return true
+        })()`)
+        await new Promise((r) => setTimeout(r, 400))
+        if (!(await waitForProbe(win, `document.querySelector('.side-panel')?.hasAttribute('data-closed') === true && document.querySelector('.subagent-panel')?.hasAttribute('data-closed') === true`, 5_000))) {
+          fail('ticket-136 stage: the right panes never normalized to collapsed')
+        }
+
+        // ① The always-present entry opens the sidebar onto the FIXED
+        // directory tab — the "closed it and could not find the entry
+        // again" fix this ticket is about.
+        await js(`document.querySelector('[data-testid="subagent-panel-toggle"]')?.click(); true`)
+        if (!(await waitForProbe(win, `document.querySelector('.subagent-panel:not([data-closed])') !== null && document.querySelector('.subagent-panel .panel-tab-active[data-panel-tab="subagents"]') !== null && document.querySelector('[data-testid="subagents-tab"]') !== null`, 8_000))) {
+          fail('ticket-136 stage: the entry never opened the sidebar onto its fixed directory tab')
+        }
+        // The side panel's picker no longer offers a Subagents card.
+        if (((await js(`document.querySelector('.panel-tab-card[aria-label="Open Subagents tab"]') !== null`)) as boolean) === true) {
+          fail('ticket-136 stage: the side panel still offers a Subagents card')
+        }
+        log('subagent136_entry_ok')
+
+        // ② Manual collapse of the sidebar: the side panel STAYS closed.
+        await js(`document.querySelector('[data-testid="subagent-panel-toggle"]')?.click(); true`)
+        if (!(await waitForProbe(win, `document.querySelector('.subagent-panel')?.hasAttribute('data-closed') === true && document.querySelector('.side-panel')?.hasAttribute('data-closed') === true`, 5_000))) {
+          fail('ticket-136 stage: a manual collapse must never open the other pane (sidebar leg)')
+        }
+
+        // ③ Open the side panel (⌥⌘B) and drag it to a distinctive width.
+        await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', altKey: true, metaKey: true, bubbles: true })); true`)
+        if (!(await waitForProbe(win, `document.querySelector('.side-panel:not([data-closed])') !== null`, 5_000))) {
+          fail('ticket-136 stage: the side panel never opened')
+        }
+        await dragPane('.side-panel', -(SIDE_W_136 - 420))
+        if (!(await waitForProbe(win, paneWidthIs('.side-panel', SIDE_W_136), 5_000))) {
+          fail('ticket-136 stage: the side panel drag never committed its width')
+        }
+
+        // ④ The swap: opening the subagents sidebar folds the side panel
+        // and INHERITS its width.
+        await js(`document.querySelector('[data-testid="subagent-panel-toggle"]')?.click(); true`)
+        if (!(await waitForProbe(win, `document.querySelector('.side-panel')?.hasAttribute('data-closed') === true && document.querySelector('.subagent-panel:not([data-closed])') !== null && ${paneWidthIs('.subagent-panel', SIDE_W_136)}`, 8_000))) {
+          fail('ticket-136 stage: the swap never folded the side panel at its width')
+        }
+        log('subagent136_swap_side_to_sub_ok')
+
+        // ⑤ Manual collapse of the sidebar: the side panel STAYS closed
+        // (the collapse never opens the other pane).
+        await js(`document.querySelector('[data-testid="subagent-panel-toggle"]')?.click(); true`)
+        if (!(await waitForProbe(win, `document.querySelector('.subagent-panel')?.hasAttribute('data-closed') === true && document.querySelector('.side-panel')?.hasAttribute('data-closed') === true`, 5_000))) {
+          fail('ticket-136 stage: collapsing the sidebar must not open the side panel')
+        }
+
+        // ⑥ Reopen: the inherited width is remembered.
+        await js(`document.querySelector('[data-testid="subagent-panel-toggle"]')?.click(); true`)
+        if (!(await waitForProbe(win, `document.querySelector('.subagent-panel:not([data-closed])') !== null && ${paneWidthIs('.subagent-panel', SIDE_W_136)}`, 8_000))) {
+          fail('ticket-136 stage: the reopened sidebar lost its width')
+        }
+
+        // ⑦ Drag the sidebar to a different width, then open the side
+        // panel — the SYMMETRIC swap: the sidebar folds, the side panel
+        // inherits 640 (its own last width was 560 — only the inheritance
+        // explains 640).
+        await dragPane('.subagent-panel', -(SUB_W_136 - SIDE_W_136))
+        if (!(await waitForProbe(win, paneWidthIs('.subagent-panel', SUB_W_136), 5_000))) {
+          fail('ticket-136 stage: the sidebar drag never committed its width')
+        }
+        await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', altKey: true, metaKey: true, bubbles: true })); true`)
+        if (!(await waitForProbe(win, `document.querySelector('.subagent-panel')?.hasAttribute('data-closed') === true && document.querySelector('.side-panel:not([data-closed])') !== null && ${paneWidthIs('.side-panel', SUB_W_136)}`, 8_000))) {
+          fail('ticket-136 stage: the symmetric swap never folded the sidebar at its width')
+        }
+        log('subagent136_swap_sub_to_side_ok')
+
+        // ⑧ Manual collapse of the side panel: the sidebar stays closed.
+        await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', altKey: true, metaKey: true, bubbles: true })); true`)
+        if (!(await waitForProbe(win, `document.querySelector('.side-panel')?.hasAttribute('data-closed') === true && document.querySelector('.subagent-panel')?.hasAttribute('data-closed') === true`, 5_000))) {
+          fail('ticket-136 stage: collapsing the side panel must not open the sidebar')
+        }
+
+        // ⑨ Reopen the side panel: the inherited width is remembered.
+        await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', altKey: true, metaKey: true, bubbles: true })); true`)
+        if (!(await waitForProbe(win, `document.querySelector('.side-panel:not([data-closed])') !== null && ${paneWidthIs('.side-panel', SUB_W_136)}`, 8_000))) {
+          fail('ticket-136 stage: the reopened side panel lost its width')
+        }
+        log('subagent136_memory_ok')
+
+        // Cleanup: leave both panes collapsed for the later stages.
+        await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', altKey: true, metaKey: true, bubbles: true })); true`)
+        if (!(await waitForProbe(win, `document.querySelector('.side-panel')?.hasAttribute('data-closed') === true && document.querySelector('.subagent-panel')?.hasAttribute('data-closed') === true`, 5_000))) {
+          fail('ticket-136 stage: the cleanup never collapsed the panes')
+        }
+      })
+    }
+    log('subagent_mutex_136_done')
 
     // ---- ticket 73: the New Task dead-end fix — from the new-task empty
     // state, ANY openable session-row click must land the main zone on the

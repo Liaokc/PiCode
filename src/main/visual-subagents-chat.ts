@@ -165,20 +165,18 @@ export function startSubagentChatVisualIfEnabled(getWindow: () => BrowserWindow 
         }
       })
 
-      // Open the Subagents tab through the picker.
-      await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', altKey: true, metaKey: true, bubbles: true })); true`)
-      if (!(await waitFor(getWindow, `document.querySelector('.panel-tab-card[aria-label="Open Subagents tab"]') !== null`, 8_000))) {
-        throw new Error('subagent-chat visual: the picker never offered the Subagents card')
-      }
-      await js(`document.querySelector('.panel-tab-card[aria-label="Open Subagents tab"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
-      if (!(await waitFor(getWindow, `document.querySelector('[data-testid="subagents-tab"]') !== null`, 8_000))) {
-        throw new Error('subagent-chat visual: the Subagents tab never rendered')
+      // Ticket 136: open the subagents sidebar through its titlebar entry
+      // (the side panel's picker no longer offers a Subagents card); the
+      // opening leg lands on the fixed directory tab.
+      await js(`document.querySelector('[data-testid="subagent-panel-toggle"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
+      if (!(await waitFor(getWindow, `document.querySelector('.subagent-panel:not([data-closed])') !== null && document.querySelector('[data-testid="subagents-tab"]') !== null`, 8_000))) {
+        throw new Error('subagent-chat visual: the subagents sidebar never opened onto its directory tab')
       }
 
       // ---- s99-1: click the live row → the task-named conversation tab ----
       await js(`document.querySelector('[data-subagent-row="${LIVE_CALL}"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
       if (!(await waitFor(getWindow, `(() => {
-        const tab = [...document.querySelectorAll('.panel-tab .panel-tab-label span')].some((s) => s.textContent === ${JSON.stringify(LIVE_TASK)})
+        const tab = [...document.querySelectorAll('.subagent-panel .panel-tab .panel-tab-label span')].some((s) => s.textContent === ${JSON.stringify(LIVE_TASK)})
         return tab && document.querySelector('[data-testid="subagent-chat-tab"]') !== null
       })()`, 8_000))) {
         throw new Error('subagent-chat visual: the row click never opened the task-named conversation tab')
@@ -256,7 +254,7 @@ export function startSubagentChatVisualIfEnabled(getWindow: () => BrowserWindow 
       // survives and the live row still reads Running (the × closes a VIEW,
       // never the child). ----
       await js(`(() => {
-        const tab = [...document.querySelectorAll('.panel-tab-label')].find((el) => el.textContent?.includes('Subagents'))
+        const tab = [...document.querySelectorAll('.subagent-panel .panel-tab-label')].find((el) => el.textContent?.includes('Subagents'))
         if (tab instanceof HTMLElement) tab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
         return true
       })()`)
@@ -270,16 +268,20 @@ export function startSubagentChatVisualIfEnabled(getWindow: () => BrowserWindow 
       })()`, 8_000))) {
         throw new Error('subagent-chat visual: the lost run never opened its honest error state')
       }
-      const tabCount = (await js(`document.querySelectorAll('.panel-tab').length`)) as number
+      const tabCount = (await js(`document.querySelectorAll('.subagent-panel .panel-tab').length`)) as number
       assert(tabCount >= 3, `expected the directory + two conversation tabs, saw ${tabCount}`)
       await capture(win, 's99-5-error')
       // Close the error tab (its × is the tab strip's close button).
       await js(`(() => {
-        const views = [...document.querySelectorAll('.panel-tab-body')]
+        // Ticket 136: the FIXED directory tab carries no ×, so close
+        // buttons cannot be indexed against the tab bodies. The strip tabs
+        // and the bodies both map openTabs in the same order — align the
+        // error body's INDEX to its strip tab, then click THAT tab's own ×.
+        const views = [...document.querySelectorAll('.subagent-panel .panel-tab-body')]
         const errorView = views.find((v) => v.querySelector('.review-empty') !== null)
-        const body = errorView?.closest('.panel-tab-body')
-        const index = body !== null && body !== undefined ? [...document.querySelectorAll('.panel-tab-body')].indexOf(body) : -1
-        const close = index >= 0 ? document.querySelectorAll('.panel-tab .panel-tab-close')[index] : null
+        const index = errorView !== undefined ? views.indexOf(errorView) : -1
+        const tab = index >= 0 ? document.querySelectorAll('.subagent-panel .panel-tabs .panel-tab')[index] : null
+        const close = tab?.querySelector('.panel-tab-close') ?? null
         if (close instanceof HTMLElement) close.dispatchEvent(new MouseEvent('click', { bubbles: true }))
         return true
       })()`)
@@ -287,7 +289,7 @@ export function startSubagentChatVisualIfEnabled(getWindow: () => BrowserWindow 
         throw new Error('subagent-chat visual: closing the error tab never left the live conversation tab intact')
       }
       const stillRunning = (await js(`(() => {
-        const body = [...document.querySelectorAll('.panel-tab-body')].find((v) => v.querySelector('[data-testid="subagents-tab"]') !== null)
+        const body = [...document.querySelectorAll('.subagent-panel .panel-tab-body')].find((v) => v.querySelector('[data-testid="subagents-tab"]') !== null)
         const row = body?.querySelector('[data-subagent-row="${LIVE_CALL}"] .subagents-badge')
         return row?.textContent ?? ''
       })()`)) as string
@@ -377,16 +379,19 @@ export function startSubagentChatVisualIfEnabled(getWindow: () => BrowserWindow 
       }
       await capture(win, 's101-2-stopping')
 
-      // s101-3: the collapsed panel's toggle badge — the focused session's
-      // live run count (a stopping run still counts; it is not terminal).
-      await js(`window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', altKey: true, metaKey: true, bubbles: true })); true`)
-      if (!(await waitFor(getWindow, `document.querySelector('.side-panel')?.hasAttribute('data-closed') === true && document.querySelector('.tb-btn-badge')?.textContent === '1'`, 10_000))) {
-        throw new Error('subagent-chat visual: the collapsed toggle never showed the running badge')
+      // s101-3: the collapsed entry's badge — the focused session's live
+      // run count (a stopping run still counts; it is not terminal).
+      // Ticket 136: the badge lives on the subagents titlebar entry; the
+      // sidebar's own entry click collapses it (the side panel is not
+      // involved anymore).
+      await js(`document.querySelector('[data-testid="subagent-panel-toggle"]')?.click(); true`)
+      if (!(await waitFor(getWindow, `document.querySelector('.subagent-panel')?.hasAttribute('data-closed') === true && document.querySelector('[data-testid="subagent-badge"]')?.textContent === '1'`, 10_000))) {
+        throw new Error('subagent-chat visual: the collapsed entry never showed the running badge')
       }
       await capture(win, 's101-3-badge')
-      // Restore: a badge click opens the panel onto the Subagents directory.
-      await js(`(document.querySelector('.tb-btn-badge')?.closest('button'))?.click(); true`)
-      if (!(await waitFor(getWindow, `document.querySelector('.panel-tab-active[data-panel-tab="subagents"]') !== null`, 8_000))) {
+      // Restore: a badge click opens the sidebar onto the directory tab.
+      await js(`(document.querySelector('[data-testid="subagent-badge"]')?.closest('button'))?.click(); true`)
+      if (!(await waitFor(getWindow, `document.querySelector('.subagent-panel .panel-tab-active[data-panel-tab="subagents"]') !== null`, 8_000))) {
         throw new Error('subagent-chat visual: the badge click never opened the directory tab')
       }
 
