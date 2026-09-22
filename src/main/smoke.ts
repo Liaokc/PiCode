@@ -1071,6 +1071,10 @@ export function startSmokeIfEnabled(
 
           // Multi-line growth through the band and past the cap: the card's
           // height demonstrably moves while the bottom stays pinned.
+          // The third line is intentionally CJK: real-world non-ASCII
+          // input exercises the same auto-grow geometry (line-height
+          // growth is identical for CJK), so the idle re-pin must hold
+          // for it too.
           const lines119 = [
           'first line of the idle draft',
           'second line — the card must grow',

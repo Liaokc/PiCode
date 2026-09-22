@@ -266,6 +266,8 @@ export function nextIdleBottomPin(
     // cumulative shrink explains has scrolled on their own — their view
     // must not move again (and the sequence closes until they return).
     const cumulativeShrinkPx = start - snapshot.clientHeight
+    // +1 = the sub-pixel band isAtBottom itself uses (<1 tolerance):
+    // fractional shrink deltas must never read as a deliberate user move.
     if (distanceFromBottom(snapshot) > cumulativeShrinkPx + 1) {
       return { scrollTopPx: null, next: IDLE_BOTTOM_SEQUENCE_IDLE }
     }

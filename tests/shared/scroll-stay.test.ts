@@ -275,7 +275,7 @@ describe('nextIdleBottomPin (ticket 119: the idle viewport-shrink re-pin — a b
     })
   })
 
-  it('re-arms after the reader returns to the bottom (回底 starts the next burst)', () => {
+  it('re-arms after the reader returns to the bottom (return-to-bottom starts the next burst)', () => {
     // The sequence closed (they scrolled away); they scroll back to the
     // bottom at the shrunken height 420: the next observation arms
     // {420}, and the FOLLOWING shrink (420→350) re-pins again.
