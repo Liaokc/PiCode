@@ -372,6 +372,20 @@ export function BoxesIcon({ size, className }: IconProps): JSX.Element {
   )
 }
 
+/** Ticket 136: the subagents entry glyph — a delegated agent's head (the
+ * same stroke grammar as the neighboring titlebar icons). */
+export function BotIcon({ size, className }: IconProps): JSX.Element {
+  return (
+    <svg {...svgProps(size, className)}>
+      <path d="M12 6V3.5" />
+      <path d="M12 3.5h-2" />
+      <rect x="4.5" y="6" width="15" height="11" rx="3" />
+      <path d="M9 10.5v2M15 10.5v2" />
+      <path d="M9.5 20h5" />
+    </svg>
+  )
+}
+
 /** Ticket 89: the MCP nav icon — a plug (server connection). */
 export function PlugIcon({ size, className }: IconProps): JSX.Element {
   return (

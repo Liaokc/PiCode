@@ -91,6 +91,10 @@ export interface AppPreferences {
    * default 420 — the same persistence contract as sidebarWidth so both
    * draggable panes behave alike. */
   panelWidth: number
+  /** Subagent sidebar width in px (ticket 136): the same clamp and default
+   * as panelWidth — the two right panes share one width system (the mutex
+   * swap inherits across them), so both persist alike. */
+  subagentPanelWidth: number
 }
 
 export const DEFAULT_PREFERENCES: AppPreferences = {
@@ -106,7 +110,8 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   sidebarSort: 'updated',
   sidebarManualOrder: EMPTY_MANUAL_ORDER,
   sidebarWidth: SIDEBAR_WIDTH_PX,
-  panelWidth: PANEL_DEFAULT_WIDTH_PX
+  panelWidth: PANEL_DEFAULT_WIDTH_PX,
+  subagentPanelWidth: PANEL_DEFAULT_WIDTH_PX
 }
 
 const THINKING_LEVELS: ReadonlySet<string> = new Set([
@@ -307,7 +312,8 @@ export function normalizePreferences(raw: unknown): AppPreferences {
     sidebarSort: normalizedSidebarSort(record['sidebarSort']),
     sidebarManualOrder: normalizedManualOrder(record['sidebarManualOrder']),
     sidebarWidth: normalizedPaneWidth(record['sidebarWidth'], SIDEBAR_WIDTH_PX, clampSidebarWidth),
-    panelWidth: normalizedPaneWidth(record['panelWidth'], PANEL_DEFAULT_WIDTH_PX, clampPanelWidth)
+    panelWidth: normalizedPaneWidth(record['panelWidth'], PANEL_DEFAULT_WIDTH_PX, clampPanelWidth),
+    subagentPanelWidth: normalizedPaneWidth(record['subagentPanelWidth'], PANEL_DEFAULT_WIDTH_PX, clampPanelWidth)
   }
 }
 
@@ -329,7 +335,8 @@ export function mergePreferences(prev: AppPreferences, patch: unknown): AppPrefe
     sidebarSort: normalizedSidebarSortOr(prev.sidebarSort, record['sidebarSort']),
     sidebarManualOrder: normalizedManualOrderOr(prev.sidebarManualOrder, record['sidebarManualOrder']),
     sidebarWidth: normalizedPaneWidthOr(prev.sidebarWidth, record['sidebarWidth'], clampSidebarWidth),
-    panelWidth: normalizedPaneWidthOr(prev.panelWidth, record['panelWidth'], clampPanelWidth)
+    panelWidth: normalizedPaneWidthOr(prev.panelWidth, record['panelWidth'], clampPanelWidth),
+    subagentPanelWidth: normalizedPaneWidthOr(prev.subagentPanelWidth, record['subagentPanelWidth'], clampPanelWidth)
   }
 }
 

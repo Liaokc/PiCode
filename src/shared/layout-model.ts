@@ -31,13 +31,13 @@ export function clampSidebarWidth(width: number): number {
 export const SIDE_PANEL_WIDTH_PX = 420
 
 /** Tabs offered by the side panel's empty picker. Since ticket 18 the
- * terminal lives in the bottom dock (⌘J / titlebar toggle). Ticket 90 adds
- * the Subagents directory card beside Review. Browser tabs are out of scope
- * for PiCode 1.0. File and call-trace tabs are NOT in the picker (tickets
- * 07/31): they open via deep-links (transcript cards, Review tree,
- * ⌘K-adjacent surfaces) and then behave like any other tab
- * (activate/close). */
-export const PANEL_EMPTY_TABS = ['review', 'subagents'] as const
+ * terminal lives in the bottom dock (⌘J / titlebar toggle). Ticket 136
+ * moves the Subagents directory to its OWN right sidebar (the titlebar
+ * entry), so the picker offers the Review card alone. File and
+ * call-trace tabs are NOT in the picker (tickets 07/31): they open via
+ * deep-links (transcript cards, Review tree, ⌘K-adjacent surfaces) and
+ * then behave like any other tab (activate/close). */
+export const PANEL_EMPTY_TABS = ['review'] as const
 
 /** Top-level view: the workspace shell or the settings window shell. */
 export type AppView = 'workspace' | 'settings'
@@ -49,12 +49,17 @@ export interface ShellUiState {
    * committed back to preferences on pointerup. */
   sidebarWidth: number
   sidePanelOpen: boolean
+  /** Ticket 136: the subagents' dedicated right sidebar (the titlebar
+   * entry right of the side-panel toggle). Mutually exclusive with the
+   * side panel — see the open actions' fold below. */
+  subagentPanelOpen: boolean
   view: AppView
 }
 
-/** Launch state must match reference screenshot 02: sidebar visible, panel collapsed. */
+/** Launch state must match reference screenshot 02: sidebar visible, both
+ * right panes collapsed. */
 export function initialShellUiState(): ShellUiState {
-  return { sidebarOpen: true, sidebarWidth: SIDEBAR_WIDTH_PX, sidePanelOpen: false, view: 'workspace' }
+  return { sidebarOpen: true, sidebarWidth: SIDEBAR_WIDTH_PX, sidePanelOpen: false, subagentPanelOpen: false, view: 'workspace' }
 }
 
 /** Ticket 86: closing the LAST side-panel tab must collapse the panel — an
@@ -70,6 +75,27 @@ export function shouldAutoCollapseSidePanel(prevOpenTabs: number, openTabs: numb
   return sidePanelOpen && prevOpenTabs > 0 && openTabs === 0
 }
 
+/** Ticket 136: the right-pane swap signature — one right pane OPENED in the
+ * same commit that folded the other. The opener INHERITS the folded pane's
+ * width (the fold never touches width state, so the folded pane's current
+ * width is exactly what it held). Pure: the App applies the plan in a
+ * layout effect so the swap paints once; a manual collapse matches no row
+ * and inherits nothing. */
+export type RightPaneWidthSwap = 'side-inherits-subagent' | 'subagent-inherits-side' | null
+
+export function planRightPaneWidthSwap(
+  prev: { sidePanelOpen: boolean; subagentPanelOpen: boolean },
+  next: { sidePanelOpen: boolean; subagentPanelOpen: boolean }
+): RightPaneWidthSwap {
+  if (next.sidePanelOpen && !prev.sidePanelOpen && prev.subagentPanelOpen && !next.subagentPanelOpen) {
+    return 'side-inherits-subagent'
+  }
+  if (next.subagentPanelOpen && !prev.subagentPanelOpen && prev.sidePanelOpen && !next.sidePanelOpen) {
+    return 'subagent-inherits-side'
+  }
+  return null
+}
+
 export type ShellUiAction =
   | { type: 'toggle-sidebar' }
   | { type: 'set-sidebar-width'; width: number }
@@ -77,6 +103,9 @@ export type ShellUiAction =
   | { type: 'toggle-side-panel' }
   | { type: 'open-side-panel' }
   | { type: 'close-side-panel' }
+  | { type: 'open-subagent-panel' }
+  | { type: 'close-subagent-panel' }
+  | { type: 'toggle-subagent-panel' }
   | { type: 'open-settings' }
   | { type: 'back-to-workspace' }
   | { type: 'toggle-settings' }
@@ -92,11 +121,26 @@ export function shellUiReducer(state: ShellUiState, action: ShellUiAction): Shel
     case 'reset-sidebar-width':
       return state.sidebarWidth === SIDEBAR_WIDTH_PX ? state : { ...state, sidebarWidth: SIDEBAR_WIDTH_PX }
     case 'toggle-side-panel':
-      return { ...state, sidePanelOpen: !state.sidePanelOpen }
+      // Ticket 136: the OPENING leg folds the subagents sidebar (the two
+      // right panes are mutually exclusive); the closing leg is the plain
+      // collapse and never opens the other.
+      if (state.sidePanelOpen) return { ...state, sidePanelOpen: false }
+      return { ...state, sidePanelOpen: true, subagentPanelOpen: false }
     case 'open-side-panel':
-      return state.sidePanelOpen ? state : { ...state, sidePanelOpen: true }
+      if (state.sidePanelOpen) return state
+      return { ...state, sidePanelOpen: true, subagentPanelOpen: false }
     case 'close-side-panel':
       return state.sidePanelOpen ? { ...state, sidePanelOpen: false } : state
+    case 'open-subagent-panel':
+      // Ticket 136: mirror image — opening the subagents sidebar folds the
+      // side panel in the same commit.
+      if (state.subagentPanelOpen) return state
+      return { ...state, subagentPanelOpen: true, sidePanelOpen: false }
+    case 'close-subagent-panel':
+      return state.subagentPanelOpen ? { ...state, subagentPanelOpen: false } : state
+    case 'toggle-subagent-panel':
+      if (state.subagentPanelOpen) return { ...state, subagentPanelOpen: false }
+      return { ...state, subagentPanelOpen: true, sidePanelOpen: false }
     case 'open-settings':
       return state.view === 'settings' ? state : { ...state, view: 'settings' }
     case 'back-to-workspace':

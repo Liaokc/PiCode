@@ -2,6 +2,7 @@ import type { Dispatch, JSX } from 'react'
 import type { DockAction } from '../../../shared/dock-model'
 import type { ShellUiAction, ShellUiState } from '../../../shared/layout-model'
 import {
+  BotIcon,
   PanelBottomIcon,
   PanelLeftIcon,
   PanelRightIcon,
@@ -15,14 +16,16 @@ interface TitleBarProps {
   dispatch: Dispatch<ShellUiAction>
   /** Bottom dock dispatch (ticket 18): ⌘J terminal + ⌥⌘J bridge panels. */
   dispatchDock: Dispatch<DockAction>
-  /** Ticket 101: the FOCUSED session's live subagent run count — the
-   * collapsed side panel's toggle badge (the sidebar's orange badge
-   * precedent). Zero renders no badge. */
+  /** Ticket 136: the FOCUSED session's live subagent run count — the
+   * subagents entry's badge (the sidebar's orange badge precedent), shown
+   * only while the subagents sidebar is collapsed (an open sidebar shows
+   * its own directory). Zero renders no badge. */
   subagentRunningCount?: number
-  /** Ticket 101: the badge click's open action — the panel opens straight
-   * onto the Subagents directory tab (the badge's promise: the count the
-   * directory will show). Absent → the toggle behaves as before. */
-  onOpenSubagents?: () => void
+  /** Ticket 136: the subagents entry's click — toggle the subagents
+   * sidebar; the opening leg lands on the fixed directory tab (the badge's
+   * promise: the count the directory's Running section will show). Absent
+   * → the entry is not rendered. */
+  onToggleSubagents?: () => void
 }
 
 /**
@@ -34,16 +37,21 @@ interface TitleBarProps {
  * the shared bottom dock, swaps it in while the other shows, or closes the
  * dock when its own panel is already showing.
  * Tooltip discipline (ticket 22): a control with a shortcut shows ONLY its
- * keycaps — ⌘B sidebar / ⌥⌘B side panel / ⌘J terminal / ⌥⌘J bridge.
+ * keycaps — ⌘B sidebar / ⌥⌘B side panel / ⌘J terminal / ⌥⌘J bridge; the
+ * subagents entry has no chord, so it shows its short description.
  * Ticket 127 retired the settings gear (the ticket-63 UI face): the ⌘,
  * chord and the sidebar's bottom-left gear are the settings entries —
- * the shortcut and the visible button stay decoupled.
+ * the shortcut and the visible button stay decoupled. Ticket 136 fills the
+ * retired gear's slot with the subagents entry: always present, badge while
+ * runs are live and the sidebar is collapsed, opening the subagents'
+ * dedicated right sidebar.
  */
-export default function TitleBar({ ui, dispatch, dispatchDock, subagentRunningCount = 0, onOpenSubagents }: TitleBarProps): JSX.Element {
+export default function TitleBar({ ui, dispatch, dispatchDock, subagentRunningCount = 0, onToggleSubagents }: TitleBarProps): JSX.Element {
   const settings = ui.view === 'settings'
-  // The badge lives ONLY on the collapsed panel (an open panel shows its
-  // own directory — the count would be redundant); zero runs, no badge.
-  const panelBadge = !ui.sidePanelOpen && subagentRunningCount > 0 ? subagentRunningCount : null
+  // The badge lives ONLY on the collapsed subagents sidebar (an open
+  // sidebar shows its own directory — the count would be redundant); zero
+  // runs, no badge.
+  const subagentBadge = !ui.subagentPanelOpen && subagentRunningCount > 0 ? subagentRunningCount : null
   return (
     <header className="titlebar">
       {!settings && (
@@ -95,27 +103,33 @@ export default function TitleBar({ ui, dispatch, dispatchDock, subagentRunningCo
             <button
               type="button"
               className="tb-btn"
-              aria-label={
-                panelBadge !== null
-                  ? `Open side panel — ${panelBadge} running subagent${panelBadge === 1 ? '' : 's'}`
-                  : ui.sidePanelOpen
-                    ? 'Close side panel'
-                    : 'Open side panel'
-              }
-              data-subagent-count={subagentRunningCount}
-              onClick={() => {
-                // Ticket 101: a badge click is a promise — the panel opens
-                // STRAIGHT onto the Subagents directory tab, whose Running
-                // section is exactly what the count counted. Every other
-                // click stays the plain toggle.
-                if (panelBadge !== null && onOpenSubagents !== undefined) onOpenSubagents()
-                else dispatch({ type: 'toggle-side-panel' })
-              }}
+              aria-label={ui.sidePanelOpen ? 'Close side panel' : 'Open side panel'}
+              onClick={() => dispatch({ type: 'toggle-side-panel' })}
             >
               <PanelRightIcon />
-              {panelBadge !== null && (
-                <span className="tb-btn-badge" aria-hidden="true" data-testid="panel-badge">
-                  {panelBadge > 9 ? '9+' : panelBadge}
+            </button>
+          </Tooltip>
+        )}
+        {!settings && (
+          <Tooltip label="Subagents">
+            <button
+              type="button"
+              className="tb-btn"
+              data-testid="subagent-panel-toggle"
+              data-subagent-count={subagentRunningCount}
+              aria-label={
+                subagentBadge !== null
+                  ? `Open subagents — ${subagentBadge} running subagent${subagentBadge === 1 ? '' : 's'}`
+                  : ui.subagentPanelOpen
+                    ? 'Close subagents'
+                    : 'Open subagents'
+              }
+              onClick={() => onToggleSubagents?.()}
+            >
+              <BotIcon />
+              {subagentBadge !== null && (
+                <span className="tb-btn-badge" aria-hidden="true" data-testid="subagent-badge">
+                  {subagentBadge > 9 ? '9+' : subagentBadge}
                 </span>
               )}
             </button>

@@ -223,18 +223,14 @@ export function startSubagentsVisualIfEnabled(getWindow: () => BrowserWindow | n
           fleet: { entries: [], totalActive: 1, omitted: 0 }
         }
       })
-      // Wait for the tab: open it through the panel picker (⌥⌘B → card).
+      // Ticket 136: open the subagents sidebar through its always-present
+      // titlebar entry (the side panel's picker no longer offers a
+      // Subagents card); the opening leg lands on the fixed directory tab.
       await win.webContents.executeJavaScript(
-        `window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB', altKey: true, metaKey: true, bubbles: true })); true`
+        `document.querySelector('[data-testid="subagent-panel-toggle"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
       )
-      if (!(await waitFor(getWindow, `document.querySelector('.panel-tab-card[aria-label="Open Subagents tab"]') !== null`, 8_000))) {
-        throw new Error('subagents visual: the picker never offered the Subagents card')
-      }
-      await win.webContents.executeJavaScript(
-        `document.querySelector('.panel-tab-card[aria-label="Open Subagents tab"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
-      )
-      if (!(await waitFor(getWindow, `document.querySelector('.subagents-view') !== null`, 8_000))) {
-        throw new Error('subagents visual: the Subagents tab never rendered')
+      if (!(await waitFor(getWindow, `document.querySelector('.subagent-panel:not([data-closed])') !== null && document.querySelector('.subagents-view') !== null`, 8_000))) {
+        throw new Error('subagents visual: the subagents sidebar never opened onto its directory tab')
       }
       if (!(await waitFor(getWindow, `document.querySelector('[data-subagent-row="call-live"] .subagents-badge-running') !== null`, 8_000))) {
         const diag = (await win.webContents.executeJavaScript(`(() => ({

@@ -39,7 +39,8 @@ describe('normalizePreferences', () => {
       sidebarSort: 'updated',
       sidebarManualOrder: EMPTY_MANUAL_ORDER,
       sidebarWidth: SIDEBAR_WIDTH_PX,
-      panelWidth: PANEL_DEFAULT_WIDTH_PX
+      panelWidth: PANEL_DEFAULT_WIDTH_PX,
+      subagentPanelWidth: PANEL_DEFAULT_WIDTH_PX
     })
     expect(
       normalizePreferences({
@@ -87,16 +88,20 @@ describe('mergePreferences', () => {
       sidebarSort: 'updated',
       sidebarManualOrder: EMPTY_MANUAL_ORDER,
       sidebarWidth: SIDEBAR_WIDTH_PX,
-      panelWidth: PANEL_DEFAULT_WIDTH_PX
+      panelWidth: PANEL_DEFAULT_WIDTH_PX,
+      subagentPanelWidth: PANEL_DEFAULT_WIDTH_PX
     })
 
     // The pane widths (ticket 29) ride the same patch channel as everything
-    // else and must survive unrelated patches (readStates upserts).
-    const widened = mergePreferences(DEFAULT_PREFERENCES, { sidebarWidth: 480, panelWidth: 640 })
+    // else and must survive unrelated patches (readStates upserts). Ticket
+    // 136 adds the subagents sidebar to the same width-persistence contract.
+    const widened = mergePreferences(DEFAULT_PREFERENCES, { sidebarWidth: 480, panelWidth: 640, subagentPanelWidth: 560 })
     expect(widened.sidebarWidth).toBe(480)
     expect(widened.panelWidth).toBe(640)
+    expect(widened.subagentPanelWidth).toBe(560)
     expect(mergePreferences(widened, { readStates: {} }).sidebarWidth).toBe(480)
     expect(mergePreferences(widened, { readStates: {} }).panelWidth).toBe(640)
+    expect(mergePreferences(widened, { readStates: {} }).subagentPanelWidth).toBe(560)
   })
 
   it('lets a patch clear the default model and thinking level with null', () => {
@@ -185,8 +190,10 @@ describe('mergePreferences', () => {
     // Sidebar: 240–520, default 320. Panel: clampPanelWidth's range, default 420.
     expect(DEFAULT_PREFERENCES.sidebarWidth).toBe(SIDEBAR_WIDTH_PX)
     expect(DEFAULT_PREFERENCES.panelWidth).toBe(PANEL_DEFAULT_WIDTH_PX)
+    expect(DEFAULT_PREFERENCES.subagentPanelWidth).toBe(PANEL_DEFAULT_WIDTH_PX)
     expect(normalizePreferences(undefined).sidebarWidth).toBe(320)
     expect(normalizePreferences(undefined).panelWidth).toBe(420)
+    expect(normalizePreferences(undefined).subagentPanelWidth).toBe(420)
     const widths: Array<[unknown, unknown, number, number, string]> = [
       [200, 100, 240, 280, 'below both floors clamps to the mins'],
       [240, 280, 240, 280, 'exact mins pass'],

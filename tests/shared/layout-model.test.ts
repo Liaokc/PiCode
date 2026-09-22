@@ -7,20 +7,23 @@ import {
   MAIN_ZONE_MIN_WIDTH_PX,
   clampSidebarWidth,
   initialShellUiState,
+  planRightPaneWidthSwap,
   shellUiReducer,
   shouldAutoCollapseSidePanel,
+  type RightPaneWidthSwap,
   type ShellUiAction,
   type ShellUiState
 } from '../../src/shared/layout-model'
 import { PANEL_MIN_WIDTH_PX as PANEL_MIN_WIDTH } from '../../src/shared/panel-model'
 
 describe('initial shell UI state', () => {
-  it('opens on the workspace with the sidebar visible and the side panel collapsed', () => {
+  it('opens on the workspace with the sidebar visible and both right panes collapsed', () => {
     // Composition must match reference screenshot 02 on launch.
     expect(initialShellUiState()).toEqual({
       sidebarOpen: true,
       sidebarWidth: SIDEBAR_WIDTH_PX,
       sidePanelOpen: false,
+      subagentPanelOpen: false,
       view: 'workspace'
     })
   })
@@ -159,12 +162,105 @@ describe('shellUiReducer', () => {
   })
 })
 
+describe('right-pane mutual exclusion (ticket 136)', () => {
+  const toggle = (action: ShellUiAction) => (state: ShellUiState): ShellUiState =>
+    shellUiReducer(state, action)
+
+  it('launches with both right panes collapsed', () => {
+    expect(initialShellUiState().subagentPanelOpen).toBe(false)
+  })
+
+  it('opening the subagents sidebar folds an open side panel', () => {
+    const sideOpen = toggle({ type: 'open-side-panel' })(initialShellUiState())
+    const swapped = toggle({ type: 'open-subagent-panel' })(sideOpen)
+    expect(swapped.subagentPanelOpen).toBe(true)
+    expect(swapped.sidePanelOpen).toBe(false)
+  })
+
+  it('opening the side panel folds an open subagents sidebar', () => {
+    const subOpen = toggle({ type: 'open-subagent-panel' })(initialShellUiState())
+    const swapped = toggle({ type: 'open-side-panel' })(subOpen)
+    expect(swapped.sidePanelOpen).toBe(true)
+    expect(swapped.subagentPanelOpen).toBe(false)
+  })
+
+  it('each open action is idempotent', () => {
+    const opened = toggle({ type: 'open-subagent-panel' })(initialShellUiState())
+    expect(toggle({ type: 'open-subagent-panel' })(opened)).toEqual(opened)
+    const sideOpened = toggle({ type: 'open-side-panel' })(initialShellUiState())
+    expect(toggle({ type: 'open-side-panel' })(sideOpened)).toEqual(sideOpened)
+  })
+
+  it('the toggles fold the other pane only on their opening leg', () => {
+    const sideOpen = toggle({ type: 'toggle-side-panel' })(initialShellUiState())
+    const swapped = toggle({ type: 'toggle-subagent-panel' })(sideOpen)
+    expect(swapped.subagentPanelOpen).toBe(true)
+    expect(swapped.sidePanelOpen).toBe(false)
+    // The closing leg never reopens the other pane.
+    const collapsed = toggle({ type: 'toggle-subagent-panel' })(swapped)
+    expect(collapsed.subagentPanelOpen).toBe(false)
+    expect(collapsed.sidePanelOpen).toBe(false)
+  })
+
+  it('manually collapsing one pane never opens the other', () => {
+    const subOpen = toggle({ type: 'open-subagent-panel' })(initialShellUiState())
+    const collapsed = toggle({ type: 'close-subagent-panel' })(subOpen)
+    expect(collapsed.subagentPanelOpen).toBe(false)
+    expect(collapsed.sidePanelOpen).toBe(false)
+    const sideOpen = toggle({ type: 'open-side-panel' })(initialShellUiState())
+    const sideCollapsed = toggle({ type: 'close-side-panel' })(sideOpen)
+    expect(sideCollapsed.sidePanelOpen).toBe(false)
+    expect(sideCollapsed.subagentPanelOpen).toBe(false)
+  })
+
+  it('closing actions are idempotent', () => {
+    const opened = toggle({ type: 'open-subagent-panel' })(initialShellUiState())
+    const closed = toggle({ type: 'close-subagent-panel' })(opened)
+    expect(toggle({ type: 'close-subagent-panel' })(closed)).toEqual(closed)
+  })
+
+  it('never folds the subagents pane when the side panel opens from collapsed', () => {
+    // The plain workspace state (both collapsed) — the side panel opens
+    // alone; the subagents flag must not flip either way.
+    const opened = toggle({ type: 'open-side-panel' })(initialShellUiState())
+    expect(opened.subagentPanelOpen).toBe(false)
+    expect(opened.sidePanelOpen).toBe(true)
+  })
+})
+
+describe('planRightPaneWidthSwap (ticket 136: the swap inherits the folded pane width)', () => {
+  const cases: Array<{ prev: [boolean, boolean]; next: [boolean, boolean]; expected: RightPaneWidthSwap; why: string }> = [
+    { prev: [false, false], next: [true, false], expected: null, why: 'side panel opens alone — no swap' },
+    { prev: [false, false], next: [false, true], expected: null, why: 'subagents pane opens alone — no swap' },
+    { prev: [true, false], next: [false, true], expected: 'subagent-inherits-side', why: 'subagents pane takes over the side panel' },
+    { prev: [false, true], next: [true, false], expected: 'side-inherits-subagent', why: 'side panel takes over the subagents pane' },
+    { prev: [true, false], next: [false, false], expected: null, why: 'a manual side-panel collapse inherits nothing' },
+    { prev: [false, true], next: [false, false], expected: null, why: 'a manual subagents collapse inherits nothing' },
+    { prev: [true, false], next: [true, false], expected: null, why: 'no change — no swap' },
+    { prev: [false, true], next: [false, true], expected: null, why: 'no change — no swap' }
+  ]
+  for (const row of cases) {
+    it(`${row.why} ([${row.prev}] → [${row.next}] → ${String(row.expected)})`, () => {
+      const [prevSide, prevSub] = row.prev
+      const [nextSide, nextSub] = row.next
+      expect(
+        planRightPaneWidthSwap(
+          { sidePanelOpen: prevSide, subagentPanelOpen: prevSub },
+          { sidePanelOpen: nextSide, subagentPanelOpen: nextSub }
+        )
+      ).toBe(row.expected)
+    })
+  }
+})
+
 describe('side panel tab slots', () => {
-  it('offers the Review + Subagents cards since the terminal moved to the bottom dock (tickets 18/90)', () => {
-    // Spec (18e): the picker offered a single Review card; ticket 90 adds
-    // the fixed Subagents directory identity beside it. File Preview stays
+  it('offers the Review card alone since the subagents moved to their own sidebar (tickets 18/90/136)', () => {
+    // Spec (18e): the picker offered a single Review card; ticket 90 once
+    // added the Subagents directory beside it — ticket 136 moved that
+    // directory to its own dedicated right sidebar (the titlebar entry),
+    // so the picker offers Review alone again. File Preview stays
     // deep-link-only and the terminal docks at the bottom.
-    expect(PANEL_EMPTY_TABS).toEqual(['review', 'subagents'])
+    expect(PANEL_EMPTY_TABS).toEqual(['review'])
     expect(PANEL_EMPTY_TABS).not.toContain('browser')
   })
 })

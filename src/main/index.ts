@@ -857,7 +857,8 @@ function fakePreferences(): AppPreferences {
     sidebarSort: 'updated',
     sidebarManualOrder: EMPTY_MANUAL_ORDER,
     sidebarWidth: SIDEBAR_WIDTH_PX,
-    panelWidth: PANEL_DEFAULT_WIDTH_PX
+    panelWidth: PANEL_DEFAULT_WIDTH_PX,
+    subagentPanelWidth: PANEL_DEFAULT_WIDTH_PX
   }
 }
 
