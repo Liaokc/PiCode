@@ -36,7 +36,8 @@ import { FILE_LIST_TRUNCATED } from '../shared/contract'
 import type { SessionDefaults } from '../shared/preferences'
 import { assistantUsageOfMessage, lastAssistantUsage } from '../shared/context-ring'
 import { buildSessionTree, extractTranscriptItems, forkAutoName, userImageParts, type RawSessionEntry } from '../shared/sessions/parse'
-import type { SessionTreePayload, TranscriptImagePart } from '../shared/sessions/types'
+import { sessionTreeToWire } from '../shared/sessions/tree-wire'
+import type { SessionTreeWirePayload, TranscriptImagePart } from '../shared/sessions/types'
 import { toolResultText } from '../shared/tool-format'
 import { isPackagesOpDescriptor, packagesOpRefusal, type PackagesOpDescriptor } from '../shared/packages-management'
 import { homedir } from 'node:os'
@@ -171,17 +172,20 @@ function rawEntries(manager: SessionManager): RawSessionEntry[] {
   return manager.getEntries() as unknown as RawSessionEntry[]
 }
 
-function treePayload(): SessionTreePayload {
+function treePayload(): SessionTreeWirePayload {
   const manager = runtime!.session.sessionManager
   const { nodes } = buildSessionTree(rawEntries(manager), homedir())
-  return {
+  // Ticket 131: the payload crosses IPC flat — nested children would nest
+  // ~2 levels per entry, and the renderer-side IPC serialization silently
+  // drops the whole event for deep (long) sessions (tree-wire.ts).
+  return sessionTreeToWire({
     sessionId: manager.getSessionId(),
     // The live leaf pointer (NOT the file-order tail — branch() moves the
     // leaf in memory without rewriting the append-only file).
     leafId: manager.getLeafId(),
     name: manager.getSessionName() ?? null,
     nodes
-  }
+  })
 }
 
 function sendTree(): void {

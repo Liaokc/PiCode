@@ -1926,14 +1926,15 @@ function onEvent(event) {
     }
     case 'L tree': {
       if (event.type !== 'session_tree') return
-      const nodesL = []
-      const walkL = (list) => {
-        for (const node of list) {
-          nodesL.push(node)
-          walkL(node.children ?? [])
-        }
+      // Ticket 131: the tree payload crosses the wire FLAT — nodes in file
+      // order with parentId links, never nested children (deep nesting is
+      // silently dropped by the renderer-side IPC serialization).
+      const nodesL = event.tree.nodes ?? []
+      if (!Array.isArray(nodesL)) fail('the tree payload must carry a flat node array')
+      for (const node of nodesL) {
+        if ('children' in node) fail(`wire node ${node.id} must not carry nested children (flat parentId wire, ticket 131)`)
+        if (node.parentId !== null && typeof node.parentId !== 'string') fail(`wire node ${node.id} has a malformed parentId`)
       }
-      walkL(event.tree.nodes ?? [])
       const kindL = new Map(nodesL.map((node) => [node.id, node.kind]))
       const seededL = new Set(census086.entries.map((e) => e.id))
       // Every census entry must survive as a node — the 0.86/unknown types
@@ -1956,7 +1957,7 @@ function onEvent(event) {
       if (event.tree?.leafId !== census086.lastId && !(extraL.length === 1 && extraL[0].id === event.tree?.leafId)) {
         fail(`the leaf must sit on the last entry (seeded or the bookkeeping tail), got ${event.tree?.leafId}`)
       }
-      console.log(`SMOKE round L tree ok — ${seededL.size} seeded nodes + ${extraL.length} bookkeeping tail, 0.86/unknown types degraded to other, leaf on the last entry`)
+      console.log(`SMOKE round L tree ok — ${seededL.size} seeded nodes + ${extraL.length} bookkeeping tail (flat parentId wire), 0.86/unknown types degraded to other, leaf on the last entry`)
       step = 'L shutdown'
       child.send({ type: 'shutdown' })
       return

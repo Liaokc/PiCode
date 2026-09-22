@@ -5298,6 +5298,117 @@ export function startSmokeIfEnabled(
     }
     log('history_tree_done')
 
+    // ---- ticket 131: deep-session History + fork rows (the History 0-rows
+    // regression guard). The `session_tree` payload used to nest `children`
+    // ~2 levels per entry; Electron's main→renderer IPC serialization
+    // silently drops messages nested beyond its depth limit (measured
+    // between a 300- and a 400-entry chain), so a long session's History
+    // rendered "0 rows / This session has no entries yet" forever — and a
+    // fork of a deep session (the fork file IS the deep root→leaf chain)
+    // inherited the same blindness. The fix ships the tree FLAT over the
+    // wire (parentId links, tree-wire.ts); the registry rebuilds the nested
+    // display shape. This stage drives the REAL host on a 430-entry chain
+    // (beyond the old drop threshold): the source History must render every
+    // entry, and a mid-tree fork must render exactly its root→fork-point
+    // rows — the fork-rows assertion the operator's repro demanded. The
+    // plain small-session History stays covered by the ticket-43 stage
+    // above (rows, jump, fork, no regression). ----
+    log('history_deep_start')
+    const deepStore = process.env['PICODE_SESSION_DIR']
+    if (!deepStore) fail('ticket-131 stage: PICODE_SESSION_DIR is not set')
+    const deepProject = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-tree131-'))
+    try {
+      const stamp = new Date().toISOString()
+      const deepFile = path.join(deepStore, 'tree131.jsonl')
+      const deepLines = [JSON.stringify({ type: 'session', version: 3, id: 'tree131-fixed-id', timestamp: stamp, cwd: deepProject })]
+      let deepParent: string | null = null
+      for (let i = 1; i <= 430; i++) {
+        const id = `t131d-e${i}`
+        deepLines.push(
+          JSON.stringify({
+            type: 'message',
+            id,
+            parentId: deepParent,
+            timestamp: stamp,
+            message: {
+              role: i % 2 === 1 ? 'user' : 'assistant',
+              content: [{ type: 'text', text: `T131D e${i}` }]
+            }
+          })
+        )
+        deepParent = id
+      }
+      writeFileSync(deepFile, deepLines.join('\n') + '\n')
+
+      supervisor.handleParentCommand({ type: 'resume_session', sessionFile: deepFile, cwd: deepProject })
+      await waitFor((e) => e.type === 'session_created' && e.sessionFile === deepFile, 'ticket-131 resume session_created')
+
+      await withWindow(getWindow, async (win) => {
+        const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+        if (!(await waitForProbe(win, `document.querySelector('.chat-view') !== null`, 10_000))) {
+          fail('ticket-131 stage: the resumed session never reached the chat view')
+        }
+
+        // The source History must show EVERY entry of the deep chain —
+        // before the flat-wire fix this was the "0 rows" repro itself.
+        await js(
+          `[...document.querySelectorAll('.chat-topbar-btn')].find((el) => el.textContent?.includes('History'))?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
+        )
+        if (!(await waitForProbe(win, `document.querySelectorAll('.tree-row').length === 430`, 10_000))) {
+          const got = (await js(`document.querySelectorAll('.tree-row').length`)) as number
+          const label = (await js(`document.querySelector('.tree-panel-count')?.textContent ?? null`)) as string | null
+          fail(`ticket-131 stage: deep-session History rows = ${got} (label ${JSON.stringify(label)}) — the flat-wire regression is back (expected 430)`)
+        }
+        log('history_deep_source_rows_ok', '430')
+
+        // Fork mid-tree (entry 200): the fork file is the root→e200 chain
+        // plus the ticket-130 auto-name's own session_info entry — a real
+        // entry that renders as its own info row — so the forked History
+        // must render exactly 201 rows (200 chain + 1 session-info).
+        const forkPromise = waitFor(
+          (e) => e.type === 'session_created' && typeof e.sessionFile === 'string' && e.sessionFile !== deepFile,
+          'ticket-131 fork session_created'
+        )
+        await js(`(() => {
+          const row = [...document.querySelectorAll('.tree-row')].find((el) => el.textContent?.includes('T131D e200'))
+          row?.querySelector('.tree-fork-btn')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+          return true
+        })()`)
+        const forkedDeep = await forkPromise
+        if (forkedDeep.type !== 'session_created' || typeof forkedDeep.sessionFile !== 'string') {
+          fail('ticket-131 stage: the deep fork produced no session_created with a file')
+        }
+        if (!existsSync(forkedDeep.sessionFile)) {
+          fail('ticket-131 stage: the forked session file never landed in the store')
+        }
+        if (!(await waitForProbe(win, `document.querySelector('[data-file="${forkedDeep.sessionFile}"]') !== null`, 10_000))) {
+          fail('ticket-131 stage: the forked deep session never reached the sidebar')
+        }
+        log('history_deep_fork_announced', String(forkedDeep.sessionId).slice(-6))
+
+        // The announcement closed the panel — reopen it on the forked view.
+        await js(
+          `[...document.querySelectorAll('.chat-topbar-btn')].find((el) => el.textContent?.includes('History'))?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
+        )
+        if (!(await waitForProbe(win, `document.querySelectorAll('.tree-row').length === 201`, 10_000))) {
+          const got = (await js(`document.querySelectorAll('.tree-row').length`)) as number
+          const label = (await js(`document.querySelector('.tree-panel-count')?.textContent ?? null`)) as string | null
+          fail(`ticket-131 stage: forked deep-session History rows = ${got} (label ${JSON.stringify(label)}) — expected the 201 root→fork-point rows (200 chain + the auto-name session_info)`)
+        }
+        // Exactly one current tag, on the fork's leaf (the session_info
+        // row the auto-name appended after the fork point).
+        if (!(await waitForProbe(win, `document.querySelectorAll('.tree-leaf-tag').length === 1`, 5_000))) {
+          fail('ticket-131 stage: the forked deep session must carry exactly one current tag')
+        }
+        log('history_deep_fork_rows_ok', '201')
+
+        await js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); true`)
+      })
+    } finally {
+      rmSync(deepProject, { recursive: true, force: true })
+    }
+    log('history_deep_done')
+
     // ---- ticket 83: the History-button toggle race — the ticket-70 race's
     // second sighting, on the branch-history panel. TreePanel hung a
     // document-level mousedown outside-close that did NOT exempt the owning

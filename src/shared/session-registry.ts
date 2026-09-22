@@ -17,6 +17,7 @@ import { chatReducer, initialChatState, type ChatAction, type ChatError, type Ch
 import type { HostToParent } from './contract'
 import type { ComposerDraft } from './composer/drafts'
 import { parkedDraft } from './composer/drafts'
+import { sessionTreeFromWire } from './sessions/tree-wire'
 import type { SessionTreePayload } from './sessions/types'
 import type { SubagentFleetDTO, SubagentRunState } from './subagents/types'
 
@@ -352,11 +353,14 @@ function foldEvent(state: SessionRegistryState, event: HostToParent): SessionReg
     }
     const withEntry = withEntryFor(state, sessionId)
     // The tree is registry view state (per session, ticket 20) — the chat
-    // reducer deliberately ignores tree payloads.
+    // reducer deliberately ignores tree payloads. Ticket 131: the payload
+    // crosses IPC FLAT (deep nesting is dropped by the renderer-side IPC
+    // serialization); the fold rebuilds the canonical nested payload every
+    // display consumer speaks (shared/sessions/tree-wire.ts).
     if (scoped.type === 'session_tree') {
       return {
         ...withEntry,
-        sessions: withEntry.sessions.map((s) => (s.id === sessionId ? { ...s, tree: scoped.tree } : s))
+        sessions: withEntry.sessions.map((s) => (s.id === sessionId ? { ...s, tree: sessionTreeFromWire(scoped.tree) } : s))
       }
     }
     // Same for the branch readout (ticket 21): per-session view state.
@@ -417,7 +421,7 @@ function foldEvent(state: SessionRegistryState, event: HostToParent): SessionReg
     if (focused === null) return state
     return {
       ...state,
-      sessions: state.sessions.map((s) => (s.id === focused ? { ...s, tree: event.tree } : s))
+      sessions: state.sessions.map((s) => (s.id === focused ? { ...s, tree: sessionTreeFromWire(event.tree) } : s))
     }
   }
   // Legacy unwrapped branch readout belongs to the FOCUSED session, like the
