@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
+  IDLE_BOTTOM_SEQUENCE_IDLE,
   STICK_THRESHOLD_PX,
   distanceFromBottom,
   isAtBottom,
   isNearBottom,
   nextHeldAway,
+  nextIdleBottomPin,
   nextSendLatch,
   shouldAutoScroll,
   type ContentGrowth,
+  type IdleBottomSequence,
   type ScrollSnapshot,
   type ScrollState
 } from '../../src/shared/scroll-stay'
@@ -165,6 +168,152 @@ describe('nextSendLatch transition (ticket 93: the send pin is an until-arrival 
     expect(afterGestureLatch).toBe(false)
     expect(afterGestureHold).toBe(true)
     expect(shouldAutoScroll({ nearBottom: true, heldAway: afterGestureHold }, { grew: true }, afterGestureLatch)).toBe(false)
+  })
+})
+
+describe('nextIdleBottomPin (ticket 119: the idle viewport-shrink re-pin — a bottom-pinned reader stays pinned across a whole typing burst, everyone else untouched)', () => {
+  // Geometry: 2000px of content; the composer's growth shrinks the scroll
+  // cell from 500px to 420px (Δ=80) or 450px (Δ=50). A bottom-pinned reader
+  // sits at scrollTop 1500 (= 2000 − 500, distance 0); an off-bottom
+  // reader at 1000 (distance 500). The observation builder pins
+  // agentRunning false unless a test says otherwise (idle is the ticket's
+  // whole scope).
+  const obs = (clientHeight: number, scrollTop: number, agentRunning = false) => ({
+    snapshot: snap(2000, scrollTop, clientHeight),
+    agentRunning
+  })
+  const armed: IdleBottomSequence = { clientHeightStartPx: 500 }
+
+  it('arms the sequence only on an at-bottom observation (the strict ticket-93 arrival rule, not the 160px follow band)', () => {
+    // At the bottom (distance 0): arms with the current height, no write.
+    expect(nextIdleBottomPin(obs(500, 1500), IDLE_BOTTOM_SEQUENCE_IDLE)).toEqual({
+      scrollTopPx: null,
+      next: { clientHeightStartPx: 500 }
+    })
+    // Mid-band (159px away — inside the follow band but NOT at the bottom)
+    // and far away: nothing arms, nothing writes.
+    expect(nextIdleBottomPin(obs(500, 1341), IDLE_BOTTOM_SEQUENCE_IDLE)).toEqual({
+      scrollTopPx: null,
+      next: IDLE_BOTTOM_SEQUENCE_IDLE
+    })
+    expect(nextIdleBottomPin(obs(500, 1000), IDLE_BOTTOM_SEQUENCE_IDLE)).toEqual({
+      scrollTopPx: null,
+      next: IDLE_BOTTOM_SEQUENCE_IDLE
+    })
+  })
+
+  it('re-pins a bottom-pinned reader across each shrink by exactly the geometry delta (the tail rows stay in view)', () => {
+    // 500→420 while pinned at 1500: the bottom edge would ride 80px up the
+    // content; the pin moves to 2000−420 = 1580 = 1500 + 80 — the exact
+    // delta, no snapping. The sequence stays armed for the next shrink.
+    expect(nextIdleBottomPin(obs(420, 1500), armed)).toEqual({
+      scrollTopPx: 1580,
+      next: armed
+    })
+    expect(nextIdleBottomPin(obs(450, 1500), armed)).toEqual({
+      scrollTopPx: 1550,
+      next: armed
+    })
+  })
+
+  it('re-pins through the engine’s native pre-pin restore (the instrumentation-proven revert: a scroll move with no JS write that lands the reader exactly the cumulative shrink above the bottom)', () => {
+    // Burst: 500→420 (the pin writes 1580), then 420→350. On the second
+    // shrink’s layout the engine natively restores the pre-pin absolute
+    // 1500 — distance = 2000−1500−350 = 150 = the cumulative shrink
+    // (500−350). A single-shot at-bottom check would read “off bottom”
+    // and stand down; the sequence bound still explains the position, so
+    // the re-pin fires: 2000−350 = 1650.
+    expect(nextIdleBottomPin(obs(350, 1500), armed)).toEqual({
+      scrollTopPx: 1650,
+      next: armed
+    })
+  })
+
+  it('leaves a reader who scrolled away on their own byte-for-byte untouched (their scroll breaks the cumulative-shrink bound)', () => {
+    // Armed at 500, shrunk to 420, the reader deliberately scrolled up to
+    // 1450: distance 130 > cumulative 80 + 1 — their own read move. No
+    // write, and the sequence closes until they return to the bottom.
+    expect(nextIdleBottomPin(obs(420, 1450), armed)).toEqual({
+      scrollTopPx: null,
+      next: IDLE_BOTTOM_SEQUENCE_IDLE
+    })
+    // A mid-band reader who never armed: no write at all.
+    expect(nextIdleBottomPin(obs(420, 1341), IDLE_BOTTOM_SEQUENCE_IDLE)).toEqual({
+      scrollTopPx: null,
+      next: IDLE_BOTTOM_SEQUENCE_IDLE
+    })
+    expect(nextIdleBottomPin(obs(420, 1000), IDLE_BOTTOM_SEQUENCE_IDLE)).toEqual({
+      scrollTopPx: null,
+      next: IDLE_BOTTOM_SEQUENCE_IDLE
+    })
+  })
+
+  it('stands down entirely while the agent runs (ticket-93/94/75 semantics own the view — zero regression)', () => {
+    expect(nextIdleBottomPin(obs(420, 1500, true), armed)).toEqual({
+      scrollTopPx: null,
+      next: armed
+    })
+  })
+
+  it('closes the sequence on viewport growth or a same-height observation (the browser’s range clamp already bottom-pins; off-bottom anchors are stable)', () => {
+    // Draft deleted: the cell grows back past the baseline → close. The
+    // reader still on the bottom re-arms a fresh sequence at the new
+    // height; an off-bottom reader stays disarmed.
+    expect(nextIdleBottomPin(obs(560, 1440), armed)).toEqual({
+      scrollTopPx: null,
+      next: { clientHeightStartPx: 560 }
+    })
+    expect(nextIdleBottomPin(obs(500, 1000), armed)).toEqual({
+      scrollTopPx: null,
+      next: IDLE_BOTTOM_SEQUENCE_IDLE
+    })
+    // A same-height observation (width-only resize): also the clamp’s
+    // territory — close and re-arm only if at the bottom.
+    expect(nextIdleBottomPin(obs(500, 1500), armed)).toEqual({
+      scrollTopPx: null,
+      next: { clientHeightStartPx: 500 }
+    })
+  })
+
+  it('re-arms after the reader returns to the bottom (回底 starts the next burst)', () => {
+    // The sequence closed (they scrolled away); they scroll back to the
+    // bottom at the shrunken height 420: the next observation arms
+    // {420}, and the FOLLOWING shrink (420→350) re-pins again.
+    const reArmed = nextIdleBottomPin(obs(420, 1580), IDLE_BOTTOM_SEQUENCE_IDLE)
+    expect(reArmed).toEqual({ scrollTopPx: null, next: { clientHeightStartPx: 420 } })
+    expect(nextIdleBottomPin(obs(350, 1580), reArmed.next)).toEqual({
+      scrollTopPx: 1650,
+      next: { clientHeightStartPx: 420 }
+    })
+  })
+
+  it('floors at 0 when the content cannot fill the shrunk viewport', () => {
+    // 300px of content in a 500px cell (nothing scrollable, reader at 0),
+    // shrunk to 420: the pin target is negative — floor to 0, nothing
+    // moves. The arm itself happens on the at-bottom (distance < 1)
+    // observation.
+    const tiny = (clientHeight: number): { snapshot: ScrollSnapshot; agentRunning: boolean } => ({
+      snapshot: snap(300, 0, clientHeight),
+      agentRunning: false
+    })
+    expect(nextIdleBottomPin(tiny(500), IDLE_BOTTOM_SEQUENCE_IDLE)).toEqual({
+      scrollTopPx: null,
+      next: { clientHeightStartPx: 500 }
+    })
+    expect(nextIdleBottomPin(tiny(420), { clientHeightStartPx: 500 })).toEqual({
+      scrollTopPx: 0,
+      next: { clientHeightStartPx: 500 }
+    })
+  })
+
+  it('composes with the growth stick: a shrink then content growth both keep the pinned reader on the bottom', () => {
+    // Typing grows the composer (cell 500→420): the re-pin writes 1580.
+    // A late entry then grows the content to 2100: the stick effect’s
+    // near-bottom follow pins 2100−420 = 1680 — one continuous bottom.
+    const afterShrink = nextIdleBottomPin(obs(420, 1500), armed)
+    expect(afterShrink.scrollTopPx).toBe(1580)
+    const grown = snap(2100, afterShrink.scrollTopPx ?? 0, 420)
+    expect(shouldAutoScroll({ nearBottom: isNearBottom(grown), heldAway: false }, { grew: true }, false)).toBe(true)
   })
 })
 

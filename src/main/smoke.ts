@@ -191,6 +191,18 @@
  * prefill path (PREFILL_EVENT — queue Edit and edit-resend ride the same
  * window event) must open a long draft showing its END.
  *
+ * Ticket 119 adds the idle-typing transcript-stillness stage ahead of the
+ * ticket-44 stage (spec R18, zero model calls — a seeded settled session,
+ * the send-pin harness's file-seeding pattern): the instrumentation
+ * proved the idle bug was the composer card's growth shrinking the
+ * transcript cell while no scroll write ever fired (the tail Copy/Fork row
+ * slid under the composer). A bottom-pinned reader types, deletes, grows
+ * the draft past the cap, pastes/removes an image and toggles the expand —
+ * every operation keeps the bottom pinned with the tail row in view; a
+ * mid-transcript reader runs the same operations with the scrollTop held
+ * EXACTLY on every rAF-sampled frame while the card's height demonstrably
+ * moves.
+ *
  * Ticket 118 adds the skill-keep-text stage right after the ticket-117
  * stage (spec R7, one real model round): picking a skill from the `/` menu
  * strips ONLY the trigger token — the `/` + the query up to the caret plus
@@ -873,6 +885,379 @@ export function startSmokeIfEnabled(
       if (!listed) fail('sidebar never listed the session created by this smoke')
       log('sidebar_index_ok')
     })
+
+    // ---- ticket 119: idle composer operations never move the transcript
+    // (spec R18, CONTEXT.md: 空闲输入不动转录) ----
+    // Placement: BEFORE the ticket-44 stage — t44 needs a REAL window focus
+    // steal, which macOS denies intermittently in some environments (the
+    // t129/t117/t125/t130 stage-relocation precedent), so these assertions
+    // run while they still can. The seeded session spawns a hosted session
+    // of its own, which is why the crash-isolation stage below selects its
+    // victim by session (pidForSession), not as the most recently spawned
+    // host.
+    // The instrumentation for this ticket proved the idle bug was never a
+    // scroll write: the composer card's growth (auto-grow, the attachment
+    // strip, the expand glide) shrinks the transcript cell's clientHeight
+    // while scrollTop sits untouched, the viewport's bottom edge rides up
+    // over the content, and the last message's Copy/Fork action row slides
+    // under the composer (the operator's 转录上移). The fix — the idle
+    // viewport-shrink re-pin (scroll-stay.ts: nextIdleBottomPin, a
+    // per-burst sequence latch driven by BOTH a ResizeObserver arm and a
+    // user-gated scroll arm) — keeps a bottom-pinned reader pinned across
+    // every shrink of a typing burst (including through the engine's
+    // native pre-pin restores, which a single-shot at-bottom check would
+    // misread as “off bottom”), and leaves a reader who scrolls away on
+    // their own byte-for-byte untouched (their move breaks the sequence's
+    // cumulative-shrink bound); the re-pin targets were audited to include
+    // the tail rows (scrollHeight covers them — the “Copy buttons don't
+    // count as the bottom” hypothesis disproven).
+    //
+    // This stage drives the operator's scenario on a seeded settled session
+    // (zero model calls — the send-pin harness's file-seeding pattern):
+    // ① a bottom-pinned reader types a single line, grows a multi-line
+    //    draft past the 160px cap, pastes and removes an image attachment,
+    //    expands and collapses the input (⌘E's button), and deletes the
+    //    draft — after EVERY operation the view must still sit on the
+    //    bottom (distance < 1) with the tail Copy/Fork row inside the
+    //    viewport (the at-bottom reader's anchor is the bottom EDGE, which
+    //    the compensation holds on the content);
+    // ② a mid-transcript reader (scrolled far past the stick band) runs the
+    //    same operations, and a rAF sampler asserts the scrollTop stays
+    //    EXACTLY constant on every sampled frame (their anchor is the
+    //    viewport top — scrollTop 逐帧不变) while the composer card's height
+    //    demonstrably moves.
+
+    log('idle_typing_119_start')
+    {
+      const store119 = process.env['PICODE_SESSION_DIR']
+      if (!store119) fail('ticket-119 stage: PICODE_SESSION_DIR is not set')
+      const now119 = new Date().toISOString()
+      const file119 = path.join(store119, 'smoke-t119-idle.jsonl')
+      const answer119 =
+        'PICODE_119_TAIL begins.\n' +
+        Array.from({ length: 160 }, (_, i) => `settled answer line ${i + 1} — typing below must never move this transcript.`).join('\n') +
+        '\nfinal settled line — the Copy/Fork row sits right under this.'
+      writeFileSync(
+        file119,
+        [
+          JSON.stringify({ type: 'session', version: 3, id: 't119-idle', timestamp: now119, cwd }),
+          JSON.stringify({
+            type: 'message', id: 't119-u1', parentId: null, timestamp: now119,
+            message: { role: 'user', content: [{ type: 'text', text: 'PICODE_119_SEED: walk through the fix plan.' }] }
+          }),
+          JSON.stringify({
+            type: 'message', id: 't119-a1', parentId: 't119-u1', timestamp: now119,
+            message: { role: 'assistant', content: [{ type: 'text', text: answer119 }] }
+          })
+        ].join('\n') + '\n'
+      )
+      // Backdate: a fresh mtime would take the Live Follow path (no composer).
+      const then119 = new Date(Date.now() - 60 * 60 * 1_000)
+      utimesSync(file119, then119, then119)
+
+      await withWindow(getWindow, async (win) => {
+        const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+        // Capture the currently active session (the agent stages'
+        // second-turn session) — the stage restores it at the end so the
+        // ticket-44 stage (which reads that session's user bubble) still
+        // finds what it expects.
+        const activeBefore119 = (await js(
+          `document.querySelector('.sb-task-active')?.dataset.file ?? null`
+        )) as string | null
+        if (activeBefore119 === null) {
+          fail('ticket-119 stage: no active session to restore for the ticket-44 stage')
+        }
+        const row119 = `document.querySelector('[data-file="${file119}"]')`
+        const ta119 = `document.querySelector('.chat-dock textarea.composer-input')`
+        // Real text input through CDP (the ticket-117 pattern): synthetic
+        // input events can lose the race with React's scheduler after a
+        // programmatic scroll write (the deferred-render flake both the
+        // dev-app probe and the first draft of this stage hit), while
+        // Input.insertText rides the browser's real input pipeline —
+        // trusted events, onChange always lands.
+        const dbg119 = win.webContents.debugger
+        try {
+          await dbg119.attach()
+        } catch (err) {
+          fail(`ticket-119 stage: the CDP debugger could not attach for the typing legs (${String(err)})`)
+        }
+        const focus119 = async (): Promise<void> => {
+          if (!(await js(`${ta119}?.focus(); true`).catch(() => false))) {
+            fail('ticket-119 stage: composer textarea missing for focus')
+          }
+        }
+        /** Insert real text at the caret (appends; each insert leaves the
+         * caret at its end) — the growth-by-line geometry the legs need. */
+        const typeReal119 = async (text: string): Promise<void> => {
+          await focus119()
+          try {
+            await dbg119.sendCommand('Input.insertText', { text })
+          } catch (err) {
+            fail(`ticket-119 stage: CDP insertText failed (${String(err)})`)
+          }
+        }
+        // The whole stage body runs under the debugger: every exit path
+        // (assertion failure included) must detach it or the later
+        // stages' own CDP attaches (ticket 117) would find it occupied.
+        try {
+          const AT_BOTTOM_119 = `(() => { const el = document.querySelector('.chat-scroll'); return el !== null && el.scrollHeight - el.scrollTop - el.clientHeight < 1 })()`
+          /** The LAST action row (the settled turn's Copy/Fork tail) sits
+           * inside the transcript viewport. */
+          const TAIL_IN_119 = `(() => {
+          const sc = document.querySelector('.chat-scroll')
+          const tail = [...document.querySelectorAll('.msg-actions')].pop()
+          if (sc === null || tail === undefined) return false
+          return tail.getBoundingClientRect().bottom <= sc.getBoundingClientRect().bottom + 1
+          })()`
+          const GEOM_119 = `JSON.stringify({
+          st: document.querySelector('.chat-scroll')?.scrollTop ?? null,
+          ch: document.querySelector('.chat-scroll')?.clientHeight ?? null,
+          sh: document.querySelector('.chat-scroll')?.scrollHeight ?? null,
+          cardH: document.querySelector('.chat-dock .composer')?.clientHeight ?? null,
+          taH: document.querySelector('.chat-dock textarea.composer-input')?.clientHeight ?? null,
+          tailIn: ${TAIL_IN_119},
+          attach: document.querySelectorAll('.chat-dock .composer-attachment').length,
+          val: (document.querySelector('.chat-dock textarea.composer-input')?.value ?? '').slice(0, 24),
+          active: document.activeElement ? document.activeElement.className.slice(0, 24) : null
+          })`
+          const geom119 = async (): Promise<string> => js(GEOM_119).catch(() => 'unavailable') as Promise<string>
+
+          // The sidebar may be closed by earlier stages — reopen it first
+          // (the ticket-49 stage's toggle probe).
+          await js(`(() => {
+          if (document.querySelector('.sb-actions')) return true
+          const toggle = document.querySelector('button[aria-label="Show sidebar"]')
+          if (toggle instanceof HTMLElement) { toggle.click(); return true }
+          return false
+          })()`)
+          if (!(await waitForProbe(win, `${row119} !== null`, 20_000))) {
+          fail('ticket-119 stage: the seeded session never reached the sidebar')
+          }
+          await js(`${row119}?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
+          if (!(await waitForProbe(win, `${ta119} !== null`, 10_000))) {
+          fail('ticket-119 stage: the chat view composer never mounted')
+          }
+          if (
+          !(await waitForProbe(win, `(document.querySelector('.chat-thread')?.textContent ?? '').includes('PICODE_119_TAIL')`, 15_000))
+          ) {
+          fail('ticket-119 stage: the seeded transcript never replayed into the chat view')
+          }
+          // The arrival pin lands the bottom with the tail row visible.
+          if (!(await waitForProbe(win, `(${AT_BOTTOM_119}) && (${TAIL_IN_119})`, 10_000))) {
+          fail(`ticket-119 stage: the opened session never landed at the bottom with the tail row visible; DOM: ${await geom119()}`)
+          }
+          const base119 = JSON.parse(String(await geom119())) as {
+          st: number; ch: number; sh: number; cardH: number; taH: number; tailIn: boolean; attach: number
+          }
+
+          // ---- ① the bottom-pinned reader: every idle composer operation
+          // keeps the bottom pinned and the tail Copy/Fork row in view ----
+          const assertPinned119 = async (label: string): Promise<void> => {
+          await new Promise((r) => setTimeout(r, 260)) // the resize settle
+          if (!(await waitForProbe(win, `(${AT_BOTTOM_119}) && (${TAIL_IN_119})`, 3_000))) {
+            fail(`ticket-119 stage: ${label} moved the bottom-pinned reader off the bottom (or the tail Copy/Fork row left the viewport); DOM: ${await geom119()}`)
+          }
+          }
+
+          // Single-line typing: no geometry changes at all — the scrollTop
+          // itself must stay byte-for-byte (the pure no-op leg).
+          await typeReal119('PICODE_119_SINGLE')
+          await assertPinned119('single-line typing')
+          const afterSingle119 = JSON.parse(String(await geom119())) as { st: number }
+          if (afterSingle119.st !== base119.st) {
+          fail(`ticket-119 stage: single-line typing moved the scrollTop (${base119.st} → ${afterSingle119.st}) with no height change; DOM: ${await geom119()}`)
+          }
+          log('idle_typing_119_single_ok')
+
+          // Multi-line growth through the band and past the cap: the card's
+          // height demonstrably moves while the bottom stays pinned.
+          const lines119 = [
+          'first line of the idle draft',
+          'second line — the card must grow',
+          '第三行——中文输入同样增长卡片高度',
+          'fourth line pushes past the resting floor',
+          'fifth line and beyond the 160px cap the input scrolls internally'
+          ]
+          for (const line of lines119) {
+          await typeReal119(`\n${line}`)
+          await assertPinned119('multi-line growth')
+          }
+          const grown119 = JSON.parse(String(await geom119())) as { st: number; ch: number; cardH: number; taH: number }
+          if (!(grown119.cardH > base119.cardH + 40 && grown119.ch < base119.ch - 40)) {
+          fail(`ticket-119 stage: the multi-line leg never exercised the geometry (card ${base119.cardH} → ${grown119.cardH}, cell ${base119.ch} → ${grown119.ch}); DOM: ${await geom119()}`)
+          }
+          log('idle_typing_119_multiline_ok')
+
+          // The attachment strip: paste an image (the card grows again),
+          // then remove it — both directions keep the bottom pinned.
+          const paste119 = `(() => {
+          const ta = document.querySelector('.chat-dock textarea.composer-input')
+          if (!(ta instanceof HTMLTextAreaElement)) return false
+          const dt = new DataTransfer()
+          dt.items.add(new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])], 'picode119.png', { type: 'image/png' }))
+          ta.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+          return true
+          })()`
+          if (!(await js(paste119).catch(() => false))) {
+          fail('ticket-119 stage: composer textarea missing for the image paste')
+          }
+          if (!(await waitForProbe(win, `document.querySelectorAll('.chat-dock .composer-attachment').length === 1`, 5_000))) {
+          fail('ticket-119 stage: the pasted image never rendered an attachment card')
+          }
+          await assertPinned119('the attachment strip')
+          if (!(await js(`document.querySelector('.chat-dock .composer-attachment-remove')?.click(); true`).catch(() => false))) {
+          fail('ticket-119 stage: the attachment remove button never clicked')
+          }
+          if (!(await waitForProbe(win, `document.querySelectorAll('.chat-dock .composer-attachment').length === 0`, 5_000))) {
+          fail('ticket-119 stage: the attachment removal never landed')
+          }
+          await assertPinned119('the attachment removal')
+          log('idle_typing_119_attachments_ok')
+
+          // The expand toggle (⌘E's button): the biggest single height change
+          // the composer can make — both directions keep the bottom pinned.
+          const expand119 = async (): Promise<void> => {
+          const clicked = (await js(`(() => {
+            const b = document.querySelector('.chat-dock .composer-expand')
+            if (b instanceof HTMLElement) { b.dispatchEvent(new MouseEvent('click', { bubbles: true })); return true }
+            return false
+          })()`)) as boolean
+          if (!clicked) fail('ticket-119 stage: could not click the expand button')
+          }
+          // The expand rides from the multi-line draft's collapsed height —
+          // the collapse must return to THAT height (the ticket-116 typing
+          // commit: the draft's content height, not the empty floor).
+          const preExpand119 = JSON.parse(String(await geom119())) as { taH: number }
+          await expand119()
+          if (
+          !(await waitForProbe(
+            win,
+            `(() => {
+              const ta = document.querySelector('.chat-dock textarea.composer-input')
+              const zone = document.querySelector('.chat-view')
+              if (!(ta instanceof HTMLElement) || zone === null) return false
+              const expected = Math.round(Math.min(Math.max(zone.clientHeight / 2, 280), 560))
+              return ta.clientHeight === expected
+            })()`,
+            5_000
+          ))
+          ) {
+          fail(`ticket-119 stage: the expand never reached the projected half-zone height; DOM: ${await geom119()}`)
+          }
+          await assertPinned119('the expand toggle')
+          await expand119()
+          if (!(await waitForProbe(win, `${ta119}.clientHeight === ${preExpand119.taH}`, 5_000))) {
+          fail(
+            `ticket-119 stage: the collapse never returned to the draft's collapsed height ` +
+              `(${preExpand119.taH}); DOM: ${await geom119()}`
+          )
+          }
+          await assertPinned119('the expand collapse')
+          log('idle_typing_119_expand_ok')
+
+          // Deleting the draft back to empty: the card shrinks — the bottom
+          // stays pinned (the browser's range clamp plus the law).
+          if (!(await js(composerClearJs).catch(() => false))) {
+          fail('ticket-119 stage: composer textarea missing for the clear')
+          }
+          await assertPinned119('the draft deletion')
+          log('idle_typing_119_delete_ok')
+
+          // ---- ② the mid-transcript reader: the same operations, with the
+          // scrollTop held EXACTLY on every sampled frame while the card's
+          // height demonstrably moves ----
+          await js(`(() => { const el = document.querySelector('.chat-scroll'); el.scrollTop = Math.floor(el.scrollHeight * 0.4); return true })(); true`)
+          const mid119 = JSON.parse(String(await geom119())) as { st: number; sh: number; ch: number; cardH: number }
+          if (!(mid119.st > 160 && mid119.sh - mid119.st - mid119.ch > 160)) {
+          fail(`ticket-119 stage: the mid-transcript staging never left the stick band; DOM: ${await geom119()}`)
+          }
+          // The rAF sampler: every frame's scrollTop AND composer-card
+          // height — the 逐帧 assertion reads the scrollTop stream, and the
+          // geometry-exercise guard reads the max card height (the ops end
+          // with a clear, so the post-ops card is back at the floor by
+          // design — comparing pre-ops to post-ops would always read "no
+          // change" and the no-move assertion would be vacuous).
+          await js(`(() => {
+          window.__t119Frames = { on: true, samples: [], cards: [] }
+          function loop() {
+            if (window.__t119Frames.on === false) return
+            const el = document.querySelector('.chat-scroll')
+            const card = document.querySelector('.chat-dock .composer')
+            if (el !== null) window.__t119Frames.samples.push(el.scrollTop)
+            if (card !== null) window.__t119Frames.cards.push(card.clientHeight)
+            requestAnimationFrame(loop)
+          }
+          requestAnimationFrame(loop)
+          return true
+          })()`)
+          const ops119 = async (): Promise<void> => {
+          await typeReal119('PICODE_119_MID single line')
+          await new Promise((r) => setTimeout(r, 260))
+          for (const line of lines119) {
+            await typeReal119(`\n${line}`)
+            await new Promise((r) => setTimeout(r, 260))
+          }
+          if (!(await js(paste119).catch(() => false))) {
+            fail('ticket-119 stage: composer textarea missing for the mid-transcript paste')
+          }
+          await new Promise((r) => setTimeout(r, 300))
+          if (!(await js(`document.querySelector('.chat-dock .composer-attachment-remove')?.click(); true`).catch(() => false))) {
+            fail('ticket-119 stage: the mid-transcript attachment removal never clicked')
+          }
+          await new Promise((r) => setTimeout(r, 300))
+          if (!(await js(composerClearJs).catch(() => false))) {
+            fail('ticket-119 stage: composer textarea missing for the mid-transcript clear')
+          }
+          await new Promise((r) => setTimeout(r, 300))
+          }
+          await ops119()
+          const frames119 = (await js(`(() => {
+          const F = window.__t119Frames
+          F.on = false
+          return JSON.stringify({ count: F.samples.length,
+            moved: F.samples.filter((s) => s !== ${mid119.st}).length,
+            maxCardH: Math.max(...F.cards) })
+          })()`)) as string
+          const framesParsed119 = JSON.parse(frames119) as { count: number; moved: number; maxCardH: number }
+          if (framesParsed119.count < 10 || framesParsed119.moved > 0) {
+          fail(
+            `ticket-119 stage: the mid-transcript reader's scrollTop moved during idle composer operations ` +
+              `(${framesParsed119.moved} of ${framesParsed119.count} sampled frames left ${mid119.st}); DOM: ${await geom119()}`
+          )
+          }
+          if (framesParsed119.maxCardH - mid119.cardH < 40) {
+          fail(
+            `ticket-119 stage: the mid-transcript leg never exercised the card geometry ` +
+              `(card ${mid119.cardH} → max ${String(framesParsed119.maxCardH)} during the ops — the no-move assertion would be vacuous); DOM: ${await geom119()}`
+          )
+          }
+          const finalMid119 = JSON.parse(String(await geom119())) as { st: number }
+          if (finalMid119.st !== mid119.st) {
+          fail(`ticket-119 stage: the mid-transcript reader ended at ${finalMid119.st}, not ${mid119.st}; DOM: ${await geom119()}`)
+          }
+          await js(`(() => { delete window.__t119Frames; return true })()`)
+          log('idle_typing_119_midtranscript_ok')
+          // Restore the session that was active on entry (the ticket-44
+          // stage reads its user bubble; every later stage drives its own
+          // session explicitly).
+          await js(
+          `document.querySelector('[data-file=${JSON.stringify(activeBefore119)}]')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`
+          )
+          if (
+          !(await waitForProbe(
+            win,
+            `(document.querySelector('.chat-thread')?.textContent ?? '').includes(${JSON.stringify('PICODE_SMOKE_OK')})`,
+            10_000
+          ))
+          ) {
+          fail('ticket-119 stage: the previously active session never came back for the ticket-44 stage')
+          }
+        } finally {
+          dbg119.detach()
+        }
+      })
+    }
+    log('idle_typing_119_done')
 
     // ---- ticket 44: the user bubble's persistent Copy — same action-row
     // family as the assistant's (icon + label + ✓ feedback), no Fork (fork
@@ -1786,8 +2171,12 @@ export function startSmokeIfEnabled(
     })
 
     // Crash isolation: SIGKILL the host; supervisor must report it unclean —
-    // and scoped to exactly the session that died (ticket 20).
-    const pid = supervisor.hostPid
+    // and scoped to exactly the session that died (ticket 20). The host is
+    // selected BY SESSION (pidForSession), not as the most recently spawned
+    // (hostPid): seeded-file stages earlier in the suite legitimately spawn
+    // their own hosted sessions, and the kill must still land on THIS
+    // session's host.
+    const pid = supervisor.pidForSession(created.sessionId)
     if (!pid) fail('no host pid to kill')
     process.kill(pid, 'SIGKILL')
     const exitEvent = (await waitFor(
@@ -2324,7 +2713,17 @@ export function startSmokeIfEnabled(
         })()`,
         10_000
       )
-      if (!decoupled) fail('background running row stayed selected — selection must follow the view (ticket 28)')
+      if (!decoupled) {
+        const diag = (await win.webContents.executeJavaScript(
+          `JSON.stringify({
+            ms1Row: document.querySelector('[data-file="${ms1.sessionFile}"]')?.className ?? null,
+            ms1RunDot: document.querySelector('[data-file="${ms1.sessionFile}"] .sb-run-dot') !== null,
+            activeRows: [...document.querySelectorAll('.sb-task-active')].map((r) => r.getAttribute('data-file')),
+            activeFile: document.querySelector('.sb-task-active')?.getAttribute('data-file') ?? null
+          })`,
+        ).catch(() => 'unavailable')) as string
+        fail(`background running row stayed selected — selection must follow the view (ticket 28); DOM: ${diag}`)
+      }
       log('multi_selection_decoupled_ok')
     })
 

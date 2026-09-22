@@ -37,6 +37,14 @@
  * ticket-75 wheel law now also out-ranks the send pin itself: a wheel-up
  * between the send and the echo pass can no longer be overridden by
  * `selfSent`).
+ *
+ * Ticket 119 (spec R18) adds the idle viewport-shrink compensation
+ * (`nextIdleBottomPin`): the instrumentation-proven idle bug was the
+ * composer card's growth shrinking the transcript cell's clientHeight
+ * while no scroll write ever fired — the pinned-bottom reader's tail rows
+ * slid under the composer. The compensation keeps the bottom edge on the
+ * content bottom across such shrinks (idle only; a running agent's scroll
+ * semantics are untouched, zero regression).
  */
 
 /** Stick threshold carried over from the pre-ticket behavior (~160px). */
@@ -159,4 +167,119 @@ export function nextSendLatch(current: boolean, deltaPx: number, viewport: Scrol
   if (deltaPx < -1) return false
   if (isAtBottom(viewport)) return false
   return current
+}
+
+/** Ticket 119: an at-bottom idle-shrink sequence — the latch that keeps the
+ * idle re-pin armed across a whole typing burst. `clientHeightStartPx` is
+ * the viewport height observed when the reader last sat ON the bottom;
+ * null means no sequence is armed (the reader is off the bottom, or the
+ * running state owns the view). */
+export interface IdleBottomSequence {
+  readonly clientHeightStartPx: number | null
+}
+
+/** The disarmed sequence (no at-bottom baseline held). */
+export const IDLE_BOTTOM_SEQUENCE_IDLE: IdleBottomSequence = { clientHeightStartPx: null }
+
+/** Ticket 119: how long after a user scroll input (wheel / pointer) the
+ * scroll-event re-pin arm treats further moves as engine-driven. The
+ * reader’s own gesture always wins (the ticket-75 law, idle edition); the
+ * window only needs to cover the gesture’s own scroll events (a few
+ * frames). */
+export const USER_SCROLL_QUIET_MS = 250
+
+/** One observation of the scroll container's geometry, plus the agent gate. */
+export interface IdlePinInput {
+  readonly snapshot: ScrollSnapshot
+  readonly agentRunning: boolean
+}
+
+/** The outcome of one idle-pin pass: the scrollTop to write (null = write
+ * nothing) and the sequence state to carry forward. */
+export interface IdlePinDecision {
+  readonly scrollTopPx: number | null
+  readonly next: IdleBottomSequence
+}
+
+/**
+ * The idle viewport-shrink re-pin (ticket 119, spec R18), sequenced over a
+ * whole idle typing burst: on every observed geometry change, decide the
+ * scrollTop that keeps a bottom-pinned reader's tail rows in view — or
+ * null when the view must not move at all.
+ *
+ * Instrumentation (dev-app probe, the ticket's first acceptance item)
+ * proved the idle bug was never a scroll write: nothing writes scrollTop
+ * while the operator types — the composer card's growth (auto-grow, the
+ * attachment strip, the expand glide) shrinks the transcript cell's
+ * clientHeight, the untouched scrollTop leaves the viewport's bottom edge
+ * riding UP over the content, and the tail rows (the last message's
+ * Copy/Fork action row) slide under the composer. The re-pin targets were
+ * also audited: every bottom pin in the codebase writes
+ * `scrollHeight - clientHeight`, which includes the tail rows — the
+ * “Copy buttons don't count as the bottom” hypothesis is disproven; the
+ * missing piece was the compensation itself.
+ *
+ * The instrumentation also caught a second-order engine behavior that a
+ * single-shot at-bottom check cannot survive: on the growth layout AFTER a
+ * programmatic re-pin, the engine can natively restore the reader's
+ * PRE-PIN absolute scrollTop (observed as a −9px move with no JS write
+ * anywhere — the scroll event arrives with `write:false`), landing the
+ * reader exactly the cumulative-shrink above the bottom and making a
+ * later at-bottom check read “off bottom” and stand down. The sequence
+ * latch defeats that: the re-pin stays armed for every later shrink of
+ * the SAME burst while the shrinks fully explain the reader's distance
+ * from the bottom —
+ *
+ *   distance-from-bottom ≤ (clientHeightStart − clientHeightNow)
+ *
+ * — which holds through the natural fall (scrollTop untouched, distance =
+ * the latest delta) AND through the engine's revert (distance = the
+ * cumulative shrink, because the revert restores the sequence-start
+ * absolute position). A deliberate upward read breaks the bound (the
+ * reader is now farther above the bottom than the shrinks explain),
+ * closes the sequence, and from then on the view is left byte-for-byte
+ * untouched — the ticket's “an off-bottom reader's scrollTop never
+ * moves” acceptance. Returning to the bottom re-arms a fresh sequence; a
+ * viewport growth (draft deleted, attachment removed) closes it — the
+ * browser's own range clamp already keeps a bottom-pinned reader pinned
+ * there, and an off-bottom reader's top anchor is stable.
+ *
+ * agentRunning gates the whole arm: while the agent runs, the
+ * ticket-93/94/75 scroll semantics own the view and this stands down.
+ */
+export function nextIdleBottomPin(
+  input: IdlePinInput,
+  previous: IdleBottomSequence
+): IdlePinDecision {
+  if (input.agentRunning) return { scrollTopPx: null, next: previous }
+  const { snapshot } = input
+  const start = previous.clientHeightStartPx
+  if (start !== null) {
+    // The viewport grew back (or held): the native clamp's job. Close the
+    // sequence, re-arming only if the reader sits on the bottom.
+    if (snapshot.clientHeight >= start) {
+      return isAtBottom(snapshot)
+        ? { scrollTopPx: null, next: { clientHeightStartPx: snapshot.clientHeight } }
+        : { scrollTopPx: null, next: IDLE_BOTTOM_SEQUENCE_IDLE }
+    }
+    // Still shrinking. A reader farther above the bottom than the
+    // cumulative shrink explains has scrolled on their own — their view
+    // must not move again (and the sequence closes until they return).
+    const cumulativeShrinkPx = start - snapshot.clientHeight
+    if (distanceFromBottom(snapshot) > cumulativeShrinkPx + 1) {
+      return { scrollTopPx: null, next: IDLE_BOTTOM_SEQUENCE_IDLE }
+    }
+    // The shrinks fully explain the position (natural fall or the engine's
+    // pre-pin revert): keep the bottom edge on the content bottom.
+    return {
+      scrollTopPx: Math.max(0, snapshot.scrollHeight - snapshot.clientHeight),
+      next: previous
+    }
+  }
+  // No sequence armed: arm one exactly when the reader sits on the bottom
+  // (the arrival-pin strictness, not the 160px follow band).
+  if (isAtBottom(snapshot)) {
+    return { scrollTopPx: null, next: { clientHeightStartPx: snapshot.clientHeight } }
+  }
+  return { scrollTopPx: null, next: IDLE_BOTTOM_SEQUENCE_IDLE }
 }

@@ -1,6 +1,15 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type JSX } from 'react'
 import type { ChatEntry, ChatState } from '../../../shared/chat-reducer'
-import { isNearBottom, nextHeldAway, nextSendLatch, shouldAutoScroll } from '../../../shared/scroll-stay'
+import {
+  IDLE_BOTTOM_SEQUENCE_IDLE,
+  USER_SCROLL_QUIET_MS,
+  isNearBottom,
+  nextHeldAway,
+  nextIdleBottomPin,
+  nextSendLatch,
+  shouldAutoScroll,
+  type IdleBottomSequence
+} from '../../../shared/scroll-stay'
 import { groupTurns } from '../../../shared/turn-collapse'
 import type { ComposerDraft, ComposerDraftEntry } from '../../../shared/composer/drafts'
 import type { SessionTreePayload } from '../../../shared/sessions/types'
@@ -114,6 +123,14 @@ export default function ChatView({
   const sendLatch = useRef(false)
   const returning = useRef(false)
   const lastScrollTop = useRef(0)
+  // Ticket 119: the last user scroll input (wheel/pointer) timestamp — the
+  // scroll-event re-pin arm’s ownership gate (a reader’s own gesture always
+  // wins; only engine-driven moves are re-pinned).
+  const lastUserScrollAtRef = useRef(0)
+  // Ticket 119: the idle bottom-pin sequence latch (Seam 1 state) — armed
+  // while an idle reader sits on the bottom, closed by their own scroll
+  // away or a running agent.
+  const idleBottomSeqRef = useRef<IdleBottomSequence>(IDLE_BOTTOM_SEQUENCE_IDLE)
   // Ticket 75 adds the reader-held-away latch: any upward scroll movement
   // holds the viewport away from the bottom (the wheel always wins); a
   // downward return into the bottom band, the user's own send or a
@@ -218,6 +235,30 @@ export default function ChatView({
     }
     lastScrollTop.current = top
     setJumpVisible(!isNearBottom(el))
+    // Ticket 119’s second arm: the engine can natively restore the scroll
+    // position on relayouts that change NO geometry (observed: the caret
+    // mirror’s forced relayout ~200ms after the last keystroke moved the
+    // pinned reader back to the pre-burst absolute — a scroll event with
+    // no resize, so the ResizeObserver arm never fired). Every native
+    // move does fire this handler, so the same Seam-1 re-pin runs here —
+    // gated on "no user scroll input just happened" (wheel / pointer),
+    // because the reader’s own gesture always wins (the ticket-75 law,
+    // idle edition): a wheel-driven position is never re-pinned, an
+    // engine-driven restore inside the sequence’s cumulative-shrink
+    // bound is.
+    if (!chat.agentRunning && performance.now() - lastUserScrollAtRef.current > USER_SCROLL_QUIET_MS) {
+      const decision = nextIdleBottomPin(
+        {
+          snapshot: { scrollHeight: el.scrollHeight, scrollTop: el.scrollTop, clientHeight: el.clientHeight },
+          agentRunning: false
+        },
+        idleBottomSeqRef.current
+      )
+      idleBottomSeqRef.current = decision.next
+      if (decision.scrollTopPx !== null && decision.scrollTopPx !== el.scrollTop) {
+        el.scrollTop = decision.scrollTopPx
+      }
+    }
   }
 
   // Ticket 45 (CONTEXT.md: 回底钮): smooth travel back to the newest
@@ -249,6 +290,68 @@ export default function ChatView({
     }),
     [composerApi]
   )
+
+  // Ticket 119 (spec R18, CONTEXT.md: 空闲输入不动转录): idle composer
+  // operations must never move the transcript — and, per the dev-app
+  // instrumentation, the idle bug was never a scroll write: the composer
+  // card's growth (auto-grow, the attachment strip, the expand glide)
+  // shrinks this scroll cell's clientHeight, the untouched scrollTop lets
+  // the viewport's bottom edge ride up over the content, and the tail rows
+  // (the last message's Copy/Fork action row) slide under the composer.
+  // This observer is the geometry arm the stick effect cannot be (its deps
+  // never change on typing): on every clientHeight change it runs the
+  // Seam-1 re-pin (nextIdleBottomPin) over a per-burst sequence latch —
+  // a reader pinned at the bottom stays pinned across every shrink of the
+  // burst (the tail rows never leave the view, including through the
+  // engine's native pre-pin-restore that a single-shot check would read as
+  // “off bottom”), while a reader who scrolls away on their own breaks the
+  // sequence's cumulative-shrink bound and is left byte-for-byte
+  // untouched; while the agent runs the whole arm stands down (the
+  // ticket-93/94/75 scroll semantics own the view; zero regression). The
+  // observer fires only on real geometry changes (a handful per draft —
+  // never per keystroke) and its entire decision converges into the pure
+  // model.
+  // Ticket 119: listen for the user’s own scroll inputs (wheel over the
+  // transcript, pointer down on it — the scrollbar drag) so the
+  // scroll-event re-pin arm can tell a reader gesture from an
+  // engine-driven move (the ticket-75 law, idle edition).
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const mark = (): void => {
+      lastUserScrollAtRef.current = performance.now()
+    }
+    el.addEventListener('wheel', mark, { passive: true })
+    el.addEventListener('pointerdown', mark, { passive: true })
+    return () => {
+      el.removeEventListener('wheel', mark)
+      el.removeEventListener('pointerdown', mark)
+    }
+  }, [])
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    // Each running-state flip restarts the burst bookkeeping: a run's own
+    // scroll passes (93/94/75) can change the geometry underneath a
+    // sequence armed before it, and the sequence's baseline would be stale.
+    idleBottomSeqRef.current = IDLE_BOTTOM_SEQUENCE_IDLE
+    if (chat.agentRunning) return
+    const observer = new ResizeObserver(() => {
+      const decision = nextIdleBottomPin(
+        {
+          snapshot: { scrollHeight: el.scrollHeight, scrollTop: el.scrollTop, clientHeight: el.clientHeight },
+          agentRunning: false
+        },
+        idleBottomSeqRef.current
+      )
+      idleBottomSeqRef.current = decision.next
+      if (decision.scrollTopPx !== null && decision.scrollTopPx !== el.scrollTop) {
+        el.scrollTop = decision.scrollTopPx
+      }
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [chat.agentRunning])
 
   function startRename(): void {
     setDraft(tree?.name ?? '')
