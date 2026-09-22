@@ -4482,6 +4482,18 @@ button.heat:hover {
   min-width: 0;
 }
 
+/* Ticket 133 (spec R20): the user bubble's TEXT segment opts back into
+   selection — the same user-select:text rule .msg-assistant carries. The
+   body-level user-select:none never exempted the user bubble (the
+   asymmetry this closes), so a drag over the user's own words could never
+   select part of them. Only the text segment opts in: the skill row and
+   the thumbnail strip are rendering widgets, not text, and stay
+   unselectable; the Copy action still copies the message's full raw text
+   (selection is the part-copy complement, not a replacement). */
+.user-bubble-text {
+  user-select: text;
+}
+
 .user-skill-row {
   display: flex;
   align-items: center;
