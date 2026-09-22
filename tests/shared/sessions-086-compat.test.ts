@@ -7,6 +7,8 @@ import {
   parseSessionLines,
   summarizeSession
 } from '../../src/shared/sessions/parse.ts'
+import { sessionTreeFromWire, sessionTreeToWire } from '../../src/shared/sessions/tree-wire.ts'
+import type { SessionTreePayload } from '../../src/shared/sessions/types.ts'
 
 /**
  * Ticket 112 (pi 0.86.1 alignment, spec R33): session-format compatibility
@@ -147,5 +149,21 @@ describe('ticket 112: real TUI 0.86.1 session opens in PiCode', () => {
     }
     expect(tree.leafId).toBe('t112-fut1')
     expect(leafIdOf(entries)).toBe('t112-fut1')
+  })
+
+  it('the flat wire shape (ticket 131) carries every census entry and rebuilds losslessly', () => {
+    // The session_tree payload crosses IPC flat (parentId links) — the
+    // host-contract smoke's round L asserts the same census over the wire;
+    // this pins it against the real 0.86 fixture at Seam-1.
+    const entries = parseSessionLines(TEXT).entries
+    const built = buildSessionTree(entries, '/Users/liaokechen')
+    const payload: SessionTreePayload = { sessionId: 't112', leafId: built.leafId, name: null, nodes: built.nodes }
+    const wire = sessionTreeToWire(payload)
+    // Every census entry is a wire node, in file order, with no nested
+    // children anywhere.
+    expect(wire.nodes.map((n) => n.id)).toEqual(CENSUS.entries.map((e) => e.id))
+    for (const node of wire.nodes) expect(node).not.toHaveProperty('children')
+    // Round-trip: the rebuilt nested payload is the original, byte for byte.
+    expect(sessionTreeFromWire(wire)).toEqual(payload)
   })
 })

@@ -360,6 +360,35 @@ describe('registryReducer — in-host fork (session_detached) + takeover re-anno
     const reannounced = run(state, scoped('s-a', { type: 'session_created', sessionId: 's-a', cwd: '/tmp/a', model: 'm1', resumed: true }))
     expect(reannounced.sessions.find((s) => s.id === 's-a')?.tree).toBeNull()
   })
+
+  it('a flat wire tree (ticket 131) folds into the rebuilt nested payload', () => {
+    // The wire payload crosses IPC flat (deep nesting is dropped by the
+    // renderer-side IPC serialization); the fold rebuilds the canonical
+    // nested shape the display consumers speak.
+    const state = run(
+      initialRegistryState(),
+      CREATED_A,
+      scoped('s-a', {
+        type: 'session_tree',
+        tree: {
+          sessionId: 's-a',
+          leafId: 'a1',
+          name: null,
+          nodes: [
+            { id: 'u1', kind: 'user', label: null, name: null, preview: 'hi', timestamp: '2026-09-22T10:00:00.000Z', parentId: null },
+            { id: 'a1', kind: 'assistant', label: null, name: null, preview: 'yo', timestamp: '2026-09-22T10:00:01.000Z', parentId: 'u1' }
+          ]
+        }
+      })
+    )
+    const tree = state.sessions.find((s) => s.id === 's-a')?.tree
+    expect(tree?.nodes).toHaveLength(1)
+    expect(tree?.nodes[0]?.id).toBe('u1')
+    expect(tree?.nodes[0]?.children).toEqual([
+      expect.objectContaining({ id: 'a1', children: [] })
+    ])
+    expect(tree?.leafId).toBe('a1')
+  })
 })
 
 describe('registryReducer — legacy unwrapped events (visual-QA harness shape)', () => {

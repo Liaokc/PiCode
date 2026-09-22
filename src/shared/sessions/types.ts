@@ -156,6 +156,30 @@ export interface SessionTreePayload {
   nodes: SessionTreeNodeDTO[]
 }
 
+/** One node of the WIRE tree payload (ticket 131): the nested `children`
+ * array is replaced by a `parentId` link so the payload's nesting depth is
+ * constant regardless of session length — Electron's main→renderer IPC
+ * serialization silently drops messages whose object nesting is too deep
+ * (a long session nests ~2 levels per entry, so deep sessions lose their
+ * entire `session_tree` event). */
+export interface SessionTreeWireNode extends Omit<SessionTreeNodeDTO, 'children'> {
+  /** Parent node id; null = root. A parent that has not appeared earlier in
+   * the flat list detaches the node to a root — the same rule the nested
+   * builder applies to out-of-order files. */
+  parentId: string | null
+}
+
+/** The `session_tree` event's payload as it crosses IPC (ticket 131):
+ * a flat node list in file order. The renderer rebuilds the nested
+ * `SessionTreePayload` (the canonical display shape) at the single wire
+ * consumer — the session registry's fold. */
+export interface SessionTreeWirePayload {
+  sessionId: string
+  leafId: string | null
+  name: string | null
+  nodes: SessionTreeWireNode[]
+}
+
 /** Pushed when a followed (Live Follow) session file grows. */
 export interface FollowUpdate {
   file: string

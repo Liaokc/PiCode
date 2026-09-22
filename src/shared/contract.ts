@@ -18,7 +18,7 @@
 import type { SessionDefaults } from './preferences.ts'
 import type { QueueKind } from './queue-mirror.ts'
 import type { McpRuntimeStatus, McpServerStatusData, McpStatusSnapshotData } from './mcp-status.ts'
-import type { SessionTreePayload, TranscriptImagePart, TranscriptItem } from './sessions/types.ts'
+import type { SessionTreeWirePayload, TranscriptImagePart, TranscriptItem } from './sessions/types.ts'
 import type { SubagentCallInfo, SubagentFleetDTO, SubagentRunState } from './subagents/types.ts'
 import type { UsageTokens } from './usage/types.ts'
 
@@ -255,8 +255,11 @@ export type SessionScopedEvent =
    * resumed context ring's starting value. ABSENT on legacy payloads and
    * null when the path records no valid usage; both mean "grey idle ring". */
   | { type: 'history_loaded'; items: TranscriptItem[]; usage?: UsageTokens | null }
-  /** The session's entry tree (resume, navigation, rename, request_tree). */
-  | { type: 'session_tree'; tree: SessionTreePayload }
+  /** The session's entry tree (resume, navigation, rename, request_tree).
+   * Ticket 131: the payload crosses IPC FLAT (nodes in file order with
+   * `parentId` links — see shared/sessions/tree-wire.ts); the registry's
+   * fold rebuilds the canonical nested payload for display. */
+  | { type: 'session_tree'; tree: SessionTreeWirePayload }
   /** The session's label was written back successfully. */
   | { type: 'session_renamed'; name: string | null }
   /** A fork extracted a new session file; resume it to continue there. */
