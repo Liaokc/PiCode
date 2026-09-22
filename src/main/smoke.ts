@@ -8794,7 +8794,17 @@ export function startSmokeIfEnabled(
       // line, many visual lines), Latin soft-wrap (word wrap — the smaller-
       // error twin of the same defect), and Latin hard lines (the stable
       // path the fix must not move: hard-line count ≈ visual line).
-      const CJK_117 = '今天我们要讨论一个很长的话题关于输入法编辑器在文本框里的滚动行为当内容超过可视区域的时候用户在底部继续输入中文每一个汉字都会触发一次组合输入事件而受控组件会同步执行高度重测与滚动恢复这一系列动作如果光标行定位算法只统计硬换行那么软换行的段落会被误判为第一行于是视口会被强行拉回顶部这就是操作者观察到的大幅上移现象我们需要用视觉行定位来修复这个问题使输入不再改变光标位置在软件工程实践中输入法的组合输入与文本框的受控更新之间存在一个微妙的竞争关系浏览器会尽力把光标行滚动到可视区域内而应用层的高度重测也会写入滚动位置两个写入者意见不一致的时候视口就会来回跳动修复的关键在于让应用层的写入与浏览器原生滚动收敛到同一个位置也就是光标真实所在的视觉行行顶'
+      // (Ticket-135 harness rider: the CJK fixture is lengthened 323 →
+      // ~433 chars — at the composer's 796px content width the old 323-char
+      // text wraps to exactly 6 lines (146px), BELOW the 160px auto-grow
+      // cap, so the "must overflow" premise depended on the machine's CJK
+      // glyph advance being wider than 14px — on this machine it is not
+      // and the leg failed deterministically (scrollH 146 = clientH 146,
+      // three runs straight). ~433 chars guarantees 8+ lines (188px) at
+      // 14px advance and 9+ even at 17px. Every downstream value is
+      // measured (visualLines) or derived from the text length, so the
+      // leg's assertions are unchanged.)
+      const CJK_117 = '今天我们要讨论一个很长的话题关于输入法编辑器在文本框里的滚动行为当内容超过可视区域的时候用户在底部继续输入中文每一个汉字都会触发一次组合输入事件而受控组件会同步执行高度重测与滚动恢复这一系列动作如果光标行定位算法只统计硬换行那么软换行的段落会被误判为第一行于是视口会被强行拉回顶部这就是操作者观察到的大幅上移现象我们需要用视觉行定位来修复这个问题使输入不再改变光标位置在软件工程实践中输入法的组合输入与文本框的受控更新之间存在一个微妙的竞争关系浏览器会尽力把光标行滚动到可视区域内而应用层的高度重测也会写入滚动位置两个写入者意见不一致的时候视口就会来回跳动修复的关键在于让应用层的写入与浏览器原生滚动收敛到同一个位置也就是光标真实所在的视觉行行顶此外还必须保证组合输入期间的高度重测不会把已经滚动的视口再次拉回顶部因为每一次重测都会重新计算文本行数与光标位置如果计算结果与浏览器的原生滚动不一致就会出现来回跳动的抖动现象所以最终方案是让两侧的写入收敛到同一个视觉行行顶位置从而彻底消除大幅上移'
       const EN_117 = 'Today we are examining a long standing defect in the composer scroll behavior when a draft grows past the visible area and the operator keeps typing at the bottom every single keystroke triggers the full height remeasure dance and if the caret line positioning only counts hard line breaks then any soft wrapped paragraph is mistaken for the first line and the viewport snaps back to the top which is exactly the upward jump the operator reported The soft wrapped paragraph keeps flowing with many more words that wrap by whole words instead of single characters which means the under estimation of the caret line is smaller than the CJK case but the defect is exactly the same one and the fix must treat both languages identically by measuring the visual line where the caret actually sits rather than counting hard line breaks that were never typed by the operator'
       const EN_HARD_117 = Array.from({ length: 16 }, (_, i) => `Hard line ${i + 1} of the draft with plain words that mostly fit.`).join('\n')
 
@@ -8883,8 +8893,18 @@ export function startSmokeIfEnabled(
             if (!(await js(type117(lang.text)))) {
               fail(`ticket-117 stage: could not stage the ${lang.name} draft`)
             }
+            // (Ticket-135 harness rider: the overflow check polls instead
+            // of stopping at the single 150ms sample — the CDP
+            // composition's text and the auto-grow relayout can land after
+            // that one sample, failing the leg spuriously three of four
+            // runs today. The assertion itself is unchanged: the draft
+            // must genuinely overflow.)
             await new Promise((r) => setTimeout(r, 150))
-            const s0 = await sample117()
+            let s0 = await sample117()
+            for (let waited117 = 0; waited117 < 5_000 && s0.scrollH <= s0.clientH; waited117 += 200) {
+              await new Promise((r) => setTimeout(r, 200))
+              s0 = await sample117()
+            }
             if (s0.scrollH <= s0.clientH) {
               fail(
                 `ticket-117 stage: the ${lang.name} draft must overflow the input for an internal scroll (scrollH ${s0.scrollH}, clientH ${s0.clientH})`
