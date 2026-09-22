@@ -697,9 +697,11 @@ export function startSmokeIfEnabled(
     // when an earlier stage's known flake would otherwise mask the queue
     // legs entirely (the t134-sanitized selector precedent).
     const queueRepairStage = async (): Promise<void> => {
-    // ---- ticket 100 → 128: the queue panel — ① the row borders sit INSIDE
-    // the composer card (row/card edge separation: horizontal inset + gaps
-    // to the textarea and the footer), ② inline Edit (the host's
+    // ---- ticket 100 → 128 → 135: the queue panel — ① (ticket 135) the
+    // card is its own rounded card stacked directly ABOVE the composer
+    // (DOM outside the composer card, flush on its top edge, same column;
+    // every row's border box sits INSIDE the queue card with a real inset),
+    // ② inline Edit (the host's
     // edit_queue_entry dance removes the entry; the composer prefills the
     // raw text and — via the host mirror — the PASTED IMAGE; the remaining
     // rows keep their order), ③ resend works (the prefilled text re-queues),
