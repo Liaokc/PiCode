@@ -6945,6 +6945,29 @@ button.preview-crumb:hover {
   right: 0;
 }
 
+/* Ticket 138: chip-aligned cards hug their chip. The chip popover's base
+   bottom is a finite 0px (the steer's delta math reads the computed
+   value — calc(100% + 8px) would parse to NaN) and the JS steer lands
+   the card's bottom edge CHIP_HUG_GAP above the chip's top edge before
+   paint; between open and steer this base never paints. */
+.cmp-popover-chip {
+  bottom: 0;
+}
+
+/* Ticket 138: the model cascade's wrapper paints NOTHING — the two
+   columns are separate cards of their own (the z19-menu-* composition),
+   so the wrapper is a pure positioner (chrome stripped, overflow visible
+   so the model card can hang beside/below the provider card). */
+.cmp-popover-cascade {
+  min-width: 0;
+  max-width: none;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: visible;
+}
+
 /* Ticket 41: the thinking menu's rows are single short labels — the 380px
    popover floor (sized for the access menu's descriptions) renders it
    mostly empty. The thinking card shrinks to its content instead. */
@@ -7094,19 +7117,20 @@ button.preview-crumb:hover {
 
 /* cascade model menu (screenshot 07): providers | models.
    Ticket 122 (spec R4): the card's height belongs to the PROVIDER column
-   alone. The old flex stretch let the model column's content drive the
-   popover height — hovering a provider with a different model count
-   grew/shrank the bottom-anchored card under the cursor (the hover-drift
-   oscillation: stretch × bottom anchoring). The model column is now
-   absolutely positioned INSIDE the card: it fills whatever height the
-   provider list gives and scrolls its overflow internally — hover changes
-   model lists, never geometry. The 200px floor keeps thin catalogs
-   roomy (form discretion per the ticket), the 320px cap is the old hat. */
+   alone — hover changes model lists, never the provider card's geometry
+   (the hover-drift oscillation: stretch × bottom anchoring).
+   Ticket 138 (z19-menu-* rework): the two columns are TWO SEPARATE CARDS
+   — each with its own border, radius, shadow and height (the ZCode
+   frames: different heights, a ≈6px shadowed groove between them), no
+   longer one connected panel with an inset divider. The provider card is
+   the anchored one (it hugs the chip via .cmp-popover-chip + the JS
+   steer); the model card hangs OUT of flow to the right, its top riding
+   the hovered provider row (placed by menus.tsx) and its height capped
+   against the viewport. */
 .cmp-cascade {
   position: relative;
   display: flex;
-  min-height: 200px;
-  max-height: 320px;
+  align-items: flex-start;
 }
 
 .cmp-cascade-col {
@@ -7116,17 +7140,22 @@ button.preview-crumb:hover {
   display: flex;
   flex-direction: column;
   gap: 1px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 12px 36px rgba(30, 30, 25, 0.14);
 }
 
-.cmp-cascade-col + .cmp-cascade-col {
+.cmp-cascade-providers {
+  position: relative;
+  max-height: 320px;
+}
+
+.cmp-cascade-models {
   position: absolute;
   top: 0;
-  bottom: 0;
-  left: 190px;
-  right: 0;
-  width: auto;
-  border-left: 1px solid var(--border);
-  background: #fbfbfa;
+  left: 196px; /* provider width + the frame's groove between the cards */
+  max-height: 320px;
 }
 
 /* steer / follow-up explicit choice (screenshot 01 busy state) */
