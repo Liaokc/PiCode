@@ -194,20 +194,28 @@ export function ShieldCheckIcon({ size, className }: IconProps): JSX.Element {
   )
 }
 
-/** Ticket 122 (spec R5): the thinking-level brain. Self-drawn geometry —
- * two hemispheres (a 12-segment closed blob symmetric about x=12) around a
- * central fissure, with two fold squiggles per hemisphere. Pure geometric
- * paths: no font, no copied ZCode asset (the red line). Retires the gauge
- * (thinking chip is the only consumer). */
+/** Ticket 137: the thinking brain — Lucide Brain geometry (ISC, lucide.dev
+ * current 9-path form) replacing ticket 122's self-drawn blob: two stroke
+ * hemispheres whose Z-close draws the central full-height fissure, the
+ * bottom-center fold caret, and six small fold arcs. Pixel-verified against
+ * the operator's ZCode reference crops (.scratch/picode-1-8/reference/
+ * z19-brain-*.png: header + selector both 28×28 native ink, NCC 0.94/0.83
+ * vs the rasterized path — no visible structural difference, so the Lucide
+ * path stands unmodified). Consumed by the thinking-level chip (Composer)
+ * and the transcript thinking rows (ThinkingRow) — one definition, no
+ * inline copies. Stroke joins the family props (currentColor, 1.7, round). */
 export function BrainIcon({ size, className }: IconProps): JSX.Element {
   return (
     <svg {...svgProps(size, className)}>
-      <path d="M12 19.6c1.8 0 3.4-1.2 3.7-2.9 1.6-.1 2.9-1.4 2.9-3 1.4-.7 2-2.5 1.3-4 .4-1.7-.7-3.3-2.4-3.5-.4-1.6-2.1-2.5-3.6-2-.6-.3-1.3-.3-1.9-.2-.6-.1-1.3-.1-1.9.2-1.5-.5-3.2.4-3.6 2-1.7.2-2.8 1.8-2.4 3.5-.7 1.5-.1 3.3 1.3 4 0 1.6 1.3 2.9 2.9 3 .3 1.7 1.9 2.9 3.7 2.9Z" />
-      <path d="M12 4.8v14" />
-      <path d="M8.2 8.5c.2 1.2 1.2 2.1 2.4 2.2" />
-      <path d="M15.8 8.5c-.2 1.2-1.2 2.1-2.4 2.2" />
-      <path d="M7.4 12.9c.6.9 1.7 1.4 2.8 1.2" />
-      <path d="M16.6 12.9c-.6.9-1.7 1.4-2.8 1.2" />
+      <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z" />
+      <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z" />
+      <path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4" />
+      <path d="M17.599 6.5a3 3 0 0 0 .399-1.375" />
+      <path d="M6.003 5.125A3 3 0 0 0 6.401 6.5" />
+      <path d="M3.477 10.896a4 4 0 0 1 .585-.396" />
+      <path d="M19.938 10.5a4 4 0 0 1 .585.396" />
+      <path d="M6 18a4 4 0 0 1-1.967-.516" />
+      <path d="M19.967 17.484A4 4 0 0 1 18 18" />
     </svg>
   )
 }
