@@ -16664,10 +16664,10 @@ export function startSmokeIfEnabled(
             let got133 = ''
             for (let waited = 0; waited < 5_000; waited += 100) {
               got133 = await clipboard.readText()
-              if (got133 === COPY_TEXT_133) break
+              if (got133 === DRAG_TEXT_133) break
               await sleep133(100)
             }
-            if (got133 === COPY_TEXT_133) copied133 = true
+            if (got133 === DRAG_TEXT_133) copied133 = true
           }
           if (!copied133) {
             fail(
