@@ -16,6 +16,7 @@ import type { ComposerDraft, ComposerDraftEntry } from '../../../shared/composer
 import type { SessionTreePayload } from '../../../shared/sessions/types'
 import Composer, { type ComposerApi } from './Composer'
 import NavigatorRail from './NavigatorRail'
+import QueuePanel from './QueuePanel'
 import TreePanel from './TreePanel'
 import TurnContainer from './TurnContainer'
 import TurnFileBar from './TurnFileBar'
@@ -547,6 +548,20 @@ export default function ChatView({
             <ChevronDownIcon size={14} />
           </button>
         </Tooltip>
+        {/* Ticket 135 (CONTEXT.md: 队列卡): the queue is its own rounded
+            card stacked directly ABOVE the composer — a chat-dock sibling,
+            NOT inside the composer's input card (the ZCode form). The busy
+            gate + the panel's own empty gate are the ticket-100/128
+            semantics, untouched; the shared api's queue ops feed the rows'
+            Edit / trash / drag-reorder (the host's dance). */}
+        {chat.agentRunning && (
+          <QueuePanel
+            queue={chat.queue}
+            onEdit={composerApi.onEditQueueEntry}
+            onRemove={composerApi.onRemoveQueueEntry}
+            onReorder={composerApi.onReorderQueueEntry}
+          />
+        )}
         <Composer
           busy={chat.agentRunning}
           disabled={creating || noSession}
@@ -556,7 +571,6 @@ export default function ChatView({
               : 'Ask anything — @ to add context, / for commands'
           }
           chat={chat}
-          queue={chat.queue}
           initialDraft={initialDraft}
           draftBridgeRef={draftBridgeRef}
           draftOwner={chat.session ? { kind: 'session', sessionId: chat.session.sessionId } : undefined}

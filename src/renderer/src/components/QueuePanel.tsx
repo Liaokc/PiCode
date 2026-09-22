@@ -9,15 +9,18 @@ import { GripDotsIcon, PencilIcon, TrashIcon } from './icons'
  * the agent runs. SDK queue state is authoritative — the panel is a pure
  * view of it.
  *
- * Ticket 128 (queue 面板 ZCode 重构): each row = drag handle (⋮⋮) +
- * Steer/Follow-up tag + message text + Edit (pencil) + trash. The handle
- * drags a row WITHIN ITS OWN SEGMENT (steer rows among steer rows,
- * follow-up rows among follow-up rows — cross-segment drops are refused at
- * the dragover gate); 越上越先注入: the top row of each segment injects
- * first (steering into the current turn, follow-ups after it — the timing
- * semantics are untouched). Trash discards exactly its own row (the host's
- * dance); the global Clear is retired (the trash replaces it) and there is
- * no "inject now" button (Q6). Reordering runs the host's additive
+ * Ticket 135 (CONTEXT.md: 队列卡): the panel is its own rounded card
+ * stacked directly ABOVE the composer — a chat-dock sibling, never inside
+ * the composer's input card (the ZCode form; the composer's geometry is
+ * invariant to the queue). The row rules are the ticket-128 delivery,
+ * untouched. The handle drags a row WITHIN ITS OWN SEGMENT (steer rows
+ * among steer rows, follow-up rows among follow-up rows — cross-segment
+ * drops are refused at the dragover gate); 越上越先注入: the top row of
+ * each segment injects first (steering into the current turn, follow-ups
+ * after it — the timing semantics are untouched). Trash discards exactly
+ * its own row (the host's dance); the global Clear is retired (the trash
+ * replaces it) and there is no "inject now" button (Q6, reaffirmed by the
+ * operator for this ticket). Reordering runs the host's additive
  * `reorder_queue_entry` op — the ticket-100 dance with a reorder mutation.
  *
  * Drag language (ticket 84's manual sort): the grip is the REAL handle, the
