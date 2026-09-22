@@ -1,40 +1,47 @@
 import { useState } from 'react'
 import type { JSX, MouseEvent } from 'react'
-import { heatmapGrid, type HeatCell, type HeatSlot, type HeatmapMode } from '../../../shared/usage/charts'
-import { formatShortDate, formatTokenCount } from '../../../shared/usage/format'
+import {
+  heatCard,
+  heatmapGrid,
+  HEAT_CARD_ANCHORS_COLUMN,
+  type HeatCell,
+  type HeatColumn,
+  type HeatmapMode,
+  type HeatSlot
+} from '../../../shared/usage/charts'
 
 interface HeatmapViewProps {
   cells: HeatCell[]
   mode: HeatmapMode
-  /** Drill into the clicked day (weekly cells are days of the current week;
-   * daily/cumulative cells drill from their column's Monday — unchanged). */
+  /** Drill into the clicked cell's week column (its Sunday start). */
   onPick: (date: string, dateTo: string | null) => void
 }
 
-/** Hovered-cell white card: the day's tokens + date (trend/donut family). */
+/** Hovered white-card state (trend/donut card family). The card + anchor are
+ * captured with the mode and cells: a mode or data switch reshapes the grid
+ * under a stationary pointer, so a mismatch voids the card at render time —
+ * no effect, no cascading render. */
 interface HeatHover {
-  slot: HeatSlot
-  /** The mode and cells the card was captured under. A mode or data switch
-   * reshapes the grid under a stationary pointer, so a mismatch voids the
-   * card at render time — no effect, no cascading render. */
   mode: HeatmapMode
   cells: HeatCell[]
-  /** Hovered cell's center x and top y, relative to the positioned wrap. */
+  card: ReturnType<typeof heatCard>
+  /** Card anchor relative to the positioned wrap: the hovered box's center x
+   * and top y in daily mode; the column's topmost box in weekly/cumulative
+   * (HEAT_CARD_ANCHORS_COLUMN — the card floats above the column). */
   x: number
   y: number
-  /** Anchor the card left of the cell when it sits in the wrap's right half
-   * (the trend tooltip's edge flip — the page clips past the card). */
-  flipLeft: boolean
+  /** weekly/cumulative: the anchored column's start — its boxes ring while
+   * the card is up (z19-heatmap-weekly-2). */
+  columnStart: string | null
 }
 
-const labelFor = (slot: { value: number; date: string }): string =>
-  `${formatTokenCount(slot.value)} tokens · ${formatShortDate(slot.date)}`
-
 /**
- * GitHub-style activity grid rendered from aggregated cells only. Weekly mode
- * reads as the current week's seven days (ticket 125); every cell with
- * activity is a drill-down entry point, and hovering any cell — zero-usage
- * days included — pops the white-card tooltip the trend and donut charts use.
+ * The Token Activity contribution grid (ticket 139): 52 whole weeks, weeks as
+ * columns, days as rows (Sunday top … Saturday bottom), one box per day in
+ * every mode — only the box's value changes per mode (daily / weekly /
+ * cumulative). Zero-usage days and the days after the data end render as
+ * empty-color boxes. Every box with activity is a drill-down entry point;
+ * hovering pops the mode's white card (content + anchor per HEAT tables).
  */
 export default function HeatmapView({ cells, mode, onPick }: HeatmapViewProps): JSX.Element {
   const grid = heatmapGrid(cells, mode)
@@ -49,33 +56,55 @@ export default function HeatmapView({ cells, mode, onPick }: HeatmapViewProps): 
     return <div className="usage-empty">No activity recorded yet.</div>
   }
 
-  const showHover = (slot: HeatSlot, event: MouseEvent<HTMLElement>): void => {
+  const anchorsAtColumn = HEAT_CARD_ANCHORS_COLUMN[mode]
+
+  const showHover = (slot: HeatSlot, column: HeatColumn, event: MouseEvent<HTMLElement>): void => {
     const wrap = event.currentTarget.closest('.heatmap-wrap')
     if (!wrap) return
-    const cellRect = event.currentTarget.getBoundingClientRect()
     const wrapRect = wrap.getBoundingClientRect()
-    const x = cellRect.left + cellRect.width / 2 - wrapRect.left
-    setHover({
-      slot,
-      mode,
-      cells,
-      x,
-      y: cellRect.top - wrapRect.top,
-      flipLeft: x > wrapRect.width / 2
-    })
+    if (anchorsAtColumn) {
+      const colEl = event.currentTarget.closest('.heatmap-col')
+      if (!colEl) return
+      const colRect = colEl.getBoundingClientRect()
+      setHover({
+        mode,
+        cells,
+        card: heatCard(mode, slot, column),
+        x: colRect.left + colRect.width / 2 - wrapRect.left,
+        y: colRect.top - wrapRect.top,
+        columnStart: column.start
+      })
+    } else {
+      const cellRect = event.currentTarget.getBoundingClientRect()
+      setHover({
+        mode,
+        cells,
+        card: heatCard(mode, slot, column),
+        x: cellRect.left + cellRect.width / 2 - wrapRect.left,
+        y: cellRect.top - wrapRect.top,
+        columnStart: null
+      })
+    }
   }
 
-  const cellHover = (slot: HeatSlot) => ({
-    onMouseMove: (event: MouseEvent<HTMLElement>) => showHover(slot, event),
-    onMouseLeave: () => setHover(null)
+  const cellHover = (slot: HeatSlot, column: HeatColumn) => ({
+    onMouseMove: (event: MouseEvent<HTMLElement>) => showHover(slot, column, event)
   })
 
+  const cardFor = (slot: HeatSlot, column: HeatColumn): string => {
+    const c = heatCard(mode, slot, column)
+    return `${c.title}, ${c.value}`
+  }
+
   return (
-    <div className="heatmap-wrap">
+    <div className="heatmap-wrap" onMouseLeave={() => setHover(null)}>
       <div className="heatmap-scroll">
-        <div className={mode === 'weekly' ? 'heatmap heatmap-weekly' : 'heatmap'}>
+        <div className="heatmap">
           {grid.columns.map((col) => (
-            <div className="heatmap-col" key={col.start}>
+            <div
+              className={`heatmap-col${card?.columnStart === col.start ? ' heatmap-col-hover' : ''}`}
+              key={col.start}
+            >
               {col.slots.map((slot) =>
                 slot.value > 0 ? (
                   <button
@@ -83,12 +112,12 @@ export default function HeatmapView({ cells, mode, onPick }: HeatmapViewProps): 
                     type="button"
                     className={`heat heat-${slot.level}`}
                     data-date={slot.date}
-                    aria-label={labelFor(slot)}
+                    aria-label={cardFor(slot, col)}
                     onClick={() => onPick(col.start, null)}
-                    {...cellHover(slot)}
+                    {...cellHover(slot, col)}
                   />
                 ) : (
-                  <div key={slot.date} className={`heat heat-${slot.level}`} data-date={slot.date} {...cellHover(slot)} />
+                  <div key={slot.date} className={`heat heat-${slot.level}`} data-date={slot.date} {...cellHover(slot, col)} />
                 )
               )}
             </div>
@@ -103,17 +132,9 @@ export default function HeatmapView({ cells, mode, onPick }: HeatmapViewProps): 
         </div>
       </div>
       {card && (
-        <div
-          className="heat-tooltip"
-          style={{
-            left: card.x,
-            top: card.y,
-            transform: card.flipLeft
-              ? 'translate(calc(-100% - 12px), calc(-100% - 8px))'
-              : 'translate(12px, calc(-100% - 8px))'
-          }}
-        >
-          {labelFor(card.slot)}
+        <div className="heat-tooltip" style={{ left: card.x, top: card.y }}>
+          <div className="heat-card-title">{card.card.title}</div>
+          <div className="heat-card-value">{card.card.value}</div>
         </div>
       )}
     </div>

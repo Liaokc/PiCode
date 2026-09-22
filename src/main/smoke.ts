@@ -244,7 +244,8 @@ import { focusSessionFromNotification, type ApprovalNotice } from './notificatio
 import type { HostToParent, SessionScopedEvent } from '../shared/contract'
 import type { AuthProbeReport } from '../shared/auth-status'
 import { configuredProviderIds, configuredProvidersOnly, sortProvidersConfiguredFirst } from '../shared/provider-sort'
-import { addDays, mondayOf } from '../shared/usage/dates'
+import { addDays } from '../shared/usage/dates'
+import { heatmapGrid } from '../shared/usage/charts'
 import { projectNewTaskCatalog } from '../shared/new-task-models'
 import { FOLLOW_TAKEOVER_REJECTED_TOAST } from '../shared/sessions/group'
 import { CWD_MISSING_ROW_TOAST } from '../shared/sessions/cwd-liveness'
@@ -252,7 +253,7 @@ import { EDIT_RESEND_TOAST } from '../shared/edit-resend'
 import { checkerboardPaint, pngBase64 } from './png-fixture'
 import type { SessionContextActionService } from './sessions/context-actions'
 import { emitContractEvent } from './visual'
-import { FAKE_USAGE_TINY_MODEL, FAKE_USAGE_ZERO_MODEL } from '../shared/usage/fixture'
+import { FAKE_USAGE_TINY_MODEL, FAKE_USAGE_ZERO_MODEL, fakeUsageSnapshot } from '../shared/usage/fixture'
 import { chmodSync } from 'node:fs'
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -11925,19 +11926,31 @@ export function startSmokeIfEnabled(
     })
     log('usage_hover_stage_done')
 
-    // ---- ticket 125: Token Activity weekly = the current week's seven days ----
-    // Fixture-driven (PICODE_FAKE_USAGE=1, same env as the ticket-65 stage):
-    // ① Weekly renders exactly seven day cells — Monday..Sunday of the
-    //    current week; the days after today (and any zero-usage day) render
-    //    as empty-color level-0 cells, never missing;
-    // ② hovering a cell pops the trend/donut-family white card (day tokens ·
-    //    date) and leaving hides it;
-    // ③ the scroll box reserves the focus-ring extent left of the first
-    //    cell, so the leftmost cell's outline keeps its left line;
-    // ④ clicking the today cell drills into that day;
-    // ⑤ Daily and Cumulative keep their month-grid form — the current
-    //    week's seven days are all present in both.
-    log('usage_weekly_start')
+    // ---- ticket 139: Token Activity three-mode day-grid (ZCode rework) ----
+    // Fixture-driven (PICODE_FAKE_USAGE=1, same env as the ticket-65 stage).
+    // The DOM must render the Seam-1 model verbatim in every mode, so the
+    // stage recomputes the expected grid from the same deterministic fixture
+    // and asserts every box (data-date + heat level) against it:
+    // ① Daily: 364 boxes — 52 Sunday-start week columns × 7 days, ending at
+    //    the data end's week; days after today render empty in every mode;
+    // ② Weekly: the same grid re-colored week-start-to-day — each column
+    //    monotone up to its last active day, reset at the next Sunday;
+    // ③ Cumulative: never resets — the term boxes match the DOM exactly;
+    // ④ hover (daily): the white card floats ABOVE the hovered box, centered
+    //    on it, naming that day ('<long date>' + 'N tokens · M messages');
+    // ⑤ hover (weekly/cumulative): the card floats above the column's
+    //    topmost box with the ' · This week' badge (cumulative adds
+    //    'Through') and the anchored column rings;
+    // ⑥ the today box still drills into its week column (regression).
+    log('usage_heat_start')
+    // Poll for the window (the stage is self-contained and must not assume a
+    // prior stage created it — the empty-state poll recipe).
+    let heatWin: BrowserWindow | null = null
+    for (let waited = 0; waited < 30_000 && heatWin === null; waited += 100) {
+      heatWin = getWindow()
+      if (heatWin === null) await new Promise((r) => setTimeout(r, 100))
+    }
+    if (heatWin === null) fail('ticket-139 stage: the smoke window never appeared')
     await withWindow(getWindow, async (win) => {
       const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
       const hoverAt = (selector: string): Promise<unknown> =>
@@ -11970,12 +11983,13 @@ export function startSmokeIfEnabled(
           }
           return false
         })()`)) as boolean
-        if (!clicked) fail(`ticket-125 stage: the ${label} ${ariaLabel} segment is missing`)
+        if (!clicked) fail(`ticket-139 stage: the ${label} ${ariaLabel} segment is missing`)
       }
 
       // The fixture snapshot is generated at the usage IPC call with the
       // real clock, so the smoke's own clock agrees on "today" (same
-      // process, day granularity).
+      // process, day granularity) — and the fixture is deterministic, so the
+      // recomputed grid equals the renderer's.
       const dayKey = (ms: number): string =>
         new Intl.DateTimeFormat('en-CA', {
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -11984,12 +11998,8 @@ export function startSmokeIfEnabled(
           day: '2-digit'
         }).format(ms)
       const today = dayKey(Date.now())
-      const week = Array.from({ length: 7 }, (_, i) => addDays(mondayOf(today), i))
-      const weekJson = JSON.stringify(week)
-      const shortDate = (date: string): string =>
-        new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' }).format(
-          Date.parse(`${date}T12:00:00.000Z`)
-        )
+      const sundayOf = (date: string): string =>
+        addDays(date, -new Date(Date.parse(`${date}T12:00:00.000Z`)).getUTCDay())
       const longDate = (date: string): string =>
         new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric' }).format(
           Date.parse(`${date}T12:00:00.000Z`)
@@ -12004,7 +12014,7 @@ export function startSmokeIfEnabled(
           return true
         })()`
       )) as boolean
-      if (!opened) fail('ticket-125 stage: the settings gear button is missing')
+      if (!opened) fail('ticket-139 stage: the settings gear button is missing')
       if (
         !(await waitForProbe(
           win,
@@ -12012,72 +12022,114 @@ export function startSmokeIfEnabled(
           15_000
         ))
       ) {
-        fail('ticket-125 stage: the usage page never rendered the heatmap (fake usage fixture missing?)')
+        fail('ticket-139 stage: the usage page never rendered the heatmap (fake usage fixture missing?)')
       }
 
-      // ① Weekly: exactly the seven weekday cells of the current week.
-      await clickSeg('Heatmap mode', 'Weekly')
-      const weeklyOk = await waitForProbe(
-        win,
-        `(() => {
-          const cells = [...document.querySelectorAll('.heat')]
-          if (cells.length !== 7) return false
-          const dates = cells.map((el) => el.getAttribute('data-date'))
-          if (JSON.stringify(dates) !== ${JSON.stringify(weekJson)}) return false
-          const future = new Set(${weekJson}.filter((d) => d > ${JSON.stringify(today)}))
-          return cells.every((el) => {
-            const level = ['heat-0', 'heat-1', 'heat-2', 'heat-3', 'heat-4'].some((c) => el.classList.contains(c))
-            const emptyOk = future.has(el.getAttribute('data-date')) ? el.classList.contains('heat-0') : true
-            return level && emptyOk
-          })
-        })()`,
-        5_000
-      )
-      if (!weeklyOk) {
-        fail('ticket-125 stage: weekly is not the current week\'s seven day cells (empty-color days included)')
+      // ①-③ Per-mode grid equality: the DOM's data-date + heat-level sequence
+      // must equal the Seam-1 model's, computed from the same fixture.
+      const fixtureSnap = fakeUsageSnapshot({ timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone })
+      const modeGrids = {
+        daily: heatmapGrid(fixtureSnap.heatmap.daily, 'daily'),
+        weekly: heatmapGrid(fixtureSnap.heatmap.daily, 'weekly'),
+        cumulative: heatmapGrid(fixtureSnap.heatmap.daily, 'cumulative')
       }
-      log('usage_weekly_seven_cells_ok')
+      const modes = [
+        { label: 'Daily', mode: 'daily' },
+        { label: 'Weekly', mode: 'weekly' },
+        { label: 'Cumulative', mode: 'cumulative' }
+      ] as const
+      for (const { label, mode } of modes) {
+        await clickSeg('Heatmap mode', label)
+        const grid = modeGrids[mode]
+        if (grid.columns.length !== 52 || grid.columns.some((c) => c.slots.length !== 7)) {
+          fail(`ticket-139 stage: the ${mode} Seam-1 grid is not 52×7`)
+        }
+        const expected = JSON.stringify(grid.columns.flatMap((col) => col.slots.map((slot) => `${slot.date}:${slot.level}`)))
+        const gridOk = await waitForProbe(
+          win,
+          `(() => {
+            const cells = [...document.querySelectorAll('.heat')]
+            if (cells.length !== 364) return false
+            const got = JSON.stringify(cells.map((el) => {
+              const level = ['heat-0', 'heat-1', 'heat-2', 'heat-3', 'heat-4'].findIndex((c) => el.classList.contains(c))
+              return (el.getAttribute('data-date') ?? '') + ':' + level
+            }))
+            return got === ${JSON.stringify(expected)}
+          })()`,
+          5_000
+        )
+        if (!gridOk) fail(`ticket-139 stage: the ${label} grid does not render the Seam-1 model (dates/levels mismatch)`)
+        log(`usage_heat_${mode}_grid_ok`)
+      }
 
-      // ② Hover a weekly cell: the white-card tooltip with day tokens + date.
-      const hoveredDay = week[2]
-      if (!(await hoverAt(`.heat[data-date="${hoveredDay}"]`))) {
-        fail('ticket-125 stage: no weekly heat cell to hover')
+      // ④ Daily hover: the card floats above the hovered box, centered on it.
+      await clickSeg('Heatmap mode', 'Daily')
+      if (!(await hoverAt(`.heat[data-date="${today}"]`))) {
+        fail('ticket-139 stage: the today heat box is missing for the daily hover')
       }
-      const tipOk = await waitForProbe(
+      const dailyTipOk = await waitForProbe(
         win,
         `(() => {
           const tip = document.querySelector('.heat-tooltip')
-          return tip !== null
-            && (tip.textContent ?? '').includes('tokens')
-            && (tip.textContent ?? '').includes(${JSON.stringify(shortDate(hoveredDay))})
+          const cell = document.querySelector('.heat[data-date="${today}"]')
+          if (!tip || !cell) return false
+          const t = tip.getBoundingClientRect()
+          const c = cell.getBoundingClientRect()
+          const text = tip.textContent ?? ''
+          return text.includes(${JSON.stringify(longDate(today))})
+            && text.includes('tokens') && text.includes('messages')
+            && t.bottom <= c.top + 3
+            && Math.abs(t.left + t.width / 2 - (c.left + c.width / 2)) <= 4
         })()`,
         5_000
       )
-      if (!tipOk) fail('ticket-125 stage: the heat cell hover never opened the white-card tooltip')
-      await unhover(`.heat[data-date="${hoveredDay}"]`)
+      if (!dailyTipOk) fail('ticket-139 stage: the daily hover card is not above/centered on the day box (or lacks date · tokens · messages)')
+      await unhover(`.heat[data-date="${today}"]`)
       if (!(await waitForProbe(win, `document.querySelector('.heat-tooltip') === null`, 5_000))) {
-        fail('ticket-125 stage: the heat tooltip never hid after the pointer left')
+        fail('ticket-139 stage: the heat card never hid after the pointer left')
       }
-      log('usage_weekly_hover_ok')
+      log('usage_heat_daily_hover_ok')
 
-      // ③ The leftmost cell's outline keeps its left line: the scroll box
-      //    must reserve the focus-ring extent (2px ring + 1px offset) left
-      //    of the first cell, inside its clip box.
-      const outlineOk = await waitForProbe(
-        win,
-        `(() => {
-          const scroll = document.querySelector('.heatmap-scroll')
-          const first = document.querySelector('.heatmap .heat')
-          if (!scroll || !first) return false
-          return first.getBoundingClientRect().left - scroll.getBoundingClientRect().left >= 3
-        })()`,
-        5_000
-      )
-      if (!outlineOk) fail('ticket-125 stage: the leftmost cell outline is clipped by the scroll box (no left margin)')
-      log('usage_weekly_leftmost_outline_ok')
+      // ⑤ Weekly/Cumulative hover: the card floats above the column's topmost
+      // box (the card is centered on the column and the column rings).
+      for (const { label, through } of [
+        { label: 'Weekly', through: false },
+        { label: 'Cumulative', through: true }
+      ]) {
+        await clickSeg('Heatmap mode', label)
+        if (!(await hoverAt(`.heat[data-date="${today}"]`))) {
+          fail(`ticket-139 stage: the today heat box is missing for the ${label} hover`)
+        }
+        const colTipOk = await waitForProbe(
+          win,
+          `(() => {
+            const tip = document.querySelector('.heat-tooltip')
+            const cell = document.querySelector('.heat[data-date="${today}"]')
+            const col = cell?.closest('.heatmap-col')
+            if (!tip || !cell || !col) return false
+            const t = tip.getBoundingClientRect()
+            const top = col.getBoundingClientRect()
+            const text = tip.textContent ?? ''
+            return text.includes('This week')
+              && (text.includes('Through') === ${through ? 'true' : 'false'})
+              && t.bottom <= top.top + 3
+              && Math.abs(t.left + t.width / 2 - (top.left + top.width / 2)) <= 4
+              && col.classList.contains('heatmap-col-hover')
+          })()`,
+          5_000
+        )
+        if (!colTipOk) {
+          fail(`ticket-139 stage: the ${label} hover card is not above the column's topmost box (or the badge/ring is missing)`)
+        }
+        await unhover(`.heat[data-date="${today}"]`)
+        log(`usage_heat_${label.toLowerCase()}_hover_ok`)
+      }
 
-      // ④ Clicking the today cell (the fixture's streak always covers it)
-      //    drills into that day.
+      // ⑥ The today box still drills (regression): the drill targets the
+      // box's week column start — the column's Sunday, the pre-ticket-139
+      // drill anchor carried over (t125: "drills from their column's start
+      // — unchanged").
+      await clickSeg('Heatmap mode', 'Daily')
       const clicked = (await js(`(() => {
         const el = document.querySelector('.heat[data-date="${today}"]')
         if (el instanceof HTMLElement) {
@@ -12086,16 +12138,16 @@ export function startSmokeIfEnabled(
         }
         return false
       })()`)) as boolean
-      if (!clicked) fail('ticket-125 stage: the today heat cell is missing for the drill-down click')
+      if (!clicked) fail('ticket-139 stage: the today heat box is missing for the drill-down click')
       const drillOk = await waitForProbe(
         win,
         `(() => {
           const sub = document.querySelector('.dd-subtitle')
-          return sub !== null && (sub.textContent ?? '') === ${JSON.stringify(longDate(today))}
+          return sub !== null && (sub.textContent ?? '') === ${JSON.stringify(longDate(sundayOf(today)))}
         })()`,
         5_000
       )
-      if (!drillOk) fail('ticket-125 stage: the weekly cell click did not drill into that day')
+      if (!drillOk) fail('ticket-139 stage: the today box click did not drill into its week column')
       await js(
         `(() => {
           const close = document.querySelector('.dd-close')
@@ -12103,24 +12155,7 @@ export function startSmokeIfEnabled(
           return true
         })()`
       )
-      log('usage_weekly_day_drill_ok')
-
-      // ⑤ Daily / Cumulative keep their month-grid form: both still carry
-      //    the current week's seven days (zero cells included).
-      for (const label of ['Daily', 'Cumulative'] as const) {
-        await clickSeg('Heatmap mode', label)
-        const modeOk = await waitForProbe(
-          win,
-          `(() => {
-            const cells = [...document.querySelectorAll('.heat')]
-            const dates = new Set(cells.map((el) => el.getAttribute('data-date')))
-            return cells.length > 7 && ${weekJson}.every((d) => dates.has(d))
-          })()`,
-          5_000
-        )
-        if (!modeOk) fail(`ticket-125 stage: ${label} mode lost its month grid (current week days missing)`)
-        log(`usage_weekly_${label.toLowerCase()}_regression_ok`)
-      }
+      log('usage_heat_day_drill_ok')
 
       // Leave the shell clean.
       await js(
@@ -12131,12 +12166,11 @@ export function startSmokeIfEnabled(
         })()`
       )
       if (!(await waitForProbe(win, `document.querySelectorAll('.stat-card').length === 0`, 5_000))) {
-        fail('ticket-125 stage: leaving the settings shell never returned to the workspace')
+        fail('ticket-139 stage: leaving the settings shell never returned to the workspace')
       }
-      log('usage_weekly_done')
+      log('usage_heat_done')
     })
-    log('usage_weekly_stage_done')
-
+    log('usage_heat_stage_done')
     // ---- ticket 63: the settings window + Skills management ----
     // ⌘, (physical Comma) toggles the settings window; the Skills section
     // lists Pi's REAL loading surface for a sandbox agent dir (the probe

@@ -5,8 +5,8 @@
  * data the SVG components render verbatim. No file access, no DOM.
  */
 import type { HeatCell, ModelUsageSlice, TrendView, UsageSnapshot } from './aggregate.ts'
-import { addDays, mondayOf } from './dates.ts'
-import { formatDurationMs, formatMonthLabel, formatShortDate, formatStreakDays, formatTokenCount } from './format.ts'
+import { addDays, sundayOf } from './dates.ts'
+import { formatDurationMs, formatLongDate, formatMonthLabel, formatShortDate, formatStreakDays, formatTokenCount } from './format.ts'
 
 export type { HeatCell, ModelUsageSlice, TrendView, UsageSnapshot }
 
@@ -59,16 +59,29 @@ export type HeatmapMode = 'daily' | 'weekly' | 'cumulative'
 export interface HeatSlot {
   date: string
   value: number
+  messages: number
   level: 0 | 1 | 2 | 3 | 4
 }
 
+/** Column-level card aggregates: the week's and the term's running totals up
+ * to the column's last visible day (its Saturday, clamped to the data end).
+ * The weekly card reads the week pair, the cumulative card the term pair. */
+export interface HeatColumnCard {
+  date: string
+  weekTokens: number
+  weekMessages: number
+  termTokens: number
+  termMessages: number
+}
+
 export interface HeatColumn {
-  /** First day of the column: its Monday in daily/cumulative mode, the
-   * column's single day in weekly mode. */
+  /** First day of the column: its Sunday — contribution-graph weeks run
+   * Sunday..Saturday, top row to bottom row (ticket 139, z19 frames). */
   start: string
   /** Short month label when the column opens a month (or is the first column). */
   monthLabel: string | null
   slots: HeatSlot[]
+  card: HeatColumnCard
 }
 
 export interface HeatGrid {
@@ -82,86 +95,145 @@ function levelOf(value: number, max: number): 0 | 1 | 2 | 3 | 4 {
   return Math.min(4, Math.ceil((value / max) * 4)) as 0 | 1 | 2 | 3 | 4
 }
 
+/** Coverage window: 52 whole weeks whose last column is the week containing
+ * the data end (= today; the snapshot's daily cells are zero-filled through
+ * today) — the z19 frames' one-year contribution grid. */
+const HEAT_WEEK_COLUMNS = 52
+
 /** When the grid opens ≤1 week before a month boundary, columns 0 and 1 both
- * get labels one 18px column apart — they paint over each other (reference
- * 09 shows one label per month). The partial first week's label yields. */
+ * get labels one column apart — they paint over each other. The partial
+ * first week's label yields. */
 function yieldCollidingFirstLabel(columns: HeatColumn[]): void {
   if (columns.length >= 2 && columns[0].monthLabel !== null && columns[1].monthLabel !== null) {
     columns[0].monthLabel = null
   }
 }
 
+/** One day's three folded series: the day's own totals, the week's
+ * start-to-date totals (reset every Sunday), and the term's start-to-date
+ * totals (never reset). All three fold in one ascending pass. */
+interface HeatDaySeries {
+  day: number
+  dayMessages: number
+  week: number
+  weekMessages: number
+  term: number
+  termMessages: number
+}
+
+/** The mode table (ticket 139 Seam-1): which folded series a box renders.
+ * Every mode shows the SAME 52×7 grid — one box per day, depth = usage — and
+ * only the per-box series changes:
+ *
+ *   daily      — that day's own usage (z19-heatmap-daily-*)
+ *   weekly     — the week's start through that day (z19-heatmap-weekly-*)
+ *   cumulative — the term's start through that day (z19-heatmap-cumulative-*)
+ *
+ * Zero-usage days and the days after the data end inside the current week
+ * render as level-0 empty-color boxes, never missing (ticket 125 carried). */
+const HEAT_BOX_SERIES: Record<HeatmapMode, (series: HeatDaySeries) => number> = {
+  daily: (series) => series.day,
+  weekly: (series) => series.week,
+  cumulative: (series) => series.term
+}
+
 /**
- * Lay heatmap cells out GitHub-style: columns are Monday-start weeks; daily
- * and cumulative modes fill seven weekday slots per column (padded to whole
- * weeks), weekly mode reads as the current week's seven days — one
- * single-day column per weekday (ticket 125), so a week is always exactly
- * seven boxes: zero-usage days (and the days after today inside the week)
- * render as level-0 empty-color cells instead of going missing. Levels are
- * 0–4 against the maximum of the chosen mode, so toggling modes re-colors
- * the same grid.
+ * Lay the contribution grid out: 52 Sunday-start week columns × seven
+ * weekday slots, ending at the data end's week. Levels are 0–4 against the
+ * maximum of the chosen mode's box series, so toggling modes re-colors the
+ * same grid.
  */
 export function heatmapGrid(cells: HeatCell[], mode: HeatmapMode): HeatGrid {
   if (cells.length === 0) return { mode, max: 0, columns: [] }
 
   const sorted = [...cells].sort((a, b) => a.date.localeCompare(b.date))
+  const today = sorted[sorted.length - 1].date
+  const cellByDate = new Map(sorted.map((cell) => [cell.date, cell]))
 
-  if (mode === 'weekly') {
-    // The snapshot's daily cells are zero-filled through today, so the latest
-    // cell anchors "today"; its Monday starts the current week.
-    const valueByDate = new Map<string, number>()
-    for (const cell of sorted) valueByDate.set(cell.date, cell.tokens)
-    const weekStart = mondayOf(sorted[sorted.length - 1].date)
-    const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i))
-    const values = days.map((date) => valueByDate.get(date) ?? 0)
-    const max = Math.max(0, ...values)
-    const weeklyColumns = days.map((date, i) => ({
-      start: date,
-      monthLabel: i === 0 ? formatMonthLabel(date) : columnMonthLabel(date, date),
-      slots: [{ date, value: values[i], level: levelOf(values[i], max) }]
-    }))
-    yieldCollidingFirstLabel(weeklyColumns)
-    return {
-      mode,
-      max,
-      columns: weeklyColumns
-    }
-  }
+  const gridEndWeek = sundayOf(today)
+  const gridStartWeek = addDays(gridEndWeek, -(HEAT_WEEK_COLUMNS - 1) * 7)
 
-  // daily / cumulative: one column per Monday-start week, seven slots each
-  const valueByDate = new Map<string, number>()
-  let running = 0
+  // Fold the three series in one ascending walk over the window. Days before
+  // the window still count toward the term series (期初 = the very first
+  // day, not the window's first day); days after the data end (the current
+  // week's future) never fold — they stay empty in every mode.
+  let termTokens = 0
+  let termMessages = 0
   for (const cell of sorted) {
-    const value = mode === 'cumulative' ? (running += cell.tokens) : cell.tokens
-    valueByDate.set(cell.date, value)
-  }
-  const first = sorted[0].date
-  const last = sorted[sorted.length - 1].date
-  const gridStart = mondayOf(first)
-  const gridEnd = addDays(mondayOf(last), 6)
-  const max = Math.max(0, ...valueByDate.values())
-  const lastValue = valueByDate.get(last) ?? 0
-
-  const columns: HeatColumn[] = []
-  for (let colStart = gridStart; colStart <= gridEnd; ) {
-    const slots: HeatSlot[] = []
-    for (let i = 0; i < 7; i++) {
-      const date = addDays(colStart, i)
-      let value = valueByDate.get(date)
-      if (value === undefined) {
-        // cumulative keeps standing after the last active day; daily falls to 0
-        value = mode === 'cumulative' && date > last ? lastValue : 0
-      }
-      slots.push({ date, value, level: levelOf(value, max) })
+    if (cell.date < gridStartWeek) {
+      termTokens += cell.tokens
+      termMessages += cell.messages
     }
-    const nextColStart = addDays(colStart, 7)
-    columns.push({
-      start: colStart,
-      monthLabel: columns.length === 0 ? formatMonthLabel(colStart) : columnMonthLabel(colStart, addDays(colStart, 6)),
-      slots
-    })
-    colStart = nextColStart
   }
+  const byDate = new Map<string, HeatDaySeries>()
+  let weekCursor: string | null = null
+  let weekTokens = 0
+  let weekMessages = 0
+  for (let date = gridStartWeek; date <= today; ) {
+    const sunday = sundayOf(date)
+    if (sunday !== weekCursor) {
+      // Week boundary: the weekly series restarts from zero every Sunday.
+      weekCursor = sunday
+      weekTokens = 0
+      weekMessages = 0
+    }
+    const cell = cellByDate.get(date)
+    // Gap days carry the week/term counters forward — a day without usage
+    // adds nothing but never resets what came before it.
+    weekTokens += cell?.tokens ?? 0
+    weekMessages += cell?.messages ?? 0
+    termTokens += cell?.tokens ?? 0
+    termMessages += cell?.messages ?? 0
+    byDate.set(date, {
+      day: cell?.tokens ?? 0,
+      dayMessages: cell?.messages ?? 0,
+      week: weekTokens,
+      weekMessages,
+      term: termTokens,
+      termMessages
+    })
+    date = addDays(date, 1)
+  }
+
+  const boxSeries = HEAT_BOX_SERIES[mode]
+
+  const raw: { colStart: string; slots: HeatSlot[]; card: HeatColumnCard }[] = []
+  let max = 0
+  for (let i = 0; i < HEAT_WEEK_COLUMNS; i++) {
+    const colStart = addDays(gridStartWeek, i * 7)
+    const slots: HeatSlot[] = []
+    for (let d = 0; d < 7; d++) {
+      const date = addDays(colStart, d)
+      const series = byDate.get(date)
+      const value = series ? boxSeries(series) : 0
+      const messages = series?.dayMessages ?? 0
+      max = Math.max(max, value)
+      slots.push({ date, value, messages, level: 0 })
+    }
+    // The card describes the week through its last visible day: the column's
+    // Saturday, clamped to the data end (the current week reads up to today).
+    const saturday = addDays(colStart, 6)
+    const cardDate = saturday <= today ? saturday : today
+    const cardSeries = byDate.get(cardDate)
+    raw.push({
+      colStart,
+      slots,
+      card: {
+        date: cardDate,
+        weekTokens: cardSeries?.week ?? 0,
+        weekMessages: cardSeries?.weekMessages ?? 0,
+        termTokens: cardSeries?.term ?? 0,
+        termMessages: cardSeries?.termMessages ?? 0
+      }
+    })
+  }
+
+  const columns: HeatColumn[] = raw.map(({ colStart, slots, card }, i) => ({
+    start: colStart,
+    monthLabel: i === 0 ? formatMonthLabel(colStart) : columnMonthLabel(colStart, addDays(colStart, 6)),
+    slots: slots.map((slot) => ({ ...slot, level: levelOf(slot.value, max) })),
+    card
+  }))
   yieldCollidingFirstLabel(columns)
   return { mode, max, columns }
 }
@@ -174,6 +246,48 @@ function columnMonthLabel(from: string, to: string): string | null {
   if (from.slice(0, 7) !== to.slice(0, 7)) return formatMonthLabel(to)
   if (from.endsWith('-01')) return formatMonthLabel(from)
   return null
+}
+
+// --- heatmap hover card ----------------------------------------------------------
+
+/** White-card content for the heatmap hover (the trend/donut card family). */
+export interface HeatCard {
+  /** Line 1: the date, with the ' · This week' badge in weekly/cumulative. */
+  title: string
+  /** Line 2: 'N tokens · M messages'. */
+  value: string
+}
+
+const heatCardValue = (tokens: number, messages: number): string =>
+  `${formatTokenCount(tokens)} tokens · ${messages} ${messages === 1 ? 'message' : 'messages'}`
+
+/** Card content per mode (ticket 139 Seam-1 table, z19 card shapes): daily
+ * names the hovered day; weekly names the column week through its last
+ * visible day ('当周'); cumulative reads '截至 <date> 当周累计' — the term's
+ * total through the column week, current week included. */
+const HEAT_CARDS: Record<HeatmapMode, (slot: HeatSlot, column: HeatColumn) => HeatCard> = {
+  daily: (slot) => ({ title: formatLongDate(slot.date), value: heatCardValue(slot.value, slot.messages) }),
+  weekly: (_slot, column) => ({
+    title: `${formatLongDate(column.card.date)} · This week`,
+    value: heatCardValue(column.card.weekTokens, column.card.weekMessages)
+  }),
+  cumulative: (_slot, column) => ({
+    title: `Through ${formatLongDate(column.card.date)} · This week`,
+    value: heatCardValue(column.card.termTokens, column.card.termMessages)
+  })
+}
+
+export function heatCard(mode: HeatmapMode, slot: HeatSlot, column: HeatColumn): HeatCard {
+  return HEAT_CARDS[mode](slot, column)
+}
+
+/** Card anchor per mode (ticket 139 Seam-1 table): daily floats at the
+ * hovered box (z19-heatmap-daily-2); weekly/cumulative float at the column's
+ * topmost box — '当周最上方方块' (z19-heatmap-weekly-2 / -cumulative-2). */
+export const HEAT_CARD_ANCHORS_COLUMN: Record<HeatmapMode, boolean> = {
+  daily: false,
+  weekly: true,
+  cumulative: true
 }
 
 // --- trend chart ----------------------------------------------------------------

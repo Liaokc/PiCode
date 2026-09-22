@@ -5,10 +5,19 @@
  * Drives the real UI through the settings shell and captures:
  *
  *   u1-usage-overview  — headline cards + Token activity heatmap (daily)
- *   u2-usage-weekly    — heatmap toggled to Weekly: the current week's
- *                        seven day cells (ticket 125)
- *   u2b-usage-weekly-hover — real-input hover on the leftmost weekly cell:
- *                        white-card tooltip + complete (unclipped) outline
+ *   u1b-usage-heat-daily-hover — real-input hover on an active daily box:
+ *                        white card above the box (z19-heatmap-daily-2 form)
+ *   u2-usage-heat-weekly    — heatmap toggled to Weekly: the same 52×7
+ *                        contribution grid re-colored week-start-to-day
+ *                        (ticket 139, z19-heatmap-weekly-1)
+ *   u2b-usage-heat-weekly-hover — real-input hover on the current week's
+ *                        column: card above the column's topmost box + ring
+ *                        (z19-heatmap-weekly-2)
+ *   u2c-usage-heat-cumulative — Cumulative mode: term-start-to-day boxes
+ *                        (z19-heatmap-cumulative-1)
+ *   u2d-usage-heat-cumulative-hover — real-input hover, card above the
+ *                        current week's column ('Through … · This week',
+ *                        z19-heatmap-cumulative-2)
  *   u3-usage-trend     — time range + per-model daily trend chart (30d,
  *                        curves clamped into the plot band — ticket 65)
  *   u4-usage-donut     — model usage donut with legend shares
@@ -172,36 +181,95 @@ export function startUsageVisualIfEnabled(getWindow: () => BrowserWindow | null)
       await sleep(400)
       await capture(win, 'u1-usage-overview')
 
-      // Heatmap mode toggles.
-      if (!(await clickSeg(wc, 'Heatmap mode', 'Weekly'))) throw new Error('usage visual: Weekly seg missing')
-      await sleep(400)
-      await capture(win, 'u2-usage-weekly')
-
-      // ticket 125: hover the leftmost weekly cell with REAL input (synthetic
-      // moves never light the CSS :hover outline) — the white-card tooltip
-      // and the complete, unclipped outline share the frame.
-      const leftPoint = await execute<{ x: number; y: number } | null>(
+      // ---- ticket 139: the six heat frames (three modes × normal/hover) ----
+      // Hover target: the LAST active box (the fixture's streak ends today,
+      // so the current week's column always carries activity — the z19
+      // frames' right-edge cluster). The grid scrolls horizontally, so the
+      // scroll box is driven to its right end before the box is located.
+      const todayBox = await execute<{ x: number; y: number } | null>(
         wc,
         `(() => {
-          const cell = document.querySelector('.heatmap-weekly .heat')
+          const scroll = document.querySelector('.heatmap-scroll')
+          if (scroll instanceof HTMLElement) scroll.scrollLeft = scroll.scrollWidth
+          const cells = [...document.querySelectorAll('button.heat')]
+          const cell = cells[cells.length - 1]
           if (!cell) return null
+          cell.scrollIntoView({ block: 'center' })
           const r = cell.getBoundingClientRect()
+          if (r.width === 0) return null
           return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
         })()`
       )
-      if (!leftPoint) throw new Error('usage visual: no weekly heat cell to hover')
-      win.webContents.sendInputEvent({ type: 'mouseMove', x: leftPoint.x, y: leftPoint.y })
-      let heatTip = false
-      for (let waited = 0; waited < 5_000 && !heatTip; waited += 200) {
-        heatTip = await execute<boolean>(wc, `document.querySelectorAll('.heat-tooltip').length > 0`)
-        if (!heatTip) await sleep(200)
+      if (!todayBox) throw new Error('usage visual: no active heat box to hover')
+      // The programmatic scroll flashes the overlay scrollbar — park the real
+      // cursor away and let the fade finish before any hover frame.
+      win.webContents.sendInputEvent({ type: 'mouseMove', x: 60, y: 60 })
+      await sleep(2_000)
+      const hoverBoxAndSettle = async (): Promise<void> => {
+        // React-driven hover: dispatch on the box itself (the card and the
+        // column ring are React state, not CSS), then a real-input move to
+        // the same point for the CSS :hover outline.
+        const opened = await execute<boolean>(
+          wc,
+          `(() => {
+            const cells = [...document.querySelectorAll('button.heat')]
+            const cell = cells[cells.length - 1]
+            if (!cell) return false
+            const r = cell.getBoundingClientRect()
+            cell.dispatchEvent(new MouseEvent('mousemove', {
+              bubbles: true,
+              clientX: r.left + r.width / 2,
+              clientY: r.top + r.height / 2
+            }))
+            return true
+          })()`
+        )
+        if (!opened) throw new Error('usage visual: no active heat box to hover')
+        win.webContents.sendInputEvent({ type: 'mouseMove', x: todayBox.x, y: todayBox.y })
+        let heatTip = false
+        for (let waited = 0; waited < 5_000 && !heatTip; waited += 200) {
+          heatTip = await execute<boolean>(wc, `document.querySelectorAll('.heat-tooltip').length > 0`)
+          if (!heatTip) await sleep(200)
+        }
+        if (!heatTip) throw new Error('usage visual: heat box hover never opened the white-card tooltip')
+        await sleep(300)
       }
-      if (!heatTip) throw new Error('usage visual: heat cell hover never opened the white-card tooltip')
-      await sleep(300)
-      await capture(win, 'u2b-usage-weekly-hover')
-      // Drop the hover so later frames stay clean.
-      win.webContents.sendInputEvent({ type: 'mouseMove', x: leftPoint.x + 240, y: leftPoint.y - 80 })
-      await sleep(300)
+      const unhoverBox = async (): Promise<void> => {
+        await execute<boolean>(
+          wc,
+          `(() => {
+            const cells = [...document.querySelectorAll('button.heat')]
+            const cell = cells[cells.length - 1]
+            if (!cell) return false
+            cell.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body }))
+            cell.dispatchEvent(new MouseEvent('mouseleave', { relatedTarget: document.body }))
+            return true
+          })()`
+        )
+        win.webContents.sendInputEvent({ type: 'mouseMove', x: todayBox.x + 260, y: todayBox.y - 120 })
+        await sleep(300)
+      }
+
+      // Daily hover (u1b) — card above the hovered box.
+      await hoverBoxAndSettle()
+      await capture(win, 'u1b-usage-heat-daily-hover')
+      await unhoverBox()
+
+      // Weekly normal + hover (u2/u2b) — card above the column's topmost box.
+      if (!(await clickSeg(wc, 'Heatmap mode', 'Weekly'))) throw new Error('usage visual: Weekly seg missing')
+      await sleep(400)
+      await capture(win, 'u2-usage-heat-weekly')
+      await hoverBoxAndSettle()
+      await capture(win, 'u2b-usage-heat-weekly-hover')
+      await unhoverBox()
+
+      // Cumulative normal + hover (u2c/u2d).
+      if (!(await clickSeg(wc, 'Heatmap mode', 'Cumulative'))) throw new Error('usage visual: Cumulative seg missing')
+      await sleep(400)
+      await capture(win, 'u2c-usage-heat-cumulative')
+      await hoverBoxAndSettle()
+      await capture(win, 'u2d-usage-heat-cumulative-hover')
+      await unhoverBox()
 
       if (!(await clickSeg(wc, 'Heatmap mode', 'Daily'))) throw new Error('usage visual: Daily seg missing')
       await sleep(300)
