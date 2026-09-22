@@ -134,3 +134,45 @@ export function dockReducer(state: DockState, action: DockAction): DockState {
 export function dockForNewTask(state: DockState): DockState {
   return state
 }
+
+// ---- terminal focus-request serving (ticket 132) ----
+
+/**
+ * The serve decision for the terminal dock's focus-request state machine
+ * (ticket 132, the recurrence of the ticket-105 regression). A ⌘J-family
+ * bump ARMS a request; the request must reach the shell WHICHEVER way the
+ * mounting races fall:
+ *
+ *   - the bump can arrive while NO shell exists yet (boot empty state, a
+ *     create still in flight with no tab) — the request HOLDS until a
+ *     workspace registers, instead of being consumed as a no-op (the
+ *     regression: focus landed on <body> with the dock wide open);
+ *   - the shell that served the request can be REPLACED moments later (a
+ *     create announcement remounts the workspace on a new cwd) — the
+ *     replacement RESTORES the caret the request just placed, unless a
+ *     live caret owner took it in between (a task-switch click reclaims
+ *     the composer first, so unrelated remounts never steal — the
+ *     ticket-105 rule survives).
+ *
+ * The visible-panel cancel (close / bridge swap) lives in the renderer
+ * glue: an armed request never fires into a hidden shell.
+ */
+export interface TerminalFocusServeState {
+  /** A dock action bumped focusSeq and the request is unresolved. */
+  armed: boolean
+  /** A shell workspace is mounted and can receive focus right now. */
+  receiver: boolean
+  /** The workspace that just unmounted held input focus (a replacement
+   * should take the caret back). */
+  heldByReplaced: boolean
+  /** The current activeElement is a live caret owner (composer/input). */
+  activeIsEditable: boolean
+}
+
+export type TerminalFocusServeDecision = 'serve' | 'hold' | 'stand-down'
+
+export function terminalFocusServeDecision(state: TerminalFocusServeState): TerminalFocusServeDecision {
+  if (state.armed) return state.receiver ? 'serve' : 'hold'
+  if (state.heldByReplaced && state.receiver && !state.activeIsEditable) return 'serve'
+  return 'stand-down'
+}

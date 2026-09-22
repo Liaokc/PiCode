@@ -7,6 +7,7 @@ import {
   initialDockState,
   dockReducer,
   dockForNewTask,
+  terminalFocusServeDecision,
   type DockAction,
   type DockState
 } from '../../src/shared/dock-model'
@@ -297,4 +298,37 @@ describe('clampDockHeight (ticket 30: drag-path/reducer parity)', () => {
     expect(clampDockHeight(DOCK_MAX_HEIGHT_PX + 1)).toBe(DOCK_MAX_HEIGHT_PX)
     expect(clampDockHeight(320.4)).toBe(320)
   })
+})
+
+describe('terminalFocusServeDecision (ticket 132: the ⌘J request survives the mounting races)', () => {
+  // Full decision table — armed × receiver, then the held-by-replacement
+  // restore with its live-caret guard. The two regression shapes the table
+  // pins: (a) armed with no receiver yet HOLDS (boot empty / create in
+  // flight — pre-fix the request was consumed as a no-op and focus landed
+  // on <body>); (b) a replaced shell that held focus RESTORES it unless an
+  // editable took the caret (a task-switch click reclaims the composer
+  // first, so unrelated remounts never steal — ticket 105 survives).
+  const cases: Array<{
+    name: string
+    state: { armed: boolean; receiver: boolean; heldByReplaced: boolean; activeIsEditable: boolean }
+    want: 'serve' | 'hold' | 'stand-down'
+  }> = [
+    // armed requests
+    { name: 'armed + receiver → serve (the ticket-105 path)', state: { armed: true, receiver: true, heldByReplaced: false, activeIsEditable: false }, want: 'serve' },
+    { name: 'armed + receiver (editable holds focus) → serve (⌘J explicitly moves focus)', state: { armed: true, receiver: true, heldByReplaced: false, activeIsEditable: true }, want: 'serve' },
+    { name: 'armed + no receiver → hold (boot empty / create in flight)', state: { armed: true, receiver: false, heldByReplaced: false, activeIsEditable: false }, want: 'hold' },
+    { name: 'armed + no receiver + held lingering → hold (the request outlives the replaced shell)', state: { armed: true, receiver: false, heldByReplaced: true, activeIsEditable: false }, want: 'hold' },
+    // replacement restores
+    { name: 'held by replaced + receiver + focus fell to body → serve (the create-announcement remount)', state: { armed: false, receiver: true, heldByReplaced: true, activeIsEditable: false }, want: 'serve' },
+    { name: 'held by replaced + receiver + composer took the caret → stand-down (task-switch click reclaimed it)', state: { armed: false, receiver: true, heldByReplaced: true, activeIsEditable: true }, want: 'stand-down' },
+    { name: 'held by replaced + no receiver yet → stand-down (nothing to restore into; the flag is spent)', state: { armed: false, receiver: false, heldByReplaced: true, activeIsEditable: false }, want: 'stand-down' },
+    // nothing outstanding
+    { name: 'no arm, no hold → stand-down', state: { armed: false, receiver: true, heldByReplaced: false, activeIsEditable: false }, want: 'stand-down' },
+    { name: 'no arm, no hold, receiver absent → stand-down', state: { armed: false, receiver: false, heldByReplaced: false, activeIsEditable: true }, want: 'stand-down' }
+  ]
+  for (const { name, state, want } of cases) {
+    it(name, () => {
+      expect(terminalFocusServeDecision(state)).toBe(want)
+    })
+  }
 })
