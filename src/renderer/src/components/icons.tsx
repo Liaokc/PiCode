@@ -199,11 +199,13 @@ export function ShieldCheckIcon({ size, className }: IconProps): JSX.Element {
  * hemispheres whose Z-close draws the central full-height fissure, the
  * bottom-center fold caret, and six small fold arcs. Pixel-verified against
  * the operator's ZCode reference crops (.scratch/picode-1-8/reference/
- * z19-brain-*.png: header + selector both 28×28 native ink, NCC 0.94/0.83
- * vs the rasterized path — no visible structural difference, so the Lucide
- * path stands unmodified). Consumed by the thinking-level chip (Composer)
- * and the transcript thinking rows (ThinkingRow) — one definition, no
- * inline copies. Stroke joins the family props (currentColor, 1.7, round). */
+ * z19-brain-*.png: header + selector both 28×28 native ink, NCC 0.9596/
+ * 0.9792 vs the rasterized path at matched 2x scale; the app's own two
+ * surfaces match the same template at 0.9351/0.9365 — no visible
+ * structural difference, so the Lucide path stands unmodified). Consumed
+ * by the thinking-level chip (Composer) and the transcript thinking rows
+ * (ThinkingRow) — one definition, no inline copies. Stroke joins the
+ * family props (currentColor, 1.7, round). */
 export function BrainIcon({ size, className }: IconProps): JSX.Element {
   return (
     <svg {...svgProps(size, className)}>
