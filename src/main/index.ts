@@ -14,6 +14,8 @@ import { EMPTY_MANUAL_ORDER } from '../shared/sessions/group'
 import { createWindowOptions } from './window-options'
 import { applyDevDockIcon } from './app-icon'
 import { HostSupervisor, defaultHostEntryPath } from './host-supervisor'
+import { initSpawnPath } from './spawn-path'
+import { subagentSdkAlignmentNoticeForInstallation } from './subagent-sdk-check'
 import { createApprovalNotifier, parseApprovalNotice } from './notifications'
 import { collectReview } from './review/collect'
 import { readPreview } from './preview/read'
@@ -222,6 +224,12 @@ if (typeof layoutSmokeUserData === 'string' && layoutSmokeUserData !== '') {
 // Ticket-88 preview-file serve scheme: privileges must be registered before
 // app ready; the handler installs inside whenReady below.
 protocol.registerSchemesAsPrivileged(previewServeSchemePrivileges)
+
+// Ticket 134 (spec R21): compose the spawn PATH for host-family children
+// early and asynchronously — a GUI launch's bare system PATH must not starve
+// pi-subagents' detached runner of a resolvable `node`. Cached once; the
+// window never waits on it.
+initSpawnPath()
 
 function createMainWindow(): BrowserWindow {
   const win = new BrowserWindow(createWindowOptions(path.join(__dirname, '../preload/index.js')))
@@ -800,6 +808,20 @@ app.whenReady().then(() => {
   startPerfIfEnabled(() => (mainWindow && !mainWindow.isDestroyed() ? mainWindow : null))
 
   mainWindow = createMainWindow()
+
+  // Ticket 134: the startup SDK/subagents alignment self-check — a bundled
+  // SDK older than 0.86.1 cannot feed pi-subagents ≥ 0.70's transcript-tools
+  // import (the extension fails to load; in-app subagents die silently
+  // otherwise). The rare broken-bundle case rides the existing host_notice
+  // toast: broadcast once the renderer can show it (did-finish-load plus a
+  // settle beat for React's mount-time subscription) and log it regardless.
+  const alignmentNotice = subagentSdkAlignmentNoticeForInstallation()
+  if (alignmentNotice !== null) {
+    console.error(`[picode] ${alignmentNotice}`)
+    mainWindow.webContents.once('did-finish-load', () => {
+      setTimeout(() => broadcastToWindows({ type: 'host_notice', level: 'error', message: alignmentNotice }), 1_500)
+    })
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) mainWindow = createMainWindow()

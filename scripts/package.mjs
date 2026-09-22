@@ -65,6 +65,51 @@ if (!appDir || !existsSync(path.join(appDir, 'PiCode.app'))) {
 }
 console.log(`→ packaged ${appDir}/PiCode.app`)
 
+// Ticket 134: the bundled-SDK alignment assertion — the packaged artifact's
+// SDK and its nested pi-ai must be the pinned 0.86.1 (the floor pi-subagents
+// 0.70.1's transcript-tools import needs; the batch's second empty run died
+// on a 0.85.1 bundle). Reads the artifact's own trees, not the dev checkout.
+{
+  const appRoot = path.join(appDir, 'PiCode.app', 'Contents', 'Resources', 'app')
+  const pinned = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')).dependencies[
+    '@earendil-works/pi-coding-agent'
+  ]
+  const readVersion = (file) => {
+    try {
+      return JSON.parse(readFileSync(file, 'utf8')).version ?? null
+    } catch {
+      return null
+    }
+  }
+  const sdkDir = path.join(appRoot, 'node_modules', '@earendil-works', 'pi-coding-agent')
+  const sdkVersion = readVersion(path.join(sdkDir, 'package.json'))
+  if (sdkVersion !== pinned) {
+    console.error(`PACKAGING FAILED: the artifact's SDK is ${sdkVersion}, expected the pinned ${pinned}`)
+    process.exit(1)
+  }
+  // pi-ai ships nested inside the SDK tree (or hoisted beside it) — either
+  // way it must be at least the 0.86.1 floor.
+  const piAiVersion =
+    readVersion(path.join(sdkDir, 'node_modules', '@earendil-works', 'pi-ai', 'package.json')) ??
+    readVersion(path.join(appRoot, 'node_modules', '@earendil-works', 'pi-ai', 'package.json'))
+  const versionAtLeast = (value, floor) => {
+    if (value === null) return false
+    const left = value.split('.').map((part) => Number(part) || 0)
+    const right = floor.split('.').map((part) => Number(part) || 0)
+    for (let i = 0; i < Math.max(left.length, right.length); i++) {
+      const l = left[i] ?? 0
+      const r = right[i] ?? 0
+      if (l !== r) return l > r
+    }
+    return true
+  }
+  if (!versionAtLeast(piAiVersion, '0.86.1')) {
+    console.error(`PACKAGING FAILED: the artifact's pi-ai is ${piAiVersion}, expected >= 0.86.1 (the transcript-tools floor)`)
+    process.exit(1)
+  }
+  console.log(`→ bundled SDK ${sdkVersion} / pi-ai ${piAiVersion} verified inside PiCode.app`)
+}
+
 if (!verify) {
   console.log('→ done. Launch: open "' + appDir + '/PiCode.app"')
   process.exit(0)
