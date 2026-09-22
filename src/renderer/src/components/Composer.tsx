@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type JSX, type KeyboardEvent } from 'react'
 import type { AccessMode, ImageAttachment, ModelRef, ProviderModels, SlashCommandItem, ThinkingLevel } from '../../../shared/contract'
-import type { ChatQueue } from '../../../shared/chat-reducer'
 import type { QueueKind } from '../../../shared/queue-mirror'
 import type { ContextRingInput } from '../../../shared/context-ring'
 import { composerDraft, type ComposerDraft, type ComposerDraftEntry, type ComposerDraftOwner } from '../../../shared/composer/drafts'
@@ -29,7 +28,6 @@ import { FileMenu, SlashMenu } from './composer/list-menus'
 import ContextRing from './ContextRing'
 import ImagePreviewOverlay from './ImagePreviewOverlay'
 import { ArrowUpIcon, BrainIcon, CloseIcon, CubeIcon, FoldIcon, PlusIcon, ShieldCheckIcon, StopIcon, UnfoldIcon, WandIcon } from './icons'
-import QueuePanel from './QueuePanel'
 import Tooltip from './Tooltip'
 
 /** Composer-relevant slices of the chat state (all contract-pushed). */
@@ -65,7 +63,10 @@ export interface ComposerApi {
   onSetModel: (providerId: string, modelId: string) => void
   onSetThinkingLevel: (level: ThinkingLevel) => void
   /** Ticket 100: inline Edit on one queue row — the host's dance removes the
-   * entry and answers with its raw text + images for the composer prefill. */
+   * entry and answers with its raw text + images for the composer prefill.
+   * Ticket 135: the queue CARD renders in the chat dock ABOVE this composer
+   * (ChatView feeds it these ops) — the composer itself no longer mounts
+   * the panel. */
   onEditQueueEntry: (kind: QueueKind, index: number) => void
   /** Ticket 100: per-row × removal — the same dance, no prefill. */
   onRemoveQueueEntry: (kind: QueueKind, index: number) => void
@@ -86,8 +87,6 @@ interface ComposerProps extends ComposerApi {
   disabled: boolean
   placeholder: string
   chat: ComposerChat
-  /** Live steering/follow-up queue (SDK-authoritative, contract-pushed). */
-  queue: ChatQueue
   /** Ticket 74: the draft to restore on MOUNT — the parked slot content for
    * this surface. Read exactly once (the state initializers); slots only
    * change while the view is elsewhere, and every view switch remounts the
@@ -156,7 +155,6 @@ export default function Composer({
   disabled,
   placeholder,
   chat,
-  queue,
   initialDraft = null,
   draftBridgeRef,
   draftOwner,
@@ -168,9 +166,6 @@ export default function Composer({
   onSetAccessMode,
   onSetModel,
   onSetThinkingLevel,
-  onEditQueueEntry,
-  onRemoveQueueEntry,
-  onReorderQueueEntry,
   onListFiles,
   onPickImages,
   onBuiltinCommand,
@@ -841,9 +836,10 @@ export default function Composer({
         </div>
       )}
 
-      {busy && (
-        <QueuePanel queue={queue} onEdit={onEditQueueEntry} onRemove={onRemoveQueueEntry} onReorder={onReorderQueueEntry} />
-      )}
+      {/* Ticket 135 (CONTEXT.md: 队列卡): the queue panel no longer mounts
+          here — it is its own card stacked ABOVE this composer in the chat
+          dock (ChatView renders it from chat.queue + the shared api's queue
+          ops). The composer's own geometry never changes with the queue. */}
 
       <footer className="composer-footer">
         <Tooltip label="Attach images">

@@ -1207,11 +1207,12 @@ export function startVisualIfEnabled(getWindow: () => BrowserWindow | null): voi
         })()`
       )
       emit({ type: 'agent_start' })
-      // Ticket 128: the queue panel frames — ONE row first (z 图6
+      // Ticket 128 → 135: the queue card frames — ONE row first (z 图6
       // composition: grip + tag + text + Edit + trash), then a row of EACH
-      // kind (z 图7: the two-segment column; the inline actions on both row
-      // shapes and the ticket-100 inset: the row borders separated from the
-      // composer card's edge).
+      // kind (z 图7: the two-segment column). Ticket 135 moved the card to
+      // its own position ABOVE the composer (a chat-dock sibling, flush on
+      // the composer's top edge); the frames now show the new position —
+      // the row rules themselves are the ticket-128 delivery, untouched.
       emit({ type: 'queue_update', steering: ['Steer the plan toward the cache-first variant'], followUp: [] })
       await sleep(500)
       await captureMenu(win, '5a-queue-single', {

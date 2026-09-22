@@ -7278,17 +7278,37 @@ button.preview-crumb:hover {
 
 /* ---------- queue panel (ticket 05; ticket 100 row/card separation;
    ticket 128: ZCode composition — grip + tag + text + Edit + trash,
-   segment-internal drag, global Clear retired) ---------- */
+   segment-internal drag, global Clear retired; ticket 135: the panel is
+   its own card ABOVE the composer, no longer inside the input card) ---------- */
 
+/* Ticket 135 (CONTEXT.md: 队列卡): the queue is a separate rounded card
+   stacked flush on the composer's top edge, in the composer's own column
+   — the ZCode queue band's form. The inset-tinted surface mirrors the
+   ZCode reference frame's gray band; the rows keep the ticket-128
+   delivery (white row chips, 28px, P20) inset inside the card. The
+   composer's own card below never moves: the queue card only grows the
+   dock upward, shrinking the transcript cell (the ticket-119 geometry
+   the idle pin already owns). */
 .queue-panel {
   display: flex;
-  /* Ticket 100: the row borders used to sit flush against the composer
-     card's edge — the row radius coincided with the card's. The horizontal
-     padding insets every row from the card edge (aligned with the input
-     text and the attachment strip), the vertical margins separate the rows
-     from the textarea above and the footer below. */
-  padding: 0 18px;
-  margin: 8px 0 2px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 6px 24px rgba(30, 30, 25, 0.06);
+  /* Ticket 100's edge separation carries into the new card: the padding
+     insets every row from the card edge so the row borders never touch
+     the card's radius. */
+  padding: 10px 14px;
+}
+
+/* The composer's column (ticket 135): same width rail as
+   .chat-dock .composer below, centered, and flush against it — the two
+   cards' borders stack into the shared junction line (the ZCode frame's
+   zero-gap stack). */
+.chat-dock .queue-panel {
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto;
 }
 
 .queue-panel-items {

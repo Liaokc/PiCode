@@ -366,7 +366,6 @@ export default function EmptyState({
           disabled={creating}
           placeholder={creating ? 'Starting session…' : 'Ask anything — @ to add context, / for commands'}
           chat={chat}
-          queue={idleChat.queue}
           initialDraft={initialDraft}
           draftBridgeRef={draftBridgeRef}
           draftOwner={NEW_TASK_DRAFT_OWNER}

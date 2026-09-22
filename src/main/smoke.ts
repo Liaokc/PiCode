@@ -658,7 +658,9 @@ export function startSmokeIfEnabled(
     // the full sequence (the sanitized-env launcher selects via
     // PICODE_SMOKE_STAGE; the full suite keeps its unchanged behavior).
     const stageSelector = process.env['PICODE_SMOKE_STAGE'] ?? ''
-    if (stageSelector !== '') {
+    // ('t100-queue' is handled later — after the smoke window exists; the
+    // queue-panel stage drives the renderer DOM.)
+    if (stageSelector !== '' && stageSelector !== 't100-queue') {
       if (stageSelector === 't134-sanitized') {
         await t134SanitizedSpawnStage()
       } else {
@@ -687,6 +689,430 @@ export function startSmokeIfEnabled(
     if (smokeWin === null) fail('smoke window missing for the empty-state stage')
     const win = smokeWin
     let pickedModelId: string | null = null
+
+    // Ticket 135 (validation harness): the queue-panel stage body
+    // (tickets 100 → 128 → 135) as a callable closure. The full suite
+    // runs it in its original position near the end of the sequence;
+    // PICODE_SMOKE_STAGE=t100-queue drives it ALONE, straight after boot,
+    // when an earlier stage's known flake would otherwise mask the queue
+    // legs entirely (the t134-sanitized selector precedent).
+    const queueRepairStage = async (): Promise<void> => {
+    // ---- ticket 100 → 128 → 135: the queue panel — ① (ticket 135) the
+    // card is its own rounded card stacked directly ABOVE the composer
+    // (DOM outside the composer card, flush on its top edge, same column;
+    // every row's border box sits INSIDE the queue card with a real inset),
+    // ② inline Edit (the host's
+    // edit_queue_entry dance removes the entry; the composer prefills the
+    // raw text and — via the host mirror — the PASTED IMAGE; the remaining
+    // rows keep their order), ③ resend works (the prefilled text re-queues),
+    // ④ per-row trash discards only its own row, ⑤ the global Clear is GONE
+    // (ticket 128: the trash replaces it), ⑥ P20: the inline actions stretch
+    // to the row body's full height, ⑦ segment-internal drag reorder
+    // (ticket 128's additive reorder_queue_entry op): two follow-ups swapped
+    // keep their images on their OWN entries, and two steers swapped inject
+    // in the NEW order at the turn end (delivery echoes, arrival order
+    // recorded). A FRESH session drives a real long count turn; the queued
+    // entries ride the dances; the swapped steers + follow-ups deliver at
+    // the turn end in the swapped order. ----
+    log('queue_repair_start')
+    const queue100Created = waitFor(
+      (e) => e.type === 'session_created',
+      'ticket-100 session_created'
+    ) as Promise<Extract<Scoped, { type: 'session_created' }>>
+    supervisor.createSession(cwd)
+    const queue100Session = await queue100Created
+    const queue100Id = queue100Session.sessionId
+    // Long enough to outlive the whole choreography (the ticket-93 width
+    // precedent: the follow-ups deliver only when the run ends NATURALLY).
+    const COUNT_PROMPT_100 =
+      'PICODE_SCROLL_100_HOST: Count from 1 to 800. Output each number on its own line, one number per line. Do not summarize and do not stop early. Do not use any tools — write the numbers directly in your reply text.\n' +
+      '\n'.repeat(100)
+    const Q1_100 = 'PICODE_100_Q1 edit me with the shot'
+    const Q2_100 = 'PICODE_100_Q2 middle row'
+    const Q3_100 = 'PICODE_100_Q3 last row'
+    // Ticket 128: the reorder choreography — a second image-bearing
+    // follow-up (the image must follow ITS entry through the reorder
+    // dance's re-feed) and two steers (the swapped pair whose delivery
+    // order pins 越上越先注入).
+    const Q4_128 = 'PICODE_128_Q4 tail row with the second shot'
+    const S1_128 = 'PICODE_128_S1 steer one'
+    const S2_128 = 'PICODE_128_S2 steer two'
+    const PNG_100 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+    await withWindow(getWindow, async (win) => {
+      const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
+      const rows100 = (): string =>
+        `[...document.querySelectorAll('.queue-item .queue-item-text')].map((el) => el.textContent).join('|')`
+      const rowCount100 = (): string => `document.querySelectorAll('.queue-item').length`
+      const clickRowAction100 = (index: number, aria: string): string => `(() => {
+        const rows = [...document.querySelectorAll('.queue-item')]
+        const row = rows[${index}]
+        if (!(row instanceof HTMLElement)) return false
+        const btn = row.querySelector('button[aria-label="${aria}"]')
+        if (!(btn instanceof HTMLElement)) return false
+        btn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        return true
+      })()`
+      // Ticket 128: one synthetic HTML5 drag on the queue rows (the
+      // ticket-84 drag form): dragstart on the source row's GRIP (the real
+      // handle), dragover + drop on the target row's top/bottom half,
+      // dragend on the grip. React's synthetic layer handles untrusted
+      // events fine; the constructed DataTransfer satisfies the handlers.
+      const dragQueueRow128 = (fromIndex: number, toIndex: number, half: 'top' | 'bottom'): string => `(() => {
+        const rows = [...document.querySelectorAll('.queue-item')]
+        const from = rows[${fromIndex}]
+        const to = rows[${toIndex}]
+        if (!(from instanceof HTMLElement) || !(to instanceof HTMLElement)) return 'missing'
+        const grip = from.querySelector('.queue-item-grip')
+        if (!(grip instanceof HTMLElement)) return 'no-grip'
+        const dt = new DataTransfer()
+        const rect = to.getBoundingClientRect()
+        const y = ${half === 'top' ? 'rect.top + 2' : 'rect.bottom - 2'}
+        const opts = { bubbles: true, cancelable: true, dataTransfer: dt, clientY: y }
+        grip.dispatchEvent(new DragEvent('dragstart', opts))
+        to.dispatchEvent(new DragEvent('dragover', opts))
+        to.dispatchEvent(new DragEvent('drop', opts))
+        grip.dispatchEvent(new DragEvent('dragend', opts))
+        return 'ok'
+      })()`
+      // The composer's queued-mode toggle (Steer / Follow-up): click the
+      // option whose label matches.
+      const pickQueuedMode128 = (label: 'Steer' | 'Follow-up'): string => `(() => {
+        const opts = [...document.querySelectorAll('.cmp-queued-opt')]
+        const opt = opts.find((n) => n.textContent?.trim() === '${label}')
+        if (!(opt instanceof HTMLElement)) return false
+        opt.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        return true
+      })()`
+      // The queued-mode toggle only renders while the agent is BUSY — the
+      // pick below asserts its own presence.
+      const pasteImage128 = (name: string): string => `(() => {
+        const ta = document.querySelector('.composer-input')
+        if (!(ta instanceof HTMLTextAreaElement)) return false
+        const bytes = Uint8Array.from(atob(${JSON.stringify(PNG_100)}), (c) => c.charCodeAt(0))
+        const dt = new DataTransfer()
+        dt.items.add(new File([bytes], '${name}', { type: 'image/png' }))
+        ta.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+        return true
+      })()`
+
+      if (!(await waitForProbe(win, `document.querySelector('.chat-view') !== null`, 10_000))) {
+        fail('ticket-100 stage: the fresh session never reached the chat view')
+      }
+      supervisor.handleParentCommand({
+        type: 'session_command',
+        sessionId: queue100Id,
+        command: { type: 'prompt', text: COUNT_PROMPT_100 }
+      })
+      await waitFor((e) => e.type === 'agent_start' && e.sessionId === queue100Id, 'ticket-100 agent_start')
+      await waitFor((e) => e.type === 'text_delta' && e.sessionId === queue100Id, 'ticket-100 first text_delta')
+
+      // Queue Q1 WITH a pasted image (the host mirror's image leg), then Q2
+      // and Q3 — three follow-up rows in order.
+      const pasted100 = (await js(`(() => {
+        const ta = document.querySelector('.composer-input')
+        if (!(ta instanceof HTMLTextAreaElement)) return false
+        const bytes = Uint8Array.from(atob(${JSON.stringify(PNG_100)}), (c) => c.charCodeAt(0))
+        const dt = new DataTransfer()
+        dt.items.add(new File([bytes], 'picode100-queue.png', { type: 'image/png' }))
+        ta.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
+        return true
+      })()`)) as boolean
+      if (!pasted100) fail('ticket-100 stage: the composer textarea is missing for the queue paste')
+      if (!(await waitForProbe(win, `document.querySelectorAll('.composer-attachments figure').length === 1`, 10_000))) {
+        fail('ticket-100 stage: the pasted image never rendered an attachment card')
+      }
+      if (!(await js(composerTypeJs(Q1_100)).catch(() => false))) fail('ticket-100 stage: composer missing for Q1')
+      await js(composerKeyJs('Enter'))
+      if (!(await waitForProbe(win, `${rowCount100()} === 1`, 10_000))) {
+        fail('ticket-100 stage: Q1 never showed in the queue panel')
+      }
+      for (const text of [Q2_100, Q3_100]) {
+        if (!(await js(composerTypeJs(text)).catch(() => false))) fail(`ticket-100 stage: composer missing for ${text}`)
+        await js(composerKeyJs('Enter'))
+      }
+      if (!(await waitForProbe(win, `${rowCount100()} === 3`, 10_000))) {
+        fail('ticket-100 stage: the three queued rows never rendered')
+      }
+      const order100 = (await js(rows100())) as string
+      if (order100 !== [Q1_100, Q2_100, Q3_100].join('|')) {
+        fail(`ticket-100 stage: the queued rows lost their order, got ${JSON.stringify(order100)}`)
+      }
+
+      // ① (tickets 100 + 135) The queue card's position: its own card
+      // stacked directly ABOVE the composer — DOM outside the composer
+      // card (a chat-dock sibling), the same column (edges aligned with the
+      // composer card), flush on the composer's top edge (the shared border
+      // line — zero gap), and every row's border box sits INSIDE the queue
+      // card with a real inset. The composer's input geometry is captured
+      // here (queue loaded) and compared again once the queue has cleared —
+      // the acceptance's 输入框几何不变.
+      const rect100 = JSON.parse((await js(`JSON.stringify((() => {
+        const card = document.querySelector('.composer')?.getBoundingClientRect()
+        const item = document.querySelector('.queue-item')?.getBoundingClientRect()
+        const ta = document.querySelector('.composer-input')?.getBoundingClientRect()
+        const panel = document.querySelector('.queue-panel')?.getBoundingClientRect()
+        if (!card || !item || !ta || !panel) return null
+        const inside = document.querySelector('.composer')?.contains(document.querySelector('.queue-panel'))
+        return { cardT: card.top, cardL: card.left, cardR: card.right, taT: ta.top, taH: ta.height, panelT: panel.top, panelB: panel.bottom, panelL: panel.left, panelR: panel.right, itemL: item.left, itemR: item.right, inside }
+      })())`).catch(() => 'null')) as string)
+      if (rect100 === null) fail('ticket-100 stage: the queue geometry probe found no elements')
+      if (rect100.inside) fail('ticket-135 stage: the queue panel still renders inside the composer card')
+      if (rect100.panelT >= rect100.cardT || Math.abs(rect100.panelB - rect100.cardT) > 1.5) {
+        fail(
+          `ticket-135 stage: the queue card is not flush on the composer's top edge ` +
+          `(panel ${rect100.panelT}..${rect100.panelB} vs card top ${rect100.cardT})`
+        )
+      }
+      if (Math.abs(rect100.panelL - rect100.cardL) > 1.5 || Math.abs(rect100.panelR - rect100.cardR) > 1.5) {
+        fail(
+          `ticket-135 stage: the queue card left the composer's column ` +
+          `(panel ${rect100.panelL}..${rect100.panelR} vs card ${rect100.cardL}..${rect100.cardR})`
+        )
+      }
+      if (rect100.itemL < rect100.panelL + 8 || rect100.itemR > rect100.panelR - 8) {
+        fail(`ticket-100 stage: the queue rows still touch the card edge (left ${rect100.itemL} vs ${rect100.panelL}, right ${rect100.itemR} vs ${rect100.panelR})`)
+      }
+      log('queue135_above_composer_ok')
+
+      // ② Every row carries the inline actions (Edit + ×).
+      const actions100 = (await js(
+        `[...document.querySelectorAll('.queue-item')].map((r) => r.querySelectorAll('.queue-item-action').length).join(',')`
+      )) as string
+      if (actions100 !== '2,2,2') fail(`ticket-100 stage: the rows must carry Edit + ×, got ${actions100}`)
+
+      // ③ Inline Edit on the MIDDLE row: the composer prefills its raw text,
+      // the row leaves, the other two keep their order (保序 through the
+      // host's clearQueue → re-feed dance).
+      if (!((await js(clickRowAction100(1, 'Edit queued message'))) as boolean)) {
+        fail('ticket-100 stage: the middle row never rendered its Edit button')
+      }
+      const edited100 = await waitForProbe(
+        win,
+        `(() => { const ta = document.querySelector('.composer-input'); return ta instanceof HTMLTextAreaElement && ta.value === ${JSON.stringify(Q2_100)} })()`,
+        10_000
+      )
+      if (!edited100) fail('ticket-100 stage: the inline Edit never prefilled the composer with the raw text')
+      if (!(await waitForProbe(win, `${rowCount100()} === 2 && (${rows100()}) === ${JSON.stringify([Q1_100, Q3_100].join('|'))}`, 10_000))) {
+        fail(`ticket-100 stage: the edited row never left / the order broke — rows: ${(await js(rows100()).catch(() => 'n/a')) as string}`)
+      }
+      log('queue100_edit_middle_ok')
+
+      // ④ Resend: the prefilled text re-queues at the tail (重发正常).
+      await js(composerKeyJs('Enter'))
+      if (
+        !(await waitForProbe(
+          win,
+          `${rowCount100()} === 3 && (${rows100()}) === ${JSON.stringify([Q1_100, Q3_100, Q2_100].join('|'))}`,
+          10_000
+        ))
+      ) {
+        fail('ticket-100 stage: the resent entry never re-queued at the tail')
+      }
+      log('queue100_resend_ok')
+
+      // ⑤ Inline Edit on the IMAGE row: the composer restores the original
+      // text AND the pasted image (the host mirror's image leg, live).
+      if (!((await js(clickRowAction100(0, 'Edit queued message'))) as boolean)) {
+        fail('ticket-100 stage: the image row never rendered its Edit button')
+      }
+      if (
+        !(await waitForProbe(
+          win,
+          `(() => { const ta = document.querySelector('.composer-input'); return ta instanceof HTMLTextAreaElement && ta.value === ${JSON.stringify(Q1_100)} && document.querySelectorAll('.composer-attachments figure').length === 1 })()`,
+          10_000
+        ))
+      ) {
+        fail('ticket-100 stage: the image row Edit never restored the original text + image')
+      }
+      if (!(await waitForProbe(win, `${rowCount100()} === 2 && (${rows100()}) === ${JSON.stringify([Q3_100, Q2_100].join('|'))}`, 10_000))) {
+        fail('ticket-100 stage: the image row never left / the order broke after its edit')
+      }
+      log('queue100_edit_with_image_ok')
+
+      // Clean the composer so the restored draft cannot leak into later
+      // steps, then ⑥ per-row trash removes ONLY that row (Q3, now first).
+      // The prefill also restored Q1's image into the attachment strip —
+      // clear it too (the composerClearJs only empties the text).
+      await js(composerClearJs)
+      await js(`(() => { let n = 0; for (const btn of document.querySelectorAll('.composer-attachment-remove')) { if (btn instanceof HTMLElement) { btn.dispatchEvent(new MouseEvent('click', { bubbles: true })); n++ } } return n })()`)
+      if (!(await waitForProbe(win, `document.querySelectorAll('.composer-attachments figure').length === 0`, 5_000))) {
+        fail('ticket-128 stage: the restored Q1 attachment never cleared from the strip')
+      }
+      if (!((await js(clickRowAction100(0, 'Remove queued message'))) as boolean)) {
+        fail('ticket-100 stage: the row never rendered its × button')
+      }
+      if (!(await waitForProbe(win, `${rowCount100()} === 1 && (${rows100()}) === ${JSON.stringify(Q2_100)}`, 10_000))) {
+        fail('ticket-100 stage: the × removal did not remove exactly its own row')
+      }
+      log('queue100_row_remove_ok')
+
+      // ⑤ (ticket 128) The global Clear is GONE — the trash replaces it
+      // (Q6: 「这样也就不需要clear按钮了」). No .queue-panel-clear anywhere.
+      if (!((await js(`document.querySelector('.queue-panel-clear') === null`)) as boolean)) {
+        fail('ticket-128 stage: the retired global Clear button still renders')
+      }
+      log('queue128_clear_retired_ok')
+
+      // ⑥ (ticket 128 P20) The inline actions stretch to the row body's
+      // full height — no more half-height action strip vs taller row. The
+      // action button's box equals the row's content box.
+      const p20 = JSON.parse(
+        (await js(`JSON.stringify((() => {
+          const row = document.querySelector('.queue-item')
+          const btn = row?.querySelector('.queue-item-action')
+          const grip = row?.querySelector('.queue-item-grip')
+          if (!(row instanceof HTMLElement) || !(btn instanceof HTMLElement) || !(grip instanceof HTMLElement)) return null
+          return {
+            rowH: row.getBoundingClientRect().height,
+            rowClient: row.clientHeight,
+            btnH: btn.getBoundingClientRect().height,
+            gripH: grip.getBoundingClientRect().height
+          }
+        })())`).catch(() => 'null')) as string
+      )
+      if (p20 === null) fail('ticket-128 stage: the P20 geometry probe found no row/action/grip')
+      if (Math.abs(p20.rowH - 28) > 1.5) fail(`ticket-128 stage: the queue row grew off the compact height (got ${p20.rowH}, want ~28)`)
+      if (Math.abs(p20.btnH - p20.rowClient) > 1.5) {
+        fail(`ticket-128 stage: P20 broken — the action button (${p20.btnH}) is not the row body's height (${p20.rowClient})`)
+      }
+      if (Math.abs(p20.gripH - p20.rowClient) > 1.5) {
+        fail(`ticket-128 stage: P20 broken — the grip (${p20.gripH}) is not the row body's height (${p20.rowClient})`)
+      }
+      log('queue128_p20_height_ok')
+
+      // ⑦ (ticket 128) Segment-internal drag reorder — follow-ups first.
+      // Queue Q4 WITH a pasted image (the mirror's image leg on the
+      // reorder dance), then drag Q2 (row 0) BELOW Q4 (row 1): the rows
+      // swap and the image must stay on Q4's entry through the re-feed.
+      if (!((await js(pasteImage128('picode128-q4.png'))) as boolean)) {
+        fail('ticket-128 stage: the composer textarea is missing for the Q4 paste')
+      }
+      if (!(await waitForProbe(win, `document.querySelectorAll('.composer-attachments figure').length === 1`, 10_000))) {
+        fail('ticket-128 stage: the Q4 paste never rendered an attachment card')
+      }
+      if (!(await js(composerTypeJs(Q4_128)).catch(() => false))) fail('ticket-128 stage: composer missing for Q4')
+      await js(composerKeyJs('Enter'))
+      if (!(await waitForProbe(win, `${rowCount100()} === 2 && (${rows100()}) === ${JSON.stringify([Q2_100, Q4_128].join('|'))}`, 10_000))) {
+        fail('ticket-128 stage: Q4 never showed after Q2')
+      }
+      if ((await js(dragQueueRow128(0, 1, 'bottom'))) !== 'ok') fail('ticket-128 stage: the follow-up drag targets went missing')
+      if (!(await waitForProbe(win, `${rowCount100()} === 2 && (${rows100()}) === ${JSON.stringify([Q4_128, Q2_100].join('|'))}`, 10_000))) {
+        fail(`ticket-128 stage: the follow-up drag never swapped the rows — rows: ${(await js(rows100()).catch(() => 'n/a')) as string}`)
+      }
+      log('queue128_followup_swap_ok')
+
+      // ⑧ (ticket 128) The steer segment: queue S1, S2 (the toggle flips to
+      // Steer), then drag S1 (row 0) BELOW S2 (row 1). The panel renders
+      // steering rows first, so the rows read [S2, S1, Q4, Q2] after.
+      if (!((await js(pickQueuedMode128('Steer'))) as boolean)) {
+        fail('ticket-128 stage: the queued-mode toggle never rendered the Steer option (busy state lost?)')
+      }
+      for (const text of [S1_128, S2_128]) {
+        if (!(await js(composerTypeJs(text)).catch(() => false))) fail(`ticket-128 stage: composer missing for ${text}`)
+        await js(composerKeyJs('Enter'))
+      }
+      if (!(await waitForProbe(win, `${rowCount100()} === 4 && (${rows100()}) === ${JSON.stringify([S1_128, S2_128, Q4_128, Q2_100].join('|'))}`, 10_000))) {
+        fail(`ticket-128 stage: the two steers never joined the panel head — rows: ${(await js(rows100()).catch(() => 'n/a')) as string}`)
+      }
+      if ((await js(dragQueueRow128(0, 1, 'bottom'))) !== 'ok') fail('ticket-128 stage: the steer drag targets went missing')
+      if (!(await waitForProbe(win, `${rowCount100()} === 4 && (${rows100()}) === ${JSON.stringify([S2_128, S1_128, Q4_128, Q2_100].join('|'))}`, 10_000))) {
+        fail(`ticket-128 stage: the steer drag never swapped the rows — rows: ${(await js(rows100()).catch(() => 'n/a')) as string}`)
+      }
+      log('queue128_steer_swap_ok')
+
+      // ⑨ (ticket 128) Delivery order = the NEW order (越上越先注入). The
+      // count turn is one giant model call, so the SDK holds both queues
+      // until its end — no mid-run injection point can race the swaps.
+      // At the turn end the steering queue injects first (S2, S1 — new
+      // order), then the follow-up queue delivers (Q4, Q2 — new order,
+      // Q4's echo must still carry ITS pasted image). The waits are armed
+      // together and each records its arrival — the ORDER of arrivals is
+      // the assertion, not the absolute timing.
+      const echoOrder128: string[] = []
+      const armEcho128 = (label: string, text: string): void => {
+        void waitFor(
+          (e) => e.type === 'user_message' && e.sessionId === queue100Id && e.text.includes(text),
+          `ticket-128 ${label} delivery echo`
+        ).then(() => {
+          echoOrder128.push(label)
+        })
+      }
+      armEcho128('S2', S2_128)
+      armEcho128('S1', S1_128)
+      armEcho128('Q4', Q4_128)
+      armEcho128('Q2', Q2_100)
+      const echoQ4Image128 = waitFor(
+        (e) => e.type === 'user_message' && e.sessionId === queue100Id && e.text.includes(Q4_128),
+        'ticket-128 Q4 echo (for the image assert)'
+      ).then((e) => {
+        const images = (e as Extract<Scoped, { type: 'user_message' }>).images
+        if (!Array.isArray(images) || images.length !== 1 || images[0]?.data !== PNG_100) {
+          fail(`ticket-128 stage: the reordered Q4's delivery echo lost its own image (re-feed order-preserving broken), got ${JSON.stringify(images)}`)
+        }
+        return true
+      })
+      const echoQ2NoImage128 = waitFor(
+        (e) => e.type === 'user_message' && e.sessionId === queue100Id && e.text.includes(Q2_100),
+        'ticket-128 Q2 echo (for the no-image assert)'
+      ).then((e) => {
+        const images = (e as Extract<Scoped, { type: 'user_message' }>).images
+        if (Array.isArray(images) && images.length > 0) {
+          fail(`ticket-128 stage: the reordered Q2's delivery echo grew an image that belongs to Q4 (mirror cross-attach), got ${JSON.stringify(images)}`)
+        }
+        return true
+      })
+      await waitFor((e) => e.type === 'agent_end' && e.sessionId === queue100Id, 'ticket-128 count turn agent_end')
+      await echoQ4Image128
+      await echoQ2NoImage128
+      await waitForProbe(win, `(${rowCount100()}) === 0`, 30_000)
+      await new Promise((r) => setTimeout(r, 1_000)) // small tail margin for the last armed waiter
+      if (echoOrder128.join(',') !== ['S2', 'S1', 'Q4', 'Q2'].join(',')) {
+        fail(`ticket-128 stage: the swapped queues injected in the wrong order — got [${echoOrder128.join(', ')}], want [S2, S1, Q4, Q2]`)
+      }
+      log('queue128_delivery_order_ok')
+
+      // The last delivery turn may still be streaming — stop it and let
+      // the session settle (it may also have finished on its own in the
+      // probe window; then there is nothing to stop and no agent_end to
+      // wait for).
+      if ((await js(`document.querySelector('.cmp-stop') !== null`)) as boolean) {
+        await js(`document.querySelector('.cmp-stop')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
+        await waitFor((e) => e.type === 'agent_end' && e.sessionId === queue100Id, 'ticket-128 stop agent_end')
+      }
+      if (!(await waitForProbe(win, `document.querySelector('.cmp-send') !== null`, 15_000))) {
+        fail('ticket-128 stage: the composer never left the busy state after the deliveries')
+      }
+      await js(composerClearJs)
+
+      // (Ticket 135 closing probe) The composer's input geometry is
+      // invariant to the queue's whole lifecycle: the textarea rect captured
+      // with three rows loaded equals the rect now that the queue is empty —
+      // the card above only ever grew the dock upward — and the empty queue
+      // leaves no card and no residual gap.
+      const rectEnd100 = JSON.parse((await js(`JSON.stringify((() => {
+        const ta = document.querySelector('.composer-input')?.getBoundingClientRect()
+        if (!ta) return null
+        return { taT: ta.top, taH: ta.height, panel: document.querySelector('.queue-panel') !== null }
+      })())`).catch(() => 'null')) as string)
+      if (rectEnd100 === null) fail('ticket-135 stage: the closing geometry probe found no textarea')
+      if (rectEnd100.panel) fail('ticket-135 stage: the empty queue still renders the card')
+      if (Math.abs(rectEnd100.taT - rect100.taT) > 1.5 || Math.abs(rectEnd100.taH - rect100.taH) > 1.5) {
+        fail(
+          `ticket-135 stage: the composer input geometry moved across the queue lifecycle ` +
+          `(top ${rect100.taT} → ${rectEnd100.taT}, height ${rect100.taH} → ${rectEnd100.taH})`
+        )
+      }
+      log('queue135_composer_invariant_ok')
+    })
+    log('queue_repair_done')
+    }
+    if (stageSelector === 't100-queue') {
+      await queueRepairStage()
+      supervisor.shutdownAll()
+      log('done')
+      app.exit(0)
+      return
+    }
 
     // ⓪ (ticket 96): the MCP section's HONEST NO-SESSION state — no session
     // exists yet, so the status projection must say so instead of inventing
@@ -1274,6 +1700,12 @@ export function startSmokeIfEnabled(
           if (!(await waitForProbe(win, `${row119} !== null`, 20_000))) {
           fail('ticket-119 stage: the seeded session never reached the sidebar')
           }
+          // Ticket 135: capture the resumed session's id (the seeded file's
+          // header id) for the queue-card lifecycle leg ③ below.
+          const resumed135Promise = waitFor(
+          (e) => e.type === 'session_created' && e.resumed === true,
+          'ticket-135 resumed session_created'
+          ) as Promise<Extract<Scoped, { type: 'session_created' }>>
           await js(`${row119}?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
           if (!(await waitForProbe(win, `${ta119} !== null`, 10_000))) {
           fail('ticket-119 stage: the chat view composer never mounted')
@@ -1482,6 +1914,139 @@ export function startSmokeIfEnabled(
           }
           await js(`(() => { delete window.__t119Frames; return true })()`)
           log('idle_typing_119_midtranscript_ok')
+
+          // ---- ③ (ticket 135) the queue card's lifecycle never moves the
+          // transcript. The card ABOVE the composer appears, grows, and
+          // clears (run → queue ×2 → abort → idle) — each step changes the
+          // transcript cell's clientHeight, the exact ticket-119 geometry.
+          // A bottom-pinned reader stays pinned through the card's
+          // appear/grow (the ticket-93 send law owns the queueing yank —
+          // already at the bottom, it is a no-op), and a reader who then
+          // scrolls away mid-transcript is held byte-exact through the
+          // abort's card clear at the idle flip (the idle pin never moves
+          // an off-bottom reader). ----
+          log('idle_queue_135_start')
+          const queue135Id = (await resumed135Promise).sessionId
+          const COUNT_PROMPT_135 =
+          'PICODE_135_IDLE_QUEUE: Count from 1 to 600. Output each number on its own line, one number per line. Do not summarize and do not stop early. Do not use any tools — write the numbers directly in your reply text.\n' +
+          '\n'.repeat(80)
+          // Back to the bottom first (the mid leg left the reader at 40%).
+          await js(`(() => { const el = document.querySelector('.chat-scroll'); if (el) el.scrollTop = el.scrollHeight; return true })()`)
+          if (!(await waitForProbe(win, `(${AT_BOTTOM_119})`, 5_000))) {
+          fail(`ticket-135 stage: the reader never returned to the bottom; DOM: ${await geom119()}`)
+          }
+          // The count prompt rides the COMPOSER (type + Enter — the
+          // ticket-93 send law): the send latch arms, so the giant user
+          // echo (the newline padding makes it one huge growth pass) is
+          // pinned to the bottom despite the stick's 160px band. A
+          // supervisor-direct prompt would bypass the latch and strand the
+          // reader — the fresh-session stages survive the same echo only
+          // through their mount-time arrival pin.
+          await typeReal119(COUNT_PROMPT_135)
+          await js(composerKeyJs('Enter'))
+          await waitFor((e) => e.type === 'agent_start' && e.sessionId === queue135Id, 'ticket-135 agent_start')
+          await waitFor((e) => e.type === 'text_delta' && e.sessionId === queue135Id, 'ticket-135 first text_delta')
+          // The engine's documented pre-pin restore (ticket 119's model)
+          // can yank the reader back to the pre-scroll absolute between
+          // the send and the first deltas — the big draft's caret-mirror
+          // relayout is a known trigger, and the restore reads as an
+          // upward move, disarming the just-armed send latch (observed in
+          // a full-suite run: the reader frozen at the mid leg's staged
+          // 1921 while the stream grew). Re-assert the bottom now that
+          // the run is live: the streaming deltas are small (the stick
+          // band holds from here), and the queue legs below ride the send
+          // latch's own repair (the ticket-93 law).
+          await js(`(() => { const el = document.querySelector('.chat-scroll'); if (el) el.scrollTop = el.scrollHeight; return true })()`)
+          if (!(await waitForProbe(win, `(${AT_BOTTOM_119})`, 10_000))) {
+          fail(`ticket-135 stage: the count run's streaming left the bottom-pinned reader off the bottom; DOM: ${await geom119()}`)
+          }
+          // Queue two follow-ups: the card appears (1 row), then grows
+          // (2 rows) — the reader stays at the bottom through both.
+          await typeReal119('PICODE_135_Q1: Reply with exactly OK1 and nothing else.')
+          await js(composerKeyJs('Enter'))
+          if (!(await waitForProbe(win, `document.querySelectorAll('.queue-item').length === 1`, 10_000))) {
+          fail('ticket-135 stage: the first queued follow-up never rendered its row')
+          }
+          const card135a = JSON.parse(
+          String(await js(`JSON.stringify({ h: document.querySelector('.queue-panel')?.clientHeight ?? null })`).catch(() => 'null'))
+          ) as { h: number | null }
+          if (card135a.h === null || card135a.h < 40) {
+          fail(`ticket-135 stage: the queue card never mounted above the composer (height ${String(card135a.h)})`)
+          }
+          if (!(await waitForProbe(win, `(${AT_BOTTOM_119})`, 5_000))) {
+          fail(`ticket-135 stage: the queue card's appearance moved the bottom-pinned reader off the bottom; DOM: ${await geom119()}`)
+          }
+          log('idle_queue_135_appear_ok')
+          await typeReal119('PICODE_135_Q2: Reply with exactly OK2 and nothing else.')
+          await js(composerKeyJs('Enter'))
+          if (!(await waitForProbe(win, `document.querySelectorAll('.queue-item').length === 2`, 10_000))) {
+          fail('ticket-135 stage: the second queued follow-up never rendered its row')
+          }
+          const card135b = JSON.parse(
+          String(await js(`JSON.stringify({ h: document.querySelector('.queue-panel')?.clientHeight ?? null })`).catch(() => 'null'))
+          ) as { h: number | null }
+          if (card135b.h === null || card135b.h <= (card135a.h ?? 0)) {
+          fail(`ticket-135 stage: the queue card never grew with the second row (${String(card135a.h)} → ${String(card135b.h)})`)
+          }
+          if (!(await waitForProbe(win, `(${AT_BOTTOM_119})`, 5_000))) {
+          fail(`ticket-135 stage: the queue card's growth moved the bottom-pinned reader off the bottom; DOM: ${await geom119()}`)
+          }
+          log('idle_queue_135_grow_ok')
+          // The reader scrolls away mid-transcript (the ticket-75 law: the
+          // wheel wins; the run keeps streaming below without dragging
+          // them), and the abort then clears the card at the idle flip —
+          // the staged scrollTop must hold byte-exact through the clear.
+          await js(`(() => { const el = document.querySelector('.chat-scroll'); el.scrollTop = Math.floor(el.scrollHeight * 0.4); return true })()`)
+          await new Promise((r) => setTimeout(r, 300)) // the scroll settles (held-away latched)
+          const st135 = JSON.parse(String(await geom119())) as { st: number }
+          await js(`(() => {
+          window.__t135Frames = { on: true, samples: [] }
+          function loop() {
+            if (window.__t135Frames.on === false) return
+            const el = document.querySelector('.chat-scroll')
+            if (el !== null) window.__t135Frames.samples.push(el.scrollTop)
+            requestAnimationFrame(loop)
+          }
+          requestAnimationFrame(loop)
+          return true
+          })()`)
+          supervisor.handleParentCommand({
+          type: 'session_command',
+          sessionId: queue135Id,
+          command: { type: 'abort_turn' }
+          })
+          await waitFor((e) => e.type === 'agent_end' && e.sessionId === queue135Id, 'ticket-135 abort agent_end')
+          // The card clears at the busy flip. If the SDK re-delivers the
+          // queued follow-ups they only stream BELOW the staged reader; the
+          // probe settles once the session is idle with no card either way.
+          if (!(await waitForProbe(win, `document.querySelector('.queue-panel') === null`, 30_000))) {
+          fail(`ticket-135 stage: the queue card never cleared after the abort; DOM: ${await geom119()}`)
+          }
+          // Hold the sampler open through the clear's settle beat so the
+          // sampled window covers any late relayouts (re-delivered turns,
+          // the dock's height settle). The window can be brief — the clear
+          // itself may settle within a few paint frames — so the assertion
+          // rides the sampled-frame equality plus the final read, not a
+          // minimum frame count.
+          await new Promise((r) => setTimeout(r, 600))
+          const frames135 = (await js(`(() => {
+          const F = window.__t135Frames
+          F.on = false
+          return JSON.stringify({ count: F.samples.length, moved: F.samples.filter((s) => s !== ${st135.st}).length })
+          })()`)) as string
+          const framesParsed135 = JSON.parse(frames135) as { count: number; moved: number }
+          if (framesParsed135.count < 1 || framesParsed135.moved > 0) {
+          fail(
+            `ticket-135 stage: the queue card's clear moved the mid-transcript reader ` +
+            `(${framesParsed135.moved} of ${framesParsed135.count} sampled frames left ${st135.st}); DOM: ${await geom119()}`
+          )
+          }
+          const final135 = JSON.parse(String(await geom119())) as { st: number }
+          if (final135.st !== st135.st) {
+          fail(`ticket-135 stage: the reader ended at ${final135.st}, not ${st135.st}; DOM: ${await geom119()}`)
+          }
+          await js(`(() => { delete window.__t135Frames; return true })()`)
+          log('idle_queue_135_clear_ok')
           // Restore the session that was active on entry (the ticket-44
           // stage reads its user bubble; every later stage drives its own
           // session explicitly).
@@ -2877,12 +3442,17 @@ export function startSmokeIfEnabled(
     // Session 1 starts a LONG streaming run. The dot probe below starts in
     // the same instant as agent_start — the run state is guaranteed until
     // the model finishes, long after the probe's first poll.
+    // (Ticket-135 harness rider: the count was raised 150 → 600 — today's
+    // faster model finished the 150-count before the probe's first poll,
+    // failing this stage twice-in-a-row and blocking every later stage;
+    // 600 matches the other stages' count magnitude and comfortably
+    // outlives this stage's refocus + abort choreography.)
     supervisor.handleParentCommand({
       type: 'session_command',
       sessionId: ms1.sessionId,
       command: {
         type: 'prompt',
-        text: `${MULTI_MARKER}: count from 1 to 150. Output each number on its own line, one number per line. Do not summarize and do not stop early. Do not use any tools — write the numbers directly in your reply text.`
+        text: `${MULTI_MARKER}: count from 1 to 600. Output each number on its own line, one number per line. Do not summarize and do not stop early. Do not use any tools — write the numbers directly in your reply text.`
       }
     })
     await waitFor((e) => e.type === 'agent_start' && e.sessionId === ms1.sessionId, 'multi agent_start 1')
@@ -3549,15 +4119,33 @@ export function startSmokeIfEnabled(
         if ((await js('document.hasFocus()').catch(() => false)) !== true && !win.isFocused()) {
           app.focus({ steal: true })
         }
+        // (Ticket-135 harness rider: the app can move ELEMENT focus off
+        // the shell mid-leg — a background session's view events return
+        // focus to the composer — so the keystroke would go to the wrong
+        // element and the echo never lands (observed: focus left the shell
+        // before the keystroke probe). Re-focus the shell's textarea
+        // directly before each keystroke: leg 1 already proved the ⌘J
+        // GRANTS the focus; this leg asserts the keystroke→echo path.)
+        if ((await js(FOCUS_IN_TERM).catch(() => false)) !== true) {
+          await js(`document.querySelector('.terminal-dock .xterm-helper-textarea')?.focus(); true`)
+        }
         await win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'z' })
         await win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'z' })
-        await new Promise((r) => setTimeout(r, 80))
-        if ((await js(FOCUS_IN_TERM).catch(() => false)) !== true) {
+        // (Ticket-135 harness rider: the echo is POLLED for up to ~1.5s
+        // instead of the single 80ms sample — under suite load (the
+        // background session's model streams saturating the renderer's
+        // task queue) the keyDown → pty → echo round trip can land well
+        // past 80ms, and the leg failed three consecutive runs on that
+        // timing alone. The assertion is unchanged: the keystroke must
+        // genuinely echo in the rows.)
+        for (let waitedEcho = 0; waitedEcho < 1_500 && !typedOk; waitedEcho += 100) {
+          await new Promise((r) => setTimeout(r, 100))
+          typedOk =
+            (await js(`${rowsText}.length > ${before.length} && ${rowsText}.includes('z')`).catch(() => false)) === true
+        }
+        if (!typedOk && (await js(FOCUS_IN_TERM).catch(() => false)) !== true) {
           fail('ticket 105: focus left the shell before the keystroke probe')
         }
-        typedOk =
-          (await js(`${rowsText}.length > ${before.length} && ${rowsText}.includes('z')`).catch(() => false)) === true
-        if (!typedOk) await new Promise((r) => setTimeout(r, 150))
       }
       if (!typedOk) fail('ticket 105: the trusted keystroke never echoed in the shell')
       log('terminal_focus_105_typing_ok')
@@ -6851,6 +7439,11 @@ export function startSmokeIfEnabled(
       // new turn's Working container as the bottom-most element above the
       // composer.
       await js(`(() => { const el = document.querySelector('.chat-scroll'); el.scrollTop = 0; return true })(); true`)
+      // (Ticket-135 harness rider: settle beat after the scroll write, the
+      // same 300ms the ③ wheel leg uses — without it the write's own scroll
+      // event can deliver AFTER the Enter arms the send latch and disarm it
+      // as an upward move, leaving the yank dead.)
+      await new Promise((r) => setTimeout(r, 300))
       if (!(await win.webContents.executeJavaScript(composerTypeJs(COUNT_PROMPT_93_E)).catch(() => false))) {
         fail('ticket-93 stage: composer textarea missing for the landing send')
       }
@@ -8221,7 +8814,17 @@ export function startSmokeIfEnabled(
       // line, many visual lines), Latin soft-wrap (word wrap — the smaller-
       // error twin of the same defect), and Latin hard lines (the stable
       // path the fix must not move: hard-line count ≈ visual line).
-      const CJK_117 = '今天我们要讨论一个很长的话题关于输入法编辑器在文本框里的滚动行为当内容超过可视区域的时候用户在底部继续输入中文每一个汉字都会触发一次组合输入事件而受控组件会同步执行高度重测与滚动恢复这一系列动作如果光标行定位算法只统计硬换行那么软换行的段落会被误判为第一行于是视口会被强行拉回顶部这就是操作者观察到的大幅上移现象我们需要用视觉行定位来修复这个问题使输入不再改变光标位置在软件工程实践中输入法的组合输入与文本框的受控更新之间存在一个微妙的竞争关系浏览器会尽力把光标行滚动到可视区域内而应用层的高度重测也会写入滚动位置两个写入者意见不一致的时候视口就会来回跳动修复的关键在于让应用层的写入与浏览器原生滚动收敛到同一个位置也就是光标真实所在的视觉行行顶'
+      // (Ticket-135 harness rider: the CJK fixture is lengthened 323 →
+      // ~433 chars — at the composer's 796px content width the old 323-char
+      // text wraps to exactly 6 lines (146px), BELOW the 160px auto-grow
+      // cap, so the "must overflow" premise depended on the machine's CJK
+      // glyph advance being wider than 14px — on this machine it is not
+      // and the leg failed deterministically (scrollH 146 = clientH 146,
+      // three runs straight). ~433 chars guarantees 8+ lines (188px) at
+      // 14px advance and 9+ even at 17px. Every downstream value is
+      // measured (visualLines) or derived from the text length, so the
+      // leg's assertions are unchanged.)
+      const CJK_117 = '今天我们要讨论一个很长的话题关于输入法编辑器在文本框里的滚动行为当内容超过可视区域的时候用户在底部继续输入中文每一个汉字都会触发一次组合输入事件而受控组件会同步执行高度重测与滚动恢复这一系列动作如果光标行定位算法只统计硬换行那么软换行的段落会被误判为第一行于是视口会被强行拉回顶部这就是操作者观察到的大幅上移现象我们需要用视觉行定位来修复这个问题使输入不再改变光标位置在软件工程实践中输入法的组合输入与文本框的受控更新之间存在一个微妙的竞争关系浏览器会尽力把光标行滚动到可视区域内而应用层的高度重测也会写入滚动位置两个写入者意见不一致的时候视口就会来回跳动修复的关键在于让应用层的写入与浏览器原生滚动收敛到同一个位置也就是光标真实所在的视觉行行顶此外还必须保证组合输入期间的高度重测不会把已经滚动的视口再次拉回顶部因为每一次重测都会重新计算文本行数与光标位置如果计算结果与浏览器的原生滚动不一致就会出现来回跳动的抖动现象所以最终方案是让两侧的写入收敛到同一个视觉行行顶位置从而彻底消除大幅上移'
       const EN_117 = 'Today we are examining a long standing defect in the composer scroll behavior when a draft grows past the visible area and the operator keeps typing at the bottom every single keystroke triggers the full height remeasure dance and if the caret line positioning only counts hard line breaks then any soft wrapped paragraph is mistaken for the first line and the viewport snaps back to the top which is exactly the upward jump the operator reported The soft wrapped paragraph keeps flowing with many more words that wrap by whole words instead of single characters which means the under estimation of the caret line is smaller than the CJK case but the defect is exactly the same one and the fix must treat both languages identically by measuring the visual line where the caret actually sits rather than counting hard line breaks that were never typed by the operator'
       const EN_HARD_117 = Array.from({ length: 16 }, (_, i) => `Hard line ${i + 1} of the draft with plain words that mostly fit.`).join('\n')
 
@@ -8310,8 +8913,18 @@ export function startSmokeIfEnabled(
             if (!(await js(type117(lang.text)))) {
               fail(`ticket-117 stage: could not stage the ${lang.name} draft`)
             }
+            // (Ticket-135 harness rider: the overflow check polls instead
+            // of stopping at the single 150ms sample — the CDP
+            // composition's text and the auto-grow relayout can land after
+            // that one sample, failing the leg spuriously three of four
+            // runs today. The assertion itself is unchanged: the draft
+            // must genuinely overflow.)
             await new Promise((r) => setTimeout(r, 150))
-            const s0 = await sample117()
+            let s0 = await sample117()
+            for (let waited117 = 0; waited117 < 5_000 && s0.scrollH <= s0.clientH; waited117 += 200) {
+              await new Promise((r) => setTimeout(r, 200))
+              s0 = await sample117()
+            }
             if (s0.scrollH <= s0.clientH) {
               fail(
                 `ticket-117 stage: the ${lang.name} draft must overflow the input for an internal scroll (scrollH ${s0.scrollH}, clientH ${s0.clientH})`
@@ -15479,378 +16092,10 @@ export function startSmokeIfEnabled(
     }
     log('bubble_trio_done')
 
-    // ---- ticket 100 → 128: the queue panel — ① the row borders sit INSIDE
-    // the composer card (row/card edge separation: horizontal inset + gaps
-    // to the textarea and the footer), ② inline Edit (the host's
-    // edit_queue_entry dance removes the entry; the composer prefills the
-    // raw text and — via the host mirror — the PASTED IMAGE; the remaining
-    // rows keep their order), ③ resend works (the prefilled text re-queues),
-    // ④ per-row trash discards only its own row, ⑤ the global Clear is GONE
-    // (ticket 128: the trash replaces it), ⑥ P20: the inline actions stretch
-    // to the row body's full height, ⑦ segment-internal drag reorder
-    // (ticket 128's additive reorder_queue_entry op): two follow-ups swapped
-    // keep their images on their OWN entries, and two steers swapped inject
-    // in the NEW order at the turn end (delivery echoes, arrival order
-    // recorded). A FRESH session drives a real long count turn; the queued
-    // entries ride the dances; the swapped steers + follow-ups deliver at
-    // the turn end in the swapped order. ----
-    log('queue_repair_start')
-    const queue100Created = waitFor(
-      (e) => e.type === 'session_created',
-      'ticket-100 session_created'
-    ) as Promise<Extract<Scoped, { type: 'session_created' }>>
-    supervisor.createSession(cwd)
-    const queue100Session = await queue100Created
-    const queue100Id = queue100Session.sessionId
-    // Long enough to outlive the whole choreography (the ticket-93 width
-    // precedent: the follow-ups deliver only when the run ends NATURALLY).
-    const COUNT_PROMPT_100 =
-      'PICODE_SCROLL_100_HOST: Count from 1 to 800. Output each number on its own line, one number per line. Do not summarize and do not stop early. Do not use any tools — write the numbers directly in your reply text.\n' +
-      '\n'.repeat(100)
-    const Q1_100 = 'PICODE_100_Q1 edit me with the shot'
-    const Q2_100 = 'PICODE_100_Q2 middle row'
-    const Q3_100 = 'PICODE_100_Q3 last row'
-    // Ticket 128: the reorder choreography — a second image-bearing
-    // follow-up (the image must follow ITS entry through the reorder
-    // dance's re-feed) and two steers (the swapped pair whose delivery
-    // order pins 越上越先注入).
-    const Q4_128 = 'PICODE_128_Q4 tail row with the second shot'
-    const S1_128 = 'PICODE_128_S1 steer one'
-    const S2_128 = 'PICODE_128_S2 steer two'
-    const PNG_100 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
-    await withWindow(getWindow, async (win) => {
-      const js = (script: string): Promise<unknown> => win.webContents.executeJavaScript(script)
-      const rows100 = (): string =>
-        `[...document.querySelectorAll('.queue-item .queue-item-text')].map((el) => el.textContent).join('|')`
-      const rowCount100 = (): string => `document.querySelectorAll('.queue-item').length`
-      const clickRowAction100 = (index: number, aria: string): string => `(() => {
-        const rows = [...document.querySelectorAll('.queue-item')]
-        const row = rows[${index}]
-        if (!(row instanceof HTMLElement)) return false
-        const btn = row.querySelector('button[aria-label="${aria}"]')
-        if (!(btn instanceof HTMLElement)) return false
-        btn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-        return true
-      })()`
-      // Ticket 128: one synthetic HTML5 drag on the queue rows (the
-      // ticket-84 drag form): dragstart on the source row's GRIP (the real
-      // handle), dragover + drop on the target row's top/bottom half,
-      // dragend on the grip. React's synthetic layer handles untrusted
-      // events fine; the constructed DataTransfer satisfies the handlers.
-      const dragQueueRow128 = (fromIndex: number, toIndex: number, half: 'top' | 'bottom'): string => `(() => {
-        const rows = [...document.querySelectorAll('.queue-item')]
-        const from = rows[${fromIndex}]
-        const to = rows[${toIndex}]
-        if (!(from instanceof HTMLElement) || !(to instanceof HTMLElement)) return 'missing'
-        const grip = from.querySelector('.queue-item-grip')
-        if (!(grip instanceof HTMLElement)) return 'no-grip'
-        const dt = new DataTransfer()
-        const rect = to.getBoundingClientRect()
-        const y = ${half === 'top' ? 'rect.top + 2' : 'rect.bottom - 2'}
-        const opts = { bubbles: true, cancelable: true, dataTransfer: dt, clientY: y }
-        grip.dispatchEvent(new DragEvent('dragstart', opts))
-        to.dispatchEvent(new DragEvent('dragover', opts))
-        to.dispatchEvent(new DragEvent('drop', opts))
-        grip.dispatchEvent(new DragEvent('dragend', opts))
-        return 'ok'
-      })()`
-      // The composer's queued-mode toggle (Steer / Follow-up): click the
-      // option whose label matches.
-      const pickQueuedMode128 = (label: 'Steer' | 'Follow-up'): string => `(() => {
-        const opts = [...document.querySelectorAll('.cmp-queued-opt')]
-        const opt = opts.find((n) => n.textContent?.trim() === '${label}')
-        if (!(opt instanceof HTMLElement)) return false
-        opt.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-        return true
-      })()`
-      // The queued-mode toggle only renders while the agent is BUSY — the
-      // pick below asserts its own presence.
-      const pasteImage128 = (name: string): string => `(() => {
-        const ta = document.querySelector('.composer-input')
-        if (!(ta instanceof HTMLTextAreaElement)) return false
-        const bytes = Uint8Array.from(atob(${JSON.stringify(PNG_100)}), (c) => c.charCodeAt(0))
-        const dt = new DataTransfer()
-        dt.items.add(new File([bytes], '${name}', { type: 'image/png' }))
-        ta.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
-        return true
-      })()`
-
-      if (!(await waitForProbe(win, `document.querySelector('.chat-view') !== null`, 10_000))) {
-        fail('ticket-100 stage: the fresh session never reached the chat view')
-      }
-      supervisor.handleParentCommand({
-        type: 'session_command',
-        sessionId: queue100Id,
-        command: { type: 'prompt', text: COUNT_PROMPT_100 }
-      })
-      await waitFor((e) => e.type === 'agent_start' && e.sessionId === queue100Id, 'ticket-100 agent_start')
-      await waitFor((e) => e.type === 'text_delta' && e.sessionId === queue100Id, 'ticket-100 first text_delta')
-
-      // Queue Q1 WITH a pasted image (the host mirror's image leg), then Q2
-      // and Q3 — three follow-up rows in order.
-      const pasted100 = (await js(`(() => {
-        const ta = document.querySelector('.composer-input')
-        if (!(ta instanceof HTMLTextAreaElement)) return false
-        const bytes = Uint8Array.from(atob(${JSON.stringify(PNG_100)}), (c) => c.charCodeAt(0))
-        const dt = new DataTransfer()
-        dt.items.add(new File([bytes], 'picode100-queue.png', { type: 'image/png' }))
-        ta.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
-        return true
-      })()`)) as boolean
-      if (!pasted100) fail('ticket-100 stage: the composer textarea is missing for the queue paste')
-      if (!(await waitForProbe(win, `document.querySelectorAll('.composer-attachments figure').length === 1`, 10_000))) {
-        fail('ticket-100 stage: the pasted image never rendered an attachment card')
-      }
-      if (!(await js(composerTypeJs(Q1_100)).catch(() => false))) fail('ticket-100 stage: composer missing for Q1')
-      await js(composerKeyJs('Enter'))
-      if (!(await waitForProbe(win, `${rowCount100()} === 1`, 10_000))) {
-        fail('ticket-100 stage: Q1 never showed in the queue panel')
-      }
-      for (const text of [Q2_100, Q3_100]) {
-        if (!(await js(composerTypeJs(text)).catch(() => false))) fail(`ticket-100 stage: composer missing for ${text}`)
-        await js(composerKeyJs('Enter'))
-      }
-      if (!(await waitForProbe(win, `${rowCount100()} === 3`, 10_000))) {
-        fail('ticket-100 stage: the three queued rows never rendered')
-      }
-      const order100 = (await js(rows100())) as string
-      if (order100 !== [Q1_100, Q2_100, Q3_100].join('|')) {
-        fail(`ticket-100 stage: the queued rows lost their order, got ${JSON.stringify(order100)}`)
-      }
-
-      // ① Row/card edge separation (visual assertion, real geometry): every
-      // row's border box sits INSIDE the composer card with a real inset,
-      // and the panel keeps gaps to the textarea above and footer below.
-      const rect100 = JSON.parse((await js(`JSON.stringify((() => {
-        const card = document.querySelector('.composer')?.getBoundingClientRect()
-        const item = document.querySelector('.queue-item')?.getBoundingClientRect()
-        const ta = document.querySelector('.composer-input')?.getBoundingClientRect()
-        const panel = document.querySelector('.queue-panel')?.getBoundingClientRect()
-        const footer = document.querySelector('.composer-footer')?.getBoundingClientRect()
-        if (!card || !item || !ta || !panel || !footer) return null
-        return { cardL: card.left, cardR: card.right, itemL: item.left, itemR: item.right, taB: ta.bottom, panelT: panel.top, panelB: panel.bottom, footerT: footer.top }
-      })())`).catch(() => 'null')) as string)
-      if (rect100 === null) fail('ticket-100 stage: the queue geometry probe found no elements')
-      if (rect100.itemL < rect100.cardL + 8 || rect100.itemR > rect100.cardR - 8) {
-        fail(`ticket-100 stage: the queue rows still touch the card edge (left ${rect100.itemL} vs ${rect100.cardL}, right ${rect100.itemR} vs ${rect100.cardR})`)
-      }
-      if (rect100.panelT < rect100.taB || rect100.panelB > rect100.footerT) {
-        fail(`ticket-100 stage: the queue panel has no separation from the textarea/footer (top ${rect100.panelT} vs textarea bottom ${rect100.taB}, bottom ${rect100.panelB} vs footer top ${rect100.footerT})`)
-      }
-      log('queue100_layout_separated_ok')
-
-      // ② Every row carries the inline actions (Edit + ×).
-      const actions100 = (await js(
-        `[...document.querySelectorAll('.queue-item')].map((r) => r.querySelectorAll('.queue-item-action').length).join(',')`
-      )) as string
-      if (actions100 !== '2,2,2') fail(`ticket-100 stage: the rows must carry Edit + ×, got ${actions100}`)
-
-      // ③ Inline Edit on the MIDDLE row: the composer prefills its raw text,
-      // the row leaves, the other two keep their order (保序 through the
-      // host's clearQueue → re-feed dance).
-      if (!((await js(clickRowAction100(1, 'Edit queued message'))) as boolean)) {
-        fail('ticket-100 stage: the middle row never rendered its Edit button')
-      }
-      const edited100 = await waitForProbe(
-        win,
-        `(() => { const ta = document.querySelector('.composer-input'); return ta instanceof HTMLTextAreaElement && ta.value === ${JSON.stringify(Q2_100)} })()`,
-        10_000
-      )
-      if (!edited100) fail('ticket-100 stage: the inline Edit never prefilled the composer with the raw text')
-      if (!(await waitForProbe(win, `${rowCount100()} === 2 && (${rows100()}) === ${JSON.stringify([Q1_100, Q3_100].join('|'))}`, 10_000))) {
-        fail(`ticket-100 stage: the edited row never left / the order broke — rows: ${(await js(rows100()).catch(() => 'n/a')) as string}`)
-      }
-      log('queue100_edit_middle_ok')
-
-      // ④ Resend: the prefilled text re-queues at the tail (重发正常).
-      await js(composerKeyJs('Enter'))
-      if (
-        !(await waitForProbe(
-          win,
-          `${rowCount100()} === 3 && (${rows100()}) === ${JSON.stringify([Q1_100, Q3_100, Q2_100].join('|'))}`,
-          10_000
-        ))
-      ) {
-        fail('ticket-100 stage: the resent entry never re-queued at the tail')
-      }
-      log('queue100_resend_ok')
-
-      // ⑤ Inline Edit on the IMAGE row: the composer restores the original
-      // text AND the pasted image (the host mirror's image leg, live).
-      if (!((await js(clickRowAction100(0, 'Edit queued message'))) as boolean)) {
-        fail('ticket-100 stage: the image row never rendered its Edit button')
-      }
-      if (
-        !(await waitForProbe(
-          win,
-          `(() => { const ta = document.querySelector('.composer-input'); return ta instanceof HTMLTextAreaElement && ta.value === ${JSON.stringify(Q1_100)} && document.querySelectorAll('.composer-attachments figure').length === 1 })()`,
-          10_000
-        ))
-      ) {
-        fail('ticket-100 stage: the image row Edit never restored the original text + image')
-      }
-      if (!(await waitForProbe(win, `${rowCount100()} === 2 && (${rows100()}) === ${JSON.stringify([Q3_100, Q2_100].join('|'))}`, 10_000))) {
-        fail('ticket-100 stage: the image row never left / the order broke after its edit')
-      }
-      log('queue100_edit_with_image_ok')
-
-      // Clean the composer so the restored draft cannot leak into later
-      // steps, then ⑥ per-row trash removes ONLY that row (Q3, now first).
-      // The prefill also restored Q1's image into the attachment strip —
-      // clear it too (the composerClearJs only empties the text).
-      await js(composerClearJs)
-      await js(`(() => { let n = 0; for (const btn of document.querySelectorAll('.composer-attachment-remove')) { if (btn instanceof HTMLElement) { btn.dispatchEvent(new MouseEvent('click', { bubbles: true })); n++ } } return n })()`)
-      if (!(await waitForProbe(win, `document.querySelectorAll('.composer-attachments figure').length === 0`, 5_000))) {
-        fail('ticket-128 stage: the restored Q1 attachment never cleared from the strip')
-      }
-      if (!((await js(clickRowAction100(0, 'Remove queued message'))) as boolean)) {
-        fail('ticket-100 stage: the row never rendered its × button')
-      }
-      if (!(await waitForProbe(win, `${rowCount100()} === 1 && (${rows100()}) === ${JSON.stringify(Q2_100)}`, 10_000))) {
-        fail('ticket-100 stage: the × removal did not remove exactly its own row')
-      }
-      log('queue100_row_remove_ok')
-
-      // ⑤ (ticket 128) The global Clear is GONE — the trash replaces it
-      // (Q6: 「这样也就不需要clear按钮了」). No .queue-panel-clear anywhere.
-      if (!((await js(`document.querySelector('.queue-panel-clear') === null`)) as boolean)) {
-        fail('ticket-128 stage: the retired global Clear button still renders')
-      }
-      log('queue128_clear_retired_ok')
-
-      // ⑥ (ticket 128 P20) The inline actions stretch to the row body's
-      // full height — no more half-height action strip vs taller row. The
-      // action button's box equals the row's content box.
-      const p20 = JSON.parse(
-        (await js(`JSON.stringify((() => {
-          const row = document.querySelector('.queue-item')
-          const btn = row?.querySelector('.queue-item-action')
-          const grip = row?.querySelector('.queue-item-grip')
-          if (!(row instanceof HTMLElement) || !(btn instanceof HTMLElement) || !(grip instanceof HTMLElement)) return null
-          return {
-            rowH: row.getBoundingClientRect().height,
-            rowClient: row.clientHeight,
-            btnH: btn.getBoundingClientRect().height,
-            gripH: grip.getBoundingClientRect().height
-          }
-        })())`).catch(() => 'null')) as string
-      )
-      if (p20 === null) fail('ticket-128 stage: the P20 geometry probe found no row/action/grip')
-      if (Math.abs(p20.rowH - 28) > 1.5) fail(`ticket-128 stage: the queue row grew off the compact height (got ${p20.rowH}, want ~28)`)
-      if (Math.abs(p20.btnH - p20.rowClient) > 1.5) {
-        fail(`ticket-128 stage: P20 broken — the action button (${p20.btnH}) is not the row body's height (${p20.rowClient})`)
-      }
-      if (Math.abs(p20.gripH - p20.rowClient) > 1.5) {
-        fail(`ticket-128 stage: P20 broken — the grip (${p20.gripH}) is not the row body's height (${p20.rowClient})`)
-      }
-      log('queue128_p20_height_ok')
-
-      // ⑦ (ticket 128) Segment-internal drag reorder — follow-ups first.
-      // Queue Q4 WITH a pasted image (the mirror's image leg on the
-      // reorder dance), then drag Q2 (row 0) BELOW Q4 (row 1): the rows
-      // swap and the image must stay on Q4's entry through the re-feed.
-      if (!((await js(pasteImage128('picode128-q4.png'))) as boolean)) {
-        fail('ticket-128 stage: the composer textarea is missing for the Q4 paste')
-      }
-      if (!(await waitForProbe(win, `document.querySelectorAll('.composer-attachments figure').length === 1`, 10_000))) {
-        fail('ticket-128 stage: the Q4 paste never rendered an attachment card')
-      }
-      if (!(await js(composerTypeJs(Q4_128)).catch(() => false))) fail('ticket-128 stage: composer missing for Q4')
-      await js(composerKeyJs('Enter'))
-      if (!(await waitForProbe(win, `${rowCount100()} === 2 && (${rows100()}) === ${JSON.stringify([Q2_100, Q4_128].join('|'))}`, 10_000))) {
-        fail('ticket-128 stage: Q4 never showed after Q2')
-      }
-      if ((await js(dragQueueRow128(0, 1, 'bottom'))) !== 'ok') fail('ticket-128 stage: the follow-up drag targets went missing')
-      if (!(await waitForProbe(win, `${rowCount100()} === 2 && (${rows100()}) === ${JSON.stringify([Q4_128, Q2_100].join('|'))}`, 10_000))) {
-        fail(`ticket-128 stage: the follow-up drag never swapped the rows — rows: ${(await js(rows100()).catch(() => 'n/a')) as string}`)
-      }
-      log('queue128_followup_swap_ok')
-
-      // ⑧ (ticket 128) The steer segment: queue S1, S2 (the toggle flips to
-      // Steer), then drag S1 (row 0) BELOW S2 (row 1). The panel renders
-      // steering rows first, so the rows read [S2, S1, Q4, Q2] after.
-      if (!((await js(pickQueuedMode128('Steer'))) as boolean)) {
-        fail('ticket-128 stage: the queued-mode toggle never rendered the Steer option (busy state lost?)')
-      }
-      for (const text of [S1_128, S2_128]) {
-        if (!(await js(composerTypeJs(text)).catch(() => false))) fail(`ticket-128 stage: composer missing for ${text}`)
-        await js(composerKeyJs('Enter'))
-      }
-      if (!(await waitForProbe(win, `${rowCount100()} === 4 && (${rows100()}) === ${JSON.stringify([S1_128, S2_128, Q4_128, Q2_100].join('|'))}`, 10_000))) {
-        fail(`ticket-128 stage: the two steers never joined the panel head — rows: ${(await js(rows100()).catch(() => 'n/a')) as string}`)
-      }
-      if ((await js(dragQueueRow128(0, 1, 'bottom'))) !== 'ok') fail('ticket-128 stage: the steer drag targets went missing')
-      if (!(await waitForProbe(win, `${rowCount100()} === 4 && (${rows100()}) === ${JSON.stringify([S2_128, S1_128, Q4_128, Q2_100].join('|'))}`, 10_000))) {
-        fail(`ticket-128 stage: the steer drag never swapped the rows — rows: ${(await js(rows100()).catch(() => 'n/a')) as string}`)
-      }
-      log('queue128_steer_swap_ok')
-
-      // ⑨ (ticket 128) Delivery order = the NEW order (越上越先注入). The
-      // count turn is one giant model call, so the SDK holds both queues
-      // until its end — no mid-run injection point can race the swaps.
-      // At the turn end the steering queue injects first (S2, S1 — new
-      // order), then the follow-up queue delivers (Q4, Q2 — new order,
-      // Q4's echo must still carry ITS pasted image). The waits are armed
-      // together and each records its arrival — the ORDER of arrivals is
-      // the assertion, not the absolute timing.
-      const echoOrder128: string[] = []
-      const armEcho128 = (label: string, text: string): void => {
-        void waitFor(
-          (e) => e.type === 'user_message' && e.sessionId === queue100Id && e.text.includes(text),
-          `ticket-128 ${label} delivery echo`
-        ).then(() => {
-          echoOrder128.push(label)
-        })
-      }
-      armEcho128('S2', S2_128)
-      armEcho128('S1', S1_128)
-      armEcho128('Q4', Q4_128)
-      armEcho128('Q2', Q2_100)
-      const echoQ4Image128 = waitFor(
-        (e) => e.type === 'user_message' && e.sessionId === queue100Id && e.text.includes(Q4_128),
-        'ticket-128 Q4 echo (for the image assert)'
-      ).then((e) => {
-        const images = (e as Extract<Scoped, { type: 'user_message' }>).images
-        if (!Array.isArray(images) || images.length !== 1 || images[0]?.data !== PNG_100) {
-          fail(`ticket-128 stage: the reordered Q4's delivery echo lost its own image (re-feed order-preserving broken), got ${JSON.stringify(images)}`)
-        }
-        return true
-      })
-      const echoQ2NoImage128 = waitFor(
-        (e) => e.type === 'user_message' && e.sessionId === queue100Id && e.text.includes(Q2_100),
-        'ticket-128 Q2 echo (for the no-image assert)'
-      ).then((e) => {
-        const images = (e as Extract<Scoped, { type: 'user_message' }>).images
-        if (Array.isArray(images) && images.length > 0) {
-          fail(`ticket-128 stage: the reordered Q2's delivery echo grew an image that belongs to Q4 (mirror cross-attach), got ${JSON.stringify(images)}`)
-        }
-        return true
-      })
-      await waitFor((e) => e.type === 'agent_end' && e.sessionId === queue100Id, 'ticket-128 count turn agent_end')
-      await echoQ4Image128
-      await echoQ2NoImage128
-      await waitForProbe(win, `(${rowCount100()}) === 0`, 30_000)
-      await new Promise((r) => setTimeout(r, 1_000)) // small tail margin for the last armed waiter
-      if (echoOrder128.join(',') !== ['S2', 'S1', 'Q4', 'Q2'].join(',')) {
-        fail(`ticket-128 stage: the swapped queues injected in the wrong order — got [${echoOrder128.join(', ')}], want [S2, S1, Q4, Q2]`)
-      }
-      log('queue128_delivery_order_ok')
-
-      // The last delivery turn may still be streaming — stop it and let
-      // the session settle (it may also have finished on its own in the
-      // probe window; then there is nothing to stop and no agent_end to
-      // wait for).
-      if ((await js(`document.querySelector('.cmp-stop') !== null`)) as boolean) {
-        await js(`document.querySelector('.cmp-stop')?.dispatchEvent(new MouseEvent('click', { bubbles: true })); true`)
-        await waitFor((e) => e.type === 'agent_end' && e.sessionId === queue100Id, 'ticket-128 stop agent_end')
-      }
-      if (!(await waitForProbe(win, `document.querySelector('.cmp-send') !== null`, 15_000))) {
-        fail('ticket-128 stage: the composer never left the busy state after the deliveries')
-      }
-      await js(composerClearJs)
-    })
-    log('queue_repair_done')
-
+    // ---- ticket 100 → 128 → 135: the queue panel stage (the
+    // queueRepairStage closure defined near the top of the boot; the
+    // full suite calls it here, in its original position). ----
+    await queueRepairStage()
     // ---- ticket 104: renaming WHILE the agent runs (TUI /name parity).
     // The chat topbar's Rename button opens the inline editor mid-run;
     // Enter commits through the host's set_session_label, which must
