@@ -17,8 +17,8 @@
  *                                viewport-left edge, floating ABOVE the
  *                                composer card (R5, the ZCode composition)
  *   mg4-thinking-brain         — the thinking menu open on its chip: the
- *                                self-drawn brain icon on the chip + the
- *                                narrow card chip-anchored (R5, z 图7 form)
+ *                                Lucide-form brain icon (t137) on the chip
+ *                                + the narrow card chip-anchored (R5, z 图7)
  *   mg5-narrow-clamp           — a 520px window: the open card stays
  *                                inside the viewport (R5 clamping)
  *
@@ -337,7 +337,7 @@ export function startMenuGeometryVisualIfEnabled(getWindow: () => BrowserWindow 
         const icon = chip.querySelector('svg path')?.getAttribute('d') ?? ''
         const c = card.getBoundingClientRect()
         const k = chip.getBoundingClientRect()
-        return JSON.stringify({ brainPath: icon.startsWith('M12 19.6'), cardLeft: c.left, chipLeft: k.left })
+        return JSON.stringify({ brainPath: icon.startsWith('M12 5a3 3 0 1 0-5.997.125'), cardLeft: c.left, chipLeft: k.left })
       })()`).catch(() => null)) as string | null
       if (!brain) throw new Error('menu-geometry visual: the thinking chip / card probe failed')
       const brainState = JSON.parse(brain) as { brainPath: boolean; cardLeft: number; chipLeft: number }
@@ -346,7 +346,7 @@ export function startMenuGeometryVisualIfEnabled(getWindow: () => BrowserWindow 
         throw new Error(`menu-geometry visual R5: thinking card left ${brainState.cardLeft.toFixed(1)} != chip left ${brainState.chipLeft.toFixed(1)}`)
       }
       await sleep(300)
-      await capture(win, 'mg4-thinking-brain', 'brain icon on the thinking chip + chip-anchored thinking card (z 图7 form, 未对照参照帧)')
+      await capture(win, 'mg4-thinking-brain', 'brain icon on the thinking chip + chip-anchored thinking card (z 图7 form; t137 pixel-compared against the z19 reference crops)')
 
       // ---- mg5: the narrow window clamps the open card inside (R5) ----
       // Ensure the thinking menu is still open (the same boot settle can

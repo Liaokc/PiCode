@@ -2,7 +2,7 @@ import type { JSX } from 'react'
 import type { ThinkingPart } from '../../../shared/chat-reducer'
 import { deriveThinkingDuration } from '../../../shared/thinking-duration'
 import { useElapsedClock } from './use-elapsed-seconds'
-import { ChevronDownIcon, ChevronRightIcon, SparklesIcon } from './icons'
+import { BrainIcon, ChevronDownIcon, ChevronRightIcon } from './icons'
 
 interface ThinkingRowProps {
   /** The thinking part this row renders (duration derivation input). */
@@ -31,6 +31,10 @@ interface ThinkingRowProps {
  * The chevron speaks the Worked-container fold language (ticket 61): right
  * when collapsed, down when expanded — same swap as TurnContainer, live
  * Thinking and settled Thought alike.
+ *
+ * The header glyph is the shared BrainIcon (ticket 137, ZCode parity — the
+ * composer's thinking chip renders the same definition at the same default
+ * size; the row's muted tint still comes from .thinking-row-icon).
  */
 export default function ThinkingRow({ part, open, onToggle }: ThinkingRowProps): JSX.Element {
   const clock = useElapsedClock(part.streaming)
@@ -50,7 +54,7 @@ export default function ThinkingRow({ part, open, onToggle }: ThinkingRowProps):
         aria-label={empty ? 'Thinking (no reasoning text)' : undefined}
         disabled={empty}
       >
-        <SparklesIcon size={13} className="thinking-row-icon" />
+        <BrainIcon className="thinking-row-icon" />
         <span className="thinking-row-label">{part.streaming ? 'Thinking' : 'Thought'}</span>
         {timed && (
           <>
