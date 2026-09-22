@@ -244,7 +244,7 @@ import { focusSessionFromNotification, type ApprovalNotice } from './notificatio
 import type { HostToParent, SessionScopedEvent } from '../shared/contract'
 import type { AuthProbeReport } from '../shared/auth-status'
 import { configuredProviderIds, configuredProvidersOnly, sortProvidersConfiguredFirst } from '../shared/provider-sort'
-import { addDays } from '../shared/usage/dates'
+import { sundayOf } from '../shared/usage/dates'
 import { heatmapGrid } from '../shared/usage/charts'
 import { projectNewTaskCatalog } from '../shared/new-task-models'
 import { FOLLOW_TAKEOVER_REJECTED_TOAST } from '../shared/sessions/group'
@@ -11998,8 +11998,6 @@ export function startSmokeIfEnabled(
           day: '2-digit'
         }).format(ms)
       const today = dayKey(Date.now())
-      const sundayOf = (date: string): string =>
-        addDays(date, -new Date(Date.parse(`${date}T12:00:00.000Z`)).getUTCDay())
       const longDate = (date: string): string =>
         new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric', year: 'numeric' }).format(
           Date.parse(`${date}T12:00:00.000Z`)
@@ -12024,6 +12022,24 @@ export function startSmokeIfEnabled(
       ) {
         fail('ticket-139 stage: the usage page never rendered the heatmap (fake usage fixture missing?)')
       }
+
+      // ⓪ The scroll box still reserves the ring extent left of the FIRST
+      //    column's first box: the ticket-125 leftmost-outline regression in
+      //    its equivalent form (the old weekly stage's seven single-day
+      //    columns are retired; the clipping geometry and the rings are
+      //    not — the column ring needs the same 4px padding).
+      const outlineOk = await waitForProbe(
+        win,
+        `(() => {
+          const scroll = document.querySelector('.heatmap-scroll')
+          const first = document.querySelector('.heatmap .heat')
+          if (!scroll || !first) return false
+          return first.getBoundingClientRect().left - scroll.getBoundingClientRect().left >= 3
+        })()`,
+        5_000
+      )
+      if (!outlineOk) fail('ticket-139 stage: the leftmost box outline is clipped by the scroll box (no left margin)')
+      log('usage_heat_leftmost_outline_ok')
 
       // ①-③ Per-mode grid equality: the DOM's data-date + heat-level sequence
       // must equal the Seam-1 model's, computed from the same fixture.
