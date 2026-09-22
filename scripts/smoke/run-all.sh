@@ -11,6 +11,9 @@
 #   4. usage aggregation         real shared store + incremental machinery
 #   5. TUI↔SDK interop           both directions against an isolated store
 #   6. electron app smoke        main→host→renderer DOM + Live Follow + crash isolation
+#   7. sanitized spawn smoke     ticket 134: bare GUI-equivalent env boot +
+#                                in-app subagent spawn (PATH composition +
+#                                bundled SDK alignment, the Finder/Dock fix)
 #
 # Session hygiene (ticket 13): every stage runs with PICODE_SESSION_DIR
 # pointed at a throwaway store, and the suite verifies the real session
@@ -63,6 +66,7 @@ STEPS=(
   "usage aggregation:node scripts/smoke/usage-smoke.ts"
   "TUI↔SDK interop:node scripts/smoke/interop-smoke.ts"
   "electron app smoke:PICODE_SMOKE=1 PICODE_FAKE_USAGE=1 electron ."
+  "sanitized spawn smoke:node scripts/smoke/sanitized-spawn-smoke.mjs"
 )
 
 overall_start=$(date +%s)

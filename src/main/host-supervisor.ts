@@ -18,6 +18,7 @@ import type { SessionDefaults } from '../shared/preferences'
 import { PROVISIONAL_SESSION_ID_PREFIX } from '../shared/contract'
 import type { HostControlCommand, HostToParent, ParentToHost, SessionScopedEvent } from '../shared/contract'
 import { encodeSessionArgs } from '../host/session-args'
+import { hostForkEnv } from './spawn-path'
 
 const SHUTDOWN_GRACE_MS = 1500
 
@@ -165,8 +166,12 @@ export class HostSupervisor {
     // that has vanished keeps the inherited cwd (the host boots and fails
     // on its own, preserving the dead-cwd exit(1) semantics).
     const cwdExists = existsSync(cwd)
+    // Ticket 134: the fork env carries the composed spawn PATH — a GUI
+    // launch's bare system PATH would leave pi-subagents' detached runner
+    // unable to resolve `node` (the Finder/Dock spawn failure). The host,
+    // the runner and every pi child inherit it.
     const child = fork(this.options.hostEntryPath, args, {
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+      env: hostForkEnv(),
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
       ...(cwdExists ? { cwd } : {})
     })

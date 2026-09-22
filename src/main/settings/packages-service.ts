@@ -34,6 +34,7 @@ import {
 } from '../../shared/packages-management'
 import { readPiSettingsSync, writeSkillOverride } from './pi-settings-editor'
 import type { AuthProbeReport } from '../../shared/auth-status'
+import { hostForkEnv } from '../spawn-path'
 
 /** Structural subset of the probe runner the service drives. */
 export type PackagesProbe = (cwd: string | null, agentDir: string | null) => Promise<AuthProbeReport>
@@ -76,7 +77,10 @@ export function forkPackagesOpRunner(hostEntryPath: string): PackagesOpRunner {
       timer.unref?.()
       try {
         child = fork(hostEntryPath, ['--packages-op', JSON.stringify(descriptor)], {
-          env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+          // Ticket 134: the composed spawn PATH rides the op fork too —
+          // the SDK's package manager shells out to npm, which needs a
+          // resolvable `node` even under a GUI launch.
+          env: hostForkEnv(),
           stdio: ['ignore', 'ignore', 'ignore', 'ipc']
         })
       } catch (err) {

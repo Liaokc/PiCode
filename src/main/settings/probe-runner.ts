@@ -11,6 +11,7 @@
  */
 import { fork, type ChildProcess } from 'node:child_process'
 import { isAuthProbeReport, type AuthProbeReport } from '../../shared/auth-status'
+import { hostForkEnv } from '../spawn-path'
 
 export interface AuthProbeHostOptions {
   timeoutMs?: number
@@ -47,7 +48,9 @@ export function runAuthProbeHost(hostEntryPath: string, options: AuthProbeHostOp
     timer.unref?.()
     try {
       child = fork(hostEntryPath, args, {
-        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+        // Ticket 134: the composed spawn PATH rides the probe fork too —
+        // every host-family child resolves `node` the same way.
+        env: hostForkEnv(),
         stdio: ['ignore', 'ignore', 'ignore', 'ipc']
       })
     } catch (err) {

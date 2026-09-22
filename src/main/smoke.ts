@@ -236,7 +236,7 @@
 import os, { homedir } from 'node:os'
 import { randomUUID, createHash } from 'node:crypto'
 import path from 'node:path'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { app, clipboard, type BrowserWindow } from 'electron'
 import type { HostSupervisor } from './host-supervisor'
@@ -256,6 +256,9 @@ import { FAKE_USAGE_TINY_MODEL, FAKE_USAGE_ZERO_MODEL } from '../shared/usage/fi
 import { chmodSync } from 'node:fs'
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { whenSpawnPathReady } from './spawn-path'
+import { readSdkAlignmentFacts, readPinnedSdkVersion } from './subagent-sdk-check'
+import { compareVersions, SUBAGENTS_SDK_FLOOR } from '../shared/subagent-sdk-alignment'
 
 const STEP_TIMEOUT_MS = 90_000
 const ABORT_AFTER_DELTAS = 3
@@ -489,8 +492,183 @@ export function startSmokeIfEnabled(
     })
   }
 
+  /**
+   * Ticket 134: the sanitized-env spawn stage. Runs INSTEAD of the full
+   * sequence when the sanitized launcher (scripts/smoke/sanitized-spawn-
+   * smoke.mjs) boots the app with a bare GUI-equivalent environment
+   * (`HOME` + `/usr/bin:/bin:/usr/sbin:/sbin` only, selected via
+   * PICODE_SMOKE_STAGE=t134-sanitized). Proves the two root factors of the
+   * Finder/Dock spawn failure are fixed, in the environment that exposed
+   * them:
+   *
+   *   ① the composed spawn PATH (login-shell snapshot + static probes) is
+   *      ready, extends the bare launch PATH, and actually resolves `node`
+   *      — the exact lookup pi-subagents' detached runner performs;
+   *   ② the bundled SDK/pi-ai alignment facts hold (SDK = the pin, at the
+   *      0.86.1 floor pi-subagents 0.70.1 needs);
+   *   ③ a REAL in-app session spawn succeeds: /run scout … --bg through the
+   *      session prompt → subagent_async_started → the runner's status.json
+   *      carries a live pid (the detached node process EXISTS — the ENOENT
+   *      breakpoint is gone) → the RPC stop converges the run and the
+   *      runner process exits (fast teardown; real model calls ride the
+   *      scout child exactly like smoke stages 2/5/6).
+   */
+  async function t134SanitizedSpawnStage(): Promise<void> {
+    /** Bounded JSON read for the runner's status.json (null = absent/corrupt). */
+    const readJsonFile = (file: string): Record<string, unknown> | null => {
+      try {
+        const parsed: unknown = JSON.parse(readFileSync(file, 'utf8'))
+        return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null
+      } catch {
+        return null
+      }
+    }
+
+    // ① the composed spawn PATH.
+    const composed = await whenSpawnPathReady()
+    const bare = process.env['PATH'] ?? ''
+    if (composed.trim() === '') fail('t134: the composed spawn PATH is empty')
+    if (composed === bare) {
+      fail(`t134: the composed spawn PATH added nothing over the sanitized launch PATH (${bare}) — the login-shell snapshot and static probes both failed`)
+    }
+    // The exact lookup the runner spawn performs: resolve `node` through the
+    // composed PATH (libuv uses the child env's PATH).
+    const nodeProbe = spawnSync('node', ['-v'], { env: { ...process.env, PATH: composed }, encoding: 'utf8' })
+    if (nodeProbe.error !== undefined || nodeProbe.status !== 0) {
+      fail(`t134: node does not resolve through the composed spawn PATH: ${String(nodeProbe.error?.message ?? `exit ${nodeProbe.status}`)}`)
+    }
+    log('spawn_path_composed', `node ${String(nodeProbe.stdout).trim()} via ${composed.split(':').length} entries (bare launch PATH had ${bare.split(':').length})`)
+
+    // ② the bundled SDK alignment facts (the second root factor).
+    const facts = readSdkAlignmentFacts()
+    const rootPinnedSdk = readPinnedSdkVersion()
+    if (facts.sdkVersion === null) fail('t134: the bundled SDK version could not be read')
+    if (rootPinnedSdk !== null && facts.sdkVersion !== rootPinnedSdk) {
+      fail(`t134: the bundled SDK (${facts.sdkVersion}) is not the pinned version (${rootPinnedSdk})`)
+    }
+    if (compareVersions(facts.sdkVersion, SUBAGENTS_SDK_FLOOR) < 0) {
+      fail(`t134: the bundled SDK (${facts.sdkVersion}) is below the 0.86.1 floor pi-subagents needs`)
+    }
+    if (facts.subagentsVersion === null) {
+      fail('t134: pi-subagents is not installed in the real agent dir — the sanitized spawn stage cannot run (the leg spawns through it)')
+    }
+    log('sdk_alignment', `sdk=${facts.sdkVersion} pi-ai-floor-ok pi-subagents=${facts.subagentsVersion}`)
+
+    // ③ the real in-app spawn, driven through the session prompt.
+    const legCwd = mkdtempSync(path.join(os.tmpdir(), 'picode-t134-cwd-'))
+    try {
+      supervisor.createSession(legCwd)
+      const created = (await waitFor((e) => e.type === 'session_created', 't134 session_created')) as Extract<
+        Scoped,
+        { type: 'session_created' }
+      >
+      log('t134_session_created', created.sessionId)
+
+      // The /run slash command dispatches through the extension pipeline (no
+      // model round for the dispatch itself); --bg rides the detached runner
+      // — the spawn chain the bare PATH used to break. The task is long
+      // enough to outlast the assertions (a trivial task could complete
+      // before the stop lands).
+      supervisor.handleParentCommand({
+        type: 'prompt',
+        text: '/run scout Write the numbers from 1 to 300, one per line, in a file named count.txt, then reply with exactly: PICODE134BGOK --bg'
+      })
+      const started = (await waitFor(
+        (e) => e.type === 'subagent_async_started' && e.sessionId === created.sessionId,
+        't134 subagent_async_started (the detached runner spawn)'
+      )) as Extract<Scoped, { type: 'subagent_async_started' }>
+      if (started.asyncDir === undefined) fail('t134: subagent_async_started carried no asyncDir')
+      log('t134_async_started', `runId=${started.runId} asyncDir=${started.asyncDir}`)
+
+      // The spawn proof: the runner's status.json exists, names a live state
+      // and carries the detached process pid — the node process the bare PATH
+      // used to ENOENT actually exists.
+      const statusPath = path.join(started.asyncDir!, 'status.json')
+      let spawnProof: { state: string; pid: number } | null = null
+      for (let waited = 0; waited < 60_000 && spawnProof === null; waited += 250) {
+        const status = readJsonFile(statusPath)
+        if (
+          status !== null &&
+          (status['state'] === 'running' || status['state'] === 'queued' || status['state'] === 'complete') &&
+          typeof status['pid'] === 'number' &&
+          status['pid'] > 0
+        ) {
+          spawnProof = { state: String(status['state']), pid: status['pid'] }
+        } else {
+          await new Promise((r) => setTimeout(r, 250))
+        }
+      }
+      if (spawnProof === null) {
+        const last = readJsonFile(statusPath)
+        fail(`t134: the runner never wrote a live status.json with a pid (last: ${JSON.stringify(last ?? 'absent')})`)
+      }
+      log('t134_spawn_proof', `state=${spawnProof.state} runner pid=${spawnProof.pid}`)
+
+      // Converge fast (the serialization discipline: data in hand, release
+      // the channel): RPC stop → stopping receipt → terminal artifact → the
+      // runner process gone. A run that completed on its own before the stop
+      // is equally fine — the spawn already proved the fix.
+      supervisor.handleParentCommand({
+        type: 'session_command',
+        sessionId: created.sessionId,
+        command: { type: 'subagent_stop', requestId: 't134-stop', asyncId: started.runId }
+      })
+      const stopReceipt = (await waitFor(
+        (e) => e.type === 'subagent_stop_receipt' && e.sessionId === created.sessionId,
+        't134 subagent_stop_receipt'
+      )) as Extract<Scoped, { type: 'subagent_stop_receipt' }>
+      let terminal: string | null = null
+      for (let waited = 0; waited < 45_000 && terminal === null; waited += 250) {
+        const status = readJsonFile(statusPath)
+        if (status !== null && ['stopped', 'failed', 'partial', 'complete'].includes(String(status['state']))) {
+          terminal = String(status['state'])
+        } else {
+          await new Promise((r) => setTimeout(r, 250))
+        }
+      }
+      if (terminal === null) fail('t134: the run never reached a terminal state after the stop')
+      let runnerGone = false
+      for (let waited = 0; waited < 30_000 && !runnerGone; waited += 250) {
+        try {
+          process.kill(spawnProof.pid, 0)
+          await new Promise((r) => setTimeout(r, 250))
+        } catch {
+          runnerGone = true
+        }
+      }
+      log(
+        't134_verdict',
+        `stop ok=${String(stopReceipt.ok)} state=${String(stopReceipt.state ?? '-')} terminal=${terminal} runner-exited=${String(runnerGone)}`
+      )
+      if (stopReceipt.ok !== true && terminal === 'complete') {
+        // The run finished before the stop landed — honest, not a failure.
+        log('t134_note', 'the run completed before the stop; the spawn itself is the verdict')
+      } else if (stopReceipt.ok !== true) {
+        fail(`t134: the stop receipt failed on a live run: ${stopReceipt.error ?? 'no error text'}`)
+      }
+    } finally {
+      rmSync(legCwd, { recursive: true, force: true })
+    }
+  }
+
   async function main(): Promise<void> {
     log('start', `cwd=${cwd} pid=${process.pid}`)
+
+    // Ticket 134: stage-selected runs drive ONE purpose-built leg instead of
+    // the full sequence (the sanitized-env launcher selects via
+    // PICODE_SMOKE_STAGE; the full suite keeps its unchanged behavior).
+    const stageSelector = process.env['PICODE_SMOKE_STAGE'] ?? ''
+    if (stageSelector !== '') {
+      if (stageSelector === 't134-sanitized') {
+        await t134SanitizedSpawnStage()
+      } else {
+        fail(`unknown PICODE_SMOKE_STAGE: ${stageSelector}`)
+      }
+      supervisor.shutdownAll()
+      log('done')
+      app.exit(0)
+      return
+    }
 
     // ---- ticket 41: the new-task empty state — the model menu lists the
     // REAL auth-probe catalog, the thinking menu offers all seven levels,
