@@ -15619,7 +15619,6 @@ export function startSmokeIfEnabled(
 
         if (!(await waitForProbe(win, `document.querySelector('.chat-view') !== null`, 10_000))) {
           fail('ticket-79 stage: the resumed session never reached the chat view')
-    await queueRepairStage()
         }
         if (!(await waitForProbe(win, `${userBlocks()} === 2`, 10_000))) {
           fail('ticket-79 stage: the two seeded user blocks never rendered')
@@ -16042,7 +16041,10 @@ export function startSmokeIfEnabled(
     }
     log('bubble_trio_done')
 
-
+    // ---- ticket 100 → 128 → 135: the queue panel stage (the
+    // queueRepairStage closure defined near the top of the boot; the
+    // full suite calls it here, in its original position). ----
+    await queueRepairStage()
     // ---- ticket 104: renaming WHILE the agent runs (TUI /name parity).
     // The chat topbar's Rename button opens the inline editor mid-run;
     // Enter commits through the host's set_session_label, which must
