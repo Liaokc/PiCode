@@ -2,11 +2,11 @@
 
 Status: ready-for-agent
 
-本 spec 覆盖工单 116 起（同目录 `issues/`，编号全局连续；115 已被 1.7 批消耗，113 号空缺不复用）。取证 = 操作者 2026-09-21/22 真实使用报痛 **28 条**（六轮报入 + Q1–Q9 裁决全记录见 `intake-grilling.md`；Round 6 = 自治批次空跑实证的基础设施缺陷）+ main 源码逐项核因（file:line 全录）+ 会话文件只读实测（SDK SessionManager / buildSessionTree / displayRows 对真实会话副本全链路实跑——History 链路数据层实证无恙）+ ZCode 实拍帧（provider 卡 / 思考卡 / 队列卡构图）。术语遵循 `CONTEXT.md`。
+本 spec 覆盖工单 116 起（同目录 `issues/`，编号全局连续；115 已被 1.7 批消耗，113 号空缺不复用）。取证 = 操作者 2026-09-21/22 真实使用报痛 **30 条**（八轮报入 + Q1–Q9 裁决全记录见 `intake-grilling.md`；Round 6/7 = 自治批次两轮空跑实证；Round 8 = v1.8.0 终验交付物修订）+ main 源码逐项核因（file:line 全录）+ 会话文件只读实测（SDK SessionManager / buildSessionTree / displayRows 对真实会话副本全链路实跑——History 链路数据层实证无恙）+ ZCode 实拍帧（provider 卡 / 思考卡 / 队列卡构图）。术语遵循 `CONTEXT.md`。
 
 ## Problem Statement
 
-v1.7.0 验收后的真实使用判定——**十四处缺陷、六处交付行为修订、两处清理、三处全新供面**（含票 100 队列形态被 ZCode 参照推翻的重构、票 105 修复的回归）：
+v1.7.0 验收后的真实使用判定——**十六处缺陷、六处交付行为修订、两处清理、三处全新供面**（含票 100 队列形态被 ZCode 参照推翻的重构、票 105 修复的回归）：
 
 - **Branch history 失明**：长会话发送→终止后 History 恒 0 rows（后续发送不恢复）；fork 会话 History 无信息（可复现路径）。数据层全链路实测通过（841 节点树、835 显示行），缺陷在运行时管道——复现定位票。
 - **导航轨两题**：live 回合运转中锚定显示在倒数第二轮（探针几何缺陷）；单回合不显示为票 46 规则——操作者确认维持（现状确认项）。
@@ -15,11 +15,11 @@ v1.7.0 验收后的真实使用判定——**十四处缺陷、六处交付行�
 - **侧栏与设置**：死 cwd 文件夹组不沉底；设置入口右上+左下双份；跳设置往返 thinking 行折叠状态丢失。
 - **用量页三题**：零用量模型照显（图例+圆环）；weekly 语义（周聚合 5 格）不符预期——裁决改「本周 7 天」；DrillDown 行内 Open task 冗余。
 - **queue 面板**：行与 Clear 按钮不等高；票 100 形态被 ZCode 参照推翻——重构成拖动排序 + Edit + 垃圾桶（删全局 Clear、无「立即」钮）。
-- **杂项**：MCP 状态条与卡片边框重叠；空闲输入（agent 停止态）移动转录视图；fork 会话不自动命名；发送文字无法拖拽选中（用户泡文本未放开 user-select——助手文本早已放开的不对称遗漏）；**Finder/Dock 启动的应用内会话无法 spawn subagent**（launchd 启动不继承 shell PATH——自治批次空跑实证，workaround = 终端带 nvm PATH 启动）。
+- **杂项**：MCP 状态条与卡片边框重叠；空闲输入（agent 停止态）移动转录视图；fork 会话不自动命名；发送文字无法拖拽选中（用户泡文本未放开 user-select——助手文本早已放开的不对称遗漏）；**Finder/Dock 启动的应用内会话无法 spawn subagent**（双根因子：launchd 启动不继承 shell PATH + 捆绑 SDK 0.85.1 缺 transcript 导出——自治批次两轮空跑实证）；**终验两处交付物未达 ZCode 参照**（cascade 两列未真分离 + 弹出卡未贴钮；热力图三模式口径——Round 8）。
 
 ## Solution
 
-二十一项需求（R1–R21）全部对齐实证参照（ZCode 实拍帧 / 会话文件实测 / main 源码 file:line）：
+二十三项需求（R1–R23）全部对齐实证参照（ZCode 实拍帧 / 会话文件实测 / main 源码 file:line）：
 
 1. **History 复现定位（R1）**：fork 路径为第一复现场景，dev app 插桩（request_tree 到达 / session_tree 发出 / 树载荷节点数）→ 定位修复。
 2. **导航轨 live 锚定（R2）**：吸底时锚定 = 最新回合（含 live）；上翻维持探针规则。纯模型决策表扩展。
@@ -41,7 +41,9 @@ v1.7.0 验收后的真实使用判定——**十四处缺陷、六处交付行�
 18. **空闲输入不动转录（R18）**：非运行态 composer 操作绝不移动转录；Copy/Fork 行计入底部目标查证。
 19. **fork 自动命名（R19）**：`Fork of <名>`（无名源跟侧栏标题投影），session_info 既有机制。
 20. **用户泡文本可选（R20）**：文本段 `user-select: text`（与助手文本同规则）；技能角标/缩略图不放开；FollowView 同规。
-21. **spawn 启动修复（R21）**：主进程启动时合成子进程 PATH（登录 shell 快照 + 常见 node 安装点探测）——Finder/Dock 启动也能 spawn；LSEnvironment 否决。
+21. **spawn 启动修复（R21，本批最后实现）**：双根因子双修复——①主进程启动时合成子进程 PATH（登录 shell 快照 + 常见 node 安装点探测）；②捆绑 SDK 对齐 0.86.1（pi-ai 0.85.1 缺 transcript 导出、pi-subagents 0.70.1 review.js 需要）。测试 = Finder/Dock 实启 + 应用内 spawn 全流程；修复落 ~/PiCode 源码、随 v1.8.0 上线；LSEnvironment 否决。
+22. **cascade 终验重修（R22）**：票 122 交付物按 ZCode 重修——两列真正分离（各自高度/边界）+ 选择卡贴触发钮（非输入栏上方）；thinking 卡同规则。
+23. **Token Activity 终验重修（R23）**：票 125 交付物按 ZCode 重修——三模式统一「每方块 = 一天、颜色深度 = 用量」：daily = 当天用量、weekly = 周初到当天累计、cumulative = 期初到当天累计；悬浮卡分级（daily = 方块旁当日用量；weekly = 当周最上方方块 + 周累计；cumulative = 同型 + 期初至当周含当周）；Q4=B「本周 7 天」口径退役。
 
 ## User Stories
 
@@ -117,6 +119,14 @@ v1.7.0 验收后的真实使用判定——**十四处缺陷、六处交付行�
 29. As an operator launching PiCode from Finder or the Dock, I want in-app sessions to spawn subagents, so that autonomous batch runs work without a terminal launch workaround.
 30. As an operator, I want the PATH composition to fail safe (login-shell snapshot, well-known node locations, graceful degradation), so that a broken shell never breaks the app.
 
+### R22 cascade 终验重修
+31. As an operator opening the model menu, I want the two columns truly separate with their own heights and edges, so that it reads like ZCode.
+32. As an operator, I want the selection card attached to its trigger button, so that the popover points exactly at what opened it.
+
+### R23 Token Activity 终验重修
+33. As an operator reading the token activity grid, I want every cell to mean one day in all three modes, so that the grid reads consistently.
+34. As an operator hovering a cell, I want mode-correct tooltips (day value next to the cell; week and cumulative anchored above the week's top cell), so that every number is explorable.
+
 ## Implementation Decisions
 
 - **R1 复现定位**：第一复现场景 = fork 会话（操作者可稳定复现）；插桩点 = host request_tree 处理、session_tree 发送、supervisor 打标、registry 落账；定位即修、修复后 electron smoke 固化（fork 会话 History 行数断言）。「0 rows」空态文案不动（诚实原则）。
@@ -139,17 +149,17 @@ v1.7.0 验收后的真实使用判定——**十四处缺陷、六处交付行�
 - **R18**：dev app 复现定位（agent 停止态输入 → 转录上移；触发源静态未定位——嫌疑：composer 高度变化引发的滚动裁定点/重钉）→ 修复 = 非运行态门（agentRunning gate：空闲态任何 composer 驱动的视口变化不触发转录重钉/滚动补偿）；Copy/Fork 行计入底部目标查证；运行态语义零回退（票 93 闩 / 票 94 锚定 / 票 75 滚轮赢全不破）。
 - **R19**：`handleFork` fork 落地后 `setSessionName("Fork of " + sourceName ?? sidebarTitleProjection)`；源名取 fork 前 manager.getSessionName()；无名源投影 = 首条用户消息（与索引扫描器同源——`shared/sessions/parse.ts` 既有投影复用）；session_renamed + 索引刷新照旧；用户可再改名。
 - **R20**：`.user-bubble-text`（或等价文本段选择器）增 `user-select: text`——与 `.msg-assistant` 同规则（app.css:4341）；技能角标段/缩略图/动作行不放开；FollowView 同规；选择起点在文本段、不破坏缩略图钮与 Edit 行交互；Copy 语义不变（整条拷用户原话）。
-- **R21**：主进程启动早期合成子进程 spawn 环境——①`$SHELL -lc 'echo $PATH'` 登录 shell 快照（缓存一次、超时与失败降级）②静态探测常见 node 安装点（`~/.nvm/versions/node/*/bin` 当前版本、`/usr/local/bin`、`/opt/homebrew/bin`、`~/.pi/agent/bin`）③注入所有需要 PATH 的子 spawn（subagent 子进程；会话 host 如涉及同注入）。**LSEnvironment 否决**（PATH 机器相关，不入通用 bundle）；探测不阻塞窗口就绪（异步初始化，票内裁量）。**精确断点（哪个 spawn 缺哪个可执行）= 第一验收项插桩定位**（不臆测纪律）；修复对新启动实例生效（运行中实例不热更——v1.8 自治批次运行本身依赖操作者启动 workaround，本票修复后续所有正常启动）。
+- **R21**：双根因子双修复，全部落 `~/PiCode` 源码、随 v1.8.0 上线（不碰已安装/已发版 bundle）。①PATH 合成：主进程启动早期（缓存一次、超时与失败降级）合成子进程 spawn 环境——`$SHELL -lc 'echo $PATH'` 登录 shell 快照 + 静态探测常见 node 安装点（nvm 版本目录、`/usr/local/bin`、`/opt/homebrew/bin`、`~/.pi/agent/bin`），注入所有需要 PATH 的子 spawn；**LSEnvironment 否决**（PATH 机器相关，不入通用 bundle）；探测不阻塞窗口就绪（异步初始化，票内裁量）。②捆绑 SDK 对齐：实测瓶颈 = 捆绑 pi-ai 0.85.1 缺 transcript 工具导出（0.86.1 才有）、pi-subagents 0.70.1 review.js 需要它——确保 dev node_modules 与打包产物内 SDK/pi-ai = 0.86.1 + 启动期版本自检（票内裁量，不静默失败）。**测试 = 操作者指定的全流程**：Finder/Dock 实启（或净化环境等效）→ 应用内会话 spawn pi-subagent 作定位与复测；两根因子分别插桩实证 = 第一验收项。**实现时点 = 本批最后（116–133 全合并后）**——验证带批次全部修复启动 app，批次运行自身（Pi Agent 主会话）不依赖本票；修复对新启动实例生效（运行中实例不热更）。
 - 术语随票入 CONTEXT.md：新增「队列卡（Queue Panel）」；修订「导航轨」（锚定规则）、「Manual 排序」（死组沉底）、「技能卡」（既有文本共存）——草案见 `intake-grilling.md`。UI 文案全英文（词汇表约束不变）。
 
 ## Testing Decisions
 
 - 延续仓库原则：**好测试只测外部行为**；不测内部调用序列、不测 CSS 字节。
 - **零新缝**，全落既有四缝：
-  - **Seam-1 表驱动 vitest**：R2 锚定决策表（吸底/上翻 × live/落定）；R8 活性桶（三排序 × 死活组 × Manual 拖不动）；R9 零用量过滤（0/非零极小/混合 × 范围切换）；R10 周格生成（7 天/空格/tooltip 数据/周起始）；R11 typing-commit 分流表（expanded × 输入/删除）；R13 展开态存取（跳转/切换/折叠往返）；R7 余文剥离（文本+图+caret 位）；R19 命名投影（有名/无名）；R21 PATH 合成（登录 shell 快照/静态探测点/去重顺序/失败降级/良好 PATH 不劣化）。
+  - **Seam-1 表驱动 vitest**：R2 锚定决策表（吸底/上翻 × live/落定）；R8 活性桶（三排序 × 死活组 × Manual 拖不动）；R9 零用量过滤（0/非零极小/混合 × 范围切换）；R10 周格生成（7 天/空格/tooltip 数据/周起始）；R11 typing-commit 分流表（expanded × 输入/删除）；R13 展开态存取（跳转/切换/折叠往返）；R7 余文剥离（文本+图+caret 位）；R19 命名投影（有名/无名）；R21 PATH 合成（登录 shell 快照/静态探测点/去重顺序/失败降级/良好 PATH 不劣化）；R23 三模式日格聚合（daily/weekly/cumulative × 零用量空格 × 跨周边界）与悬浮卡锚位表。
   - **host-contract smoke**：R17 `reorder_queue_entry` additive op 报备入账 + 旧载荷兼容；R1 修复后的 request_tree/session_tree 链路断言。
-  - **electron smoke**：R6 四入口 ⌘J 聚焦；R1 fork 会话 History 行数断言；R7 技能选中后文本保留 + 发送重组逐字节一致；R11 展开态输入/删除高度不变；R12 prefill 视口在光标行；R17 拖动重排保序 + 垃圾桶单条废弃 + 无 Clear；R18 空闲输入转录静止；R3 New Task 列表 = 会话内列表；R15 按钮不存在；R14 入口唯一；R20 泡文本段可拖拽选择 + 非文本段不选中。
-  - **visual harness**：R5 弹出锚点帧（对照 z 图6/图7）+ 大脑图标帧；R4 cascade 两帧（不同 provider hover 几何不变）；R17 queue 单条/多条帧（对照 z 图6/图7）；R10 weekly 七格帧；R16 边框分离帧；R2 吸底/上翻两态帧。
+  - **electron smoke**：R6 四入口 ⌘J 聚焦；R1 fork 会话 History 行数断言；R7 技能选中后文本保留 + 发送重组逐字节一致；R11 展开态输入/删除高度不变；R12 prefill 视口在光标行；R17 拖动重排保序 + 垃圾桶单条废弃 + 无 Clear；R18 空闲输入转录静止；R3 New Task 列表 = 会话内列表；R15 按钮不存在；R14 入口唯一；R20 泡文本段可拖拽选择 + 非文本段不选中；R22 hover 几何稳定 + 弹出锚点 = chip 边缘；R23 三模式切换与悬浮断言。
+  - **visual harness**：R5 弹出锚点帧（对照 z 图6/图7）+ 大脑图标帧；R4 cascade 两帧（不同 provider hover 几何不变）；R17 queue 单条/多条帧（对照 z 图6/图7）；R10 weekly 七格帧；R16 边框分离帧；R2 吸底/上翻两态帧；R22 cascade 帧对照 z19-menu-*（两列分离 + 贴钮）；R23 三模式常态+悬浮六帧对照 z19-heatmap-*。
 - 性能红线：R2 零轮询（纯模型派生）；R17 拖拽零全列表重挂载；R12 不增 IME 路径渲染次数；R18 空闲路径零新增监听（决策收敛纯函数）。
 
 ## Out of Scope
@@ -168,11 +178,12 @@ v1.7.0 验收后的真实使用判定——**十四处缺陷、六处交付行�
 - **R→票映射纪律**：本 spec 每条 R 必须映射到至少一张票（1.3 R11 掉票教训，1.5–1.7 已执行）。
 - **缝确认**：零新缝——全落既有四缝。**additive 契约/投影增量一项**（R17 `reorder_queue_entry`）实施时报备入 host-contract smoke（1.6/1.7 惯例）。
 - **ADR 检查**：无新 ADR——R13 视图注册表扩展在 ADR-0006 框架内；R19 会话命名写 fork 自身文件 = 既有 rename 机制（ADR-0002 会话文件纪律不破——SDK 既有写入面）；R17 host 舞步 = 票 100 同机制（ADR-0003 host 架构内）。
-- **依赖与波次提示（/to-tickets 用）**：同文件群 A（composer 群）R11→R12→R7 强串行（116→117→118），R18（119）弱邻接随后；同区段 B（菜单群）R3→R4+R5 串行（121→122）；独立可并行 R2/R8/R9+R15/R10/R16/R14/R13/R19/R1/R6/R20；R17 独立大票；**R21（134）本批最后实现**（116–133 全合并后，验证带全部修复启动 app）。
+- **依赖与波次提示（/to-tickets 用）**：同文件群 A（composer 群）R11→R12→R7 强串行（116→117→118），R18（119）弱邻接随后；同区段 B（菜单群）R3→R4+R5 串行（121→122）；独立可并行 R2/R8/R9+R15/R10/R16/R14/R13/R19/R1/R6/R20；R17 独立大票；**R21（134）本批最后实现**（116–133 全合并后，验证带全部修复启动 app）；**R22/R23（135/136）终验修复波**（对已合并代码的修订票，无阻塞，多模态）。
 - **操作者待办**：①`ELECTRON_MIRROR=… npm install`（node_modules 0.85.1 → pin 0.86.1——实施前必须）；②实拍图原件复制入 `.scratch/compare/`（pi18-*）；③dev app serialization 口径；④merge-ticket.sh ls-files 补 picode-1-8（默认操作者执行）。
 
 ## Comments
 
-- 2026-09-22 (requirements intake → /to-spec): 28 痛点六轮定稿（R1–R21 + P3 现状确认）；Q1–Q9 裁决全记录见 `intake-grilling.md`。工单编号 116 起全局连续，134 为自治空跑发现的 Round 6 增补。
-- 2026-09-22 (自治空跑复原重发)：首跑主 Agent 会话因 Finder/Dock 启动 PATH 缺失无法 spawn（P28→R21/票 134 立票）；空跑全部改动已复原（tag/worktrees/分支/run-log/main 两提交均已撤销），批次文档按 19 票重发。
-- 2026-09-22 (缝确认)：零新缝——全落既有四缝，已随 spec 发布向操作者报备（1.5/1.6/1.7 先例）。additive 增量一项（R17 reorder_queue_entry）实施时报备入账。
+- 2026-09-22 (requirements intake → /to-spec): 30 痛点八轮定稿（R1–R23 + P3 现状确认）；Q1–Q9 裁决全记录见 `intake-grilling.md`。工单编号 116 起全局连续，134 为自治空跑发现的 Round 6/7 增补（双根因子 + 本批最后实现），135/136 为 v1.8.0 终验的 Round 8 增补（终验修复波，多模态）。
+- 2026-09-22 (自治空跑复原重发 ×2)：首跑因 Finder/Dock PATH 缺失无法 spawn（P28→R21/票 134）；二跑 PATH workaround 生效后仍失败，实证第二根因子（捆绑 pi-ai 0.85.1 缺 transcript 导出）→ 134 重写（双因子 + 最后实现 + Finder/Dock 实启测试）。两轮空跑改动均已复原。
+- 2026-09-22 (终验修复轮)：v1.8.0 开发完成后操作者终验报 P29/P30（票 122/125 交付物未达 ZCode 参照），立票 135/136（R22/R23，多模态）；Q4=B 口径被终验改判（R23 取代票 125 的周格语义）。
+- 2026-09-22 (缝确认)：零新缝——全落既有四缝，已随 spec 发布向操作者报备（1.5–1.7 先例）。additive 增量一项（R17 reorder_queue_entry）实施时报备入账。

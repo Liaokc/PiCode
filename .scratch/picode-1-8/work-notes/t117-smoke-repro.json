@@ -1,0 +1,398 @@
+{
+  "steps": [
+    {
+      "step": 0,
+      "text": "more ",
+      "t": 14530,
+      "valueLen": 871,
+      "scrollTop": 70,
+      "clientH": 160,
+      "scrollH": 230,
+      "lh": 21,
+      "padT": 16,
+      "padB": 4,
+      "selEnd": 871,
+      "selStart": 871,
+      "caretTop": 205,
+      "caretVisible": true,
+      "lastLineTop": 205
+    },
+    {
+      "step": 1,
+      "text": "words ",
+      "t": 14677,
+      "valueLen": 877,
+      "scrollTop": 70,
+      "clientH": 160,
+      "scrollH": 230,
+      "lh": 21,
+      "padT": 16,
+      "padB": 4,
+      "selEnd": 877,
+      "selStart": 877,
+      "caretTop": 205,
+      "caretVisible": true,
+      "lastLineTop": 205
+    },
+    {
+      "step": 2,
+      "text": "here ",
+      "t": 14828,
+      "valueLen": 882,
+      "scrollTop": 70,
+      "clientH": 160,
+      "scrollH": 230,
+      "lh": 21,
+      "padT": 16,
+      "padB": 4,
+      "selEnd": 882,
+      "selStart": 882,
+      "caretTop": 205,
+      "caretVisible": true,
+      "lastLineTop": 205
+    },
+    {
+      "step": 3,
+      "text": "to ",
+      "t": 14984,
+      "valueLen": 885,
+      "scrollTop": 70,
+      "clientH": 160,
+      "scrollH": 230,
+      "lh": 21,
+      "padT": 16,
+      "padB": 4,
+      "selEnd": 885,
+      "selStart": 885,
+      "caretTop": 205,
+      "caretVisible": true,
+      "lastLineTop": 205
+    },
+    {
+      "step": 4,
+      "text": "type ",
+      "t": 15143,
+      "valueLen": 890,
+      "scrollTop": 87,
+      "clientH": 160,
+      "scrollH": 251,
+      "lh": 21,
+      "padT": 16,
+      "padB": 4,
+      "selEnd": 890,
+      "selStart": 890,
+      "caretTop": 226,
+      "caretVisible": true,
+      "lastLineTop": 226
+    },
+    {
+      "step": 5,
+      "text": "now ",
+      "t": 15300,
+      "valueLen": 894,
+      "scrollTop": 87,
+      "clientH": 160,
+      "scrollH": 251,
+      "lh": 21,
+      "padT": 16,
+      "padB": 4,
+      "selEnd": 894,
+      "selStart": 894,
+      "caretTop": 226,
+      "caretVisible": true,
+      "lastLineTop": 226
+    }
+  ],
+  "tap": [
+    {
+      "kind": "input",
+      "t": 14373,
+      "target": "ta",
+      "data": "more ",
+      "valueLen": 871,
+      "scrollTop": 70,
+      "selEnd": 871
+    },
+    {
+      "kind": "JS scrollTop=",
+      "t": 14382,
+      "write": 70,
+      "was": 70,
+      "stack": "    at file:///Users/liaokechen/PiCode/.worktrees/wt-117-ime-scroll/out/renderer/assets/index-CdztNFT3.js:17480:19 |     at commitHookEffectListMount (file:///Users/liaokechen/PiCode/.worktrees/wt-117-ime-scroll/out/rend"
+    },
+    {
+      "kind": "input",
+      "t": 14384,
+      "target": "ta",
+      "data": "more ",
+      "valueLen": 871,
+      "scrollTop": 70,
+      "selEnd": 871
+    },
+    {
+      "kind": "selectionchange",
+      "t": 14385,
+      "target": "ta",
+      "data": null,
+      "valueLen": 871,
+      "scrollTop": 70,
+      "selEnd": 871
+    },
+    {
+      "kind": "selectionchange",
+      "t": 14385,
+      "target": "ta",
+      "data": null,
+      "valueLen": 871,
+      "scrollTop": 70,
+      "selEnd": 871
+    },
+    {
+      "kind": "input",
+      "t": 14530,
+      "target": "ta",
+      "data": "words ",
+      "valueLen": 877,
+      "scrollTop": 70,
+      "selEnd": 877
+    },
+    {
+      "kind": "JS scrollTop=",
+      "t": 14531,
+      "write": 70,
+      "was": 70,
+      "stack": "    at file:///Users/liaokechen/PiCode/.worktrees/wt-117-ime-scroll/out/renderer/assets/index-CdztNFT3.js:17480:19 |     at commitHookEffectListMount (file:///Users/liaokechen/PiCode/.worktrees/wt-117-ime-scroll/out/rend"
+    },
+    {
+      "kind": "input",
+      "t": 14532,
+      "target": "ta",
+      "data": "words ",
+      "valueLen": 877,
+      "scrollTop": 70,
+      "selEnd": 877
+    },
+    {
+      "kind": "selectionchange",
+      "t": 14532,
+      "target": "ta",
+      "data": null,
+      "valueLen": 877,
+      "scrollTop": 70,
+      "selEnd": 877
+    },
+    {
+      "kind": "selectionchange",
+      "t": 14532,
+      "target": "ta",
+      "data": null,
+      "valueLen": 877,
+      "scrollTop": 70,
+      "selEnd": 877
+    },
+    {
+      "kind": "input",
+      "t": 14678,
+      "target": "ta",
+      "data": "here ",
+      "valueLen": 882,
+      "scrollTop": 70,
+      "selEnd": 882
+    },
+    {
+      "kind": "JS scrollTop=",
+      "t": 14679,
+      "write": 70,
+      "was": 70,
+      "stack": "    at file:///Users/liaokechen/PiCode/.worktrees/wt-117-ime-scroll/out/renderer/assets/index-CdztNFT3.js:17480:19 |     at commitHookEffectListMount (file:///Users/liaokechen/PiCode/.worktrees/wt-117-ime-scroll/out/rend"
+    },
+    {
+      "kind": "input",
+      "t": 14680,
+      "target": "ta",
+      "data": "here ",
+      "valueLen": 882,
+      "scrollTop": 70,
+      "selEnd": 882
+    },
+    {
+      "kind": "selectionchange",
+      "t": 14680,
+      "target": "ta",
+      "data": null,
+      "valueLen": 882,
+      "scrollTop": 70,
+      "selEnd": 882
+    },
+    {
+      "kind": "selectionchange",
+      "t": 14680,
+      "target": "ta",
+      "data": null,
+      "valueLen": 882,
+      "scrollTop": 70,
+      "selEnd": 882
+    },
+    {
+      "kind": "input",
+      "t": 14831,
+      "target": "ta",
+      "data": "to ",
+      "valueLen": 885,
+      "scrollTop": 70,
+      "selEnd": 885
+    },
+    {
+      "kind": "JS scrollTop=",
+      "t": 14832,
+      "write": 70,
+      "was": 70,
+      "stack": "    at file:///Users/liaokechen/PiCode/.worktrees/wt-117-ime-scroll/out/renderer/assets/index-CdztNFT3.js:17480:19 |     at commitHookEffectListMount (file:///Users/liaokechen/PiCode/.worktrees/wt-117-ime-scroll/out/rend"
+    },
+    {
+      "kind": "input",
+      "t": 14835,
+      "target": "ta",
+      "data": "to ",
+      "valueLen": 885,
+      "scrollTop": 70,
+      "selEnd": 885
+    },
+    {
+      "kind": "selectionchange",
+      "t": 14835,
+      "target": "ta",
+      "data": null,
+      "valueLen": 885,
+      "scrollTop": 70,
+      "selEnd": 885
+    },
+    {
+      "kind": "selectionchange",
+      "t": 14835,
+      "target": "ta",
+      "data": null,
+      "valueLen": 885,
+      "scrollTop": 70,
+      "selEnd": 885
+    },
+    {
+      "kind": "input",
+      "t": 14987,
+      "target": "ta",
+      "data": "type ",
+      "valueLen": 890,
+      "scrollTop": 85,
+      "selEnd": 890
+    },
+    {
+      "kind": "JS scrollTop=",
+      "t": 14988,
+      "write": 85,
+      "was": 85,
+      "stack": "    at file:///Users/liaokechen/PiCode/.worktrees/wt-117-ime-scroll/out/renderer/assets/index-CdztNFT3.js:17480:19 |     at commitHookEffectListMount (file:///Users/liaokechen/PiCode/.worktrees/wt-117-ime-scroll/out/rend"
+    },
+    {
+      "kind": "JS scrollTop=",
+      "t": 14992,
+      "write": 87,
+      "was": 85,
+      "stack": "    at revealComposerCaret (file:///Users/liaokechen/PiCode/.worktrees/wt-117-ime-scroll/out/renderer/assets/index-CdztNFT3.js:17995:38) |     at file:///Users/liaokechen/PiCode/.worktrees/wt-117-ime-scroll/out/renderer/"
+    },
+    {
+      "kind": "input",
+      "t": 14992,
+      "target": "ta",
+      "data": "type ",
+      "valueLen": 890,
+      "scrollTop": 87,
+      "selEnd": 890
+    },
+    {
+      "kind": "selectionchange",
+      "t": 14993,
+      "target": "ta",
+      "data": null,
+      "valueLen": 890,
+      "scrollTop": 87,
+      "selEnd": 890
+    },
+    {
+      "kind": "selectionchange",
+      "t": 14993,
+      "target": "ta",
+      "data": null,
+      "valueLen": 890,
+      "scrollTop": 87,
+      "selEnd": 890
+    },
+    {
+      "kind": "scroll",
+      "t": 14997,
+      "target": "ta",
+      "data": null,
+      "valueLen": 890,
+      "scrollTop": 87,
+      "selEnd": 890
+    },
+    {
+      "kind": "input",
+      "t": 15146,
+      "target": "ta",
+      "data": "now ",
+      "valueLen": 894,
+      "scrollTop": 87,
+      "selEnd": 894
+    },
+    {
+      "kind": "JS scrollTop=",
+      "t": 15147,
+      "write": 87,
+      "was": 87,
+      "stack": "    at file:///Users/liaokechen/PiCode/.worktrees/wt-117-ime-scroll/out/renderer/assets/index-CdztNFT3.js:17480:19 |     at commitHookEffectListMount (file:///Users/liaokechen/PiCode/.worktrees/wt-117-ime-scroll/out/rend"
+    },
+    {
+      "kind": "input",
+      "t": 15150,
+      "target": "ta",
+      "data": "now ",
+      "valueLen": 894,
+      "scrollTop": 87,
+      "selEnd": 894
+    },
+    {
+      "kind": "selectionchange",
+      "t": 15151,
+      "target": "ta",
+      "data": null,
+      "valueLen": 894,
+      "scrollTop": 87,
+      "selEnd": 894
+    },
+    {
+      "kind": "selectionchange",
+      "t": 15151,
+      "target": "ta",
+      "data": null,
+      "valueLen": 894,
+      "scrollTop": 87,
+      "selEnd": 894
+    }
+  ],
+  "start": null,
+  "placed": {
+    "t": 14359,
+    "valueLen": 866,
+    "scrollTop": 70,
+    "clientH": 160,
+    "scrollH": 230,
+    "lh": 21,
+    "padT": 16,
+    "padB": 4,
+    "selEnd": 866,
+    "selStart": 866,
+    "caretTop": 205,
+    "caretVisible": true,
+    "lastLineTop": 205
+  }
+}

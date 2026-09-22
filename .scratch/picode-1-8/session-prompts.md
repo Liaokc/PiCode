@@ -2,8 +2,8 @@
 
 > 每个工单一个新 pi 会话、一个 worktree、一条分支。本手册每块都可独立复制粘贴。
 > 约定详情见 `AGENTS.md › Parallel development (git worktrees)`。
-> 总 spec：`.scratch/picode-1-8/spec.md`（R1–R21 决议与验收口径；**每条 R 1:1 映射进票，116–134**——R4+R5 合 122、R9+R15 合 124；P3 导航轨阈值为现状确认无票）。
-> 需求定稿全记录（28 痛点 × 六轮 + Q1–Q9 裁决 + file:line 根因 + History 链路只读实测 + P2 复核）：`.scratch/picode-1-8/intake-grilling.md`。
+> 总 spec：`.scratch/picode-1-8/spec.md`（R1–R23 决议与验收口径；**每条 R 1:1 映射进票，116–136**——R4+R5 合 122、R9+R15 合 124；P3 导航轨阈值为现状确认无票）。
+> 需求定稿全记录（30 痛点 × 八轮 + Q1–Q9 裁决 + file:line 根因 + History 链路只读实测 + P2 复核 + 终验改判）：`.scratch/picode-1-8/intake-grilling.md`。
 > 证据帧：`.scratch/compare/pi18-*`（操作者待复制——会话内贴图无法落盘）。
 > 术语新增（队列卡 → 票 128 rider）与修订（导航轨锚定规则 → 票 120；Manual 排序沉底 → 票 123；技能卡既有文本共存 → 票 118）随票入 CONTEXT.md。
 > 本批 **1 个 additive 契约/投影增量**：128 `reorder_queue_entry`——**实施时报备入 host-contract smoke**。
@@ -54,6 +54,7 @@ cd ~/PiCode && bash scripts/merge-ticket.sh <NN>
 | W4 | 119（Blocked by 117）· 128 | 空闲转录门在 composer 滚动族后；queue 重构独立大票 |
 | W5 | 131（History 复现定位）· 132（⌘J 复现定位） | 两张定位票随时可插空（与 dev-app serialization 错峰） |
 | W6 | **134（spawn 启动修复——本批最后实现）** | Blocked by 116–133 全合并；验证 = Finder/Dock 实启 + 应用内 spawn，带批次全部修复启动 app |
+| W7 | **135 · 136（终验修复波，多模态）** | 对已合并 main 的修订票，无阻塞；参照帧 z19-* 为实施前提 |
 | 收尾 | 全量回归：vitest + smoke:host + smoke:electron + visual 抽帧 | T00 或操作者 |
 
 ---
@@ -584,6 +585,65 @@ dev-app serialization 照纪律（ps 自查）。
 
 流程：Status→claimed → 实现全验收项 → 全英文文案 → code-review → 提交当前
 分支（不自行 merge，提示操作者 bash scripts/merge-ticket.sh 134）→
+Status 改 ready-for-human + Comments 记 sha。跑应用通道前 ps 自查（票内验收项）。
+```
+
+---
+
+## T135 — cascade 终验重修（W7 · 终验修复波 · 多模态）
+
+```bash
+cd ~/PiCode
+git worktree add .worktrees/wt-135-cascade-rework -b t135-cascade-rework main
+cd .worktrees/wt-135-cascade-rework && npm install
+```
+
+```text
+/implement .scratch/picode-1-8/issues/135-cascade-zcode-rework.md
+
+规矩：CONTEXT.md 是术语权威；docs/adr/ 0001–0006 有效；1.8 总 spec 在
+.scratch/picode-1-8/spec.md。你当前在 worktree 分支 t135-cascade-rework。
+
+核心：票 122 交付物按 ZCode 重修——①两列真分离（各自高度/边界，不再是
+stretch 连体面板）；②选择卡贴触发钮（紧贴 chip 边缘，不是输入栏上方）；
+thinking 卡同规则。票 122 原验收（hover 几何稳定）与票 68/69/98 基座
+不回归。
+
+参照帧：开工前确认 .scratch/compare/ 已有 z19-menu-1/2.png 与
+pi19-menu-current.png——帧缺席停下向操作者要，不盲修视觉。需多模态会话。
+
+流程：Status→claimed → 实现全验收项 → 全英文文案 → code-review → 提交当前
+分支（不自行 merge，提示操作者 bash scripts/merge-ticket.sh 135）→
+Status 改 ready-for-human + Comments 记 sha。跑应用通道前 ps 自查（票内验收项）。
+```
+
+---
+
+## T136 — Token Activity 终验重修（W7 · 终验修复波 · 多模态）
+
+```bash
+cd ~/PiCode
+git worktree add .worktrees/wt-136-heatmap-rework -b t136-heatmap-rework main
+cd .worktrees/wt-136-heatmap-rework && npm install
+```
+
+```text
+/implement .scratch/picode-1-8/issues/136-heatmap-zcode-rework.md
+
+规矩：CONTEXT.md 是术语权威；docs/adr/ 0001–0006 有效；1.8 总 spec 在
+.scratch/picode-1-8/spec.md。你当前在 worktree 分支 t136-heatmap-rework。
+
+核心：票 125 交付物按 ZCode 全面重修——统一基理：每方块 = 一天、颜色深度
+= 用量；daily = 当天用量；weekly = 周初到当天累计；cumulative = 期初到
+当天累计。悬浮卡分级：daily 方块旁当日用量；weekly 当周最上方方块 +
+本周累计；cumulative 同型 + 期初至当周含当周。Q4=B「本周 7 天」口径退役。
+网格构图与覆盖窗口对照帧校准（票内定稿留档）；零用量日空色格保留。
+
+参照帧：开工前确认 .scratch/compare/ 已有 z19-heatmap-daily-1/2、
+weekly-1/2、cumulative-1/2 六帧——帧缺席停下向操作者要。需多模态会话。
+
+流程：Status→claimed → 实现全验收项 → 全英文文案 → code-review → 提交当前
+分支（不自行 merge，提示操作者 bash scripts/merge-ticket.sh 136）→
 Status 改 ready-for-human + Comments 记 sha。跑应用通道前 ps 自查（票内验收项）。
 ```
 

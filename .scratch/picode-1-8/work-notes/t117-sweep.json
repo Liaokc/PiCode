@@ -1,0 +1,536 @@
+[
+  {
+    "targetInner": 1150,
+    "placed": {
+      "valueLen": 871,
+      "scrollTop": 49,
+      "clientH": 160,
+      "scrollH": 209,
+      "taW": 720,
+      "lh": 21,
+      "selEnd": 871,
+      "caretTop": 184,
+      "caretVisible": true
+    },
+    "steps": [
+      {
+        "step": 0,
+        "valueLen": 876,
+        "scrollTop": 49,
+        "clientH": 160,
+        "scrollH": 209,
+        "taW": 720,
+        "lh": 21,
+        "selEnd": 876,
+        "caretTop": 184,
+        "caretVisible": true
+      },
+      {
+        "step": 1,
+        "valueLen": 882,
+        "scrollTop": 49,
+        "clientH": 160,
+        "scrollH": 209,
+        "taW": 720,
+        "lh": 21,
+        "selEnd": 882,
+        "caretTop": 184,
+        "caretVisible": true
+      },
+      {
+        "step": 2,
+        "valueLen": 887,
+        "scrollTop": 49,
+        "clientH": 160,
+        "scrollH": 209,
+        "taW": 720,
+        "lh": 21,
+        "selEnd": 887,
+        "caretTop": 184,
+        "caretVisible": true
+      },
+      {
+        "step": 3,
+        "valueLen": 890,
+        "scrollTop": 49,
+        "clientH": 160,
+        "scrollH": 209,
+        "taW": 720,
+        "lh": 21,
+        "selEnd": 890,
+        "caretTop": 184,
+        "caretVisible": true
+      },
+      {
+        "step": 4,
+        "valueLen": 895,
+        "scrollTop": 49,
+        "clientH": 160,
+        "scrollH": 209,
+        "taW": 720,
+        "lh": 21,
+        "selEnd": 895,
+        "caretTop": 184,
+        "caretVisible": true
+      },
+      {
+        "step": 5,
+        "valueLen": 899,
+        "scrollTop": 66,
+        "clientH": 160,
+        "scrollH": 230,
+        "taW": 720,
+        "lh": 21,
+        "selEnd": 899,
+        "caretTop": 205,
+        "caretVisible": true
+      }
+    ],
+    "bad": 0
+  },
+  {
+    "targetInner": 1200,
+    "placed": {
+      "valueLen": 871,
+      "scrollTop": 49,
+      "clientH": 160,
+      "scrollH": 209,
+      "taW": 770,
+      "lh": 21,
+      "selEnd": 871,
+      "caretTop": 184,
+      "caretVisible": true
+    },
+    "steps": [
+      {
+        "step": 0,
+        "valueLen": 876,
+        "scrollTop": 49,
+        "clientH": 160,
+        "scrollH": 209,
+        "taW": 770,
+        "lh": 21,
+        "selEnd": 876,
+        "caretTop": 184,
+        "caretVisible": true
+      },
+      {
+        "step": 1,
+        "valueLen": 882,
+        "scrollTop": 49,
+        "clientH": 160,
+        "scrollH": 209,
+        "taW": 770,
+        "lh": 21,
+        "selEnd": 882,
+        "caretTop": 184,
+        "caretVisible": true
+      },
+      {
+        "step": 2,
+        "valueLen": 887,
+        "scrollTop": 49,
+        "clientH": 160,
+        "scrollH": 209,
+        "taW": 770,
+        "lh": 21,
+        "selEnd": 887,
+        "caretTop": 184,
+        "caretVisible": true
+      },
+      {
+        "step": 3,
+        "valueLen": 890,
+        "scrollTop": 49,
+        "clientH": 160,
+        "scrollH": 209,
+        "taW": 770,
+        "lh": 21,
+        "selEnd": 890,
+        "caretTop": 184,
+        "caretVisible": true
+      },
+      {
+        "step": 4,
+        "valueLen": 895,
+        "scrollTop": 49,
+        "clientH": 160,
+        "scrollH": 209,
+        "taW": 770,
+        "lh": 21,
+        "selEnd": 895,
+        "caretTop": 184,
+        "caretVisible": true
+      },
+      {
+        "step": 5,
+        "valueLen": 899,
+        "scrollTop": 49,
+        "clientH": 160,
+        "scrollH": 209,
+        "taW": 770,
+        "lh": 21,
+        "selEnd": 899,
+        "caretTop": 184,
+        "caretVisible": true
+      }
+    ],
+    "bad": 0
+  },
+  {
+    "targetInner": 1250,
+    "placed": {
+      "valueLen": 871,
+      "scrollTop": 28,
+      "clientH": 160,
+      "scrollH": 188,
+      "taW": 820,
+      "lh": 21,
+      "selEnd": 871,
+      "caretTop": 163,
+      "caretVisible": true
+    },
+    "steps": [
+      {
+        "step": 0,
+        "valueLen": 876,
+        "scrollTop": 28,
+        "clientH": 160,
+        "scrollH": 188,
+        "taW": 820,
+        "lh": 21,
+        "selEnd": 876,
+        "caretTop": 163,
+        "caretVisible": true
+      },
+      {
+        "step": 1,
+        "valueLen": 882,
+        "scrollTop": 28,
+        "clientH": 160,
+        "scrollH": 188,
+        "taW": 820,
+        "lh": 21,
+        "selEnd": 882,
+        "caretTop": 163,
+        "caretVisible": true
+      },
+      {
+        "step": 2,
+        "valueLen": 887,
+        "scrollTop": 28,
+        "clientH": 160,
+        "scrollH": 188,
+        "taW": 820,
+        "lh": 21,
+        "selEnd": 887,
+        "caretTop": 163,
+        "caretVisible": true
+      },
+      {
+        "step": 3,
+        "valueLen": 890,
+        "scrollTop": 28,
+        "clientH": 160,
+        "scrollH": 188,
+        "taW": 820,
+        "lh": 21,
+        "selEnd": 890,
+        "caretTop": 163,
+        "caretVisible": true
+      },
+      {
+        "step": 4,
+        "valueLen": 895,
+        "scrollTop": 28,
+        "clientH": 160,
+        "scrollH": 188,
+        "taW": 820,
+        "lh": 21,
+        "selEnd": 895,
+        "caretTop": 163,
+        "caretVisible": true
+      },
+      {
+        "step": 5,
+        "valueLen": 899,
+        "scrollTop": 28,
+        "clientH": 160,
+        "scrollH": 188,
+        "taW": 820,
+        "lh": 21,
+        "selEnd": 899,
+        "caretTop": 163,
+        "caretVisible": true
+      }
+    ],
+    "bad": 0
+  },
+  {
+    "targetInner": 1300,
+    "placed": {
+      "valueLen": 871,
+      "scrollTop": 28,
+      "clientH": 160,
+      "scrollH": 188,
+      "taW": 848,
+      "lh": 21,
+      "selEnd": 871,
+      "caretTop": 163,
+      "caretVisible": true
+    },
+    "steps": [
+      {
+        "step": 0,
+        "valueLen": 876,
+        "scrollTop": 28,
+        "clientH": 160,
+        "scrollH": 188,
+        "taW": 848,
+        "lh": 21,
+        "selEnd": 876,
+        "caretTop": 163,
+        "caretVisible": true
+      },
+      {
+        "step": 1,
+        "valueLen": 882,
+        "scrollTop": 28,
+        "clientH": 160,
+        "scrollH": 188,
+        "taW": 848,
+        "lh": 21,
+        "selEnd": 882,
+        "caretTop": 163,
+        "caretVisible": true
+      },
+      {
+        "step": 2,
+        "valueLen": 887,
+        "scrollTop": 28,
+        "clientH": 160,
+        "scrollH": 188,
+        "taW": 848,
+        "lh": 21,
+        "selEnd": 887,
+        "caretTop": 163,
+        "caretVisible": true
+      },
+      {
+        "step": 3,
+        "valueLen": 890,
+        "scrollTop": 28,
+        "clientH": 160,
+        "scrollH": 188,
+        "taW": 848,
+        "lh": 21,
+        "selEnd": 890,
+        "caretTop": 163,
+        "caretVisible": true
+      },
+      {
+        "step": 4,
+        "valueLen": 895,
+        "scrollTop": 28,
+        "clientH": 160,
+        "scrollH": 188,
+        "taW": 848,
+        "lh": 21,
+        "selEnd": 895,
+        "caretTop": 163,
+        "caretVisible": true
+      },
+      {
+        "step": 5,
+        "valueLen": 899,
+        "scrollTop": 28,
+        "clientH": 160,
+        "scrollH": 188,
+        "taW": 848,
+        "lh": 21,
+        "selEnd": 899,
+        "caretTop": 163,
+        "caretVisible": true
+      }
+    ],
+    "bad": 0
+  },
+  {
+    "targetInner": 1350,
+    "placed": {
+      "valueLen": 871,
+      "scrollTop": 28,
+      "clientH": 160,
+      "scrollH": 188,
+      "taW": 848,
+      "lh": 21,
+      "selEnd": 871,
+      "caretTop": 163,
+      "caretVisible": true
+    },
+    "steps": [
+      {
+        "step": 0,
+        "valueLen": 876,
+        "scrollTop": 28,
+        "clientH": 160,
+        "scrollH": 188,
+        "taW": 848,
+        "lh": 21,
+        "selEnd": 876,
+        "caretTop": 163,
+        "caretVisible": true
+      },
+      {
+        "step": 1,
+        "valueLen": 882,
+        "scrollTop": 28,
+        "clientH": 160,
+        "scrollH": 188,
+        "taW": 848,
+        "lh": 21,
+        "selEnd": 882,
+        "caretTop": 163,
+        "caretVisible": true
+      },
+      {
+        "step": 2,
+        "valueLen": 887,
+        "scrollTop": 28,
+        "clientH": 160,
+        "scrollH": 188,
+        "taW": 848,
+        "lh": 21,
+        "selEnd": 887,
+        "caretTop": 163,
+        "caretVisible": true
+      },
+      {
+        "step": 3,
+        "valueLen": 890,
+        "scrollTop": 28,
+        "clientH": 160,
+        "scrollH": 188,
+        "taW": 848,
+        "lh": 21,
+        "selEnd": 890,
+        "caretTop": 163,
+        "caretVisible": true
+      },
+      {
+        "step": 4,
+        "valueLen": 895,
+        "scrollTop": 28,
+        "clientH": 160,
+        "scrollH": 188,
+        "taW": 848,
+        "lh": 21,
+        "selEnd": 895,
+        "caretTop": 163,
+        "caretVisible": true
+      },
+      {
+        "step": 5,
+        "valueLen": 899,
+        "scrollTop": 28,
+        "clientH": 160,
+        "scrollH": 188,
+        "taW": 848,
+        "lh": 21,
+        "selEnd": 899,
+        "caretTop": 163,
+        "caretVisible": true
+      }
+    ],
+    "bad": 0
+  },
+  {
+    "targetInner": 1400,
+    "placed": {
+      "valueLen": 871,
+      "scrollTop": 28,
+      "clientH": 160,
+      "scrollH": 188,
+      "taW": 848,
+      "lh": 21,
+      "selEnd": 871,
+      "caretTop": 163,
+      "caretVisible": true
+    },
+    "steps": [
+      {
+        "step": 0,
+        "valueLen": 876,
+        "scrollTop": 28,
+        "clientH": 160,
+        "scrollH": 188,
+        "taW": 848,
+        "lh": 21,
+        "selEnd": 876,
+        "caretTop": 163,
+        "caretVisible": true
+      },
+      {
+        "step": 1,
+        "valueLen": 882,
+        "scrollTop": 28,
+        "clientH": 160,
+        "scrollH": 188,
+        "taW": 848,
+        "lh": 21,
+        "selEnd": 882,
+        "caretTop": 163,
+        "caretVisible": true
+      },
+      {
+        "step": 2,
+        "valueLen": 887,
+        "scrollTop": 28,
+        "clientH": 160,
+        "scrollH": 188,
+        "taW": 848,
+        "lh": 21,
+        "selEnd": 887,
+        "caretTop": 163,
+        "caretVisible": true
+      },
+      {
+        "step": 3,
+        "valueLen": 890,
+        "scrollTop": 28,
+        "clientH": 160,
+        "scrollH": 188,
+        "taW": 848,
+        "lh": 21,
+        "selEnd": 890,
+        "caretTop": 163,
+        "caretVisible": true
+      },
+      {
+        "step": 4,
+        "valueLen": 895,
+        "scrollTop": 28,
+        "clientH": 160,
+        "scrollH": 188,
+        "taW": 848,
+        "lh": 21,
+        "selEnd": 895,
+        "caretTop": 163,
+        "caretVisible": true
+      },
+      {
+        "step": 5,
+        "valueLen": 899,
+        "scrollTop": 28,
+        "clientH": 160,
+        "scrollH": 188,
+        "taW": 848,
+        "lh": 21,
+        "selEnd": 899,
+        "caretTop": 163,
+        "caretVisible": true
+      }
+    ],
+    "bad": 0
+  }
+]

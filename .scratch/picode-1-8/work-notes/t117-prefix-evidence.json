@@ -1,0 +1,3164 @@
+{
+  "sections": {
+    "mechanism_cjk_end": {
+      "t": "2026-09-21T19:47:05.749Z",
+      "sample": {
+        "valueLen": 184,
+        "hardLines": 1,
+        "visualLines": 5,
+        "lh": 21,
+        "padT": 16,
+        "padB": 4,
+        "scrollTop": 0,
+        "clientH": 125,
+        "scrollH": 125,
+        "selStart": 184,
+        "selEnd": 184,
+        "oldMathLineTop": 16
+      },
+      "mirror": {
+        "top": 106,
+        "lh": 21,
+        "padT": 16,
+        "caret": 184
+      },
+      "selectionApi": {
+        "rangeCount": 1,
+        "rects": [],
+        "bounding": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "collapsed": true,
+        "elRectTop": 493.3,
+        "scrollTop": 0,
+        "expectedMirrorTop": -493.3
+      },
+      "expectedLastLineTop": 100
+    },
+    "mechanism_cjk_mid": {
+      "t": "2026-09-21T19:47:05.878Z",
+      "mid": 92,
+      "mirror": {
+        "top": 61,
+        "lh": 21,
+        "padT": 16,
+        "caret": 92
+      },
+      "selectionApi": {
+        "rangeCount": 1,
+        "rects": [],
+        "bounding": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "collapsed": true,
+        "elRectTop": 493.3,
+        "scrollTop": 0,
+        "expectedMirrorTop": -493.3
+      }
+    },
+    "prefill_viewport": {
+      "t": "2026-09-21T19:47:30.229Z",
+      "sample": {
+        "valueLen": 1718,
+        "hardLines": 1,
+        "visualLines": 19,
+        "lh": 21,
+        "padT": 16,
+        "padB": 4,
+        "scrollTop": 0,
+        "clientH": 160,
+        "scrollH": 419,
+        "selStart": 1718,
+        "selEnd": 1718,
+        "oldMathLineTop": 16
+      },
+      "caretLineTop": 415,
+      "caretVisible": false,
+      "scrolledToEnd": false
+    },
+    "matrix": {
+      "composer": [
+        {
+          "lang": "cjk",
+          "scenario": "A_bottom",
+          "sel": "textarea.composer-input",
+          "totalLines": 5,
+          "targetLine": 4,
+          "caretOffset": 184,
+          "start": {
+            "scrollTop": 0,
+            "lineTop": 106,
+            "lh": 21,
+            "clientH": 125
+          },
+          "steps": [
+            {
+              "step": 0,
+              "ins": "今",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 106,
+              "oldMathLineTop": 16,
+              "caretVisible": false,
+              "selStart": 185,
+              "selEnd": 185,
+              "valueLen": 185,
+              "hardLines": 1,
+              "visualLines": 5
+            },
+            {
+              "step": 1,
+              "ins": "今天",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 128.5,
+              "oldMathLineTop": 16,
+              "caretVisible": false,
+              "selStart": 186,
+              "selEnd": 186,
+              "valueLen": 186,
+              "hardLines": 1,
+              "visualLines": 5
+            },
+            {
+              "step": 2,
+              "ins": "今天天",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 128.5,
+              "oldMathLineTop": 16,
+              "caretVisible": false,
+              "selStart": 187,
+              "selEnd": 187,
+              "valueLen": 187,
+              "hardLines": 1,
+              "visualLines": 5
+            },
+            {
+              "step": 3,
+              "ins": "今天天气",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 128.5,
+              "oldMathLineTop": 16,
+              "caretVisible": false,
+              "selStart": 188,
+              "selEnd": 188,
+              "valueLen": 188,
+              "hardLines": 1,
+              "visualLines": 5
+            },
+            {
+              "step": 4,
+              "ins": "今天天气很",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 128.5,
+              "oldMathLineTop": 16,
+              "caretVisible": false,
+              "selStart": 189,
+              "selEnd": 189,
+              "valueLen": 189,
+              "hardLines": 1,
+              "visualLines": 5
+            },
+            {
+              "step": 5,
+              "ins": "今天天气很好",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 128.5,
+              "oldMathLineTop": 16,
+              "caretVisible": false,
+              "selStart": 190,
+              "selEnd": 190,
+              "valueLen": 190,
+              "hardLines": 1,
+              "visualLines": 5
+            },
+            {
+              "step": "commit",
+              "ins": "今天天气很好",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 128.5,
+              "oldMathLineTop": 16,
+              "caretVisible": false,
+              "selStart": 190,
+              "selEnd": 190,
+              "valueLen": 190
+            }
+          ],
+          "events": [
+            {
+              "kind": "compositionstart",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 184
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 184
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 185
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 185
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 186
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 186
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 187
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 187
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 188
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 188
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 189
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 189
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 190
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 190
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 190
+            },
+            {
+              "kind": "compositionend",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 190
+            }
+          ]
+        },
+        {
+          "lang": "cjk",
+          "scenario": "B_second_last",
+          "sel": "textarea.composer-input",
+          "totalLines": 5,
+          "targetLine": 3,
+          "caretOffset": 111,
+          "start": {
+            "scrollTop": 0,
+            "lineTop": 61,
+            "lh": 21,
+            "clientH": 125
+          },
+          "steps": [
+            {
+              "step": 0,
+              "ins": "今",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 83.5,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 112,
+              "selEnd": 112,
+              "valueLen": 185,
+              "hardLines": 1,
+              "visualLines": 5
+            },
+            {
+              "step": 1,
+              "ins": "今天",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 83.5,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 113,
+              "selEnd": 113,
+              "valueLen": 186,
+              "hardLines": 1,
+              "visualLines": 5
+            },
+            {
+              "step": 2,
+              "ins": "今天天",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 83.5,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 114,
+              "selEnd": 114,
+              "valueLen": 187,
+              "hardLines": 1,
+              "visualLines": 5
+            },
+            {
+              "step": 3,
+              "ins": "今天天气",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 83.5,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 115,
+              "selEnd": 115,
+              "valueLen": 188,
+              "hardLines": 1,
+              "visualLines": 5
+            },
+            {
+              "step": 4,
+              "ins": "今天天气很",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 83.5,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 116,
+              "selEnd": 116,
+              "valueLen": 189,
+              "hardLines": 1,
+              "visualLines": 5
+            },
+            {
+              "step": 5,
+              "ins": "今天天气很好",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 83.5,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 117,
+              "selEnd": 117,
+              "valueLen": 190,
+              "hardLines": 1,
+              "visualLines": 5
+            },
+            {
+              "step": "commit",
+              "ins": "今天天气很好",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 83.5,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 117,
+              "selEnd": 117,
+              "valueLen": 190
+            }
+          ],
+          "events": [
+            {
+              "kind": "compositionstart",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 184
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 184
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 185
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 185
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 186
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 186
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 187
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 187
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 188
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 188
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 189
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 189
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 190
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 190
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 190
+            },
+            {
+              "kind": "compositionend",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 190
+            }
+          ]
+        },
+        {
+          "lang": "cjk",
+          "scenario": "C_mid_lower",
+          "sel": "textarea.composer-input",
+          "totalLines": 5,
+          "targetLine": 3,
+          "caretOffset": 111,
+          "start": {
+            "scrollTop": 0,
+            "lineTop": 61,
+            "lh": 21,
+            "clientH": 125
+          },
+          "steps": [
+            {
+              "step": 0,
+              "ins": "今",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 83.5,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 112,
+              "selEnd": 112,
+              "valueLen": 185,
+              "hardLines": 1,
+              "visualLines": 5
+            },
+            {
+              "step": 1,
+              "ins": "今天",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 83.5,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 113,
+              "selEnd": 113,
+              "valueLen": 186,
+              "hardLines": 1,
+              "visualLines": 5
+            },
+            {
+              "step": 2,
+              "ins": "今天天",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 83.5,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 114,
+              "selEnd": 114,
+              "valueLen": 187,
+              "hardLines": 1,
+              "visualLines": 5
+            },
+            {
+              "step": 3,
+              "ins": "今天天气",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 83.5,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 115,
+              "selEnd": 115,
+              "valueLen": 188,
+              "hardLines": 1,
+              "visualLines": 5
+            },
+            {
+              "step": 4,
+              "ins": "今天天气很",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 83.5,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 116,
+              "selEnd": 116,
+              "valueLen": 189,
+              "hardLines": 1,
+              "visualLines": 5
+            },
+            {
+              "step": 5,
+              "ins": "今天天气很好",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 83.5,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 117,
+              "selEnd": 117,
+              "valueLen": 190,
+              "hardLines": 1,
+              "visualLines": 5
+            },
+            {
+              "step": "commit",
+              "ins": "今天天气很好",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 83.5,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 117,
+              "selEnd": 117,
+              "valueLen": 190
+            }
+          ],
+          "events": [
+            {
+              "kind": "compositionstart",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 184
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 184
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 185
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 185
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 186
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 186
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 187
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 187
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 188
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 188
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 189
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 189
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 190
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 190
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 190
+            },
+            {
+              "kind": "compositionend",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 190
+            }
+          ]
+        },
+        {
+          "lang": "en",
+          "scenario": "A_bottom",
+          "sel": "textarea.composer-input",
+          "totalLines": 5,
+          "targetLine": 4,
+          "caretOffset": 446,
+          "start": {
+            "scrollTop": 0,
+            "lineTop": 111,
+            "lh": 21,
+            "clientH": 125
+          },
+          "steps": [
+            {
+              "step": 0,
+              "ins": "more ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 111,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 451,
+              "selEnd": 451,
+              "valueLen": 451,
+              "hardLines": 1,
+              "visualLines": 6
+            },
+            {
+              "step": 1,
+              "ins": "words ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 111,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 457,
+              "selEnd": 457,
+              "valueLen": 457,
+              "hardLines": 1,
+              "visualLines": 6
+            },
+            {
+              "step": 2,
+              "ins": "here ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 111,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 462,
+              "selEnd": 462,
+              "valueLen": 462,
+              "hardLines": 1,
+              "visualLines": 6
+            },
+            {
+              "step": 3,
+              "ins": "to ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 111,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 465,
+              "selEnd": 465,
+              "valueLen": 465,
+              "hardLines": 1,
+              "visualLines": 6
+            },
+            {
+              "step": 4,
+              "ins": "type ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 111,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 470,
+              "selEnd": 470,
+              "valueLen": 470,
+              "hardLines": 1,
+              "visualLines": 6
+            },
+            {
+              "step": 5,
+              "ins": "now ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 130,
+              "oldMathLineTop": 16,
+              "caretVisible": false,
+              "selStart": 474,
+              "selEnd": 474,
+              "valueLen": 474,
+              "hardLines": 1,
+              "visualLines": 6
+            }
+          ],
+          "events": [
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 15,
+              "valueLen": 451
+            },
+            {
+              "kind": "scroll",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 451
+            },
+            {
+              "kind": "scroll",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 451
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 457
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 462
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 465
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 470
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 474
+            }
+          ]
+        },
+        {
+          "lang": "en",
+          "scenario": "B_second_last",
+          "sel": "textarea.composer-input",
+          "totalLines": 5,
+          "targetLine": 3,
+          "caretOffset": 239,
+          "start": {
+            "scrollTop": 0,
+            "lineTop": 54,
+            "lh": 21,
+            "clientH": 125
+          },
+          "steps": [
+            {
+              "step": 0,
+              "ins": "more ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 73,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 244,
+              "selEnd": 244,
+              "valueLen": 451,
+              "hardLines": 1,
+              "visualLines": 6
+            },
+            {
+              "step": 1,
+              "ins": "words ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 73,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 250,
+              "selEnd": 250,
+              "valueLen": 457,
+              "hardLines": 1,
+              "visualLines": 6
+            },
+            {
+              "step": 2,
+              "ins": "here ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 73,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 255,
+              "selEnd": 255,
+              "valueLen": 462,
+              "hardLines": 1,
+              "visualLines": 6
+            },
+            {
+              "step": 3,
+              "ins": "to ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 73,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 258,
+              "selEnd": 258,
+              "valueLen": 465,
+              "hardLines": 1,
+              "visualLines": 6
+            },
+            {
+              "step": 4,
+              "ins": "type ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 73,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 263,
+              "selEnd": 263,
+              "valueLen": 470,
+              "hardLines": 1,
+              "visualLines": 6
+            },
+            {
+              "step": 5,
+              "ins": "now ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 73,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 267,
+              "selEnd": 267,
+              "valueLen": 474,
+              "hardLines": 1,
+              "visualLines": 6
+            }
+          ],
+          "events": [
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 451
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 457
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 462
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 465
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 470
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 474
+            }
+          ]
+        },
+        {
+          "lang": "en",
+          "scenario": "C_mid_lower",
+          "sel": "textarea.composer-input",
+          "totalLines": 5,
+          "targetLine": 3,
+          "caretOffset": 239,
+          "start": {
+            "scrollTop": 0,
+            "lineTop": 54,
+            "lh": 21,
+            "clientH": 125
+          },
+          "steps": [
+            {
+              "step": 0,
+              "ins": "more ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 73,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 244,
+              "selEnd": 244,
+              "valueLen": 451,
+              "hardLines": 1,
+              "visualLines": 6
+            },
+            {
+              "step": 1,
+              "ins": "words ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 73,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 250,
+              "selEnd": 250,
+              "valueLen": 457,
+              "hardLines": 1,
+              "visualLines": 6
+            },
+            {
+              "step": 2,
+              "ins": "here ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 73,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 255,
+              "selEnd": 255,
+              "valueLen": 462,
+              "hardLines": 1,
+              "visualLines": 6
+            },
+            {
+              "step": 3,
+              "ins": "to ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 73,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 258,
+              "selEnd": 258,
+              "valueLen": 465,
+              "hardLines": 1,
+              "visualLines": 6
+            },
+            {
+              "step": 4,
+              "ins": "type ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 73,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 263,
+              "selEnd": 263,
+              "valueLen": 470,
+              "hardLines": 1,
+              "visualLines": 6
+            },
+            {
+              "step": 5,
+              "ins": "now ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 73,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 267,
+              "selEnd": 267,
+              "valueLen": 474,
+              "hardLines": 1,
+              "visualLines": 6
+            }
+          ],
+          "events": [
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 451
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 457
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 462
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 465
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 470
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 474
+            }
+          ]
+        },
+        {
+          "lang": "en_hard",
+          "scenario": "A_bottom",
+          "sel": "textarea.composer-input",
+          "totalLines": 14,
+          "targetLine": 13,
+          "caretOffset": 830,
+          "start": {
+            "scrollTop": 154,
+            "lineTop": 187,
+            "lh": 21,
+            "clientH": 160
+          },
+          "steps": [
+            {
+              "step": 0,
+              "ins": "more ",
+              "scrollTopBefore": 154,
+              "scrollTopAfter": 154,
+              "delta": 0,
+              "caretLineTop": 187,
+              "oldMathLineTop": 289,
+              "caretVisible": true,
+              "selStart": 835,
+              "selEnd": 835,
+              "valueLen": 835,
+              "hardLines": 14,
+              "visualLines": 14
+            },
+            {
+              "step": 1,
+              "ins": "words ",
+              "scrollTopBefore": 154,
+              "scrollTopAfter": 154,
+              "delta": 0,
+              "caretLineTop": 187,
+              "oldMathLineTop": 289,
+              "caretVisible": true,
+              "selStart": 841,
+              "selEnd": 841,
+              "valueLen": 841,
+              "hardLines": 14,
+              "visualLines": 14
+            },
+            {
+              "step": 2,
+              "ins": "here ",
+              "scrollTopBefore": 154,
+              "scrollTopAfter": 154,
+              "delta": 0,
+              "caretLineTop": 206,
+              "oldMathLineTop": 289,
+              "caretVisible": true,
+              "selStart": 846,
+              "selEnd": 846,
+              "valueLen": 846,
+              "hardLines": 14,
+              "visualLines": 14
+            },
+            {
+              "step": 3,
+              "ins": "to ",
+              "scrollTopBefore": 154,
+              "scrollTopAfter": 154,
+              "delta": 0,
+              "caretLineTop": 206,
+              "oldMathLineTop": 289,
+              "caretVisible": true,
+              "selStart": 849,
+              "selEnd": 849,
+              "valueLen": 849,
+              "hardLines": 14,
+              "visualLines": 14
+            },
+            {
+              "step": 4,
+              "ins": "type ",
+              "scrollTopBefore": 154,
+              "scrollTopAfter": 154,
+              "delta": 0,
+              "caretLineTop": 206,
+              "oldMathLineTop": 289,
+              "caretVisible": true,
+              "selStart": 854,
+              "selEnd": 854,
+              "valueLen": 854,
+              "hardLines": 14,
+              "visualLines": 14
+            },
+            {
+              "step": 5,
+              "ins": "now ",
+              "scrollTopBefore": 154,
+              "scrollTopAfter": 154,
+              "delta": 0,
+              "caretLineTop": 206,
+              "oldMathLineTop": 289,
+              "caretVisible": true,
+              "selStart": 858,
+              "selEnd": 858,
+              "valueLen": 858,
+              "hardLines": 14,
+              "visualLines": 14
+            }
+          ],
+          "events": [
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 154,
+              "valueLen": 835
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 154,
+              "valueLen": 841
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 154,
+              "valueLen": 846
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 154,
+              "valueLen": 849
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 154,
+              "valueLen": 854
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 154,
+              "valueLen": 858
+            }
+          ]
+        },
+        {
+          "lang": "en_hard",
+          "scenario": "B_second_last",
+          "sel": "textarea.composer-input",
+          "totalLines": 14,
+          "targetLine": 12,
+          "caretOffset": 830,
+          "start": {
+            "scrollTop": 48,
+            "lineTop": 187,
+            "lh": 21,
+            "clientH": 160
+          },
+          "steps": [
+            {
+              "step": 0,
+              "ins": "more ",
+              "scrollTopBefore": 48,
+              "scrollTopAfter": 150,
+              "delta": 102,
+              "caretLineTop": 187,
+              "oldMathLineTop": 289,
+              "caretVisible": true,
+              "selStart": 835,
+              "selEnd": 835,
+              "valueLen": 835,
+              "hardLines": 14,
+              "visualLines": 14
+            },
+            {
+              "step": 1,
+              "ins": "words ",
+              "scrollTopBefore": 150,
+              "scrollTopAfter": 150,
+              "delta": 0,
+              "caretLineTop": 187,
+              "oldMathLineTop": 289,
+              "caretVisible": true,
+              "selStart": 841,
+              "selEnd": 841,
+              "valueLen": 841,
+              "hardLines": 14,
+              "visualLines": 14
+            },
+            {
+              "step": 2,
+              "ins": "here ",
+              "scrollTopBefore": 150,
+              "scrollTopAfter": 150,
+              "delta": 0,
+              "caretLineTop": 206,
+              "oldMathLineTop": 289,
+              "caretVisible": true,
+              "selStart": 846,
+              "selEnd": 846,
+              "valueLen": 846,
+              "hardLines": 14,
+              "visualLines": 14
+            },
+            {
+              "step": 3,
+              "ins": "to ",
+              "scrollTopBefore": 150,
+              "scrollTopAfter": 150,
+              "delta": 0,
+              "caretLineTop": 206,
+              "oldMathLineTop": 289,
+              "caretVisible": true,
+              "selStart": 849,
+              "selEnd": 849,
+              "valueLen": 849,
+              "hardLines": 14,
+              "visualLines": 14
+            },
+            {
+              "step": 4,
+              "ins": "type ",
+              "scrollTopBefore": 150,
+              "scrollTopAfter": 150,
+              "delta": 0,
+              "caretLineTop": 206,
+              "oldMathLineTop": 289,
+              "caretVisible": true,
+              "selStart": 854,
+              "selEnd": 854,
+              "valueLen": 854,
+              "hardLines": 14,
+              "visualLines": 14
+            },
+            {
+              "step": 5,
+              "ins": "now ",
+              "scrollTopBefore": 150,
+              "scrollTopAfter": 150,
+              "delta": 0,
+              "caretLineTop": 206,
+              "oldMathLineTop": 289,
+              "caretVisible": true,
+              "selStart": 858,
+              "selEnd": 858,
+              "valueLen": 858,
+              "hardLines": 14,
+              "visualLines": 14
+            }
+          ],
+          "events": [
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 148,
+              "valueLen": 835
+            },
+            {
+              "kind": "scroll",
+              "composing": false,
+              "scrollTop": 150,
+              "valueLen": 835
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 150,
+              "valueLen": 841
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 150,
+              "valueLen": 846
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 150,
+              "valueLen": 849
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 150,
+              "valueLen": 854
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 150,
+              "valueLen": 858
+            }
+          ]
+        },
+        {
+          "lang": "en_hard",
+          "scenario": "C_mid_lower",
+          "sel": "textarea.composer-input",
+          "totalLines": 14,
+          "targetLine": 8,
+          "caretOffset": 761,
+          "start": {
+            "scrollTop": 71,
+            "lineTop": 168,
+            "lh": 21,
+            "clientH": 160
+          },
+          "steps": [
+            {
+              "step": 0,
+              "ins": "more ",
+              "scrollTopBefore": 71,
+              "scrollTopAfter": 129,
+              "delta": 58,
+              "caretLineTop": 187,
+              "oldMathLineTop": 268,
+              "caretVisible": true,
+              "selStart": 766,
+              "selEnd": 766,
+              "valueLen": 835,
+              "hardLines": 14,
+              "visualLines": 14
+            },
+            {
+              "step": 1,
+              "ins": "words ",
+              "scrollTopBefore": 129,
+              "scrollTopAfter": 129,
+              "delta": 0,
+              "caretLineTop": 187,
+              "oldMathLineTop": 268,
+              "caretVisible": true,
+              "selStart": 772,
+              "selEnd": 772,
+              "valueLen": 841,
+              "hardLines": 14,
+              "visualLines": 14
+            },
+            {
+              "step": 2,
+              "ins": "here ",
+              "scrollTopBefore": 129,
+              "scrollTopAfter": 129,
+              "delta": 0,
+              "caretLineTop": 187,
+              "oldMathLineTop": 268,
+              "caretVisible": true,
+              "selStart": 777,
+              "selEnd": 777,
+              "valueLen": 846,
+              "hardLines": 14,
+              "visualLines": 14
+            },
+            {
+              "step": 3,
+              "ins": "to ",
+              "scrollTopBefore": 129,
+              "scrollTopAfter": 129,
+              "delta": 0,
+              "caretLineTop": 187,
+              "oldMathLineTop": 268,
+              "caretVisible": true,
+              "selStart": 780,
+              "selEnd": 780,
+              "valueLen": 849,
+              "hardLines": 14,
+              "visualLines": 14
+            },
+            {
+              "step": 4,
+              "ins": "type ",
+              "scrollTopBefore": 129,
+              "scrollTopAfter": 129,
+              "delta": 0,
+              "caretLineTop": 187,
+              "oldMathLineTop": 268,
+              "caretVisible": true,
+              "selStart": 785,
+              "selEnd": 785,
+              "valueLen": 854,
+              "hardLines": 14,
+              "visualLines": 14
+            },
+            {
+              "step": 5,
+              "ins": "now ",
+              "scrollTopBefore": 129,
+              "scrollTopAfter": 129,
+              "delta": 0,
+              "caretLineTop": 187,
+              "oldMathLineTop": 268,
+              "caretVisible": true,
+              "selStart": 789,
+              "selEnd": 789,
+              "valueLen": 858,
+              "hardLines": 14,
+              "visualLines": 14
+            }
+          ],
+          "events": [
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 127,
+              "valueLen": 835
+            },
+            {
+              "kind": "scroll",
+              "composing": false,
+              "scrollTop": 129,
+              "valueLen": 835
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 129,
+              "valueLen": 841
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 129,
+              "valueLen": 846
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 129,
+              "valueLen": 849
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 129,
+              "valueLen": 854
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 129,
+              "valueLen": 858
+            }
+          ]
+        }
+      ],
+      "scratch": [
+        {
+          "lang": "cjk",
+          "scenario": "A_bottom",
+          "sel": "#t117scratch",
+          "totalLines": 7,
+          "targetLine": 6,
+          "caretOffset": 184,
+          "start": {
+            "scrollTop": 0,
+            "lineTop": 128.5,
+            "lh": 21,
+            "clientH": 160
+          },
+          "steps": [
+            {
+              "step": 0,
+              "ins": "今",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 128.5,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 185,
+              "selEnd": 185,
+              "valueLen": 185,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": 1,
+              "ins": "今天",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 128.5,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 186,
+              "selEnd": 186,
+              "valueLen": 186,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": 2,
+              "ins": "今天天",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 128.5,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 187,
+              "selEnd": 187,
+              "valueLen": 187,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": 3,
+              "ins": "今天天气",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 128.5,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 188,
+              "selEnd": 188,
+              "valueLen": 188,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": 4,
+              "ins": "今天天气很",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 128.5,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 189,
+              "selEnd": 189,
+              "valueLen": 189,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": 5,
+              "ins": "今天天气很好",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 128.5,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 190,
+              "selEnd": 190,
+              "valueLen": 190,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": "commit",
+              "ins": "今天天气很好",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 128.5,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 190,
+              "selEnd": 190,
+              "valueLen": 190
+            }
+          ],
+          "events": [
+            {
+              "kind": "compositionstart",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 184
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 184
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 185
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 185
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 186
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 186
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 187
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 187
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 188
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 188
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 189
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 189
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 190
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 190
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 190
+            },
+            {
+              "kind": "compositionend",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 190
+            }
+          ]
+        },
+        {
+          "lang": "cjk",
+          "scenario": "B_second_last",
+          "sel": "#t117scratch",
+          "totalLines": 7,
+          "targetLine": 5,
+          "caretOffset": 180,
+          "start": {
+            "scrollTop": 0,
+            "lineTop": 106,
+            "lh": 21,
+            "clientH": 160
+          },
+          "steps": [
+            {
+              "step": 0,
+              "ins": "今",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 128.5,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 181,
+              "selEnd": 181,
+              "valueLen": 185,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": 1,
+              "ins": "今天",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 128.5,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 182,
+              "selEnd": 182,
+              "valueLen": 186,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": 2,
+              "ins": "今天天",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 128.5,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 183,
+              "selEnd": 183,
+              "valueLen": 187,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": 3,
+              "ins": "今天天气",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 128.5,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 184,
+              "selEnd": 184,
+              "valueLen": 188,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": 4,
+              "ins": "今天天气很",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 128.5,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 185,
+              "selEnd": 185,
+              "valueLen": 189,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": 5,
+              "ins": "今天天气很好",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 128.5,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 186,
+              "selEnd": 186,
+              "valueLen": 190,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": "commit",
+              "ins": "今天天气很好",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 128.5,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 186,
+              "selEnd": 186,
+              "valueLen": 190
+            }
+          ],
+          "events": [
+            {
+              "kind": "compositionstart",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 184
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 184
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 185
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 185
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 186
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 186
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 187
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 187
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 188
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 188
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 189
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 189
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 190
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 190
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 190
+            },
+            {
+              "kind": "compositionend",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 190
+            }
+          ]
+        },
+        {
+          "lang": "cjk",
+          "scenario": "C_mid_lower",
+          "sel": "#t117scratch",
+          "totalLines": 7,
+          "targetLine": 4,
+          "caretOffset": 144,
+          "start": {
+            "scrollTop": 0,
+            "lineTop": 83.5,
+            "lh": 21,
+            "clientH": 160
+          },
+          "steps": [
+            {
+              "step": 0,
+              "ins": "今",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 106,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 145,
+              "selEnd": 145,
+              "valueLen": 185,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": 1,
+              "ins": "今天",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 106,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 146,
+              "selEnd": 146,
+              "valueLen": 186,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": 2,
+              "ins": "今天天",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 106,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 147,
+              "selEnd": 147,
+              "valueLen": 187,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": 3,
+              "ins": "今天天气",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 106,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 148,
+              "selEnd": 148,
+              "valueLen": 188,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": 4,
+              "ins": "今天天气很",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 106,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 149,
+              "selEnd": 149,
+              "valueLen": 189,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": 5,
+              "ins": "今天天气很好",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 106,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 150,
+              "selEnd": 150,
+              "valueLen": 190,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": "commit",
+              "ins": "今天天气很好",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 106,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 150,
+              "selEnd": 150,
+              "valueLen": 190
+            }
+          ],
+          "events": [
+            {
+              "kind": "compositionstart",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 184
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 184
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 185
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 185
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 186
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 186
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 187
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 187
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 188
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 188
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 189
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 189
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 190
+            },
+            {
+              "kind": "compositionupdate",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 190
+            },
+            {
+              "kind": "input",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 190
+            },
+            {
+              "kind": "compositionend",
+              "composing": true,
+              "scrollTop": 0,
+              "valueLen": 190
+            }
+          ]
+        },
+        {
+          "lang": "en",
+          "scenario": "A_bottom",
+          "sel": "#t117scratch",
+          "totalLines": 7,
+          "targetLine": 6,
+          "caretOffset": 446,
+          "start": {
+            "scrollTop": 0,
+            "lineTop": 111,
+            "lh": 21,
+            "clientH": 160
+          },
+          "steps": [
+            {
+              "step": 0,
+              "ins": "more ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 111,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 451,
+              "selEnd": 451,
+              "valueLen": 451,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": 1,
+              "ins": "words ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 111,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 457,
+              "selEnd": 457,
+              "valueLen": 457,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": 2,
+              "ins": "here ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 111,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 462,
+              "selEnd": 462,
+              "valueLen": 462,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": 3,
+              "ins": "to ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 111,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 465,
+              "selEnd": 465,
+              "valueLen": 465,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": 4,
+              "ins": "type ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 111,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 470,
+              "selEnd": 470,
+              "valueLen": 470,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": 5,
+              "ins": "now ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 130,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 474,
+              "selEnd": 474,
+              "valueLen": 474,
+              "hardLines": 1,
+              "visualLines": 7
+            }
+          ],
+          "events": [
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 451
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 457
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 462
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 465
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 470
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 474
+            }
+          ]
+        },
+        {
+          "lang": "en",
+          "scenario": "B_second_last",
+          "sel": "#t117scratch",
+          "totalLines": 7,
+          "targetLine": 5,
+          "caretOffset": 394,
+          "start": {
+            "scrollTop": 0,
+            "lineTop": 92,
+            "lh": 21,
+            "clientH": 160
+          },
+          "steps": [
+            {
+              "step": 0,
+              "ins": "more ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 111,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 399,
+              "selEnd": 399,
+              "valueLen": 451,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": 1,
+              "ins": "words ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 111,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 405,
+              "selEnd": 405,
+              "valueLen": 457,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": 2,
+              "ins": "here ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 111,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 410,
+              "selEnd": 410,
+              "valueLen": 462,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": 3,
+              "ins": "to ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 111,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 413,
+              "selEnd": 413,
+              "valueLen": 465,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": 4,
+              "ins": "type ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 111,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 418,
+              "selEnd": 418,
+              "valueLen": 470,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": 5,
+              "ins": "now ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 111,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 422,
+              "selEnd": 422,
+              "valueLen": 474,
+              "hardLines": 1,
+              "visualLines": 7
+            }
+          ],
+          "events": [
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 451
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 457
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 462
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 465
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 470
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 474
+            }
+          ]
+        },
+        {
+          "lang": "en",
+          "scenario": "C_mid_lower",
+          "sel": "#t117scratch",
+          "totalLines": 7,
+          "targetLine": 4,
+          "caretOffset": 319,
+          "start": {
+            "scrollTop": 0,
+            "lineTop": 73,
+            "lh": 21,
+            "clientH": 160
+          },
+          "steps": [
+            {
+              "step": 0,
+              "ins": "more ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 92,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 324,
+              "selEnd": 324,
+              "valueLen": 451,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": 1,
+              "ins": "words ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 92,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 330,
+              "selEnd": 330,
+              "valueLen": 457,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": 2,
+              "ins": "here ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 92,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 335,
+              "selEnd": 335,
+              "valueLen": 462,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": 3,
+              "ins": "to ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 92,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 338,
+              "selEnd": 338,
+              "valueLen": 465,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": 4,
+              "ins": "type ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 92,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 343,
+              "selEnd": 343,
+              "valueLen": 470,
+              "hardLines": 1,
+              "visualLines": 7
+            },
+            {
+              "step": 5,
+              "ins": "now ",
+              "scrollTopBefore": 0,
+              "scrollTopAfter": 0,
+              "delta": 0,
+              "caretLineTop": 92,
+              "oldMathLineTop": 16,
+              "caretVisible": true,
+              "selStart": 347,
+              "selEnd": 347,
+              "valueLen": 474,
+              "hardLines": 1,
+              "visualLines": 7
+            }
+          ],
+          "events": [
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 451
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 457
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 462
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 465
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 470
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 0,
+              "valueLen": 474
+            }
+          ]
+        },
+        {
+          "lang": "en_hard",
+          "scenario": "A_bottom",
+          "sel": "#t117scratch",
+          "totalLines": 14,
+          "targetLine": 13,
+          "caretOffset": 830,
+          "start": {
+            "scrollTop": 154,
+            "lineTop": 187,
+            "lh": 21,
+            "clientH": 160
+          },
+          "steps": [
+            {
+              "step": 0,
+              "ins": "more ",
+              "scrollTopBefore": 154,
+              "scrollTopAfter": 154,
+              "delta": 0,
+              "caretLineTop": 187,
+              "oldMathLineTop": 289,
+              "caretVisible": true,
+              "selStart": 835,
+              "selEnd": 835,
+              "valueLen": 835,
+              "hardLines": 14,
+              "visualLines": 14
+            },
+            {
+              "step": 1,
+              "ins": "words ",
+              "scrollTopBefore": 154,
+              "scrollTopAfter": 154,
+              "delta": 0,
+              "caretLineTop": 187,
+              "oldMathLineTop": 289,
+              "caretVisible": true,
+              "selStart": 841,
+              "selEnd": 841,
+              "valueLen": 841,
+              "hardLines": 14,
+              "visualLines": 14
+            },
+            {
+              "step": 2,
+              "ins": "here ",
+              "scrollTopBefore": 154,
+              "scrollTopAfter": 154,
+              "delta": 0,
+              "caretLineTop": 206,
+              "oldMathLineTop": 289,
+              "caretVisible": true,
+              "selStart": 846,
+              "selEnd": 846,
+              "valueLen": 846,
+              "hardLines": 14,
+              "visualLines": 14
+            },
+            {
+              "step": 3,
+              "ins": "to ",
+              "scrollTopBefore": 154,
+              "scrollTopAfter": 154,
+              "delta": 0,
+              "caretLineTop": 206,
+              "oldMathLineTop": 289,
+              "caretVisible": true,
+              "selStart": 849,
+              "selEnd": 849,
+              "valueLen": 849,
+              "hardLines": 14,
+              "visualLines": 14
+            },
+            {
+              "step": 4,
+              "ins": "type ",
+              "scrollTopBefore": 154,
+              "scrollTopAfter": 154,
+              "delta": 0,
+              "caretLineTop": 206,
+              "oldMathLineTop": 289,
+              "caretVisible": true,
+              "selStart": 854,
+              "selEnd": 854,
+              "valueLen": 854,
+              "hardLines": 14,
+              "visualLines": 14
+            },
+            {
+              "step": 5,
+              "ins": "now ",
+              "scrollTopBefore": 154,
+              "scrollTopAfter": 154,
+              "delta": 0,
+              "caretLineTop": 206,
+              "oldMathLineTop": 289,
+              "caretVisible": true,
+              "selStart": 858,
+              "selEnd": 858,
+              "valueLen": 858,
+              "hardLines": 14,
+              "visualLines": 14
+            }
+          ],
+          "events": [
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 154,
+              "valueLen": 835
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 154,
+              "valueLen": 841
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 154,
+              "valueLen": 846
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 154,
+              "valueLen": 849
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 154,
+              "valueLen": 854
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 154,
+              "valueLen": 858
+            }
+          ]
+        },
+        {
+          "lang": "en_hard",
+          "scenario": "B_second_last",
+          "sel": "#t117scratch",
+          "totalLines": 14,
+          "targetLine": 12,
+          "caretOffset": 830,
+          "start": {
+            "scrollTop": 48,
+            "lineTop": 187,
+            "lh": 21,
+            "clientH": 160
+          },
+          "steps": [
+            {
+              "step": 0,
+              "ins": "more ",
+              "scrollTopBefore": 48,
+              "scrollTopAfter": 147.5,
+              "delta": 99.5,
+              "caretLineTop": 187,
+              "oldMathLineTop": 289,
+              "caretVisible": true,
+              "selStart": 835,
+              "selEnd": 835,
+              "valueLen": 835,
+              "hardLines": 14,
+              "visualLines": 14
+            },
+            {
+              "step": 1,
+              "ins": "words ",
+              "scrollTopBefore": 147.5,
+              "scrollTopAfter": 147.5,
+              "delta": 0,
+              "caretLineTop": 187,
+              "oldMathLineTop": 289,
+              "caretVisible": true,
+              "selStart": 841,
+              "selEnd": 841,
+              "valueLen": 841,
+              "hardLines": 14,
+              "visualLines": 14
+            },
+            {
+              "step": 2,
+              "ins": "here ",
+              "scrollTopBefore": 147.5,
+              "scrollTopAfter": 147.5,
+              "delta": 0,
+              "caretLineTop": 206,
+              "oldMathLineTop": 289,
+              "caretVisible": true,
+              "selStart": 846,
+              "selEnd": 846,
+              "valueLen": 846,
+              "hardLines": 14,
+              "visualLines": 14
+            },
+            {
+              "step": 3,
+              "ins": "to ",
+              "scrollTopBefore": 147.5,
+              "scrollTopAfter": 147.5,
+              "delta": 0,
+              "caretLineTop": 206,
+              "oldMathLineTop": 289,
+              "caretVisible": true,
+              "selStart": 849,
+              "selEnd": 849,
+              "valueLen": 849,
+              "hardLines": 14,
+              "visualLines": 14
+            },
+            {
+              "step": 4,
+              "ins": "type ",
+              "scrollTopBefore": 147.5,
+              "scrollTopAfter": 147.5,
+              "delta": 0,
+              "caretLineTop": 206,
+              "oldMathLineTop": 289,
+              "caretVisible": true,
+              "selStart": 854,
+              "selEnd": 854,
+              "valueLen": 854,
+              "hardLines": 14,
+              "visualLines": 14
+            },
+            {
+              "step": 5,
+              "ins": "now ",
+              "scrollTopBefore": 147.5,
+              "scrollTopAfter": 147.5,
+              "delta": 0,
+              "caretLineTop": 206,
+              "oldMathLineTop": 289,
+              "caretVisible": true,
+              "selStart": 858,
+              "selEnd": 858,
+              "valueLen": 858,
+              "hardLines": 14,
+              "visualLines": 14
+            }
+          ],
+          "events": [
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 147.5,
+              "valueLen": 835
+            },
+            {
+              "kind": "scroll",
+              "composing": false,
+              "scrollTop": 147.5,
+              "valueLen": 835
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 147.5,
+              "valueLen": 841
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 147.5,
+              "valueLen": 846
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 147.5,
+              "valueLen": 849
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 147.5,
+              "valueLen": 854
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 147.5,
+              "valueLen": 858
+            }
+          ]
+        },
+        {
+          "lang": "en_hard",
+          "scenario": "C_mid_lower",
+          "sel": "#t117scratch",
+          "totalLines": 14,
+          "targetLine": 8,
+          "caretOffset": 761,
+          "start": {
+            "scrollTop": 71,
+            "lineTop": 168,
+            "lh": 21,
+            "clientH": 160
+          },
+          "steps": [
+            {
+              "step": 0,
+              "ins": "more ",
+              "scrollTopBefore": 71,
+              "scrollTopAfter": 126.5,
+              "delta": 55.5,
+              "caretLineTop": 187,
+              "oldMathLineTop": 268,
+              "caretVisible": true,
+              "selStart": 766,
+              "selEnd": 766,
+              "valueLen": 835,
+              "hardLines": 14,
+              "visualLines": 14
+            },
+            {
+              "step": 1,
+              "ins": "words ",
+              "scrollTopBefore": 126.5,
+              "scrollTopAfter": 126.5,
+              "delta": 0,
+              "caretLineTop": 187,
+              "oldMathLineTop": 268,
+              "caretVisible": true,
+              "selStart": 772,
+              "selEnd": 772,
+              "valueLen": 841,
+              "hardLines": 14,
+              "visualLines": 14
+            },
+            {
+              "step": 2,
+              "ins": "here ",
+              "scrollTopBefore": 126.5,
+              "scrollTopAfter": 126.5,
+              "delta": 0,
+              "caretLineTop": 187,
+              "oldMathLineTop": 268,
+              "caretVisible": true,
+              "selStart": 777,
+              "selEnd": 777,
+              "valueLen": 846,
+              "hardLines": 14,
+              "visualLines": 14
+            },
+            {
+              "step": 3,
+              "ins": "to ",
+              "scrollTopBefore": 126.5,
+              "scrollTopAfter": 126.5,
+              "delta": 0,
+              "caretLineTop": 187,
+              "oldMathLineTop": 268,
+              "caretVisible": true,
+              "selStart": 780,
+              "selEnd": 780,
+              "valueLen": 849,
+              "hardLines": 14,
+              "visualLines": 14
+            },
+            {
+              "step": 4,
+              "ins": "type ",
+              "scrollTopBefore": 126.5,
+              "scrollTopAfter": 126.5,
+              "delta": 0,
+              "caretLineTop": 187,
+              "oldMathLineTop": 268,
+              "caretVisible": true,
+              "selStart": 785,
+              "selEnd": 785,
+              "valueLen": 854,
+              "hardLines": 14,
+              "visualLines": 14
+            },
+            {
+              "step": 5,
+              "ins": "now ",
+              "scrollTopBefore": 126.5,
+              "scrollTopAfter": 126.5,
+              "delta": 0,
+              "caretLineTop": 187,
+              "oldMathLineTop": 268,
+              "caretVisible": true,
+              "selStart": 789,
+              "selEnd": 789,
+              "valueLen": 858,
+              "hardLines": 14,
+              "visualLines": 14
+            }
+          ],
+          "events": [
+            {
+              "kind": "scroll",
+              "composing": false,
+              "scrollTop": 71,
+              "valueLen": 830
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 126.5,
+              "valueLen": 835
+            },
+            {
+              "kind": "scroll",
+              "composing": false,
+              "scrollTop": 126.5,
+              "valueLen": 835
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 126.5,
+              "valueLen": 841
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 126.5,
+              "valueLen": 846
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 126.5,
+              "valueLen": 849
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 126.5,
+              "valueLen": 854
+            },
+            {
+              "kind": "input",
+              "composing": false,
+              "scrollTop": 126.5,
+              "valueLen": 858
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

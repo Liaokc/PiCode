@@ -2,7 +2,7 @@
 
 Status: ready-for-spec
 
-2026-09-21/22 需求收集会话产出。操作者报 **28 条痛点**（Round 1 十五条 + Round 2 七条与一条补充 + Round 3 fork 两条 + Round 4 一条，随 Round 4 附 Q1–Q9 裁决 + Round 5 一条 + Round 6 一条——自治批次空跑发现），全部经 main 源码逐项核因（file:line 全录于本文件）+ 会话文件只读实测（SDK SessionManager.open / buildSessionTree / sessionTreeDisplayRows 对真实会话副本全链路实跑）定稿。术语遵循 `CONTEXT.md`；红线沿用（不碰 Pi/ZCode 内部、ZCode 数据只读、UI 文案全英文、会话文件改动仅限 SDK 既有写入面）。工单编号 **116 起全局连续**（1.7 批已消耗 81–115，113 号空缺不复用）。
+2026-09-21/22 需求收集会话产出。操作者报 **30 条痛点**（Round 1–7 同前 + Round 8 终验反馈两条：v1.8.0 开发完成后的 npm run dev 终验发现两处交付物未达 ZCode 参照），全部经 main 源码逐项核因（file:line 全录于本文件）+ 会话文件只读实测（SDK SessionManager.open / buildSessionTree / sessionTreeDisplayRows 对真实会话副本全链路实跑）定稿。术语遵循 `CONTEXT.md`；红线沿用（不碰 Pi/ZCode 内部、ZCode 数据只读、UI 文案全英文、会话文件改动仅限 SDK 既有写入面）。工单编号 **116 起全局连续**（1.7 批已消耗 81–115，113 号空缺不复用）。
 
 ## 批次上下文
 
@@ -50,7 +50,7 @@ Status: ready-for-spec
 - **Q8（P9）**：确认——死 cwd 组沉底**含 Manual**（手动拖不动死组位置，优先级大于一切排序逻辑）。
 - **Q9（报备项）**：queue 重排走 host 侧镜像舞步（票 100 同机制），新增 additive op `reorder_queue_entry` **报备入 host-contract smoke**；SDK 契约只有文本数组，毫秒级投递竞态照票 100 口径诚实记录。
 
-## R1–R21 决议（每条：痛点 / 归类 / 定稿）
+## R1–R23 决议（每条：痛点 / 归类 / 定稿）
 
 ### R1 History 0 rows 复现定位 —— 缺陷（P1 长会话 + P23 fork 会话同症）
 - **症状**：①长会话（wrap-up：发送→终止→History 恒 0 rows，后续发送不恢复）；②fork 会话 History 无信息（可复现路径）。
@@ -121,6 +121,14 @@ Status: ready-for-spec
 - **根因方向**：launchd 启动的 GUI app 不继承交互 shell 的 PATH——操作者的 node/pi 在 nvm 版本目录，spawn 链找不到可执行；终端 `open` 继承 shell 环境所以通。**精确断点 = 票内第一验收项插桩定位**。
 - **定稿**：主进程启动时合成子进程 spawn 用的 PATH——①`$SHELL -lc 'echo $PATH'` 登录 shell 快照（缓存一次、超时降级）②静态探测常见 node 安装点（nvm 版本目录 / /usr/local/bin / /opt/homebrew/bin / ~/.pi/agent/bin）③注入所有需要 PATH 的子 spawn；**LSEnvironment 否决**（PATH 机器相关，不入通用 bundle）。修复对新启动实例生效（运行中实例不热更）——v1.8 自治批次运行本身仍靠操作者启动 workaround。纯文本票。
 
+### R22 cascade 终验重修——列分离 + 贴钮锚点（P29，Round 8；票 122 交付物修订）
+- **痛点**：终验 npm run dev 实测——provider/model 两列**没有真正分开**（仍是连体等高面板），且选择卡**悬浮在输入栏上**而非贴在触发按钮上。
+- **定稿**：按 ZCode 截图重修——①两列分离（各自独立高度与边界，ZCode 构图：不同高、各自圆角/边界）；②选择卡（provider/model 卡与 thinking 卡）**贴在触发按钮上**（紧贴 chip 边缘），不是输入栏上方。参照帧 = 实施前提（z19-menu-*），需多模态会话。
+
+### R23 Token Activity 终验重修——三模式日格热力图（P30，Round 8；票 125 交付物修订，Q4=B 裁决被终验改判）
+- **痛点**：热力图逻辑与 ZCode 不符。
+- **定稿（操作者直给全规格）**：**无论什么统计口径，每个方块 = 一天，颜色深度 = 用量**。①日统计：方块 = 当天用量；悬浮卡 = 当天用量，悬浮在方块旁。②周统计：方块 = 当周开始到当天的用量；悬浮卡 = 这周的累积用量，悬浮在**当周最上方的方块**上。③累计统计：方块 = 最开始到当天的用量；悬浮卡 = 从最开始到当周的用量（包括当周），悬浮位与周统计同型。网格构图与覆盖窗口对照 ZCode 帧校准（贡献图式：周为列、日为行——票内定）。参照帧 = 实施前提（z19-heatmap-* 六帧），需多模态会话。
+
 ### 现状确认（无代码变更）
 - **P3 导航轨阈值**：`RAIL_MIN_TICKS = 2` 维持——单回合不显示符合预期（Q1）；live 第二回合计入 anchors 已与 ZCode 一致。操作者 Round 5 复核确认 P2 已入 R2（票 120）。
 
@@ -133,11 +141,12 @@ Status: ready-for-spec
 - **Round 5（P27 + P2 复核）**：操作者复核 P2 是否已考虑（答：R2/票 120 在案）+ 用户泡文本不可选报入——根因实锤（body 禁选 × 助手放开的对称缺口），机制唯一免问定稿。
 - **Round 6（P28，自治空跑发现）**：操作者按主 Agent prompt 首跑批次，PiCode 会话内 spawn subagent 失败（GUI 启动 PATH 缺失）； workaround 实证 = 带 nvm PATH 启动。操作者裁决：立票修复（Finder/Dock 启动也能 spawn）+ 复原空跑全部改动 + 修订批次文档与主 Agent prompt 后重跑。定稿 R21（票 134）。
 - **Round 7（P28 修订，第二次空跑实证双根因子）**：PATH workaround 已生效后 spawn 仍失败——深挖出第二根因子：**app 捆绑 pi-ai 0.85.1 无 transcript 工具导出（0.86.1 才有），pi-subagents 0.70.1 的 review.js 需要它**。操作者裁决三项：①134 移至**批次最后实现**（116–133 全合并后）；②测试 = Finder/Dock 实启 + 应用内 spawn 全流程；③修复落 `~/PiCode` 源码、随 v1.8.0 上线（不碰已发版 bundle）。另：执行环境改定 = **主 Agent 在 Pi Agent 新会话运行（不在 PiCode 内）**。
-- **至此前沿树空**：28 条痛点 → 21 个 R 簇（R21 双因子修订）+ 1 项现状确认 × 全部边界均有裁决。
+- **Round 8（P29/P30，v1.8.0 终验反馈）**：19 票全部合并后操作者 npm run dev 终验，报两处交付物未达 ZCode 参照——①cascade 两列未真分离 + 弹出卡在输入栏上（票 122 交付）；②热力图逻辑与 ZCode 不符（票 125 交付；Q4=B 的「本周 7 天」口径被终验改判为 ZCode 三模式日格）。操作者直给全规格（R23）。定稿 R22/R23（票 135/136），随终验修复轮入册。
+- **至此前沿树空**：30 条痛点 → 23 个 R 簇 + 1 项现状确认 × 全部边界均有裁决。
 
 ## 归类记录
 
-- 缺陷 13：R1（History 0 rows——复现定位）、R4（列高联动）、R6（⌘J 回归——复现定位）、R7（技能清空）、R9（零用量照显）、R11（展开态缩高）、R12（IME 滚动 + prefill 视口）、R16（MCP 边框）、R17 布局半边（queue 行高）、R18（空闲输入移动转录）、R20（用户泡不可选）、P21 归 R12、R10 三修中的 tooltip/焦点圈两修。
+- 缺陷 15：R1（History 0 rows——复现定位）、R4（列高联动）、R6（⌘J 回归——复现定位）、R7（技能清空）、R9（零用量照显）、R11（展开态缩高）、R12（IME 滚动 + prefill 视口）、R16（MCP 边框）、R17 布局半边（queue 行高）、R18（空闲输入移动转录）、R20（用户泡不可选）、R22（cascade 列未分离/未贴钮——票 122 交付物修订）、R23（热力图口径——票 125 交付物修订）、P21 归 R12、R10 三修中的 tooltip/焦点圈两修。
 - 交付行为修订 6：R2（导航轨锚定）、R3（provider 口径）、R5（锚点+图标）、R10（weekly 语义）、R13（thinking 记忆）、R17 重构半边（ZCode 构图替代票 100 形态）。
 - 清理 2：R14（入口去重）、R15（Open task 删除）。
 - 新需求 3：R8（死组沉底）、R17 编辑排序半边（拖动重排+垃圾桶）、R19（fork 命名）。
