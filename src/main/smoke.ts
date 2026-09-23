@@ -9662,13 +9662,32 @@ export function startSmokeIfEnabled(
       const sample91 = async (): Promise<OverlaySample91> => JSON.parse(String(await js(SAMPLE_91)))
 
       /** Closed-and-undisturbed: mask down, draft byte-equal, 3
-       * attachments, caret back on the input. The failure dump carries the
-       * value's length + char codes — one stray keystroke (the smoke window
-       * holds REAL focus while it runs; an operator's typing can land in
-       * the focused input, ticket-79/70/83 same-class environmental
-       * flakes) must name itself instead of looking like a product bug. */
+       * attachments, caret back on the input. The close check is a bounded
+       * settle-poll (the sample's own open semantics — no backdrop or no
+       * image inside it), matching the stage's sibling probes: under
+       * renderer load the React unmount can land after the exit action's
+       * synchronous return (the mask-blank real-click leg observed this),
+       * and a single snapshot would misread that as a product bug. Still a
+       * real failure when the overlay is up 5s later. The failure dump
+       * carries the value's length + char codes — one stray keystroke (the
+       * smoke window holds REAL focus while it runs; an operator's typing
+       * can land in the focused input, ticket-79/70/83 same-class
+       * environmental flakes) must name itself instead of looking like a
+       * product bug. */
       const closedIntact91 = async (leg: string): Promise<void> => {
-        const s = await sample91()
+        if (
+          !(await waitForProbe(
+            win,
+            `(() => {
+              const backdrop = document.querySelector('.image-preview-backdrop')
+              if (backdrop === null) return true
+              return backdrop.querySelector('.image-preview-img') === null
+            })()`,
+            5_000
+          ))
+        ) {
+          fail(`ticket-91 stage: the overlay never closed via the ${leg} exit`)
+        }
         const intact = JSON.parse(String(await js(`(() => {
           const ta = document.querySelector('.chat-dock textarea.composer-input')
           return JSON.stringify({
@@ -9678,7 +9697,6 @@ export function startSmokeIfEnabled(
             attachments: document.querySelectorAll('.chat-dock .composer-attachment').length
           })
         })()`))) as { value: string | null; codes: string | null; active: string; attachments: number }
-        if (s.open) fail(`ticket-91 stage: the overlay never closed via the ${leg} exit`)
         if (intact.value !== DRAFT_91 || intact.attachments !== 3) {
           fail(
             `ticket-91 stage: the ${leg} exit disturbed the composer (value ${JSON.stringify(intact.value)}, codes ${intact.codes ?? '-'}, active ${intact.active}, attachments ${intact.attachments}; a real keystroke in the focused input = environmental, see comment)`
