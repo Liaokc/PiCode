@@ -46,6 +46,14 @@ Status: in-progress
   - **Q9 = 先升环境、操作者亲为**：操作者在启动执行会话**之前**完成三件环境升级（`pi update` → 0.87.1；`pi update --extensions` → pi-subagents 0.71.0 / pi-mcp-adapter 2.37.0）。理由：执行会话自身跑在 pi 进程上，中途升级不热替换（扩展加载不热换、self 替换不热载）→ 会话自身机器滞留旧版，正是操作者要避免的重启场景。手册前置节 = 操作者先升环境再启动执行会话，执行会话零环境操作。
   - **Q10 = 模型分派（原话）**：思考强度使用 max；非多模态票的模型使用 bella-local 的 GLM-5.3；需要多模态的票使用 bella 的 GLM-5.3-flash。本批全票非多模态（依赖/桥/探针面，无 UI 帧）→ 全批 bella-local/GLM-5.3:max。事实核对：bella-local/GLM-5.3 在 ~/.pi/agent/models.json 在案。
 
+## R0-Q7 细化轮（可选项逐项裁决 + 两问事实，2026-09-24）
+
+- **Q7-② child-status "started" 转发 = 不入批、留盘点**（操作者定）。
+- **Q7-④ /mcp jev setup UI = 不入批**；但操作者附加要求：「如果已经配置好了需要能在 ZCode 中使用」——**按 CONTEXT.md 术语理解为 PiCode**（ZCode 是外部参照物不承载 pi 扩展；若理解有误请操作者纠正）。事实核验（三段）：①**运行时自动可用**——jev 语义搜索跑在 adapter 扩展内，PiCode host 会话同样加载用户级 adapter，配置好后 PiCode 会话内自动生效，零 PiCode 改动；②**配置共存零破坏**——/mcp jev setup 把 settings.jev 写入 .pi/mcp.json（或全局等价物，adapter config.ts:1189+ writeJevSemanticSearchConfig）；PiCode 合并模型只读 mcpServers/mcp-servers 键（mcp-management.ts:195,213），settings 块被忽略不碍事；增改删写保留未知键（deriveServerEntryWrite/Remove「unknown keys preserved」）→ PiCode 编辑服务器不会抹掉 jev 配置；③唯一缺口与 exposeResources 同类：MCP 设置页不显示 jev 配置状态（settings 块不投影），不影响使用。**T148 加验收项：jev 已配置时 PiCode MCP 面正常 + 编辑写不丢 jev 块。**
+- **Q7-① cost RPC 桥接（操作者问消费点，待终裁）**：事实——**用量统计页已经计入 subagent 开销**：UsageStore.listSessionFiles 递归 walk 全目录 depth<8 收全部 *.jsonl（src/main/usage/store.ts:62-80），子代理会话文件（sessions/<project>/<parent-id>/<child-uuid>/run-N/session.jsonl，三路调研 delegate 的 session 文件即此布局）的 usage 按 day×model 折入快照，ADR-0002 口径无死角。cost RPC 的差异化价值仅 **live 数据**（运行中当前会话 parent+children 即时花销、turn 边界可拉、unresolvedAsyncChildren 下界）——现有 UI 零消费点，需新 UI 设计才有意义。建议：**不入批**（历史统计已覆盖；live 消费是独立产品需求）。
+- **Q7-③ exposeResources 投影（操作者问语义，待终裁）**：事实——MCP 服务器可暴露 tools（可调用函数）与 resources（可读数据对象：文件/文档/数据库行等）；adapter 默认把每个 resource 变成可调用的「资源工具」（README "Expose MCP resources as tools (default: true)"，生成名如 read_figjam）。settings.exposeResources: false = 全局不再把任何服务器的 resources 变成工具；**每服务器自带的 exposeResources 条目胜过全局默认**（README "Per-server exposeResources overrides this"）。操作者当前未设此键 → 全局默认 true，PiCode 显示与运行时零差异。建议：**不入批**。
+- **Q9 升级委托改向（操作者 2026-09-24）**：「在你给出执行 prompt 之后你帮我升级」——intake 交付执行 prompt 后由 intake 执行环境升级（pi update → self 0.87.1；pi update --extensions → pi-subagents 0.71.0 / pi-mcp-adapter 2.37.0）+ 验证版本 + 报告；intake 自身进程不热替换无碍（升级后不再派工）。操作者随后启动执行会话——环境已是终态，零重启场景。
+
 ## Q0（开工第一问）：微票 144 处置 —— **A：并入 1.8.1**
 
 - **问题**：微票 144（forkHost 环境标记剥离——`scripts/smoke/host-contract-smoke.mjs:408-415` 直 fork host 时不剥 `PI_SUBAGENT_CHILD`/`PI_SUBAGENTS_HERDR_BRIDGE`；从 subagent 会话驱动的 smoke:host 死 Round K，票 143 实现工实证、`env -u` 三变量后全套过；Linear LIA-205 Todo）仍待派。
