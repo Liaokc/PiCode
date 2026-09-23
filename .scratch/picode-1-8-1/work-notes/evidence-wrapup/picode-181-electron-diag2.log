@@ -1,0 +1,682 @@
+
+> picode@1.8.0 smoke:electron
+> npm run build && node scripts/smoke/electron-smoke.mjs
+
+
+> picode@1.8.0 build
+> electron-vite build
+
+vite v7.3.6 building ssr environment for production...
+transforming...
+✓ 122 modules transformed.
+rendering chunks...
+out/main/chunks/artifact-DFeAwCCu.js     38.54 kB
+out/main/host.js                         74.91 kB
+out/main/index.js                     1,466.07 kB
+✓ built in 516ms
+vite v7.3.6 building ssr environment for production...
+transforming...
+✓ 2 modules transformed.
+rendering chunks...
+out/preload/index.js  12.86 kB
+✓ built in 8ms
+vite v7.3.6 building client environment for production...
+transforming...
+✓ 2810 modules transformed.
+rendering chunks...
+../../out/renderer/index.html                                           0.58 kB
+../../out/renderer/assets/index-C6K3hew3.css                          195.60 kB
+../../out/renderer/assets/channel-BS32G_qJ.js                           0.20 kB
+../../out/renderer/assets/init-ZxktEp_H.js                              0.26 kB
+../../out/renderer/assets/chunk-JWPE2WC7-BwMoj0gX.js                    0.37 kB
+../../out/renderer/assets/chunk-2Q5K7J3B-Bg_hNZOS.js                    0.38 kB
+../../out/renderer/assets/chunk-5VM5RSS4-DPpUV1kG.js                    0.43 kB
+../../out/renderer/assets/chunk-XXDRQBXY-D5tIe6aY.js                    0.48 kB
+../../out/renderer/assets/swimlanesDiagram-TC7HE7FX-nYaH38sT.js         0.75 kB
+../../out/renderer/assets/infoDiagram-VRGFBTTK-C4l4gaiL.js              0.98 kB
+../../out/renderer/assets/chunk-WEXAMYUT-B8ZiE2Fj.js                    1.07 kB
+../../out/renderer/assets/sizeCapture-INFHLROL-HFvOibzB.js              1.78 kB
+../../out/renderer/assets/ordinal-CxptdPJm.js                           2.20 kB
+../../out/renderer/assets/railroadDiagram-XR7U4H2S-D0Xansfe.js          2.82 kB
+../../out/renderer/assets/abnfDiagram-O67JEVCF-DTbD5xq1.js              3.45 kB
+../../out/renderer/assets/pegDiagram-GJSIUBJH-B81wXM5k.js               3.69 kB
+../../out/renderer/assets/chunk-GWA4HPMP-DVXYftoJ.js                    3.75 kB
+../../out/renderer/assets/ebnfDiagram-ZINNZB2B-BB_7DgWq.js              3.86 kB
+../../out/renderer/assets/arc-BVuuc46H.js                               6.95 kB
+../../out/renderer/assets/diagram-MLGK6HIB-C16ROplX.js                  7.35 kB
+../../out/renderer/assets/defaultLocale-B2RvLBDe.js                     9.37 kB
+../../out/renderer/assets/linear-BAchWaQO.js                           11.25 kB
+../../out/renderer/assets/diagram-MPIPVDR6-CZe7kAvh.js                 11.42 kB
+../../out/renderer/assets/pieDiagram-5QR66LMP-BpKiijcr.js              12.53 kB
+../../out/renderer/assets/chunk-NETBCI7D-CDG2-B8Q.js                   12.96 kB
+../../out/renderer/assets/diagram-CDSNMT55-DF6yyNCB.js                 16.01 kB
+../../out/renderer/assets/_basePickBy-DYAg5xYG.js                      17.91 kB
+../../out/renderer/assets/cynefinDiagram-VND7K2PF-BUcyUuH_.js          18.33 kB
+../../out/renderer/assets/diagram-ATOU4E4O-C2E985CK.js                 21.57 kB
+../../out/renderer/assets/chunk-3FUC2YCW-CLHCdyid.js                   23.59 kB
+../../out/renderer/assets/graph-Bvha9izY.js                            24.12 kB
+../../out/renderer/assets/chunk-GTNCS2PH-CKQ5asuU.js                   30.85 kB
+../../out/renderer/assets/diagram-3UASUU5V-DL2EbU-t.js                 32.35 kB
+../../out/renderer/assets/ishikawaDiagram-OU5B5YK6-Dx1MMLF3.js         35.07 kB
+../../out/renderer/assets/kanban-definition-PNTS6WVX--5_o68k5.js       38.11 kB
+../../out/renderer/assets/_baseUniq-D5pVdbvJ.js                        42.60 kB
+../../out/renderer/assets/mindmap-definition-NLK3R4M7-CycutKeJ.js      43.29 kB
+../../out/renderer/assets/wardleyDiagram-VNRHLVJA-CCONgcM3.js          44.51 kB
+../../out/renderer/assets/journeyDiagram-ZHPQQLJL-C6bsHg9N.js          45.28 kB
+../../out/renderer/assets/sankeyDiagram-IPEJSGJF-CKN0FWsD.js           46.13 kB
+../../out/renderer/assets/requirementDiagram-PLB6GJNP-ChXfLeMs.js      52.74 kB
+../../out/renderer/assets/erDiagram-OPXOYQCR-C2uH3tnK.js               56.21 kB
+../../out/renderer/assets/gitGraphDiagram-X574FWY7-faw_nYgT.js         57.47 kB
+../../out/renderer/assets/timeline-definition-EJHVYXUP-BsSXGU-Y.js     60.70 kB
+../../out/renderer/assets/quadrantDiagram-O4NWA36T-CNzZ-pWm.js         61.63 kB
+../../out/renderer/assets/blockDiagram-BEXU5L5S-hqmiQqeS.js            78.00 kB
+../../out/renderer/assets/stateDiagram-v2-GCMORJYK-tJZAL0Xr.js         79.10 kB
+../../out/renderer/assets/xychartDiagram-PMCCYNJV-_ty7RNuP.js          83.25 kB
+../../out/renderer/assets/classDiagram-v2-NBCMYWYE-BlYM4Agg.js         85.71 kB
+../../out/renderer/assets/dagre-6A5THRUB-DRrJmZil.js                   86.30 kB
+../../out/renderer/assets/vennDiagram-UO4OBE2U-BLazhJb6.js             88.90 kB
+../../out/renderer/assets/flowDiagram-KWPJA3E3-ClMEsmyg.js            108.49 kB
+../../out/renderer/assets/c4Diagram-YGBWAQC7-DBTAQDRP.js              111.94 kB
+../../out/renderer/assets/ganttDiagram-FUAMR5RP-BfjSL9JQ.js           133.55 kB
+../../out/renderer/assets/diagram-22UHCM2B-BlkQYKHd.js                153.52 kB
+../../out/renderer/assets/sequenceDiagram-PO4LG4MO-BoSyKqYl.js        205.61 kB
+../../out/renderer/assets/cose-bilkent-JH36ORCC-DvLbu-3e.js           214.53 kB
+../../out/renderer/assets/swimlanes-2SLR337P-B0OvdAo_.js              287.34 kB
+../../out/renderer/assets/usecaseDiagram-POWQR4AR-CQ1VUl4y.js         376.37 kB
+../../out/renderer/assets/architectureDiagram-NJMV4G6O-Lfxxl1Ih.js    423.23 kB
+../../out/renderer/assets/katex-oVG3DVWa.js                           484.52 kB
+../../out/renderer/assets/cytoscape.esm-Ct9zsnh1.js                   961.04 kB
+../../out/renderer/assets/mermaid-api-BjvvU8E0.js                   1,184.82 kB
+../../out/renderer/assets/cynefin-OW5HDTMX-DazxJoHV.js              1,304.47 kB
+../../out/renderer/assets/index-CUBhOZWR.js                         2,630.40 kB
+../../out/renderer/assets/elk-276RUBZZ-TynGo769.js                  3,354.11 kB
+✓ built in 8.06s
+SMOKE isolated session store: /var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-sessions-czhk6b
+SMOKE isolated pi agent dir: /var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-piagent-n3GhD7
+Downloading Electron binary...
+SMOKE start cwd=/var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T pid=78462
+SMOKE empty_state_start
+SMOKE mcp_status_no_session_ok
+SMOKE empty_state_chip_default_ok Model: GLM-5.3
+SMOKE empty_state_menu_catalog_ok providers=3 models=4
+SMOKE empty_state_menu_provider_order_ok bella,bella-local,bella-remote
+SMOKE empty_state_menu_locate_ok bella at row 0
+SMOKE empty_state_model_pick_ok model=GLM-5.3-flash (override)
+SMOKE empty_state_thinking_levels_ok Low High Max
+SMOKE empty_state_thinking_pick_ok level=Low
+SMOKE empty_state_access_default_ok Access mode: Standard
+SMOKE empty_state_access_pick_ok tier=read-only
+SMOKE terminal_focus_132_boot_empty_open_ok dock open on the no-workspace empty state, focus request armed
+SMOKE session_created sessionId=01a0cfed-e433-71d9-9f29-8d8e53a5397a model=GLM-5.3-flash
+SMOKE empty_state_pick_rides_ok model=GLM-5.3-flash
+SMOKE empty_state_thinking_rides_ok thinking=low levels=low,high,max
+SMOKE terminal_focus_132_boot_empty_focus_ok the armed request landed in the first shell
+SMOKE empty_state_access_rides_ok tier=read-only
+SMOKE empty_state_access_session_chip_ok tier=read-only
+SMOKE empty_state_access_restore_ok tier=standard
+SMOKE agent_start
+SMOKE deltas_collected count=3
+SMOKE aborted_ok
+SMOKE second_turn_ok
+SMOKE renderer_dom_ok
+SMOKE sidebar_index_ok
+SMOKE idle_typing_119_start
+SMOKE idle_typing_119_single_ok
+SMOKE idle_typing_119_multiline_ok
+SMOKE idle_typing_119_attachments_ok
+SMOKE idle_typing_119_expand_ok
+SMOKE idle_typing_119_delete_ok
+SMOKE idle_typing_119_midtranscript_ok
+SMOKE idle_queue_135_start
+SMOKE idle_queue_135_appear_ok
+SMOKE idle_queue_135_grow_ok
+SMOKE idle_queue_135_clear_ok
+SMOKE idle_typing_119_done
+SMOKE user_copy_start
+SMOKE user_copy_row_shape_ok
+SMOKE user_copy_clipboard_ok
+SMOKE user_copy_feedback_ok
+SMOKE user_copy_done
+SMOKE slash_gate_start
+SMOKE slash_menu_retired_ok rows=/compact /council /gather-context-and-clarify /parallel-cleanup /parallel-research /parallel-review /review-loop /archify /ask-matt /claude-handoff /code-review /codebase-design
+SMOKE slash_gate_toast_ok
+SMOKE slash_gate_args_toast_ok
+SMOKE slash_gate_zero_send_ok
+SMOKE slash_gate_done
+SMOKE menu_surface_start
+SMOKE menu_surface_leading_token_ok
+SMOKE menu_surface_shift_enter_ok
+SMOKE menu_surface_multiline_ok
+SMOKE menu_surface_at_midtext_ok
+SMOKE menu_surface_zero_match_send_ok
+SMOKE menu_surface_done
+SMOKE menu_keyboard_start
+SMOKE menu_keyboard_text_menu_ok rows=12
+SMOKE menu_keyboard_file_enter_pick_skipped no file candidates in the smoke cwd
+SMOKE menu_keyboard_access_enter_pick_ok tier=Standard
+SMOKE menu_keyboard_access_walk_ok rows=3
+SMOKE menu_keyboard_thinking_walk_ok rows=3
+SMOKE menu_keyboard_model_parity_ok bella,bella-local,bella-remote
+SMOKE menu_keyboard_model_providers_ok providers=3
+SMOKE menu_keyboard_done
+SMOKE chip_toggle_start
+SMOKE chip_toggle_press_closes Access mode:
+SMOKE chip_toggle_press_closes Model:
+SMOKE chip_toggle_press_closes Thinking:
+SMOKE chip_toggle_inside_click_picks_ok
+SMOKE chip_toggle_cross_chip_ok
+SMOKE chip_toggle_outside_close_ok
+SMOKE chip_toggle_done
+SMOKE menu_geometry_122_start
+SMOKE menu_geometry_anchor_ok card left 1024.2 == chip left, hug gap 2.0, columns separate (gap 6.0)
+SMOKE menu_geometry_cascade_stable_ok providers=3, bbox fixed across hover
+SMOKE menu_geometry_keyboard_ok model 0 → 1, focus on the selected row
+SMOKE menu_geometry_clamp_ok innerWidth=1040, card 646.0..836.0, models right 1032.0
+SMOKE menu_geometry_thinking_anchor_ok thinking card left 861.4 == chip left, hug gap 2.0
+SMOKE menu_geometry_122_done
+SMOKE host_exit session=01a0cfed-e433-71d9-9f29-8d8e53a5397a code=null signal=SIGKILL
+SMOKE rebuild_ok
+SMOKE rebuild_turn_ok
+SMOKE round3_ok /var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-sessions-czhk6b/2026-09-23T20-22-09-254Z_01a0cfee-ce66-72f5-b353-66a6f0a0b709.jsonl
+SMOKE rebuilt_host_killed 01a0cfee-c5c1-7612-8730-3d21ea28e42f
+SMOKE follow_live_state_ok
+SMOKE follow_view_opened
+SMOKE follow_streamed_ok
+SMOKE follow_selection_ok
+SMOKE follow_exit_ok
+SMOKE follow_reselected_ok
+SMOKE follow_structured_ok
+SMOKE follow_open_shown
+SMOKE follow_open_rejected_ok
+SMOKE takeover_resumed_ok
+SMOKE replay_payload_ok 9 structured items
+SMOKE replay_dom_ok
+SMOKE newtask_chip_default_ok T
+SMOKE newtask_dropdown_ok
+SMOKE newtask_session_created sessionId=01a0cfef-16b2-715a-b502-00dc3285b1a4
+SMOKE newtask_first_prompt_ok
+SMOKE newtask_turn_aborted_ok
+SMOKE multi_session_start
+SMOKE multi_dot_states_ok
+SMOKE multi_background_streaming_ok
+SMOKE multi_selection_decoupled_ok
+SMOKE multi_refocus_ok
+SMOKE multi_abort_ok
+SMOKE unread_start
+SMOKE unread_masked_ok
+SMOKE unread_lit_ok
+SMOKE unread_cleared_ok
+SMOKE multi_crash_isolation_ok
+SMOKE bg_approval_start
+SMOKE bg_approval_required tool=bash call=call_54bc4ae88f404397adf5e526
+SMOKE bg_agent_suspended_ok
+SMOKE bg_badge_ok
+SMOKE bg_notification_ok title=T
+SMOKE bg_jump_ok
+SMOKE bg_approve_remember_ok
+SMOKE bg_remember_ok
+SMOKE bg_deny_ask call=call_681ae590686141889e5c3f74
+SMOKE bg_deny_ok
+SMOKE bg_approval_done
+SMOKE keymap_start
+SMOKE keymap_tooltips_ok
+SMOKE keymap_cmd_b_sidebar_ok
+SMOKE keymap_alt_cmd_b_panel_ok
+SMOKE keymap_cmd_j_terminal_ok
+SMOKE keymap_alt_cmd_j_bridge_ok
+SMOKE keymap_bridge_toggle_off_ok
+SMOKE keymap_pane_motion_ok sidebar=0px panel=420px dock=0px
+SMOKE keymap_done
+SMOKE terminal_focus_105_start
+SMOKE terminal_focus_105_cmdj_ok
+SMOKE terminal_focus_105_typing_ok
+SMOKE terminal_focus_105_titlebar_ok
+SMOKE terminal_focus_105_cycle_ok
+SMOKE terminal_focus_105_bridge_no_steal_ok
+SMOKE terminal_focus_105_swap_back_ok
+SMOKE terminal_focus_105_done
+SMOKE terminal_focus_132_start
+SMOKE terminal_focus_132_in_session_ok
+SMOKE terminal_focus_132_new_session_ok
+SMOKE terminal_focus_132_bridge_swap_back_ok
+SMOKE terminal_focus_132_done
+SMOKE panel_tabs_start
+SMOKE panel_session_ok sessionId=01a0cfef-bb43-76b7-815a-d3de96526f71
+SMOKE panel_review_tree_ok
+SMOKE panel_file_tab_one_ok
+SMOKE panel_retarget_in_place_ok picode-smoke-panel-vrydkr
+SMOKE panel_file_tab_two_ok Review,picode-smoke-panel-vrydkr,panel_beta.md
+SMOKE panel_close_independent_ok
+SMOKE panel_dropdown_ok
+SMOKE panel_search_reopen_ok
+SMOKE panel_preferences_ok
+SMOKE panel_restart_keep_ok
+SMOKE panel_reopen_after_restart_ok
+SMOKE panel_tabs_done
+SMOKE panel_collapse_86_start
+SMOKE panel_86_session_ok 01a0cfef-c1e6-75e9-baed-b0acb9805382
+SMOKE panel_86_autocollapse_ok
+SMOKE panel_86_reopen_picker_ok
+SMOKE panel_86_partial_close_ok
+SMOKE panel_86_autocollapse_again_ok
+SMOKE panel_86_recent_reopen_ok
+SMOKE panel_86_deeplink_expand_ok
+SMOKE panel_collapse_86_done
+SMOKE preview_dual_88_start
+SMOKE preview_88_session_ok
+SMOKE preview_88_review_tree_ok
+SMOKE preview_88_html_ok {"probe":"picode-88","ran":true,"node":"undefined","proc":"undefined","picode":"undefined","title":"PICODE88 report","css":"rgb(255, 240, 224)","img":false}
+SMOKE preview_88_html_source_ok
+SMOKE preview_88_svg_ok
+SMOKE preview_88_png_ok
+SMOKE preview_88_markdown_ok
+SMOKE preview_88_binary_ok
+SMOKE preview_dual_88_done
+SMOKE context_menu_start
+SMOKE archive_hidden_ok
+SMOKE archive_view_ok
+SMOKE archive_restore_ok
+SMOKE context_menu_items_ok
+SMOKE context_menu_copy_id_ok
+SMOKE context_menu_copy_cwd_ok
+SMOKE context_menu_done
+SMOKE trace_start
+SMOKE trace_tab_open_ok
+SMOKE trace_entries_ok 8 entries, stats "8 calls·61,355 tok·GLM-5.3-flash"
+SMOKE trace_refresh_ok
+SMOKE trace_growth_ok
+SMOKE trace_search_ok
+SMOKE trace_kind_toggles_ok
+SMOKE trace_expand_collapse_ok
+SMOKE trace_close_ok
+SMOKE trace_done
+SMOKE group_fold_start
+SMOKE fold_default_shape_ok
+SMOKE fold_caret_gone_ok
+SMOKE fold_step_plus5_ok
+SMOKE fold_folded_ok
+SMOKE fold_shape_restored_ok
+SMOKE fold_all_shown_ok
+SMOKE fold_show_less_reset_ok
+SMOKE fold_restart_default_ok
+SMOKE group_fold_done
+SMOKE collapse_all_start
+SMOKE collapse_default_shapes_ok
+SMOKE collapse_step_seeded_ok
+SMOKE collapse_pin_seeded_ok
+SMOKE collapse_manual_mix_ok
+SMOKE collapse_all_folds_ok
+SMOKE expand_all_restores_ok
+SMOKE collapse_timeline_hidden_ok
+SMOKE collapse_view_switch_ok
+SMOKE collapse_restart_default_ok
+SMOKE collapse_unpin_cleanup_ok
+SMOKE collapse_all_done
+SMOKE sidebar_drag_start
+SMOKE sidebar_drag_row_ok
+SMOKE sidebar_drag_manual_checked_ok
+SMOKE sidebar_drag_group_ok
+SMOKE sidebar_drag_dimmed_ok
+SMOKE sidebar_drag_sessions_untouched_ok
+SMOKE sidebar_drag_restart_ok
+SMOKE sidebar_drag_timeline_static_ok
+SMOKE sidebar_drag_pinned_static_ok
+SMOKE sidebar_drag_sort_restored_ok
+SMOKE sidebar_drag_done
+SMOKE dead_cwd_start
+SMOKE dead_cwd_control_listed_ok
+SMOKE dead_cwd_gray_row_ok
+SMOKE dead_cwd_click_toast_ok
+SMOKE dead_cwd_gray_menu_ok
+SMOKE dead_cwd_hidden_ok
+SMOKE dead_cwd_file_untouched_ok
+SMOKE dead_cwd_title_skip_ok
+SMOKE dead_cwd_palette_hidden_ok
+SMOKE dead_cwd_palette_control_ok
+SMOKE dead_cwd_live_resumed_ok
+SMOKE dead_cwd_live_exempt_ok
+SMOKE cwd_banner_shown_ok
+SMOKE cwd_banner_recovered_ok
+SMOKE cwd_row_recovered_ok
+SMOKE cwd_menu_restored_ok
+SMOKE dead_cwd_done
+SMOKE dead_group_sink_start
+SMOKE dead_group_sink_seeded_ok
+SMOKE dead_group_sink_updated_ok
+SMOKE dead_group_sink_created_ok
+SMOKE dead_group_sink_grip_frozen_ok
+SMOKE dead_group_sink_live_drag_ok
+SMOKE dead_group_sink_boundary_drop_ok
+SMOKE dead_group_sink_recovered_ok
+SMOKE dead_group_sink_done
+SMOKE history_tree_start
+SMOKE history_tree_form_ok
+SMOKE history_tree_jump_ok
+SMOKE history_tree_fork_ok
+SMOKE history_tree_done
+SMOKE history_deep_start
+SMOKE history_deep_source_rows_ok 430
+SMOKE history_deep_fork_announced b4d9b0
+SMOKE history_deep_fork_rows_ok 201
+SMOKE history_deep_done
+SMOKE history_toggle_start
+SMOKE history_toggle_press_closes
+SMOKE history_toggle_inside_ok
+SMOKE history_toggle_esc_ok
+SMOKE history_toggle_outside_ok
+SMOKE history_toggle_row_ok
+SMOKE history_toggle_done
+SMOKE scroll_stay_start
+SMOKE scroll_stay_focus_pinned_ok
+SMOKE scroll_stay_no_yank_ok
+SMOKE scroll_stay_jump_back_ok
+SMOKE scroll_stay_self_send_ok
+SMOKE scroll_stay_done
+SMOKE scroll75_start
+SMOKE scroll75_hold_latched heldTop=2060.5
+SMOKE scroll75_hold_ok
+SMOKE scroll75_restore_ok
+(node:78462) UnhandledPromiseRejectionWarning: Error: tripwire timed out after 90000ms
+    at Timeout._onTimeout (/Users/liaokechen/PiCode/.worktrees/diag-0861-base/out/main/index.js:9241:18)
+    at listOnTimeout (node:internal/timers:605:17)
+    at process.processTimers (node:internal/timers:541:7)
+(Use `Electron --trace-warnings ...` to show where the warning was created)
+(node:78462) UnhandledPromiseRejectionWarning: Unhandled promise rejection. This error originated either by throwing inside of an async function without a catch block, or by rejecting a promise which was not handled with .catch(). To terminate the node process on unhandled promise rejection, use the CLI flag `--unhandled-rejections=strict` (see https://nodejs.org/api/cli.html#cli_unhandled_rejections_mode). (rejection id: 2)
+SMOKE scroll75_self_send_ok
+SMOKE scroll75_done
+SMOKE scroll93_start
+SMOKE scroll93_queue_yank_ok
+SMOKE scroll93_queue_inject_ok
+SMOKE scroll93_wheel_wins_ok
+SMOKE scroll93_send_land_ok
+SMOKE scroll93_done
+SMOKE fold_anchor_start
+SMOKE fold_anchor_mid_expand_ok headerRow 262 → 262
+SMOKE fold_anchor_mid_collapse_ok
+SMOKE fold_anchor_pinned_expand_ok dist 0, headerRow 450.5 → 363.5
+SMOKE fold_anchor_pinned_collapse_ok
+SMOKE fold_anchor_follow_open_ok
+SMOKE fold_anchor_follow_expand_ok
+SMOKE fold_anchor_follow_collapse_ok
+SMOKE fold_anchor_follow_pinned_expand_ok dist 0, headerRow 646.5 → 559.5
+SMOKE fold_anchor_follow_pinned_collapse_ok
+SMOKE fold_anchor_done
+SMOKE nav_rail_start
+SMOKE nav_rail_empty_ok
+SMOKE nav_rail_one_tick_hidden_ok
+SMOKE nav_rail_two_ticks_ok
+SMOKE nav_rail_bubble_ok
+SMOKE nav_rail_bubble_close_ok
+SMOKE nav_rail_click_jump_ok
+SMOKE nav_rail_narrow_hidden_ok
+SMOKE nav_rail_done
+SMOKE nav_live_anchor_start
+SMOKE nav_live_anchor_scene_ok
+SMOKE nav_live_anchor_live_bottom_ok
+SMOKE nav_live_anchor_live_scrolled_ok
+SMOKE nav_live_anchor_settled_scrolled_ok
+SMOKE nav_live_anchor_settled_bottom_ok
+SMOKE nav_live_anchor_done
+SMOKE composer_expand_start
+SMOKE composer_expand_key_empty_state_ok
+SMOKE composer_expand_empty_state_ok
+SMOKE composer_autogrow_midband_ok
+SMOKE composer_autogrow_cap_ok
+SMOKE composer_autogrow_reset_ok
+SMOKE composer_expand_open_ok
+SMOKE composer_expand_collapse_paths_ok
+SMOKE composer_expand_key_chat_ok
+SMOKE composer_expand_send_collapse_ok
+SMOKE composer_expand_done
+SMOKE composer_typing_116_start
+SMOKE composer_typing_116_collapsed_band_ok
+SMOKE composer_typing_116_input_stable_ok
+SMOKE composer_typing_116_delete_stable_ok
+SMOKE composer_typing_116_resize_reproject_ok
+SMOKE composer_typing_116_send_collapse_ok
+SMOKE composer_typing_116_done
+SMOKE composer_ime_117_start
+SMOKE composer_ime_117_prefill_viewport_ok
+SMOKE composer_ime_117_matrix_ok
+SMOKE composer_ime_117_done
+SMOKE skill_keep_text_118_start
+SMOKE skill_keep_text_118_draft_staged_ok
+SMOKE skill_keep_text_118_pick_kept_ok
+SMOKE skill_keep_text_118_send_expanded_ok
+SMOKE skill_keep_text_118_send_reset_ok
+SMOKE skill_keep_text_118_done
+SMOKE composer_layout_81_start
+SMOKE composer_layout_81_band_ok
+SMOKE composer_layout_81_cap_caret_ok
+SMOKE composer_layout_81_scrollbar_ok
+SMOKE composer_layout_81_glide_ok
+SMOKE composer_layout_81_reduced_motion_ok
+SMOKE composer_layout_81_done
+SMOKE image_preview_91_start
+SMOKE image_preview_91_open_ok
+SMOKE image_preview_91_walk_ok
+SMOKE image_preview_91_space_ok
+SMOKE image_preview_91_close_btn_ok
+SMOKE image_preview_91_escape_ok
+SMOKE image_preview_91_mask_ok
+SMOKE image_preview_91_done
+SMOKE focus_discipline_98_start
+SMOKE focus_discipline_98_plus_ok
+SMOKE focus_discipline_98_model_ok
+SMOKE focus_discipline_98_keyboard_pick_ok
+SMOKE focus_discipline_98_history_ok
+SMOKE focus_discipline_98_ring_ok
+SMOKE focus_discipline_98_done
+SMOKE answer_split_start
+SMOKE answer_split_settled_ok
+SMOKE answer_split_open_ok
+SMOKE answer_split_done
+SMOKE worked_container_start
+SMOKE worked_container_replayed_ok
+SMOKE worked_container_inert_ok
+SMOKE worked_container_live_silent_ok
+SMOKE worked_container_settled_ok
+SMOKE worked_container_spinners_live_expanded_ok
+SMOKE worked_container_timer_fold_ok 1s → 2s
+SMOKE worked_container_spinners_settled_ok
+SMOKE worked_container_done
+SMOKE turn_chronology_start
+SMOKE turn_chronology_live_inline_ok
+SMOKE turn_chronology_two_states_one_slot_ok top 296 → 296
+SMOKE turn_chronology_live_thinking_inline_ok
+SMOKE turn_chronology_settled_same_position_ok
+SMOKE turn_chronology_no_rotation_ok
+SMOKE turn_chronology_settled_fold_order_ok
+SMOKE turn_chronology_done
+SMOKE turn_filebar_start
+SMOKE turn_filebar_collapsed_ok
+SMOKE turn_filebar_expanded_ok
+SMOKE turn_filebar_review_tab_ok
+SMOKE turn_filebar_open_deeplink_ok
+SMOKE turn_filebar_live_no_bar_ok
+SMOKE turn_filebar_live_settle_in_place_ok
+SMOKE turn_filebar_stop_live_no_bar_ok
+SMOKE turn_filebar_stop_turn_bar_ok
+SMOKE turn_filebar_live_no_change_no_bar_ok
+SMOKE turn_filebar_done
+SMOKE fork_live_start
+SMOKE fork_live_parent_created session=dedabb
+SMOKE fork_live_two_turns_ok
+SMOKE fork_live_midrun_silent_ok
+SMOKE fork_live_ack_toast_ok
+SMOKE fork_live_parent_session_ok
+SMOKE fork_live_done
+SMOKE command_catalog_start
+SMOKE command_catalog_empty_state_ok
+SMOKE command_catalog_rows_ok dirA=picode-smoke-template+picode-smoke-skill
+SMOKE command_catalog_exclusions_ok bareRows=12
+SMOKE command_catalog_card_zero_send_ok
+SMOKE command_catalog_card_clear_ok
+SMOKE command_catalog_dir_switch_ok
+SMOKE command_catalog_done
+SMOKE mermaid_diagram_start
+SMOKE mermaid_card_rendered_ok
+SMOKE mermaid_fallbacks_ok
+SMOKE mermaid_download_menu_ok
+SMOKE mermaid_copy_source_ok
+SMOKE mermaid_fullscreen_open_ok
+SMOKE mermaid_fullscreen_esc_ok
+SMOKE mermaid_diagram_done
+SMOKE codecard_table_start
+SMOKE codecard_linenos_ok
+SMOKE table_tools_row_ok
+SMOKE table_copy_markdown_ok
+SMOKE table_copy_csv_ok
+SMOKE table_copy_tsv_ok
+SMOKE table_full_display_ok
+SMOKE codecard_download_ok
+SMOKE codecard_table_done
+SMOKE usage_hover_start
+SMOKE usage_page_open_ok
+SMOKE usage_trend_hover_ok
+SMOKE usage_trend_unhover_ok
+SMOKE usage_donut_hover_ok
+SMOKE usage_range_row_retired_ok
+SMOKE usage_zero_filter_fixed_window_ok
+SMOKE usage_drilldown_click_ok
+SMOKE usage_drilldown_rows_pure_ok
+SMOKE usage_hover_done
+SMOKE usage_hover_stage_done
+SMOKE usage_heat_start
+SMOKE usage_heat_leftmost_outline_ok
+SMOKE usage_heat_daily_grid_ok
+SMOKE usage_heat_weekly_grid_ok
+SMOKE usage_heat_cumulative_grid_ok
+SMOKE usage_heat_daily_hover_ok
+SMOKE usage_heat_weekly_hover_ok
+SMOKE usage_heat_cumulative_hover_ok
+SMOKE usage_heat_day_drill_ok
+SMOKE usage_heat_done
+SMOKE usage_heat_stage_done
+SMOKE settings_skills_start
+SMOKE settings_open_cmdcomma_ok
+SMOKE settings_close_cmdcomma_ok
+SMOKE settings_reopen_ok
+SMOKE settings_models_provider_order_ok bella,bella-local,bella-remote,Amazon Bedrock,Ant Ling,Anthropic,Azure OpenAI,Baseten,Cerebras,Cloudflare AI Gateway,Cloudflare Workers AI,DeepSeek,Fireworks,GitHub Copilot,Google,Google Vertex AI,Groq,Hugging Face,Kimi For Coding,Meta,MiniMax,MiniMax CN,Mistral,Moonshot AI,Moonshot AI CN,NVIDIA,OpenAI,OpenAI Codex,OpenCode Go,OpenCode Zen,OpenRouter,Qwen Token Plan,Qwen Token Plan CN,Qwen Token Plan Individual,Radius,Together,Vercel AI Gateway,xAI,Xiaomi,Xiaomi Token Plan AMS,Xiaomi Token Plan CN,Xiaomi Token Plan SGP,Z.AI,Z.AI Coding CN
+SMOKE skills_rows_probed_ok real+link+dangling
+SMOKE skills_disable_written_ok -skills/picode-smoke-real/SKILL.md
+SMOKE skills_enable_written_ok +skills/picode-smoke-real/SKILL.md
+SMOKE skills_confirm_copy_ok
+SMOKE skills_delete_link_target_survives_ok
+SMOKE settings_esc_close_ok
+SMOKE settings_open_sidebar_gear_ok
+SMOKE settings_sidebar_gear_esc_ok
+SMOKE settings_skills_done
+SMOKE packages_stage_start
+SMOKE packages_section_open_ok
+SMOKE packages_empty_state_ok
+SMOKE packages_install_ok ../picode-smoke-pkg-Y4SNIG
+SMOKE packages_toggle_off_ok
+SMOKE packages_toggle_on_ok
+SMOKE packages_remove_ok
+SMOKE packages_tui_side_reflected_ok
+SMOKE packages_project_untrusted_ok
+SMOKE packages_esc_close_ok
+SMOKE packages_trust_json_untouched_ok
+SMOKE packages_new_session_loads_ok
+SMOKE packages_stage_done
+SMOKE settings_mcp_start
+SMOKE mock-oauth POST /mcp
+SMOKE mock-oauth POST /mcp
+SMOKE mock-oauth POST /mcp
+SMOKE mock-oauth POST /mcp
+SMOKE mock-oauth POST /mcp
+SMOKE mock-oauth POST /mcp
+SMOKE mock-oauth POST /mcp
+SMOKE mock-oauth POST /mcp
+SMOKE mock-oauth POST /mcp
+SMOKE mcp_section_open_ok
+SMOKE mock-oauth GET /.well-known/oauth-protected-resource/mcp
+SMOKE mock-oauth GET /mcp
+SMOKE mock-oauth POST /mcp
+SMOKE mock-oauth GET /.well-known/oauth-protected-resource
+SMOKE mock-oauth GET /.well-known/oauth-authorization-server
+SMOKE mock-oauth POST /register
+[host stderr] MCP: Failed to connect to eager-cms: OAuth authentication required. Run /mcp-auth eager-cms.
+SMOKE mcp_cards_badges_ok
+SMOKE mcp_status_projection_ok
+SMOKE mcp_enable_flag_ok /var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-mcpproject-0usMuO/.pi/mcp.json
+SMOKE mcp_disable_flag_ok /var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-mcpproject-0usMuO/.pi/mcp.json
+SMOKE mcp_add_global_ok /var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-mcpbase-Bq7eR2/mcp-home/.config/mcp/mcp.json
+SMOKE mcp_edit_global_ok
+SMOKE mcp_remove_ok
+SMOKE mcp_layer_entries_ok
+SMOKE mock-oauth POST /mcp
+SMOKE mock-oauth GET /.well-known/oauth-protected-resource/mcp
+SMOKE mock-oauth GET /.well-known/oauth-protected-resource
+SMOKE mock-oauth GET /.well-known/oauth-authorization-server
+SMOKE mock-oauth POST /register
+SMOKE mock-oauth GET /authorize
+SMOKE mock-oauth POST /token
+SMOKE mock-oauth POST /mcp
+SMOKE mock-oauth POST /mcp
+SMOKE mock-oauth GET /mcp
+SMOKE mock-oauth POST /mcp
+SMOKE mcp_oauth_autocomplete_ok http://127.0.0.1:49833
+SMOKE mcp_status_live_update_ok
+SMOKE mock-oauth POST /mcp
+SMOKE mock-oauth GET /.well-known/oauth-protected-resource/mcp
+SMOKE mock-oauth GET /.well-known/oauth-protected-resource
+SMOKE mock-oauth GET /.well-known/oauth-authorization-server
+SMOKE mock-oauth POST /register
+SMOKE mcp_paste_dialog_ok
+SMOKE mock-oauth GET /authorize
+SMOKE mock-oauth POST /token
+SMOKE mock-oauth POST /mcp
+SMOKE mock-oauth POST /mcp
+SMOKE mock-oauth GET /mcp
+SMOKE mock-oauth POST /mcp
+SMOKE mcp_oauth_manual_paste_ok
+SMOKE mcp_external_zero_write_ok
+SMOKE mcp_credentials_zero_leak_ok
+SMOKE mcp_status_lazy_untouched_ok
+SMOKE settings_mcp_done
+SMOKE subagent_dir_start
+SMOKE subagent90_resumed_ok sub90-seeded-id
+SMOKE subagent90_seeded_ok shown=20 total=25
+SMOKE subagent90_paging_ok
+SMOKE subagent90_live_running_ok
+SMOKE subagent90_live_completed_ok
+SMOKE subagent90_reopened_ok
+SMOKE subagent90_rebuild_ok ended=25 completed=25 lost=0
+SMOKE subagent_dir_done
+SMOKE subagent_chat_start
+SMOKE subagent99_resumed_ok sub99-seeded-id
+SMOKE subagent99_chat_open_ok
+SMOKE subagent99_live_update_ok
+SMOKE subagent99_receipt_ok No async run found for 'sub99-live-1'.
+SMOKE subagent99_close_alive_ok
+SMOKE subagent99_close_reopen_ok
+SMOKE subagent99_readonly_ok
+SMOKE subagent99_error_path_ok
+SMOKE subagent_chat_done
+SMOKE subagent_stop_start
+SMOKE subagent101_resumed_ok sub101-seeded-id
+SMOKE subagent101_badge_zero_ok
+SMOKE subagent101_pull A.available=true A.runs=2 B.available=true B.runs=2
+SMOKE subagent101_badge_two_ok
+SMOKE subagent101_badge_click_ok
+SMOKE subagent101_cancel_ok
+SMOKE subagent101_esc_outside_ok
+SMOKE subagent101_stopping_ok
+SMOKE subagent101_stopped_ok
+SMOKE subagent101_chat_stop_ok
+SMOKE subagent101_badge_zero_again_ok
+SMOKE subagent101_foreground_abort_ok [{"commandType":"subagent_stop","sessionId":"sub101-seeded-id","asyncId":"sub101-run-a"},{"commandType":"subagent_stop","sessionId":"sub101-seeded-id","asyncId":"sub101-run-b"},{"commandType":"abort_turn","sessionId":"sub101-seeded-id"}]
+SMOKE subagent_stop_done
+SMOKE subagent_mutex_136_start
+SMOKE subagent136_entry_ok
+SMOKE T136_DEBUG {"iw":1221,"sbOpen":true,"sbW":320,"spW":481,"subOpen":false,"subW":0}
+SMOKE FAIL ticket-136 stage: the side panel drag never committed its width
+SMOKE FAIL recent events: ing-33:mcp_status | ing-33:mcp_status | ing-33:session_detached | ded-id:session_created(/var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-sessions-czhk6b/subagent99-seeded.jsonl) | ded-id:composer_state | ded-id:models_available | ded-id:slash_commands | ded-id:history_loaded | ded-id:session_tree | ded-id:subagent_status | ded-id:branch_info | ded-id:branch_info | ded-id:subagent_status | ded-id:subagent_status | ded-id:subagent_steer_receipt | ded-id:subagent_status | ded-id:subagent_status | ded-id:subagent_status | ded-id:subagent_status | ing-34:mcp_status | ing-34:mcp_status | ing-34:session_detached | ded-id:session_created(/var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-sessions-czhk6b/subagent101-seeded.jsonl) | ded-id:composer_state | ded-id:models_available | ded-id:slash_commands | ded-id:history_loaded | ded-id:session_tree | ded-id:subagent_status | ded-id:branch_info | ded-id:branch_info | ded-id:subagent_status | ded-id:subagent_status | ded-id:subagent_stop_receipt | ded-id:subagent_status | ded-id:subagent_status | ded-id:subagent_stop_receipt | ded-id:subagent_status | ded-id:subagent_status | ded-id:subagent_status
+SMOKE FAIL SMOKE FAIL ticket-136 stage: the side panel drag never committed its width
+SMOKE FAIL recent events: ing-33:mcp_status | ing-33:mcp_status | ing-33:session_detached | ded-id:session_created(/var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-sessions-czhk6b/subagent99-seeded.jsonl) | ded-id:composer_state | ded-id:models_available | ded-id:slash_commands | ded-id:history_loaded | ded-id:session_tree | ded-id:subagent_status | ded-id:branch_info | ded-id:branch_info | ded-id:subagent_status | ded-id:subagent_status | ded-id:subagent_steer_receipt | ded-id:subagent_status | ded-id:subagent_status | ded-id:subagent_status | ded-id:subagent_status | ing-34:mcp_status | ing-34:mcp_status | ing-34:session_detached | ded-id:session_created(/var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-sessions-czhk6b/subagent101-seeded.jsonl) | ded-id:composer_state | ded-id:models_available | ded-id:slash_commands | ded-id:history_loaded | ded-id:session_tree | ded-id:subagent_status | ded-id:branch_info | ded-id:branch_info | ded-id:subagent_status | ded-id:subagent_status | ded-id:subagent_stop_receipt | ded-id:subagent_status | ded-id:subagent_status | ded-id:subagent_stop_receipt | ded-id:subagent_status | ded-id:subagent_status | ded-id:subagent_status
+(node:78462) UnhandledPromiseRejectionWarning: Error: SMOKE FAIL SMOKE FAIL ticket-136 stage: the side panel drag never committed its width
+    at fail (/Users/liaokechen/PiCode/.worktrees/diag-0861-base/out/main/index.js:9212:11)
+    at /Users/liaokechen/PiCode/.worktrees/diag-0861-base/out/main/index.js:22690:5
+(node:78462) UnhandledPromiseRejectionWarning: Unhandled promise rejection. This error originated either by throwing inside of an async function without a catch block, or by rejecting a promise which was not handled with .catch(). To terminate the node process on unhandled promise rejection, use the CLI flag `--unhandled-rejections=strict` (see https://nodejs.org/api/cli.html#cli_unhandled_rejections_mode). (rejection id: 3)

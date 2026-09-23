@@ -1,0 +1,10 @@
+SANITIZED SMOKE isolated session store: /var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-t134-sessions-QIIUmk
+SANITIZED SMOKE isolated subagent artifacts: /var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-t134-artifacts-tLhWGb
+SMOKE start cwd=/tmp pid=87218
+SMOKE spawn_path_composed node v24.13.0 via 18 entries (bare launch PATH had 4)
+SMOKE sdk_alignment sdk=0.87.1 pi-ai-floor-ok pi-subagents=0.71.0
+SMOKE t134_session_created 01a0cff3-e35f-753d-bcd7-2aba4cc10d9c
+SMOKE t134_async_started runId=56a4c293-98d2-4b5d-ac89-67522260126a asyncDir=/var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-t134-artifacts-tLhWGb/async-subagent-runs/56a4c293-98d2-4b5d-ac89-67522260126a
+SMOKE t134_spawn_proof state=running runner pid=87269
+SMOKE t134_verdict stop ok=true state=stopping terminal=stopped runner-exited=false
+SMOKE done

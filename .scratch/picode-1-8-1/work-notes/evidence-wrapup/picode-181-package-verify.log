@@ -1,0 +1,241 @@
+
+> picode@1.8.0 package:verify
+> node scripts/package.mjs --verify
+
+→ building bundles (electron-vite build)
+vite v7.3.6 building ssr environment for production...
+transforming...
+✓ 122 modules transformed.
+rendering chunks...
+out/main/chunks/artifact-DFeAwCCu.js     38.54 kB
+out/main/host.js                         74.91 kB
+out/main/index.js                     1,465.54 kB
+✓ built in 537ms
+vite v7.3.6 building ssr environment for production...
+transforming...
+✓ 2 modules transformed.
+rendering chunks...
+out/preload/index.js  12.86 kB
+✓ built in 7ms
+vite v7.3.6 building client environment for production...
+transforming...
+✓ 2810 modules transformed.
+rendering chunks...
+../../out/renderer/index.html                                           0.58 kB
+../../out/renderer/assets/index-C6K3hew3.css                          195.60 kB
+../../out/renderer/assets/channel-BS32G_qJ.js                           0.20 kB
+../../out/renderer/assets/init-ZxktEp_H.js                              0.26 kB
+../../out/renderer/assets/chunk-JWPE2WC7-BwMoj0gX.js                    0.37 kB
+../../out/renderer/assets/chunk-2Q5K7J3B-Bg_hNZOS.js                    0.38 kB
+../../out/renderer/assets/chunk-5VM5RSS4-DPpUV1kG.js                    0.43 kB
+../../out/renderer/assets/chunk-XXDRQBXY-D5tIe6aY.js                    0.48 kB
+../../out/renderer/assets/swimlanesDiagram-TC7HE7FX-nYaH38sT.js         0.75 kB
+../../out/renderer/assets/infoDiagram-VRGFBTTK-C4l4gaiL.js              0.98 kB
+../../out/renderer/assets/chunk-WEXAMYUT-B8ZiE2Fj.js                    1.07 kB
+../../out/renderer/assets/sizeCapture-INFHLROL-HFvOibzB.js              1.78 kB
+../../out/renderer/assets/ordinal-CxptdPJm.js                           2.20 kB
+../../out/renderer/assets/railroadDiagram-XR7U4H2S-D0Xansfe.js          2.82 kB
+../../out/renderer/assets/abnfDiagram-O67JEVCF-DTbD5xq1.js              3.45 kB
+../../out/renderer/assets/pegDiagram-GJSIUBJH-B81wXM5k.js               3.69 kB
+../../out/renderer/assets/chunk-GWA4HPMP-DVXYftoJ.js                    3.75 kB
+../../out/renderer/assets/ebnfDiagram-ZINNZB2B-BB_7DgWq.js              3.86 kB
+../../out/renderer/assets/arc-BVuuc46H.js                               6.95 kB
+../../out/renderer/assets/diagram-MLGK6HIB-C16ROplX.js                  7.35 kB
+../../out/renderer/assets/defaultLocale-B2RvLBDe.js                     9.37 kB
+../../out/renderer/assets/linear-BAchWaQO.js                           11.25 kB
+../../out/renderer/assets/diagram-MPIPVDR6-CZe7kAvh.js                 11.42 kB
+../../out/renderer/assets/pieDiagram-5QR66LMP-BpKiijcr.js              12.53 kB
+../../out/renderer/assets/chunk-NETBCI7D-CDG2-B8Q.js                   12.96 kB
+../../out/renderer/assets/diagram-CDSNMT55-DF6yyNCB.js                 16.01 kB
+../../out/renderer/assets/_basePickBy-DYAg5xYG.js                      17.91 kB
+../../out/renderer/assets/cynefinDiagram-VND7K2PF-BUcyUuH_.js          18.33 kB
+../../out/renderer/assets/diagram-ATOU4E4O-C2E985CK.js                 21.57 kB
+../../out/renderer/assets/chunk-3FUC2YCW-CLHCdyid.js                   23.59 kB
+../../out/renderer/assets/graph-Bvha9izY.js                            24.12 kB
+../../out/renderer/assets/chunk-GTNCS2PH-CKQ5asuU.js                   30.85 kB
+../../out/renderer/assets/diagram-3UASUU5V-DL2EbU-t.js                 32.35 kB
+../../out/renderer/assets/ishikawaDiagram-OU5B5YK6-Dx1MMLF3.js         35.07 kB
+../../out/renderer/assets/kanban-definition-PNTS6WVX--5_o68k5.js       38.11 kB
+../../out/renderer/assets/_baseUniq-D5pVdbvJ.js                        42.60 kB
+../../out/renderer/assets/mindmap-definition-NLK3R4M7-CycutKeJ.js      43.29 kB
+../../out/renderer/assets/wardleyDiagram-VNRHLVJA-CCONgcM3.js          44.51 kB
+../../out/renderer/assets/journeyDiagram-ZHPQQLJL-C6bsHg9N.js          45.28 kB
+../../out/renderer/assets/sankeyDiagram-IPEJSGJF-CKN0FWsD.js           46.13 kB
+../../out/renderer/assets/requirementDiagram-PLB6GJNP-ChXfLeMs.js      52.74 kB
+../../out/renderer/assets/erDiagram-OPXOYQCR-C2uH3tnK.js               56.21 kB
+../../out/renderer/assets/gitGraphDiagram-X574FWY7-faw_nYgT.js         57.47 kB
+../../out/renderer/assets/timeline-definition-EJHVYXUP-BsSXGU-Y.js     60.70 kB
+../../out/renderer/assets/quadrantDiagram-O4NWA36T-CNzZ-pWm.js         61.63 kB
+../../out/renderer/assets/blockDiagram-BEXU5L5S-hqmiQqeS.js            78.00 kB
+../../out/renderer/assets/stateDiagram-v2-GCMORJYK-tJZAL0Xr.js         79.10 kB
+../../out/renderer/assets/xychartDiagram-PMCCYNJV-_ty7RNuP.js          83.25 kB
+../../out/renderer/assets/classDiagram-v2-NBCMYWYE-BlYM4Agg.js         85.71 kB
+../../out/renderer/assets/dagre-6A5THRUB-DRrJmZil.js                   86.30 kB
+../../out/renderer/assets/vennDiagram-UO4OBE2U-BLazhJb6.js             88.90 kB
+../../out/renderer/assets/flowDiagram-KWPJA3E3-ClMEsmyg.js            108.49 kB
+../../out/renderer/assets/c4Diagram-YGBWAQC7-DBTAQDRP.js              111.94 kB
+../../out/renderer/assets/ganttDiagram-FUAMR5RP-BfjSL9JQ.js           133.55 kB
+../../out/renderer/assets/diagram-22UHCM2B-BlkQYKHd.js                153.52 kB
+../../out/renderer/assets/sequenceDiagram-PO4LG4MO-BoSyKqYl.js        205.61 kB
+../../out/renderer/assets/cose-bilkent-JH36ORCC-DvLbu-3e.js           214.53 kB
+../../out/renderer/assets/swimlanes-2SLR337P-B0OvdAo_.js              287.34 kB
+../../out/renderer/assets/usecaseDiagram-POWQR4AR-CQ1VUl4y.js         376.37 kB
+../../out/renderer/assets/architectureDiagram-NJMV4G6O-Lfxxl1Ih.js    423.23 kB
+../../out/renderer/assets/katex-oVG3DVWa.js                           484.52 kB
+../../out/renderer/assets/cytoscape.esm-Ct9zsnh1.js                   961.04 kB
+../../out/renderer/assets/mermaid-api-BjvvU8E0.js                   1,184.82 kB
+../../out/renderer/assets/cynefin-OW5HDTMX-DazxJoHV.js              1,304.47 kB
+../../out/renderer/assets/index-CUBhOZWR.js                         2,630.40 kB
+../../out/renderer/assets/elk-276RUBZZ-TynGo769.js                  3,354.11 kB
+✓ built in 8.03s
+→ packing darwin app
+Packaging app for platform darwin arm64 using electron v44.0.0
+WARNING: Could not find icon "/Users/liaokechen/PiCode/build/icon.icns" with extension ".icon", skipping this app icon format
+→ packaged /Users/liaokechen/PiCode/release/PiCode-darwin-arm64/PiCode.app
+→ bundled SDK 0.87.1 / pi-ai 0.87.1 verified inside PiCode.app
+→ verifying artifact: launching packaged app via `open` (LaunchServices) with PICODE_SMOKE=1
+SMOKE start cwd=/var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T pid=88984
+SMOKE empty_state_start
+SMOKE mcp_status_no_session_ok
+SMOKE empty_state_chip_default_ok Model: GLM-5.3
+SMOKE empty_state_menu_catalog_ok providers=3 models=4
+SMOKE empty_state_menu_provider_order_ok bella,bella-local,bella-remote
+SMOKE empty_state_menu_locate_ok bella at row 0
+SMOKE empty_state_model_pick_ok model=GLM-5.3-flash (override)
+SMOKE empty_state_thinking_levels_ok Low High Max
+SMOKE empty_state_thinking_pick_ok level=Low
+SMOKE empty_state_access_default_ok Access mode: Standard
+SMOKE empty_state_access_pick_ok tier=read-only
+SMOKE terminal_focus_132_boot_empty_open_ok dock open on the no-workspace empty state, focus request armed
+SMOKE session_created sessionId=01a0cff5-7eda-730f-963b-6a79ca98e0ec model=GLM-5.3-flash
+SMOKE empty_state_pick_rides_ok model=GLM-5.3-flash
+SMOKE empty_state_thinking_rides_ok thinking=low levels=low,high,max
+SMOKE terminal_focus_132_boot_empty_focus_ok the armed request landed in the first shell
+SMOKE empty_state_access_rides_ok tier=read-only
+SMOKE empty_state_access_session_chip_ok tier=read-only
+SMOKE empty_state_access_restore_ok tier=standard
+SMOKE agent_start
+SMOKE deltas_collected count=4
+SMOKE aborted_ok
+SMOKE second_turn_ok
+SMOKE renderer_dom_ok
+SMOKE sidebar_index_ok
+SMOKE idle_typing_119_start
+SMOKE idle_typing_119_single_ok
+SMOKE idle_typing_119_multiline_ok
+SMOKE idle_typing_119_attachments_ok
+SMOKE idle_typing_119_expand_ok
+SMOKE idle_typing_119_delete_ok
+SMOKE idle_typing_119_midtranscript_ok
+SMOKE idle_queue_135_start
+SMOKE idle_queue_135_appear_ok
+SMOKE idle_queue_135_grow_ok
+SMOKE idle_queue_135_clear_ok
+SMOKE idle_typing_119_done
+SMOKE user_copy_start
+SMOKE user_copy_row_shape_ok
+SMOKE user_copy_clipboard_ok
+SMOKE user_copy_feedback_ok
+SMOKE user_copy_done
+SMOKE slash_gate_start
+SMOKE slash_menu_retired_ok rows=/compact /council /gather-context-and-clarify /parallel-cleanup /parallel-research /parallel-review /review-loop /archify /ask-matt /claude-handoff /code-review /codebase-design
+SMOKE slash_gate_toast_ok
+SMOKE slash_gate_args_toast_ok
+SMOKE slash_gate_zero_send_ok
+SMOKE slash_gate_done
+SMOKE menu_surface_start
+SMOKE menu_surface_leading_token_ok
+SMOKE menu_surface_shift_enter_ok
+SMOKE menu_surface_multiline_ok
+SMOKE menu_surface_at_midtext_ok
+SMOKE menu_surface_zero_match_send_ok
+SMOKE menu_surface_done
+SMOKE menu_keyboard_start
+SMOKE menu_keyboard_text_menu_ok rows=12
+SMOKE menu_keyboard_file_enter_pick_skipped no file candidates in the smoke cwd
+SMOKE menu_keyboard_access_enter_pick_ok tier=Standard
+SMOKE menu_keyboard_access_walk_ok rows=3
+SMOKE menu_keyboard_thinking_walk_ok rows=3
+SMOKE menu_keyboard_model_parity_ok bella,bella-local,bella-remote
+SMOKE menu_keyboard_model_providers_ok providers=3
+SMOKE menu_keyboard_done
+SMOKE chip_toggle_start
+SMOKE chip_toggle_press_closes Access mode:
+SMOKE chip_toggle_press_closes Model:
+SMOKE chip_toggle_press_closes Thinking:
+SMOKE chip_toggle_inside_click_picks_ok
+SMOKE chip_toggle_cross_chip_ok
+SMOKE chip_toggle_outside_close_ok
+SMOKE chip_toggle_done
+SMOKE menu_geometry_122_start
+SMOKE menu_geometry_anchor_ok card left 1024.2 == chip left, hug gap 2.0, columns separate (gap 6.0)
+SMOKE menu_geometry_cascade_stable_ok providers=3, bbox fixed across hover
+SMOKE menu_geometry_keyboard_ok model 0 → 1, focus on the selected row
+SMOKE menu_geometry_clamp_ok innerWidth=1040, card 646.0..836.0, models right 1032.0
+SMOKE menu_geometry_thinking_anchor_ok thinking card left 861.4 == chip left, hug gap 2.0
+SMOKE menu_geometry_122_done
+SMOKE host_exit session=01a0cff5-7eda-730f-963b-6a79ca98e0ec code=null signal=SIGKILL
+SMOKE rebuild_ok
+SMOKE rebuild_turn_ok
+SMOKE round3_ok /var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-verify-I3rHMe/sessions/2026-09-23T20-30-35-700Z_01a0cff6-88b4-753f-a87e-23d3065fc83e.jsonl
+SMOKE rebuilt_host_killed 01a0cff6-707b-74f7-967f-c363b1089a28
+SMOKE follow_live_state_ok
+SMOKE follow_view_opened
+SMOKE follow_streamed_ok
+SMOKE follow_selection_ok
+SMOKE follow_exit_ok
+SMOKE follow_reselected_ok
+SMOKE follow_structured_ok
+SMOKE follow_open_shown
+SMOKE follow_open_rejected_ok
+SMOKE takeover_resumed_ok
+SMOKE replay_payload_ok 9 structured items
+SMOKE replay_dom_ok
+SMOKE newtask_chip_default_ok T
+SMOKE newtask_dropdown_ok
+SMOKE newtask_session_created sessionId=01a0cff6-e171-71ac-9011-1e97fb9add14
+SMOKE newtask_first_prompt_ok
+SMOKE newtask_turn_aborted_ok
+SMOKE multi_session_start
+SMOKE multi_dot_states_ok
+SMOKE multi_background_streaming_ok
+SMOKE multi_selection_decoupled_ok
+SMOKE multi_refocus_ok
+SMOKE multi_abort_ok
+SMOKE unread_start
+SMOKE unread_masked_ok
+SMOKE unread_lit_ok
+SMOKE unread_cleared_ok
+SMOKE multi_crash_isolation_ok
+SMOKE bg_approval_start
+SMOKE bg_approval_required tool=bash call=call_6ba80cce728941c5af8ae383
+SMOKE bg_agent_suspended_ok
+SMOKE bg_badge_ok
+SMOKE bg_notification_ok title=T
+SMOKE bg_jump_ok
+SMOKE bg_approve_remember_ok
+SMOKE bg_remember_ok
+SMOKE bg_deny_ask call=call_818112d3d79948f2b9994753
+SMOKE bg_deny_ok
+SMOKE bg_approval_done
+SMOKE keymap_start
+SMOKE keymap_tooltips_ok
+SMOKE keymap_cmd_b_sidebar_ok
+SMOKE keymap_alt_cmd_b_panel_ok
+SMOKE keymap_cmd_j_terminal_ok
+SMOKE keymap_alt_cmd_j_bridge_ok
+SMOKE keymap_bridge_toggle_off_ok
+SMOKE keymap_pane_motion_ok sidebar=0px panel=420px dock=0px
+SMOKE keymap_done
+SMOKE terminal_focus_105_start
+SMOKE terminal_focus_105_cmdj_ok
+SMOKE FAIL ticket 105: the trusted keystroke never echoed in the shell
+SMOKE FAIL recent events: b127f0:thinking_end | b127f0:message_end | b127f0:tool_start | b127f0:approval_required | b127f0:approval_resolved(true:-) | b127f0:tool_update | b127f0:branch_info | b127f0:tool_update | b127f0:tool_end | b127f0:message_start | b127f0:text_delta | b127f0:message_end | b127f0:agent_end | b127f0:agent_start | b127f0:user_message | b127f0:message_start | b127f0:message_end | b127f0:tool_start | b127f0:tool_update | b127f0:tool_update | b127f0:tool_end | b127f0:message_start | b127f0:text_delta | b127f0:text_delta | b127f0:text_delta | b127f0:text_delta | b127f0:text_delta | b127f0:text_delta | b127f0:text_delta | b127f0:message_end | b127f0:agent_end | b127f0:agent_start | b127f0:user_message | b127f0:message_start | b127f0:message_end | b127f0:tool_start | b127f0:approval_required | b127f0:approval_resolved(false:No new files today.) | b127f0:tool_end | b127f0:agent_end
+SMOKE FAIL SMOKE FAIL ticket 105: the trusted keystroke never echoed in the shell
+SMOKE FAIL recent events: b127f0:thinking_end | b127f0:message_end | b127f0:tool_start | b127f0:approval_required | b127f0:approval_resolved(true:-) | b127f0:tool_update | b127f0:branch_info | b127f0:tool_update | b127f0:tool_end | b127f0:message_start | b127f0:text_delta | b127f0:message_end | b127f0:agent_end | b127f0:agent_start | b127f0:user_message | b127f0:message_start | b127f0:message_end | b127f0:tool_start | b127f0:tool_update | b127f0:tool_update | b127f0:tool_end | b127f0:message_start | b127f0:text_delta | b127f0:text_delta | b127f0:text_delta | b127f0:text_delta | b127f0:text_delta | b127f0:text_delta | b127f0:text_delta | b127f0:message_end | b127f0:agent_end | b127f0:agent_start | b127f0:user_message | b127f0:message_start | b127f0:message_end | b127f0:tool_start | b127f0:approval_required | b127f0:approval_resolved(false:No new files today.) | b127f0:tool_end | b127f0:agent_end
+(node:88984) UnhandledPromiseRejectionWarning: Error: SMOKE FAIL SMOKE FAIL ticket 105: the trusted keystroke never echoed in the shell
+    at fail (/Users/liaokechen/PiCode/release/PiCode-darwin-arm64/PiCode.app/Contents/Resources/app/out/main/index.js:9212:11)
+    at /Users/liaokechen/PiCode/release/PiCode-darwin-arm64/PiCode.app/Contents/Resources/app/out/main/index.js:22688:5
+(Use `PiCode --trace-warnings ...` to show where the warning was created)
+(node:88984) UnhandledPromiseRejectionWarning: Unhandled promise rejection. This error originated either by throwing inside of an async function without a catch block, or by rejecting a promise which was not handled with .catch(). To terminate the node process on unhandled promise rejection, use the CLI flag `--unhandled-rejections=strict` (see https://nodejs.org/api/cli.html#cli_unhandled_rejections_mode). (rejection id: 2)
+PACKAGED ARTIFACT VERIFY FAILED: SMOKE FAIL ticket 105: the trusted keystroke never echoed in the shell
