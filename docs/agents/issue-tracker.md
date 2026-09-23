@@ -2,6 +2,18 @@
 
 Issues and specs for this repo live as markdown files in `.scratch/`.
 
+## Linear mirror (mandatory)
+
+Every ticket state change is mirrored to Linear (team `LiaoKC`, project `PiCode`) via the `mcp` tool (`mcp_save_issue` / `mcp_list_issues`):
+
+- **Intake** (ticket filed + committed): create the Linear issue (`Todo`, label `iter:<version>`) — description = sync header (branch/shas) + full ticket text.
+- **Execution start** (implement worker dispatched): state → `In Progress`.
+- **Review / fix rounds**: append the review record to the description.
+- **Merge** (merge sha landed): state → `Done`, description gains the merge + verification record.
+- **Release** (tag / publish / install): record the release shas in the description.
+
+A ticket is not "closed" locally until its Linear mirror reflects the same state. The mirror is the operator's cross-batch view — never let it lag behind the local run-log.
+
 ## Conventions
 
 - One feature per directory: `.scratch/<feature-slug>/`
