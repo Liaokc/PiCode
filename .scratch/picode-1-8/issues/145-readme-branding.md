@@ -1,6 +1,6 @@
 # 145: README 国际化与品牌升级——logo/横幅/badge/截图 + 中文版
 
-**Status:** In Progress
+**Status:** Done
 
 **What to build:** 操作者指令：像高 star GitHub 项目一样升级 README——中文版、logo、图片等。研究员正在调研高星范式（产出 `.scratch/readme-research-brief.md`）。
 
@@ -11,11 +11,11 @@
 4. 待操作者决策：LICENSE 文件（仓库当前无 LICENSE 无 license 字段——badge 与法律状态需要它；建议 MIT，待确认）
 
 **Acceptance:**
-- [ ] 中英双版本互链、结构对齐、内容同步
-- [ ] 既有段落（Development/smoke/Visual QA/Packaging）与锚点保留，AGENTS.md 交叉引用不破
-- [ ] 图片全部走相对路径且已提交（docs/assets/）
-- [ ] badge 数据真实（version 1.8.0、平台 macOS、license 以操作者决策为准）
-- [ ] main 提交 + 推送 + LIA-155 镜像
+- [x] 中英双版本互链、结构对齐、内容同步
+- [x] 既有段落（Development/smoke/Visual QA/Packaging）与锚点保留，AGENTS.md 交叉引用不破
+- [x] 图片全部走相对路径且已提交（docs/assets/）
+- [x] badge 数据真实（version 1.8.0、平台 macOS、license 以操作者决策为准）
+- [x] main 提交 + 推送 + LIA-155 镜像
 
 **Red lines:** 零产品代码改动；.scratch/visual/ 原帧不动（只复制）。
 

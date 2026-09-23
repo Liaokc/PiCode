@@ -1,14 +1,75 @@
+<div align="center">
+  <img src="docs/assets/logo.png" width="128" alt="PiCode" />
+
 # PiCode
 
-A local macOS desktop app that wraps the [Pi coding agent](https://github.com/earendil-works/pi) in a product-grade shell: **the look and interaction model belong to ZCode, the brain belongs to Pi.** Sessions, history, and usage stats are shared with the Pi TUI — a session created on either side shows up and resumes on the other (Handoff), and a session running in the TUI can be watched live from PiCode (Live Follow).
+**A product-grade macOS desktop app around the [Pi coding agent](https://github.com/earendil-works/pi).**
 
-See [`CONTEXT.md`](./CONTEXT.md) for the domain vocabulary. The red line: **no code or data inside the Pi installation or the ZCode app is ever modified** — everything lives in this repository.
+The shell's look and interaction model follow ZCode — the brain is Pi.
 
-## Layout
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![version](https://img.shields.io/github/v/tag/Liaokc/PiCode?label=version)](https://github.com/Liaokc/PiCode/tags)
+[![platform](https://img.shields.io/badge/platform-macOS-000000?logo=apple&logoColor=white)](https://github.com/Liaokc/PiCode)
+[![node](https://img.shields.io/badge/node-%E2%89%A524-339933)](https://nodejs.org)
 
-Three-zone shell: navigation sidebar (Tasks grouped by project), chat main area, and a resizable side panel hosting Terminal (full PTY), Review (workspace diff), and File Preview tabs. A settings window covers defaults, appearance, read-only provider auth status, and a Usage page (tokens, streaks, heatmap, per-model trends, estimated cost) aggregated from all Pi session records — TUI included.
+**English** | [简体中文](./README.zh-CN.md)
 
-## Architecture
+</div>
+
+---
+
+Sessions, history, and usage stats are **shared with the Pi TUI**: a session created on either side shows up and resumes on the other (**Handoff**), and a session running in the TUI can be watched live from PiCode (**Live Follow**). No other desktop shell gives you that.
+
+The red line: **no code or data inside the Pi installation or the ZCode app is ever modified** — everything lives in this repository.
+
+<p align="center">
+  <img src="docs/assets/hero.png" alt="The full workbench — thinking, tool calls with live output, and rich markdown in one transcript" />
+</p>
+
+## ✨ Features
+
+- 🔁 **Handoff** — the same session library as the Pi TUI: start a session on either side, resume it on the other
+- 👁️ **Live Follow** — watch a session running in the TUI stream live from PiCode, in real time
+- 🖥️ **Three-zone shell** — Tasks sidebar (grouped by project) · chat main area · resizable side panel hosting **Terminal** (real PTY), **Review** (workspace diff) and **File Preview** tabs
+- 📊 **Usage analytics** — token totals, streaks, a 52-week activity heatmap, per-model trends and estimated cost, aggregated from all Pi session records — TUI included
+- 🧠 **Full agent surface** — approval gates (approve / remember / deny), Steer & Follow-up queues, thinking levels, the subagent fleet, and skills · packages · MCP management in the settings window
+- 🛡️ **Read-only red line** — never modifies code or data inside the Pi installation or the ZCode app
+
+## 📸 Screenshots
+
+| | |
+|:---:|:---:|
+| <img src="docs/assets/feature-code-rendering.png" alt="Code rendering" /> | <img src="docs/assets/feature-usage-stats.png" alt="Usage stats" /> |
+| Syntax-highlighted code cards with line numbers, wrap toggle and download. | The Usage page — token totals, streaks, a 52-week activity heatmap and per-model trends. |
+| <img src="docs/assets/feature-approval-queue.png" alt="Approval queue" /> | <img src="docs/assets/feature-model-picker.png" alt="Model picker" /> |
+| The approval gate plus the Steer / Follow-up queue, inline. | A two-column model picker across all configured providers. |
+| <img src="docs/assets/feature-file-preview.png" alt="File preview" /> | <img src="docs/assets/feature-command-menu.png" alt="Command menu" /> |
+| File preview with a Rendered/Source toggle for markdown. | Slash commands with fuzzy search. |
+
+<p align="center">
+  <img src="docs/assets/feature-sidebar-projects.png" alt="Sidebar" width="60%" /><br />
+  <sub>The projects sidebar with session status dots and hover actions.</sub>
+</p>
+
+## 🚀 Quick Start
+
+**Requirements:** macOS · Node.js 24+ · working Pi auth in `~/.pi/agent` (the same credentials the `pi` TUI uses)
+
+```bash
+npm install     # prefix ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ if the Electron download stalls
+npm run dev     # dev app
+```
+
+To produce a local app bundle:
+
+```bash
+npm run package            # → release/PiCode-darwin-<arch>/PiCode.app (unsigned local artifact, asar off so the host child can fork)
+npm run package:verify     # …then boot the artifact with PICODE_SMOKE=1 and require a real-session smoke round to exit 0
+```
+
+## 🏗 Architecture
+
+Three-zone shell: navigation sidebar (Tasks grouped by project), chat main area, and a resizable side panel hosting Terminal (full PTY), Review (workspace diff), and File Preview tabs. A settings window covers defaults, appearance, read-only provider auth status, and the Usage page.
 
 | Zone | Role |
 |------|------|
@@ -18,21 +79,17 @@ Three-zone shell: navigation sidebar (Tasks grouped by project), chat main area,
 | `src/host` | Isolated agent host child process; the **only** place `@earendil-works/pi-coding-agent` (pinned version, ADR-0005) is loaded. One host instance backs one Session. |
 | `src/shared` | The contract (`ParentToHost`/`HostToParent`), pure reducers, parsers, and aggregators — the testable core. |
 
-Architecture decisions live in [`docs/adr/`](./docs/adr) (0001–0005, all current); the product spec in `.scratch/picode-1-0/spec.md`.
+Architecture decisions live in [`docs/adr/`](./docs/adr) (0001–0005, all current); the domain vocabulary in [`CONTEXT.md`](./CONTEXT.md); the product spec in `.scratch/picode-1-0/spec.md`.
 
-## Development
-
-Requirements: Node 24+, and working Pi auth in `~/.pi/agent` (the same credentials the `pi` TUI uses).
+## 🧪 Development
 
 ```bash
-npm install                # prefix ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ if the Electron download stalls
-npm run dev                # dev app
 npm run typecheck          # tsc over node + web tsconfigs
 npm run lint
 npm test                   # vitest unit suite (the three spec test seams)
 ```
 
-## Compatibility smoke suite
+## 🔬 Compatibility smoke suite
 
 One command runs every compatibility red line against the real Pi SDK and the real shared session store:
 
@@ -75,7 +132,7 @@ node scripts/cleanup-smoke-sessions.ts        # list what would be deleted
 node scripts/cleanup-smoke-sessions.ts --yes  # delete
 ```
 
-## Visual QA
+## 🎞 Visual QA
 
 Screenshot harnesses capture the real UI for pixel comparison against the ZCode baselines in `.scratch/reference/screenshots/` (record: `.scratch/picode-1-0/visual-redline-final.md`):
 
@@ -100,9 +157,19 @@ PICODE_VISUAL=1 PICODE_VISUAL_TERMINAL=1 npx electron .
 
 PNGs land in `.scratch/visual/`.
 
-## Packaging
+## 🤝 Contributing
+
+Issues are tracked as local markdown tickets under `.scratch/` (see [`docs/agents/issue-tracker.md`](./docs/agents/issue-tracker.md)) and mirrored to Linear. Development happens on one branch per ticket in a git worktree. Before sending changes, run:
 
 ```bash
-npm run package            # → release/PiCode-darwin-<arch>/PiCode.app (unsigned local artifact, asar off so the host child can fork)
-npm run package:verify     # …then boot the artifact with PICODE_SMOKE=1 and require a real-session smoke round to exit 0
+npm run typecheck && npm run lint && npm test
 ```
+
+## 🙏 Acknowledgements
+
+- **[Pi](https://github.com/earendil-works/pi)** — the agent brain and the shared session ecosystem this project wraps.
+- **ZCode** — the interaction and visual model this shell references. PiCode is an independent implementation, not affiliated with or endorsed by ZCode; no ZCode code or assets are used.
+
+## 📄 License
+
+[MIT](./LICENSE) © 2026 Liaokc
