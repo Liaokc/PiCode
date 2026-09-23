@@ -2,6 +2,10 @@
 
 A local desktop GUI for the Pi coding agent. See `CONTEXT.md` for the domain glossary.
 
+## Development contract (cross-session)
+
+This project is developed across many agent sessions. The binding contract is `docs/agents/development-contract.md`: the dual-session delivery pattern (requirements session → execution session), the **mandatory Linear mirror** (every ticket filing, state change, and work-content change syncs to Linear, team `LiaoKC` / project `PiCode`), ledger & evidence discipline, and red lines. Every session reads and follows it.
+
 ## Agent skills
 
 ### Issue tracker

@@ -4,11 +4,12 @@ Issues and specs for this repo live as markdown files in `.scratch/`.
 
 ## Linear mirror (mandatory)
 
-Every ticket state change is mirrored to Linear (team `LiaoKC`, project `PiCode`) via the `mcp` tool (`mcp_save_issue` / `mcp_list_issues`):
+This section is part of the cross-session development contract (`docs/agents/development-contract.md` §2). Every ticket event is mirrored to Linear (team `LiaoKC`, project `PiCode`) via the `mcp` tool (`mcp_save_issue` / `mcp_list_issues`):
 
 - **Intake** (ticket filed + committed): create the Linear issue (`Todo`, label `iter:<version>`) — description = sync header (branch/shas) + full ticket text.
 - **Execution start** (implement worker dispatched): state → `In Progress`.
 - **Review / fix rounds**: append the review record to the description.
+- **Work-content changes** (scope rewrite, acceptance change, renumbering, retirement, a later ruling that supersedes the ticket): update the Linear description with the change record; if the ticket number changes, the mirror moves to the new number with a note.
 - **Merge** (merge sha landed): state → `Done`, description gains the merge + verification record.
 - **Release** (tag / publish / install): record the release shas in the description.
 

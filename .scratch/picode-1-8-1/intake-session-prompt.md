@@ -8,7 +8,7 @@
 角色：你是 PiCode **v1.8.1** 迭代的需求 intake 会话。职责：与操作者多轮需求沟通 → 逐条在 main 源码实证根因 → 定稿 spec 与工单并全部落库 → 产出「主执行 Agent prompt」交操作者（由另一个会话驱使 subagent 执行全批）。工作目录 /Users/liaokechen/PiCode。
 
 ━━ 第零步：开工前置（先熟悉，不臆测）━━
-1. 仓库纪律：`AGENTS.md`、`CONTEXT.md`（术语权威）、`docs/adr/`（0001–0006 现行）、`docs/agents/issue-tracker.md`（含 **Linear 镜像强制纪律**）、`docs/agents/triage-labels.md`
+1. 仓库纪律：`AGENTS.md`（含开发契约入口）、**`docs/agents/development-contract.md`（跨会话开发契约——双会话范式 + Linear 镜像强制 + 红线，逐条遵守）**、`CONTEXT.md`（术语权威）、`docs/adr/`（0001–0006 现行）、`docs/agents/issue-tracker.md`（Linear 镜像机制）、`docs/agents/triage-labels.md`
 2. 上一批全档（v1.8.0 已发版：tag `v1.8.0` 在案、main+tags 已推 origin、/Applications/PiCode.app 已替换、工区已清空——现状基线）：
    - `.scratch/picode-1-8/`：`spec.md`、`intake-grilling.md`、`session-prompts.md`、`issues/116–145`、`run-log.md`（§0–§7+：主批 116–134、终验修复轮 138/139、增补 140–143、发版推送、README 品牌升级 145）
 3. 核对事实：`git tag` / `git log --oneline -10` / `package.json` 版本 / `git worktree list`（应仅根）
@@ -33,6 +33,7 @@
 
 ━━ 第三步：交付执行 prompt（收尾产物，完整输出给操作者）━━
 「主执行 Agent prompt」必含：
+- 契约声明：遵守 `docs/agents/development-contract.md`（跨会话开发契约；含 Linear 镜像强制）
 - 恢复式账本：执行会话新建 `.scratch/picode-1-8-1/run-log.md`（§0 指南 / §1 账本 / §2 检查点…）；**先落库后行动**；256k 模型 compact 即遗忘，恢复唯一入口 = 重读 run-log
 - 前置：spawn 自检（能 spawn 才开工）、基线 tag（`picode-1-8-1-base`）、参照帧核对（缺帧挂起并报告）、work-notes 目录（`.scratch/picode-1-8-1/work-notes/`，跨工区可见、不 git add）
 - 派工纪律：并发 ≤3；每票 worktree（`.worktrees/wt-NNN-slug` + `npm install`）；双轴评审（review-standards / review-spec，不可用则 fallback self-review 并在票 Comments 标注）；合并 = 根工作区 `bash scripts/merge-ticket.sh NNN`；dev-app serialization（`ps` 自查 + sleep 60 重试，上限 30 分钟）；不自开候选票（留操作者裁决）
