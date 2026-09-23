@@ -65,7 +65,7 @@ STEPS=(
   "pty:ELECTRON_RUN_AS_NODE=1 electron scripts/smoke/pty-smoke.mjs"
   "usage aggregation:node scripts/smoke/usage-smoke.ts"
   "TUI↔SDK interop:node scripts/smoke/interop-smoke.ts"
-  "electron app smoke:PICODE_SMOKE=1 PICODE_FAKE_USAGE=1 electron ."
+  "electron app smoke:env -u PI_SUBAGENT_CHILD -u PI_SUBAGENTS_HERDR_BRIDGE PICODE_SMOKE=1 PICODE_FAKE_USAGE=1 electron ."
   "sanitized spawn smoke:node scripts/smoke/sanitized-spawn-smoke.mjs"
 )
 

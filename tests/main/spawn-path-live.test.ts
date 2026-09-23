@@ -74,4 +74,21 @@ describe('spawn-path live composition (ticket 141)', () => {
     process.env['PATH'] = `${sentinel}:${process.env['PATH'] ?? ''}`
     expect(fresh.getSpawnPath()).toBe(process.env['PATH'])
   })
+
+  it('strips stale pi-subagents child markers from the fork env (ticket 142)', () => {
+    // A suite/app launched from inside a subagent session inherits the
+    // runner's child markers; pi-subagents reads them as "I am a child" and
+    // refuses to register its extension — the fleet RPC never answers and
+    // every host degrades to available:false. The fork env is the one
+    // chokepoint every host passes through: the markers die here.
+    process.env['PI_SUBAGENT_CHILD'] = '1'
+    process.env['PI_SUBAGENTS_HERDR_BRIDGE'] = '1'
+    const forkEnv = hostForkEnv()
+    expect(forkEnv['PI_SUBAGENT_CHILD']).toBeUndefined()
+    expect(forkEnv['PI_SUBAGENTS_HERDR_BRIDGE']).toBeUndefined()
+    // The caller's own environment is untouched (only the child's is).
+    expect(process.env['PI_SUBAGENT_CHILD']).toBe('1')
+    delete process.env['PI_SUBAGENT_CHILD']
+    delete process.env['PI_SUBAGENTS_HERDR_BRIDGE']
+  })
 })
