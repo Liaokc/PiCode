@@ -65,9 +65,10 @@ if (!appDir || !existsSync(path.join(appDir, 'PiCode.app'))) {
 }
 console.log(`→ packaged ${appDir}/PiCode.app`)
 
-// Ticket 134: the bundled-SDK alignment assertion — the packaged artifact's
-// SDK and its nested pi-ai must be the pinned 0.86.1 (the floor pi-subagents
-// 0.70.1's transcript-tools import needs; the batch's second empty run died
+// Ticket 134 (re-pinned at 0.87.1 by ticket 146): the bundled-SDK alignment
+// assertion — the packaged artifact's SDK must be the pinned 0.87.1 and its
+// nested pi-ai at least the 0.86.1 floor (that floor guards pi-subagents
+// 0.70.1's transcript-tools import; the batch's second empty run died
 // on a 0.85.1 bundle). Reads the artifact's own trees, not the dev checkout.
 {
   const appRoot = path.join(appDir, 'PiCode.app', 'Contents', 'Resources', 'app')

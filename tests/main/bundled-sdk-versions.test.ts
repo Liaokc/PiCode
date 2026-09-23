@@ -1,11 +1,14 @@
 /**
- * Ticket 134: the bundled-version acceptance — the dev node_modules must
- * carry SDK/pi-ai 0.86.1 (the floor pi-subagents 0.70.1's review chain
- * needs) AND actually provide the capability face that floor stands for:
- * the SDK's `createReadOnlyTools` / `convertToLlm` exports and pi-ai's
- * transcript utilities (`createInitialSystemMessage` / `toToolDeclaration`,
- * absent before 0.86.0 — the second root factor of the batch's empty runs).
- * Version numbers alone can lie; the probes cannot.
+ * Ticket 134 (re-pinned at 0.87.1 by ticket 146): the bundled-version
+ * acceptance — the dev node_modules must carry the pinned SDK 0.87.1, and
+ * its nested pi-ai must stay at least 0.86.1 (the floor pi-subagents
+ * 0.70.1's review chain needs) AND actually provide the capability face
+ * that floor stands for: the SDK's `createReadOnlyTools` / `convertToLlm`
+ * exports and pi-ai's transcript utilities (`createInitialSystemMessage` /
+ * `toToolDeclaration`, absent before 0.86.0 — the second root factor of the
+ * batch's empty runs). The pi-ai floor deliberately stays 0.86.1: it guards
+ * old pi-subagents 0.70.x installs (0.71.0 dropped the hard import, but the
+ * floor remains honest). Version numbers alone can lie; the probes cannot.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -26,8 +29,8 @@ const piAiPackage = existsSync(join(piAiDir, 'package.json'))
   : null
 
 describe('the bundled SDK tree (ticket 134 acceptance)', () => {
-  it('package.json pins the SDK exactly at 0.86.1 (no drift range)', () => {
-    expect(pinned).toBe('0.86.1')
+  it('package.json pins the SDK exactly at 0.87.1 (no drift range)', () => {
+    expect(pinned).toBe('0.87.1')
   })
 
   it('the installed SDK is the pinned version', () => {
