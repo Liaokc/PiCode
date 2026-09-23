@@ -55,7 +55,7 @@ export function readRunStateFromArtifact(asyncDir: string): SubagentRunState | n
 
 /** What the extension may send: one session's scoped events (the supervisor
  * tags and relays; `host_exit` is supervisor-only). Exported for the
- * ticket-111 live probe (scripts/smoke/subagents-070-probe.ts) — the type
+ * ticket-111 live probe (scripts/smoke/subagents-071-probe.ts) — the type
  * only, zero runtime surface. */
 export type HostEvent = Exclude<SessionScopedEvent, { type: 'host_exit' }>
 

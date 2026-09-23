@@ -1,22 +1,30 @@
 /**
- * pi-subagents 0.70.1 LIVE integration probe (ticket 111). Boots a real SDK
+ * pi-subagents 0.71.0 LIVE integration probe (ticket 147; born as the
+ * ticket-111 0.70.1 probe, upgraded in place for 1.8.1). Boots a real SDK
  * session IN-PROCESS with the REAL PiCode subagent bridge registered (the
  * same resource-loader pipeline as the host) and pi-subagents loaded from
  * the real agent dir — then drives REAL async subagent runs through the
- * versioned RPC and verifies every integration surface ticket 111 re-audits,
- * against the live package:
+ * versioned RPC and verifies every integration surface ticket 111 re-audits
+ * plus the 0.71.0 increments, against the live package:
  *
- *   ① RPC reply shapes  — ping capabilities (fleetStatus v1), status reply
- *                         { text, details, fleet, asyncSnapshot }, steer
- *                         acknowledged delivery (deliveryStatus), stop reply
- *                         state:"stopping" — via the BRIDGE's own handlers
- *                         (the exact consumption path tickets 90/99/101 ship)
- *                         plus raw replies for the census.
+ *   ① RPC reply shapes  — ping capabilities (fleetStatus v1 + cost v1),
+ *                         status reply { text, details, fleet, asyncSnapshot
+ *                         }, steer acknowledged delivery (deliveryStatus),
+ *                         stop reply state:"stopping", and one cost RPC
+ *                         roundtrip's versioned envelope { version: 1,
+ *                         parent, children, childTotal, total,
+ *                         unresolvedAsyncChildren } — via the BRIDGE's own
+ *                         handlers (the exact consumption path tickets
+ *                         90/99/101 ship) plus raw replies for the census
+ *                         (cost stays raw: PiCode does not consume it yet).
  *   ② status.json       — runId / state / startedAt / mode / agents /
  *                         sessionFile / steps / endedAt / tokens: what
- *                         PiCode's parsers consume vs what 0.70.1 writes
- *                         (field census + strict reads, unknown fields
- *                         tolerated).
+ *                         PiCode's parsers consume vs what 0.71.0 writes
+ *                         (two-level field census — envelope keys and
+ *                         steps[] keys, with 0.71.0's optional
+ *                         steps[].externalProcess recorded
+ *                         presence-tolerantly — plus strict reads, unknown
+ *                         fields tolerated).
  *   ③ events            — subagent:async-started / async-complete,
  *                         subagent:child-status (stopping/stopped), and the
  *                         bridge's forwarded contract twins.
@@ -26,10 +34,22 @@
  *                         (parseRunStateEnvelope + mapArtifactState); the
  *                         non-observable states stay table-driven (vitest).
  *
- * Real model calls: two cheap scout children. Same class as smoke stages
+ * 0.71.0 behavior notes (research §3④/§4A, accepted as-is — the batch's
+ * Q6=A ruling):
+ *   • dev/unpacked hosts get dynamic tool activation: the model first sees
+ *     the small `subagents_enable` loader; the full `subagent` tool loads on
+ *     demand (the packaged app keeps the eager tool). This probe drives the
+ *     RPC and the bridge's direct handlers, which bypass the activation
+ *     gate — the legs below are unaffected either way.
+ *   • packaged `worker` agents now default to fresh context instead of
+ *     forking the parent conversation.
+ *   • `subagent:async-started` task/goal become redacted markers for
+ *     workflowScript roots — the bridge reads neither key.
+ *
+ * Real model calls: three cheap scout children. Same class as smoke stages
  * 2/5/6 — dev-app serialization applies (run the ps check first).
  *
- * Usage: node scripts/smoke/subagents-070-probe.ts
+ * Usage: node scripts/smoke/subagents-071-probe.ts
  * Needs working model auth in ~/.pi/agent (same as the pi TUI). Session
  * writes land in a throwaway store; the real session library is untouched.
  * Exits 0 only when every expectation held. Progress logs as PROBE lines.
@@ -76,12 +96,28 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 
 // ---- setup -----------------------------------------------------------------
 
-const probeCwd = mkdtempSync(join(tmpdir(), 'picode-probe070-cwd-'))
-const sessionsStore = mkdtempSync(join(tmpdir(), 'picode-probe070-sessions-'))
+const probeCwd = mkdtempSync(join(tmpdir(), 'picode-probe071-cwd-'))
+const sessionsStore = mkdtempSync(join(tmpdir(), 'picode-probe071-sessions-'))
 // Artifact isolation (the ticket-90 smoke stage precedent): the probe's real
 // runs write status.json under a throwaway temp root, never the shared
 // per-uid root where the operator's own runs live.
-process.env['PI_SUBAGENTS_TEMP_ROOT'] = mkdtempSync(join(tmpdir(), 'picode-probe070-artifacts-'))
+process.env['PI_SUBAGENTS_TEMP_ROOT'] = mkdtempSync(join(tmpdir(), 'picode-probe071-artifacts-'))
+
+// Host-environment hygiene (ticket 142's stale-marker finding; the
+// hostForkEnv and run-all.sh stage precedents): this probe's in-process
+// session plays a TOP-LEVEL host — never a pi-subagents child. A stale
+// PI_SUBAGENT_CHILD (or HERDR_BRIDGE) inherited from the launching shell
+// (e.g. the probe run from inside a subagent session) makes pi-subagents
+// refuse to register its extension at all — the RPC never answers. The
+// runner-root override and PI_PACKAGE_DIR are cleared for the same reason:
+// an inherited value wins over the ensureSubagentRunnerPackageRoot call
+// below (operator override always wins) and would divert the runner
+// pairing away from the bundled SDK under test.
+delete process.env['PI_SUBAGENT_CHILD']
+delete process.env['PI_SUBAGENTS_HERDR_BRIDGE']
+delete process.env['PI_SUBAGENT_PARENT_SESSION']
+delete process.env['PI_SUBAGENTS_PI_CODING_AGENT_PACKAGE_ROOT']
+delete process.env['PI_PACKAGE_DIR']
 
 /** Every forwarded bridge event (the renderer-facing contract twins). */
 const bridgeEvents: HostEvent[] = []
@@ -92,7 +128,7 @@ const bridge = new SubagentBridge((event) => bridgeEvents.push(event))
 let bus: { emit(channel: string, data: unknown): void; on(channel: string, handler: (data: unknown) => void): () => void } | null = null
 const rawEvents: Array<{ channel: string; data: unknown }> = []
 const observer: pi.InlineExtension = {
-  name: 'picode-070-probe-observer',
+  name: 'picode-071-probe-observer',
   hidden: true,
   factory: (pi) => {
     bus = pi.events
@@ -107,14 +143,14 @@ const rpcSeq = { n: 0 }
 function rpc(method: string, params: Record<string, unknown>): Promise<{ success: boolean; data?: unknown; error?: { code?: string; message?: string } }> {
   const events = bus
   if (events === null) return Promise.reject(new Error('session bus not wired'))
-  const requestId = `probe070-${++rpcSeq.n}-${Date.now().toString(36)}`
+  const requestId = `probe071-${++rpcSeq.n}-${Date.now().toString(36)}`
   return withTimeout(`rpc ${method}`, RPC_ROUNDTRIP_MS, async () => {
     return await new Promise((resolve) => {
       const unsubscribe = events.on(`subagents:rpc:v1:reply:${requestId}`, (data) => {
         unsubscribe()
         resolve(data as { success: boolean; data?: unknown; error?: { code?: string; message?: string } })
       })
-      events.emit(RPC_REQUEST_EVENT, { version: 1, requestId, method, params, source: { extension: 'picode-070-probe-observer' } })
+      events.emit(RPC_REQUEST_EVENT, { version: 1, requestId, method, params, source: { extension: 'picode-071-probe-observer' } })
     })
   })
 }
@@ -141,8 +177,17 @@ function readStatusJson(asyncDir: string): Record<string, unknown> | null {
 }
 
 const statusFieldCensus = new Set<string>()
+const stepFieldCensus = new Set<string>()
 function census(status: Record<string, unknown>): void {
   for (const key of Object.keys(status)) statusFieldCensus.add(key)
+  // 0.71.0 increment: the steps[] key census — externalProcess is optional
+  // (only external CLI agent steps carry it); presence is recorded, never
+  // required.
+  if (Array.isArray(status['steps'])) {
+    for (const step of status['steps']) {
+      if (isRecord(step)) for (const key of Object.keys(step)) stepFieldCensus.add(key)
+    }
+  }
 }
 
 /** The spawn reply's launch receipt (data.details — the SAME shape the
@@ -183,15 +228,32 @@ async function main(): Promise<void> {
         if (!isRecord(capabilities['fleetStatus']) || capabilities['fleetStatus']['version'] !== 1) {
           fail(`ping: fleetStatus capability is not v1 (${JSON.stringify(capabilities['fleetStatus'])})`)
         }
+        // 0.71.0 increment: the versioned cost capability (RPC `cost`).
+        if (!isRecord(capabilities['cost']) || capabilities['cost']['version'] !== 1) {
+          fail(`ping: cost capability is not v1 (${JSON.stringify(capabilities['cost'])})`)
+        }
         if (capabilities['nonRecoveringSteer'] !== true) fail('ping: nonRecoveringSteer capability absent')
         if (events['childStatus'] !== CHILD_STATUS_EVENT) fail(`ping: events.childStatus != ${CHILD_STATUS_EVENT} (${JSON.stringify(events)})`)
-        log('rpc_capabilities', 'fleetStatus v1 + nonRecoveringSteer + childStatus channel match')
+        log('rpc_capabilities', 'fleetStatus v1 + cost v1 + nonRecoveringSteer + childStatus channel match')
         return
       }
       if (Date.now() > deadline) fail('rpc ready: ping never succeeded')
       await sleep(250)
     }
   })
+
+  // ---- ① 0.71.0 increment: the versioned cost envelope --------------------
+  // One cost RPC roundtrip — the same parent-plus-child spend /subagent-cost
+  // renders, as versioned data. Shape only: the version pin + key presence;
+  // numeric values ride the live session (loosely logged, never pinned).
+  const costRaw = await rpc('cost', {})
+  if (costRaw.success !== true) fail(`cost RPC failed: ${JSON.stringify(costRaw.error)}`)
+  const costData = digRecord(costRaw.data)
+  if (costData['version'] !== 1) fail(`cost reply is not the v1 envelope (version=${JSON.stringify(costData['version'])})`)
+  for (const key of ['parent', 'children', 'childTotal', 'total', 'unresolvedAsyncChildren']) {
+    if (!(key in costData)) fail(`cost envelope missing "${key}" (shape drift)`)
+  }
+  log('cost_envelope', `version=1 parent/children/childTotal/total/unresolvedAsyncChildren present children=${Array.isArray(costData['children']) ? (costData['children'] as unknown[]).length : '?'} unresolvedAsyncChildren=${String(costData['unresolvedAsyncChildren'])}`)
 
   // ---- leg 1: spawn → running → status/steer → natural COMPLETE -----------
 
@@ -201,7 +263,7 @@ async function main(): Promise<void> {
   // A long multi-tool single task: the live window must outlast the steer +
   // status roundtrips below (a flash-model child answers trivial prompts in
   // seconds; reads + a long write keep it busy for tens of seconds).
-  const LONG_TASK = 'Read the files package.json, tsconfig.json, vitest.config.ts, eslint.config.js and README.md in this directory ONE AT A TIME, waiting for each result before the next. After the five reads, write the numbers from 1 to 100, one per line. Then reply with exactly: PICODE070OK'
+  const LONG_TASK = 'Read the files package.json, tsconfig.json, vitest.config.ts, eslint.config.js and README.md in this directory ONE AT A TIME, waiting for each result before the next. After the five reads, write the numbers from 1 to 100, one per line. Then reply with exactly: PICODE071OK'
   const leg1 = await rpc('spawn', { agent: 'scout', task: LONG_TASK })
   const identity1 = extractSpawnIdentity(leg1)
   if (identity1 === null) fail(`spawn leg1 failed or carried no identity: ${JSON.stringify(leg1.error ?? (isRecord(leg1.data) ? Object.keys(digRecord(leg1.data, 'details')) : leg1.data))}`)
@@ -231,7 +293,7 @@ async function main(): Promise<void> {
 
   // ① steer roundtrip through the BRIDGE (ticket 99's exact path).
   bridgeEvents.length = 0
-  await bridge.handleSteerRequest('probe-steer-1', runId1!, 'Continue: still reply with exactly PICODE070OK at the very end')
+  await bridge.handleSteerRequest('probe-steer-1', runId1!, 'Continue: still reply with exactly PICODE071OK at the very end')
   const steerTwin = bridgeEvents.find((e): e is Extract<HostEvent, { type: 'subagent_steer_receipt' }> => e.type === 'subagent_steer_receipt')
   if (steerTwin === undefined) fail('bridge handleSteerRequest forwarded no steer receipt')
   if (steerTwin.ok !== true || (steerTwin.deliveryStatus !== 'delivered' && steerTwin.deliveryStatus !== 'queued')) {
@@ -252,7 +314,7 @@ async function main(): Promise<void> {
 
   // ② the conversation tab's source fields (ticket 99's parser, real file).
   // sessionFile lands once the child's own session starts writing — poll for
-  // it inside the live artifact (0.70.1 writes it top-level for singles).
+  // it inside the live artifact (0.71.0 writes it top-level for singles).
   const transcriptStatus = await pollUntil('status.json sessionFile', CHILD_BUDGET_MS, () => readStatusJson(asyncDir1!), (s) => {
     if (s !== null) census(s)
     return s !== null && typeof s['sessionFile'] === 'string' && s['sessionFile'] !== ''
@@ -286,7 +348,7 @@ async function main(): Promise<void> {
   await bridge.handleStatusRequest('probe-status-1', () => [asyncDir1!])
   const statusTwin = bridgeEvents.find((e): e is Extract<HostEvent, { type: 'subagent_status' }> => e.type === 'subagent_status')
   if (statusTwin === undefined) fail('bridge handleStatusRequest forwarded no subagent_status')
-  if (statusTwin.available !== true) fail('bridge subagent_status: available != true (RPC fleet path broken on 0.70.1)')
+  if (statusTwin.available !== true) fail('bridge subagent_status: available != true (RPC fleet path broken on 0.71.0)')
   // The wire's fleet.version==1 was already asserted on the RAW reply; the
   // bridge's DTO projection carries entries/totalActive/omitted.
   if (statusTwin.fleet === null || statusTwin.fleet.entries.length === 0) {
@@ -407,11 +469,15 @@ async function main(): Promise<void> {
 
   // ---- checklist summary ---------------------------------------------------
 
-  log('field_census', `status.json keys 0.70.1 wrote: ${[...statusFieldCensus].sort().join(',')}`)
+  log('field_census', `status.json keys 0.71.0 wrote: ${[...statusFieldCensus].sort().join(',')}`)
+  log('step_field_census', `status.json steps[] keys 0.71.0 wrote: ${[...stepFieldCensus].sort().join(',')}`)
+  // 0.71.0 increment, presence-tolerant: externalProcess only appears on
+  // external CLI agent steps — record it when seen, never require it.
+  log('external_process_census', `steps[].externalProcess ${stepFieldCensus.has('externalProcess') ? 'seen (an external CLI step ran)' : 'absent (no external CLI steps ran)'} — presence-tolerant`)
   const mustSee = ['runId', 'state', 'startedAt', 'endedAt', 'mode', 'sessionFile', 'steps']
   const missing = mustSee.filter((key) => !statusFieldCensus.has(key))
   if (missing.length > 0) fail(`field census: PiCode/doc-consumed keys never seen in the real artifacts: ${missing.join(',')}`)
-  log('verdict', '① RPC shapes ② status.json fields ③ events ④ live projection — all held on 0.70.1')
+  log('verdict', '① RPC shapes (+cost envelope) ② status.json fields (+steps[] census) ③ events ④ live projection — all held on 0.71.0')
   log('PASS')
   rmSync(probeCwd, { recursive: true, force: true })
   rmSync(sessionsStore, { recursive: true, force: true })

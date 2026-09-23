@@ -18,7 +18,7 @@
     "smoke:pty": "ELECTRON_RUN_AS_NODE=1 electron scripts/smoke/pty-smoke.mjs",
     "smoke:usage": "node scripts/smoke/usage-smoke.ts",
     "smoke:interop": "npm run build && node scripts/smoke/interop-smoke.ts",
-    "smoke:subagents070": "esbuild scripts/smoke/subagents-070-probe.ts --bundle --platform=node --format=esm --external:@earendil-works/pi-coding-agent --outfile=node_modules/.cache/probe070.mjs && node node_modules/.cache/probe070.mjs",
+    "smoke:subagents071": "esbuild scripts/smoke/subagents-071-probe.ts --bundle --platform=node --format=esm --external:@earendil-works/pi-coding-agent --outfile=node_modules/.cache/probe071.mjs && node node_modules/.cache/probe071.mjs",
     "smoke:electron": "npm run build && node scripts/smoke/electron-smoke.mjs",
     "smoke:layout": "npm run build && node scripts/smoke/layout-persist-smoke.mjs",
     "smoke": "bash scripts/smoke/run-all.sh",
