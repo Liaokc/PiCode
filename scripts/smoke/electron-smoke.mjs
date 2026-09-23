@@ -23,6 +23,14 @@ const store = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-sessions-'))
 const piAgent = mkdtempSync(path.join(os.tmpdir(), 'picode-smoke-piagent-'))
 console.log(`SMOKE isolated session store: ${store}`)
 console.log(`SMOKE isolated pi agent dir: ${piAgent}`)
+// Ticket 142: a suite driven from inside a subagent session inherits the
+// runner's child markers; a stale PI_SUBAGENT_CHILD makes pi-subagents
+// refuse to register in every host (the t90 live legs then die on
+// available:false). The app under smoke is never a subagent child — the
+// markers are only meaningful when the runner sets them at its own spawns.
+const env = { ...process.env, PICODE_SMOKE: '1', PICODE_FAKE_USAGE: '1', PICODE_SESSION_DIR: store, PICODE_PI_AGENT_DIR: piAgent }
+delete env['PI_SUBAGENT_CHILD']
+delete env['PI_SUBAGENTS_HERDR_BRIDGE']
 const result = spawnSync('electron', ['.'], {
   stdio: 'inherit',
   // PICODE_FAKE_USAGE: the ticket-65 usage stage hovers the fixture-driven
@@ -32,13 +40,7 @@ const result = spawnSync('electron', ['.'], {
   // operator's real ~/.pi/agent/settings.json and skills links are never
   // touched by a smoke run (the stage seeds and cleans the sandbox itself;
   // this wrapper deletes the whole directory on exit).
-  env: {
-    ...process.env,
-    PICODE_SMOKE: '1',
-    PICODE_FAKE_USAGE: '1',
-    PICODE_SESSION_DIR: store,
-    PICODE_PI_AGENT_DIR: piAgent
-  }
+  env
 })
 rmSync(store, { recursive: true, force: true })
 rmSync(piAgent, { recursive: true, force: true })

@@ -180,7 +180,19 @@ export function whenSpawnPathReady(): Promise<string> {
 
 /** The env for every host-family fork: the app's environment with the
  * live-composed PATH (so the host, pi-subagents' runner and every pi child
- * resolve `node`) and the run-as-node marker the fork protocol needs. */
+ * resolve `node`) and the run-as-node marker the fork protocol needs.
+ *
+ * The pi-subagents child markers (PI_SUBAGENT_CHILD,
+ * PI_SUBAGENTS_HERDR_BRIDGE) are stripped: they are only meaningful when
+ * the pi-subagents runner sets them for ITS OWN spawns, and a stale copy
+ * inherited from the app's launch environment (e.g. the app launched from
+ * inside a subagent session) makes pi-subagents refuse to register its
+ * extension in every host — the fleet RPC never answers and the subagent
+ * directory degrades to available:false everywhere (ticket 142). A host
+ * fork is a top-level agent process, never a subagent child. */
 export function hostForkEnv(): NodeJS.ProcessEnv {
-  return { ...process.env, ELECTRON_RUN_AS_NODE: '1', PATH: getSpawnPath() }
+  const env: NodeJS.ProcessEnv = { ...process.env, ELECTRON_RUN_AS_NODE: '1', PATH: getSpawnPath() }
+  delete env['PI_SUBAGENT_CHILD']
+  delete env['PI_SUBAGENTS_HERDR_BRIDGE']
+  return env
 }
