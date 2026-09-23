@@ -30,6 +30,16 @@ Status: in-progress
   - **Q4 = 单态以新版为主**：不双态兼容旧版用户级包；诚实地板检查机制保留并更新水位。
   - **Q5 = 断言/探针面纳入票面验收**：subagents 探针升位、smoke t134 地板断言、package.mjs 打包校验、subagent-sdk-alignment 地板常量随水位更新；契约事件增量照 additive 纪律报备。
 
+## R0-调研 三路报告落地（2026-09-24，报告全存 `.scratch/picode-1-8-1/research/`）
+
+- **报告**：`sdk-0.87.1-diff.md` / `pi-subagents-0.71.0-diff.md` / `pi-mcp-adapter-2.37.0-diff.md`（changelog 逐字 + .d.ts diff + tsc 双探针 + 逐文件 diff + file:line 证据索引；delegate 全程只读，/tmp 解包）。
+- **SDK 0.87.1**：0.87.0 五条 Breaking（shouldStopAfterTurn 移除 / SessionEntry+context_edit / SessionManager canonical / TurnEndEvent 扩张+emit(turn_end) 禁用 / agent_settled 延迟）全部不触及 PiCode（rg 零命中或松类型兜底）；API 面 18 个 .d.ts 变化除 loadPromptTemplates（PiCode 不调用）外全为加法；prompt/steer/followUp/abort/navigateTree/fork 签名不变；AgentEvent/AgentSessionEvent 联合逐字一致。**唯一硬失败 = `tests/main/bundled-sdk-versions.test.ts:29-30` 写死 '0.86.1'**。会话格式 v3 不变（context_edit 仅错误重试/溢出恢复写入）；旧 TUI 开新会话不崩（唯一良性分歧：旧 TUI 续写含 context_edit 会话时被省略的失败尝试重回上下文——Q2 同步升后此分歧消解）。适配 = package.json:72 版本（S）+ 测试字面量（S）+ package.mjs:69,91 注释（S）+ 全量验证（M）。
+- **pi-subagents 0.71.0**：**强制改动为零、零死亡面**——票 134 根因（review.js/permission-arbiter.js 的 pi-ai transcript-tools 硬导入）在 0.71.0 已整体删除（watchdog 改 initialState.systemPrompt，pi-agent-core 0.86.1 原生支持；changelog #2377 明言修复 0.86.1 布局）；RPC 七方法 handler 逐字节不变（仅新增 cost）；status.json 信封不变（steps 仅增量 externalProcess）；四生命周期事件名/payload 键不变（child-status 增 "started"，被 PiCode 过滤器忽略）；peer 地板恰 pi-ai >=0.86.1、无 0.87 硬门。**三个行为变化（非破坏）**：①dev/unpacked 动态激活开启（subagents_enable loader 先行，一次额外往返；asar 打包保持 eager+一条警告——票 111 的 PI_SUBAGENTS_PI_CODING_AGENT_PACKAGE_ROOT override 语义下探针读到内嵌 SDK）；②打包 worker 默认 fresh 上下文（worker.md defaultContext: fork→fresh，per-call/全局 fork 仍可请求）；③async-started task/goal 脱敏（PiCode 不读）。可选项：cost RPC 桥接事件（S~M）、动态激活预激活（S~M）、child-status started 转发（S）、探针补 0.71 断言（S）。
+- **pi-mcp-adapter 2.37.0**：**无硬死面**——mcp-status.ts/mcp-setup-panel.ts/server-manager.ts/OAuth 流/skills 全部字节未变；MCP_STATUS_SNAPSHOT_VERSION=1 与频道 pi-mcp-adapter/status/v1 未 bump（票 96 投影安全）；config.ts 合并规则逐行未变（仅外包 applySettingDefaults：settings.exposeResources 全局默认，server 自带者胜出）。两处软降级仅当用户启用新设置：①PiCode mergeMcpLayers 不读 settings 块 → exposeResources 全局默认不投影（显示保真缺口）；②deferWithMissingMetadata 延迟首快照（诚实降级已覆盖）。适配 = 两处 fidelity 注释升级（S）；可选 exposeResources 投影（S/M ~1 天）。新能力盘点：exposeResources 全局开关（S）、/mcp jev setup（M–L）、allowInstall/deferWithMissingMetadata（UI 价值低）。
+- **升级次序无死锁**：0.71.0+SDK 0.86.1 已验证可行；0.71.0+SDK 0.87.1 可行（peer `>=0.86.1`/`*`）；adapter 2.37 peer 含 ^0.86 与 ^0.87。
+- **本地事实补齐**：`smoke:subagents070` 不在 run-all.sh（独立脚本，更名零风险）；interop-smoke.ts 无版本字面量（import 捆绑 SDK + 读最新 TUI 会话，天然验证终态）；run-all.sh:68 electron smoke 已带 env -u 净化。
+- **Round 2（Q6–Q10）已摆**：dev 动态激活处置 / 可选项入批与否 / 探针更名口径 / 环境升级时序 / 模型分派。答后回填。
+
 ## Q0（开工第一问）：微票 144 处置 —— **A：并入 1.8.1**
 
 - **问题**：微票 144（forkHost 环境标记剥离——`scripts/smoke/host-contract-smoke.mjs:408-415` 直 fork host 时不剥 `PI_SUBAGENT_CHILD`/`PI_SUBAGENTS_HERDR_BRIDGE`；从 subagent 会话驱动的 smoke:host 死 Round K，票 143 实现工实证、`env -u` 三变量后全套过；Linear LIA-205 Todo）仍待派。
