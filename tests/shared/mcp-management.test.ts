@@ -4,6 +4,10 @@
  * winning-source annotation, write-target resolution, and the pure
  * document derivations for the disabled flag / add / edit / delete writes.
  * The empty state is asserted as honestly empty, never invented.
+ * Ticket 148 pins the jev coexistence (adapter 2.36 `/mcp jev setup`): a
+ * layer document carrying the writer's settings.jev block parses it
+ * through, the merge reads only server entries, and PiCode's write
+ * derivations leave the block intact.
  */
 
 import { describe, expect, it } from 'vitest'
@@ -32,6 +36,7 @@ import {
   sharedConfigTargetPath,
   supportsOAuth,
   type McpConfigLayer,
+  type McpEffectiveServer,
   type McpServerEntry
 } from '../../src/shared/mcp-management'
 
@@ -109,6 +114,15 @@ describe('document parse', () => {
     const parsed = parseMcpDocument('{"imports":["cursor"],"settings":{"hostConfigDiscovery":"on"},"mcpServers":{}}')
     expect(parsed.doc['imports']).toEqual(['cursor'])
     expect(parsed.doc['settings']).toEqual({ hostConfigDiscovery: 'on' })
+  })
+
+  it('preserves the settings.jev block the /mcp jev setup writer produces (2.36 writeJevSemanticSearchConfig)', () => {
+    const parsed = parseMcpDocument(
+      '{"settings":{"jev":{"semanticSearch":true,"allowedServers":["repo-tools","shared-search"]}},"mcpServers":{"repo-tools":{"command":"node","args":["tools/repo-mcp.js"]}}}'
+    )
+    expect(parsed.key).toBe('mcpServers')
+    expect(parsed.servers).toEqual({ 'repo-tools': { command: 'node', args: ['tools/repo-mcp.js'] } })
+    expect(parsed.doc['settings']).toEqual({ jev: { semanticSearch: true, allowedServers: ['repo-tools', 'shared-search'] } })
   })
 
   it('rejects corrupt documents and malformed shapes with honest messages', () => {
@@ -218,6 +232,17 @@ describe('mergeMcpLayers (precedence + winning-source annotation)', () => {
   it('carries the OAuth marker from the merged entry', () => {
     const rows = mergeMcpLayers([makeLayer('shared-global', { notion: { url: 'https://mcp.notion.com/mcp', auth: 'oauth' } })])
     expect(rows[0]!.oauth).toBe(true)
+  })
+
+  it('reads only server entries — a jev-configured layer never leaks settings.jev into the merged view', () => {
+    const parsed = parseMcpDocument(
+      '{"settings":{"jev":{"semanticSearch":true,"allowedServers":["repo-tools","shared-search"]}},"mcpServers":{"repo-tools":{"command":"node"},"shared-search":{"command":"shared-search-bin"}}}'
+    )
+    const rows = mergeMcpLayers([makeLayer('pi-project', parsed.servers)])
+    expect(rows.map((r) => r.name)).toEqual(['repo-tools', 'shared-search'])
+    expect(rows[0]!.entry).toEqual({ command: 'node' })
+    expect(rows[1]!.entry).toEqual({ command: 'shared-search-bin' })
+    expect(JSON.stringify(rows)).not.toContain('jev')
   })
 
   it('never mutates the input layers', () => {
@@ -379,6 +404,28 @@ describe('deriveServerEntryWrite / deriveServerEntryRemove (add / edit / delete)
     expect(repeat.changed).toBe(false)
     expect(repeat.doc).toBe(doc)
   })
+
+  it('a write onto a jev-configured layer keeps settings.jev verbatim (2.36 /mcp jev setup coexistence)', () => {
+    const raw = {
+      settings: { jev: { semanticSearch: true, allowedServers: ['repo-tools', 'shared-search'] } },
+      mcpServers: { 'repo-tools': { command: 'node' } }
+    }
+    const { doc, changed } = deriveServerEntryWrite(raw, 'search', { command: 'search-bin' })
+    expect(changed).toBe(true)
+    expect(doc['settings']).toEqual({ jev: { semanticSearch: true, allowedServers: ['repo-tools', 'shared-search'] } })
+    expect(serversOf(doc)).toEqual({ 'repo-tools': { command: 'node' }, search: { command: 'search-bin' } })
+  })
+
+  it('a remove from a jev-configured layer keeps settings.jev verbatim', () => {
+    const raw = {
+      settings: { jev: { semanticSearch: true, allowedServers: ['repo-tools'] } },
+      mcpServers: { 'repo-tools': { command: 'node' }, other: { command: 'other-bin' } }
+    }
+    const { doc, changed } = deriveServerEntryRemove(raw, 'repo-tools')
+    expect(changed).toBe(true)
+    expect(doc['settings']).toEqual({ jev: { semanticSearch: true, allowedServers: ['repo-tools'] } })
+    expect(serversOf(doc)).toEqual({ other: { command: 'other-bin' } })
+  })
 })
 
 describe('OAuth support (adapter-faithful detection)', () => {
@@ -433,7 +480,7 @@ describe('form round-trip', () => {
   })
 })
 
-type McpEffectiveRowLike = Pick<import('../../src/shared/mcp-management').McpEffectiveServer, 'name' | 'winnerPath' | 'definedIn'>
+type McpEffectiveRowLike = Pick<McpEffectiveServer, 'name' | 'winnerPath' | 'definedIn'>
 
 describe('copy', () => {
   it('carries the Pi-official security tone', () => {

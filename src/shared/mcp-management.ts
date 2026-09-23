@@ -6,19 +6,29 @@
  * an add/edit into a `/mcp setup` target write, and a delete into a
  * remove-from-the-owning-layer action.
  *
- * Adapter fidelity (pi-mcp-adapter 2.35.0, re-verified for ticket 115):
+ * Adapter fidelity (pi-mcp-adapter 2.37.0, re-verified for ticket 148):
  * - Layer precedence (lowest → highest): user-global shared
  *   (`~/.config/mcp/mcp.json`) → `~/.agents` shared files → Pi global
  *   override (`<agentDir>/mcp.json`) → project shared (`.mcp.json`) →
  *   Pi project override (`<cwd>/.pi/mcp.json`). Later layers win.
- *   2.35 leaves every write target in place (README: "/mcp setup write
+ *   2.37 leaves every write target in place (README: "/mcp setup write
  *   targets and project-local /mcp disable and /mcp enable overrides are
- *   unchanged"); the only 2.35 writer change — symlink-target-preserving
- *   atomic replace + file-mode retention — lives in the service's writer
- *   (mcp-service.ts), which mirrors the adapter's writeConfigText.
+ *   unchanged" — still verbatim in 2.37); the last writer change — 2.35's
+ *   symlink-target-preserving atomic replace + file-mode retention —
+ *   lives in the service's writer (mcp-service.ts), which mirrors the
+ *   adapter's writeConfigText.
  * - The merge is per-field with URL-bound auth security: a higher layer
  *   that repoints a server at another transport or url must not inherit
  *   the lower layer's auth material (credential-exfiltration guard).
+ *   2.37 re-verification (research/pi-mcp-adapter-2.37.0-diff.md §2.1):
+ *   the merge proper — mergeConfigs / mergeServerMaps / the URL-bound
+ *   auth stripping / the transport-switch cleanup /
+ *   writeProjectServerDisabledOverride / writeSharedServerEntry / the two
+ *   `/mcp setup` write targets — is line-for-line unchanged; the only
+ *   2.37 behavior addition wraps the merged result in
+ *   applySettingDefaults (a `settings.exposeResources` default for
+ *   servers that do not carry their own) — a display-fidelity gap only,
+ *   and only while the new setting is actually used.
  * - Enable/disable writes ONLY the `disabled` flag into the project Pi
  *   layer (`.pi/mcp.json`) — exactly the adapter's
  *   `writeProjectServerDisabledOverride`; enabling writes an explicit
@@ -28,6 +38,18 @@
  *   the project `.mcp.json` and the user-global shared
  *   `~/.config/mcp/mcp.json` — plus, for edits/deletes of definitions that
  *   already live in a Pi-owned layer, that layer's own file.
+ * - Jev coexistence (2.36 `/mcp jev setup`, adapter
+ *   writeJevSemanticSearchConfig): the adapter writes a `settings.jev`
+ *   block into the project Pi layer (`.pi/mcp.json`) or the Pi global
+ *   file; the merge reads ONLY the server entries, and every write
+ *   derivation preserves unknown keys (the `{ ...rawDoc }` spread touches
+ *   only the servers key), so a jev-configured layer and PiCode's writes
+ *   coexist with zero destruction (pinned by the tests).
+ * - The OAuth surface is unchanged: 2.37's one auth fix — getValidToken
+ *   no longer returns an expired access token when no refresh token is
+ *   stored — touches only the extension-facing token query
+ *   (getMcpOAuthTokensForUrl); the `/mcp-auth` flow behind the
+ *   Authenticate affordance is line-for-line unchanged.
  *
  * Data safety line (ticket 89): external host-tool configs (Cursor, Claude
  * Code, Codex, …) are read-only compatibility discovery for the ADAPTER —

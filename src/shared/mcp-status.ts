@@ -7,7 +7,7 @@
  * additive `mcp_status` contract event, and the renderer projects it onto
  * the config rows.
  *
- * Adapter fidelity (pi-mcp-adapter 2.35.0, re-verified for ticket 115;
+ * Adapter fidelity (pi-mcp-adapter 2.37.0, re-verified for ticket 148;
  * README "Runtime status
  * snapshots" + mcp-status.ts):
  * - the snapshot is READ-ONLY machine-readable data: reading it never
@@ -26,6 +26,18 @@
  *   (+ resourceCount when known, failedAgoSeconds only during an active
  *   failure). listenState / catalogStale stay adapter-internal and are
  *   dropped from the bounded contract projection.
+ * - 2.37 re-verification (research/pi-mcp-adapter-2.37.0-diff.md §2.2):
+ *   the adapter's mcp-status.ts is byte-identical to 2.35, and neither
+ *   MCP_STATUS_SNAPSHOT_VERSION = 1 nor the
+ *   `pi-mcp-adapter/status/v1` channel is bumped — the v1 projection and
+ *   the pinned-channel subscription below stay exactly valid. The OAuth
+ *   flow is unchanged as well: 2.37's one auth fix (getValidToken returns
+ *   null for an expired access token with no refresh token) touches only
+ *   the extension-facing token query — the /mcp-auth flow that puts a
+ *   server into needs-auth is line-for-line unchanged. The 2.37
+ *   `settings.deferWithMissingMetadata` may delay the initial snapshot or
+ *   show zero tools until the first call — mcpStatusLine's not-yet-reported
+ *   and empty-snapshot notes already cover that honestly.
  *
  * Pure module: no node builtins, no SDK imports, no adapter imports
  * (Seam-1 guardrail — the adapter is not a PiCode dependency; the channel
