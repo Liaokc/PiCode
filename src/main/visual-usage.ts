@@ -4,28 +4,45 @@
  * usage IPC serves the deterministic fixture (src/shared/usage/fixture.ts).
  * Drives the real UI through the settings shell and captures:
  *
- *   u1-usage-overview  — headline cards + Token activity heatmap (daily)
+ *   u1-usage-overview  — headline cards + Token activity heatmap (daily);
+ *                        the 52×7 grid fully fits its container (no
+ *                        horizontal scroll — ticket 140)
+ *   u10-usage-narrow   — the same daily grid with the window resized to a
+ *                        narrow width (~760px content, below the app's own
+ *                        1040 minimum — the minimum is relaxed for the frame
+ *                        and restored after): 52 columns × 7 rows all
+ *                        rendered, columns shrink and share the width, no
+ *                        horizontal overflow (ticket 140 narrow-window fit)
  *   u1b-usage-heat-daily-hover — real-input hover on an active daily box:
- *                        white card above the box (z19-heatmap-daily-2 form)
+ *                        white card above the box (z19-heatmap-daily-2 form);
+ *                        the hovered box keeps its deeper outline (daily
+ *                        highlight retained — ticket 140)
  *   u2-usage-heat-weekly    — heatmap toggled to Weekly: the same 52×7
  *                        contribution grid re-colored week-start-to-day
  *                        (ticket 139, z19-heatmap-weekly-1)
  *   u2b-usage-heat-weekly-hover — real-input hover on the current week's
- *                        column: card above the column's topmost box + ring
- *                        (z19-heatmap-weekly-2)
+ *                        column: card above the column's topmost box + ring;
+ *                        the hovered box's outline equals its column
+ *                        siblings' (no deeper cell frame — ticket 140)
  *   u2c-usage-heat-cumulative — Cumulative mode: term-start-to-day boxes
  *                        (z19-heatmap-cumulative-1)
  *   u2d-usage-heat-cumulative-hover — real-input hover, card above the
  *                        current week's column ('Through … · This week',
- *                        z19-heatmap-cumulative-2)
- *   u3-usage-trend     — time range + per-model daily trend chart (30d,
- *                        curves clamped into the plot band — ticket 65)
- *   u4-usage-donut     — model usage donut with legend shares
+ *                        z19-heatmap-cumulative-2; sibling-outline rule as
+ *                        u2b — ticket 140)
+ *   u3-usage-trend     — the per-model daily trend, fixed to a one-week
+ *                        window (the Time Range switch row is retired —
+ *                        ticket 140)
+ *   u4-usage-donut     — model usage donut with legend shares (same fixed
+ *                        one-week window — ticket 140)
  *   u5-usage-drilldown — drill-down panel after picking an active day
- *   u6-usage-trend-hover — 30d trend hover: guide line + dots + white card
- *   u7-usage-trend-7d  — 7-day trend (same interpolation/clamp as 30d)
- *   u8-usage-trend-7d-hover — 7d hover white card (ZCode z13 anchor form)
+ *   u6-usage-trend-hover — trend hover: guide line + dots + white card
  *   u9-usage-donut-hover — donut arc hover white card (ZCode z13 anchor form)
+ *
+ * Retired frames (ticket 140, recorded in the ticket Comments): u7-usage-
+ * trend-7d and u8-usage-trend-7d-hover — the 7/30 switch they exercised is
+ * gone; u3 + u6 now capture the fixed one-week trend and its hover. The
+ * tracked PNGs were removed from the repo in review round 1.
  *
  * PNGs land in $PICODE_VISUAL_OUT (default: <cwd>/.scratch/visual/). Not part
  * of `npm test`; a human compares them against the reference screenshots.
@@ -72,6 +89,22 @@ async function clickSeg(webContents: WebContents, ariaLabel: string, label: stri
       const btn = [...(seg?.querySelectorAll('.seg-btn') ?? [])].find((b) => b.textContent?.trim() === ${JSON.stringify(label)})
       if (btn instanceof HTMLElement) {
         btn.click()
+        return true
+      }
+      return false
+    })()`
+  )
+}
+
+/** Scroll the .usage-card containing `innerSelector` to the viewport top
+ * (the trend/donut cards have no stable class of their own). */
+async function scrollCard(webContents: WebContents, innerSelector: string): Promise<boolean> {
+  return execute<boolean>(
+    webContents,
+    `(() => {
+      const card = document.querySelector(${JSON.stringify(innerSelector)})?.closest('.usage-card')
+      if (card instanceof HTMLElement) {
+        card.scrollIntoView({ block: 'start' })
         return true
       }
       return false
@@ -190,6 +223,49 @@ const noHeatCard = `document.querySelector('.heat-tooltip') === null`
 /** The hovered column's ring is up (weekly/cumulative hover state). */
 const heatColumnRing = `document.querySelector('.heatmap-col-hover') !== null`
 
+/** The 52×7 grid fully fits its scroll box (ticket 140): no horizontal
+ * overflow at any window width — the columns shrink with the container. */
+const heatFitsContainer = `(() => {
+  const scroll = document.querySelector('.heatmap-scroll')
+  return scroll !== null && scroll.scrollWidth <= scroll.clientWidth + 1
+})()`
+
+/** All 364 day boxes render (52 columns × 7 rows — nothing dropped). */
+const heatCellsAll = `document.querySelectorAll('.heat').length === 364`
+
+/** The grid fills the scroll box's padded content and never spills past it
+ * (ticket 140 narrow-window fit): the columns share the width instead of
+ * keeping a fixed pitch that could overflow. */
+const heatFillsContainer = `(() => {
+  const scroll = document.querySelector('.heatmap-scroll')
+  const grid = document.querySelector('.heatmap')
+  if (!scroll || !grid) return false
+  const g = grid.getBoundingClientRect()
+  const s = scroll.getBoundingClientRect()
+  return g.width >= s.width - 12 && g.right <= s.right + 1
+})()`
+
+/** Daily hover keeps its deeper box outline (ticket 140): the hovered box
+ * under the real pointer carries a non-none outline (button.heat:hover). */
+const dailyHoverBoxOutlined = `(() => {
+  const el = document.querySelector('button.heat:hover')
+  return el !== null && getComputedStyle(el).outlineStyle !== 'none'
+})()`
+
+/** weekly/cumulative hover shows ONLY the column ring (ticket 140): the
+ * hovered box's computed outline equals a column sibling's — no deeper
+ * cell frame on top of the ring. */
+const hoverBoxMatchesSiblings = `(() => {
+  const hovered = document.querySelector('.heatmap-col-hover button.heat:hover')
+  if (!hovered) return false
+  const col = hovered.closest('.heatmap-col')
+  const sibling = [...col.querySelectorAll('.heat')].find((el) => el !== hovered)
+  if (!sibling) return true
+  const a = getComputedStyle(hovered)
+  const b = getComputedStyle(sibling)
+  return a.outlineStyle === b.outlineStyle && a.outlineWidth === b.outlineWidth && a.outlineColor === b.outlineColor
+})()`
+
 /** A section's top edge is inside the viewport (the scroll-to target landed). */
 const sectionInView = (selector: string): string =>
   `(() => {
@@ -197,13 +273,6 @@ const sectionInView = (selector: string): string =>
     if (!el) return false
     const r = el.getBoundingClientRect()
     return r.top >= 0 && r.top < window.innerHeight && r.bottom > 0
-  })()`
-
-/** The trend-range segment control's active label equals `label`. */
-const trendRangeActive = (label: string): string =>
-  `(() => {
-    const seg = [...document.querySelectorAll('.seg')].find((el) => el.getAttribute('aria-label') === 'Trend time range')
-    return (seg?.querySelector('.seg-btn-active')?.textContent ?? '').trim() === ${JSON.stringify(label)}
   })()`
 
 export function startUsageVisualIfEnabled(getWindow: () => BrowserWindow | null): void {
@@ -246,19 +315,39 @@ export function startUsageVisualIfEnabled(getWindow: () => BrowserWindow | null)
       await capture(
         win,
         'u1-usage-overview',
-        `(${heatModeActive('Daily')}) && ${noHeatCard}`
+        `(${heatModeActive('Daily')}) && ${noHeatCard} && ${heatFitsContainer}`
       )
+
+      // ---- ticket 140: the narrow-window fit frame (u10) ------------------
+      // The columns must shrink and share the container at ANY width. The
+      // app's own minimum is 1040px, so the harness relaxes it for this one
+      // frame (~760px content — inside the review's 720–800px band), then
+      // restores BOTH the minimum and the content size so every later frame
+      // runs at the original geometry.
+      {
+        const [origW, origH] = win.getContentSize()
+        const [minW, minH] = win.getMinimumSize()
+        win.setMinimumSize(0, 0)
+        win.setContentSize(760, origH)
+        await sleep(400)
+        await capture(
+          win,
+          'u10-usage-narrow',
+          `(${heatModeActive('Daily')}) && ${noHeatCard} && ${heatCellsAll} && ${heatFitsContainer} && ${heatFillsContainer}`
+        )
+        win.setContentSize(origW, origH)
+        win.setMinimumSize(minW, minH)
+        await sleep(400)
+      }
 
       // ---- ticket 139: the six heat frames (three modes × normal/hover) ----
       // Hover target: the LAST active box (the fixture's streak ends today,
       // so the current week's column always carries activity — the z19
-      // frames' right-edge cluster). The grid scrolls horizontally, so the
-      // scroll box is driven to its right end before the box is located.
+      // frames' right-edge cluster). The grid never scrolls (ticket 140),
+      // so every box is reachable where it lays.
       const todayBox = await execute<{ x: number; y: number } | null>(
         wc,
         `(() => {
-          const scroll = document.querySelector('.heatmap-scroll')
-          if (scroll instanceof HTMLElement) scroll.scrollLeft = scroll.scrollWidth
           const cells = [...document.querySelectorAll('button.heat')]
           const cell = cells[cells.length - 1]
           if (!cell) return null
@@ -320,28 +409,30 @@ export function startUsageVisualIfEnabled(getWindow: () => BrowserWindow | null)
         await sleep(300)
       }
 
-      // Daily hover (u1b) — card above the hovered box.
+      // Daily hover (u1b) — card above the hovered box; the box keeps its
+      // deeper outline (daily highlight retained, ticket 140).
       await hoverBoxAndSettle()
       await capture(
         win,
         'u1b-usage-heat-daily-hover',
-        `(${heatModeActive('Daily')}) && (${heatCardShowing(['tokens', 'messages'], ['This week'])})`
+        `(${heatModeActive('Daily')}) && (${heatCardShowing(['tokens', 'messages'], ['This week'])}) && ${dailyHoverBoxOutlined}`
       )
       await unhoverBox()
 
-      // Weekly normal + hover (u2/u2b) — card above the column's topmost box.
+      // Weekly normal + hover (u2/u2b) — card above the column's topmost box;
+      // the hovered box reads like its column siblings (ring only, ticket 140).
       if (!(await clickSeg(wc, 'Heatmap mode', 'Weekly'))) throw new Error('usage visual: Weekly seg missing')
       await sleep(400)
       await capture(
         win,
         'u2-usage-heat-weekly',
-        `(${heatModeActive('Weekly')}) && ${noHeatCard}`
+        `(${heatModeActive('Weekly')}) && ${noHeatCard} && ${heatFitsContainer}`
       )
       await hoverBoxAndSettle()
       await capture(
         win,
         'u2b-usage-heat-weekly-hover',
-        `(${heatModeActive('Weekly')}) && (${heatCardShowing(['This week'], ['Through'])}) && ${heatColumnRing}`
+        `(${heatModeActive('Weekly')}) && (${heatCardShowing(['This week'], ['Through'])}) && ${heatColumnRing} && ${hoverBoxMatchesSiblings}`
       )
       await unhoverBox()
 
@@ -351,26 +442,30 @@ export function startUsageVisualIfEnabled(getWindow: () => BrowserWindow | null)
       await capture(
         win,
         'u2c-usage-heat-cumulative',
-        `(${heatModeActive('Cumulative')}) && ${noHeatCard}`
+        `(${heatModeActive('Cumulative')}) && ${noHeatCard} && ${heatFitsContainer}`
       )
       await hoverBoxAndSettle()
       await capture(
         win,
         'u2d-usage-heat-cumulative-hover',
-        `(${heatModeActive('Cumulative')}) && (${heatCardShowing(['Through', 'This week'])}) && ${heatColumnRing}`
+        `(${heatModeActive('Cumulative')}) && (${heatCardShowing(['Through', 'This week'])}) && ${heatColumnRing} && ${hoverBoxMatchesSiblings}`
       )
       await unhoverBox()
 
       if (!(await clickSeg(wc, 'Heatmap mode', 'Daily'))) throw new Error('usage visual: Daily seg missing')
       await sleep(300)
 
-      // Trend section (default range 30 days, like the reference).
-      await scrollTo(wc, '.range-row')
+      // Trend section — fixed to a one-week window (ticket 140): the Time
+      // Range switch row is retired (no .range-row, no 'Trend time range'
+      // segment) and the axis always projects the 7-day three-tick form.
+      if (!(await scrollCard(wc, '.trend-svg'))) throw new Error('usage visual: trend card missing')
       await sleep(400)
       await capture(
         win,
         'u3-usage-trend',
-        `(${trendRangeActive('Last 30 days')}) && (${sectionInView('.trend-svg')}) && document.querySelector('.trend-tooltip') === null`
+        `(${sectionInView('.trend-svg')}) && document.querySelector('.range-row') === null
+          && document.querySelectorAll('.trend-x-label').length === 3
+          && document.querySelector('.trend-tooltip') === null`
       )
 
       // Donut section.
@@ -400,13 +495,13 @@ export function startUsageVisualIfEnabled(getWindow: () => BrowserWindow | null)
       await sleep(400)
       await capture(win, 'u5-usage-drilldown', `document.querySelectorAll('.drilldown').length > 0`)
 
-      // ---- ticket 65: hover frames (ZCode z13-usage-* anchors) -------------
-      // Close the drill-down, then hover the trend chart: the white-card
-      // tooltip with guide line + intersection dots must appear.
+      // ---- ticket 65/140: hover frames (ZCode z13-usage-* anchors) --------
+      // Close the drill-down, then hover the fixed one-week trend chart: the
+      // white-card tooltip with guide line + intersection dots must appear.
       if (!(await click(wc, '.dd-close'))) throw new Error('usage visual: drill-down close button missing')
       await sleep(300)
 
-      await scrollTo(wc, '.range-row')
+      if (!(await scrollCard(wc, '.trend-svg'))) throw new Error('usage visual: trend svg missing for hover')
       await sleep(300)
       if (!(await hoverAt(wc, '.trend-svg', 0.8, 0.5))) throw new Error('usage visual: trend svg missing for hover')
       let trendTip = false
@@ -427,26 +522,8 @@ export function startUsageVisualIfEnabled(getWindow: () => BrowserWindow | null)
       await unhover(wc, '.trend-svg')
       await sleep(300)
 
-      // The 7-day range must speak the same visual language (same
-      // interpolation + clamp) — captured for the side-by-side review.
-      if (!(await clickSeg(wc, 'Trend time range', 'Last 7 days'))) throw new Error('usage visual: 7d seg missing')
-      await sleep(400)
-      await capture(
-        win,
-        'u7-usage-trend-7d',
-        `(${trendRangeActive('Last 7 days')}) && document.querySelector('.trend-tooltip') === null`
-      )
-      if (!(await hoverAt(wc, '.trend-svg', 0.5, 0.5))) throw new Error('usage visual: trend svg missing for 7d hover')
-      let trendTip7 = false
-      for (let waited = 0; waited < 5_000 && !trendTip7; waited += 200) {
-        trendTip7 = await execute<boolean>(wc, `document.querySelectorAll('.trend-tooltip').length > 0`)
-        if (!trendTip7) await sleep(200)
-      }
-      if (!trendTip7) throw new Error('usage visual: 7d trend hover never opened the tooltip')
-      await sleep(300)
-      await capture(win, 'u8-usage-trend-7d-hover', `document.querySelectorAll('.trend-tooltip').length > 0`)
-      await unhover(wc, '.trend-svg')
-      await sleep(300)
+      // (u7/u8 retired — ticket 140: the 7/30 Time Range switch they
+      // exercised is gone; u3 + u6 cover the fixed one-week trend.)
 
       // Donut hover: move over the first arc (twelve o'clock sits on the
       // ring) — the white card with model · tokens · share must appear.

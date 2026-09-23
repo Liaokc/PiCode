@@ -11692,12 +11692,13 @@ export function startSmokeIfEnabled(
     //    intersection dots + date · per-model tokens · total);
     // ③ leaving the chart hides the chrome again;
     // ④ hovering a donut arc pops its card (model · tokens · share);
-    // ⑤ ticket 124 (R9): the strict-zero fixture model is absent from both
-    //    legends while the tiny non-zero one stays (30d default range);
-    // ⑥ ticket 124 (R9): switching to 7d re-projects (x-axis 3 ticks) and
-    //    the same legend invariants hold; switching back to 30d restores 7;
-    // ⑦ the trend click STILL opens the drill-down (zero click regression);
-    // ⑧ ticket 124 (R15): the drill-down rows carry no Open task button and
+    // ⑤ ticket 124 (R9) + ticket 140: the strict-zero fixture model is
+    //    absent from both legends while the tiny non-zero one stays — both
+    //    charts now read the FIXED one-week window (the Time Range switch
+    //    row is retired: no .range-row, no 'Trend time range' segment), and
+    //    the 7-day axis always projects its three ticks;
+    // ⑥ the trend click STILL opens the drill-down (zero click regression);
+    // ⑦ ticket 124 (R15): the drill-down rows carry no Open task button and
     //    the row grid (session + token-value cells per row) survives.
     log('usage_hover_start')
     await withWindow(getWindow, async (win) => {
@@ -11797,10 +11798,27 @@ export function startSmokeIfEnabled(
       }
       log('usage_donut_hover_ok')
 
-      // ⑤ Ticket 124 (R9): the strict-zero fixture model must be absent from
-      // the trend legend AND the donut (sectors + legend), while the tiny
-      // non-zero model stays in both — and no donut token cell may read a
-      // bare '0 tokens' (exact match: '120 tokens' is legit, '0 tokens' is not).
+      // ⑤ Ticket 124 (R9) + ticket 140: the strict-zero fixture model must
+      // be absent from the trend legend AND the donut (sectors + legend),
+      // while the tiny non-zero model stays in both — and no donut token
+      // cell may read a bare '0 tokens' (exact match: '120 tokens' is
+      // legit, '0 tokens' is not). The trend is FIXED to a one-week window
+      // (ticket 140): the Time Range switch row is retired — no .range-row
+      // and no 'Trend time range' segment — and the 7-day axis always
+      // shows its three ticks. The fixture's zero/tiny models land on a
+      // streak day so the window sees them alike.
+      if (
+        !(await waitForProbe(
+          win,
+          `document.querySelector('.range-row') === null
+            && [...document.querySelectorAll('.seg')].find((el) => el.getAttribute('aria-label') === 'Trend time range') === undefined
+            && document.querySelectorAll('.trend-x-label').length === 3`,
+          5_000
+        ))
+      ) {
+        fail('ticket-140 stage: the trend range switch row is not retired (or the fixed 7-day axis lost its three ticks)')
+      }
+      log('usage_range_row_retired_ok')
       const legendsZeroFree = (): Promise<boolean> =>
         waitForProbe(
           win,
@@ -11819,44 +11837,11 @@ export function startSmokeIfEnabled(
           5_000
         )
       if (!(await legendsZeroFree())) {
-        fail('ticket-124 stage: the 30d legends still show the zero-token model (or lost the tiny one)')
+        fail('ticket-124 stage: the fixed-window legends still show the zero-token model (or lost the tiny one)')
       }
-      log('usage_zero_filter_30d_ok')
+      log('usage_zero_filter_fixed_window_ok')
 
-      // ⑥ Switch to 7 days: the trend re-projects (7 dates → 3 x-ticks) and
-      // the same legend invariants hold; back to 30 days restores 7 ticks.
-      const clickRange = async (label: string): Promise<void> => {
-        const clickedSeg = (await js(
-          `(() => {
-            const seg = [...document.querySelectorAll('.seg')].find((el) => el.getAttribute('aria-label') === 'Trend time range')
-            const btn = [...(seg?.querySelectorAll('.seg-btn') ?? [])].find((b) => b.textContent?.trim() === ${JSON.stringify(label)})
-            if (btn instanceof HTMLElement) {
-              btn.click()
-              return true
-            }
-            return false
-          })()`
-        )) as boolean
-        if (!clickedSeg) fail(`ticket-124 stage: the ${label} range button is missing`)
-      }
-      await clickRange('Last 7 days')
-      if (!(await waitForProbe(win, `document.querySelectorAll('.trend-x-label').length === 3`, 5_000))) {
-        fail('ticket-124 stage: the 7d switch never re-projected the trend axis')
-      }
-      if (!(await legendsZeroFree())) {
-        fail('ticket-124 stage: the 7d legends still show the zero-token model (or lost the tiny one)')
-      }
-      log('usage_zero_filter_7d_ok')
-      await clickRange('Last 30 days')
-      if (!(await waitForProbe(win, `document.querySelectorAll('.trend-x-label').length === 7`, 5_000))) {
-        fail('ticket-124 stage: the 30d switch never re-projected the trend axis')
-      }
-      if (!(await legendsZeroFree())) {
-        fail('ticket-124 stage: the returned-30d legends still show the zero-token model (or lost the tiny one)')
-      }
-      log('usage_zero_filter_back_30d_ok')
-
-      // ⑦ Click regression: the trend click still opens the drill-down.
+      // ⑥ Click regression: the trend click still opens the drill-down.
       const clicked = (await js(
         `(() => {
           const svg = document.querySelector('.trend-svg')
@@ -11876,7 +11861,7 @@ export function startSmokeIfEnabled(
       }
       log('usage_drilldown_click_ok')
 
-      // ⑧ Ticket 124 (R15): the drill-down rows are pure display — no Open
+      // ⑦ Ticket 124 (R15): the drill-down rows are pure display — no Open
       // task button anywhere, and every data row keeps its two value
       // columns: the session id cell (.dd-session) and the bare token
       // figure (.dd-tokens — formatTokenCount output like '1.80M', never

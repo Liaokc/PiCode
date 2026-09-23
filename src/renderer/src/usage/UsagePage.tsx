@@ -1,8 +1,8 @@
 import type { Dispatch, JSX } from 'react'
-import type { DrillDownSelection, TrendRange, SettingsUiAction } from '../../../shared/settings-model'
+import type { DrillDownSelection, SettingsUiAction } from '../../../shared/settings-model'
 import type { HeatmapMode, TrendView, UsageSnapshot } from '../../../shared/usage/charts'
 import { modelColor, statCards } from '../../../shared/usage/charts'
-import { excludeZeroTokenModels, trendView } from '../../../shared/usage/aggregate'
+import { excludeZeroTokenModels, modelWindowTotals, trendView } from '../../../shared/usage/aggregate'
 import { formatCostUsd } from '../../../shared/usage/format'
 import HeatmapView from './HeatmapView'
 import TrendChart from './TrendChart'
@@ -14,21 +14,26 @@ interface UsagePageProps {
   snapshot: UsageSnapshot | null
   error: string | null
   heatmapMode: HeatmapMode
-  trendRange: TrendRange
   drillDown: DrillDownSelection | null
   dispatch: Dispatch<SettingsUiAction>
 }
 
 const DONUT_SLICES = 6
 
+/** The one chart window (ticket 140): the trend and the model-usage donut
+ * both read the last 7 local days ending today. The settings model's
+ * TrendRange/trendRange field stays (shared additive-only); the UI no longer
+ * renders a switch and passes 7. */
+const TREND_RANGE_DAYS = 7
+
 /**
  * The Usage page (reference screenshot 09): five headline cards, the
  * GitHub-style token-activity heatmap with daily/weekly/cumulative toggles,
- * the 7/30-day per-model trend, the model-share donut, and the session
+ * the fixed one-week per-model trend, the model-share donut, and the session
  * drill-down. Every figure comes from the aggregated snapshot.
  */
 export default function UsagePage(props: UsagePageProps): JSX.Element {
-  const { snapshot, error, heatmapMode, trendRange, drillDown, dispatch } = props
+  const { snapshot, error, heatmapMode, drillDown, dispatch } = props
 
   if (error) {
     return (
@@ -52,13 +57,13 @@ export default function UsagePage(props: UsagePageProps): JSX.Element {
   // heatmapGrid always consumes the raw daily cells; weekly/cumulative are
   // transforms it applies itself (passing pre-cumulative cells would double-count).
   const heatCells = snapshot.heatmap.daily
-  const trend = trendView(snapshot, trendRange)
-  // Zero-token models never reach the donut (ticket 124, R9) — filtered
-  // before the top-slices cut so they cannot occupy a slot either. The two
-  // charts' measurement windows are deliberately different: the donut
-  // projects ALL-TIME modelTotals (reference-09 semantics) while the trend
-  // above follows the selected Time Range — do not unify them.
-  const donut = excludeZeroTokenModels(snapshot.modelTotals).slice(0, DONUT_SLICES)
+  const trend = trendView(snapshot, TREND_RANGE_DAYS)
+  // The donut reads the SAME one-week window as the trend (ticket 140 —
+  // t124 R9's all-time donut scope is retired). Zero-token models never
+  // reach the donut: filtered before the top-slices cut so they cannot
+  // occupy a slot either. The five headline cards above keep the all-time
+  // scope.
+  const donut = excludeZeroTokenModels(modelWindowTotals(snapshot, TREND_RANGE_DAYS)).slice(0, DONUT_SLICES)
 
   return (
     <div className="usage-page">
@@ -92,19 +97,6 @@ export default function UsagePage(props: UsagePageProps): JSX.Element {
           onPick={(date, dateTo) => dispatch({ type: 'open-drilldown', date, dateTo, model: null })}
         />
       </section>
-
-      <div className="range-row">
-        <span className="range-label">Time Range</span>
-        <Segmented<TrendRange>
-          ariaLabel="Trend time range"
-          value={trendRange}
-          onChange={(rangeDays) => dispatch({ type: 'set-trend-range', rangeDays })}
-          options={[
-            { value: 7, label: 'Last 7 days' },
-            { value: 30, label: 'Last 30 days' }
-          ]}
-        />
-      </div>
 
       <section className="usage-card">
         <h2>Daily Token Trend</h2>
