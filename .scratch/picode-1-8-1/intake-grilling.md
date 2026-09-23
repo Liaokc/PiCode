@@ -23,6 +23,12 @@ Status: in-progress
 - **适配面盘点（源码实证）**：`src/shared/subagent-sdk-alignment.ts:17-18`（地板常量 SDK 0.86.1 / 包 0.70.0）；`src/host/subagent-bridge.ts`（票 90/99/101 RPC/steer/stop）+ `subagent-runner-root.ts`；`src/shared/subagents/`（七态目录/chat 模型/工件）；`src/shared/mcp-management.ts` + `mcp-status.ts`（票 115 标注 2.35.0 保真；票 96 版本化状态快照事件）；`src/host/mcp-auth-bridge.ts` + `mcp-status-bridge.ts`；`scripts/smoke/subagents-070-probe.ts`（0.70.1 活探针）；`scripts/package.mjs:69-91`（0.86.1 打包校验）；`src/main/smoke.ts:509/551`（t134 地板断言）；`src/main/index.ts:813`。
 - **调研派工（操作者明示授权 spawn）**：三路 delegate 并行异步（workflow b0356b88）——SDK 0.87.1 diff / pi-subagents 0.71.0 diff / pi-mcp-adapter 2.37.0 diff；报告落 `.scratch/picode-1-8-1/research/`；delegate 只读取证（/tmp 解包 diff，仓库与 ~/.pi 零写入）。
 - **grilling Round 1（Q1–Q5）已摆给操作者**：三件齐升 vs 分步 / 全局 TUI 同步 / 适配深度（不破坏 vs 采纳新能力）/ 旧版兼容单态 vs 双态 / 断言探针面入票。答后回填。
+- **Round 1 裁决（操作者 2026-09-24，五项全按推荐）**：
+  - **Q1 = 三件齐升**：SDK 0.87.1 + pi-subagents 0.71.0 + pi-mcp-adapter 2.37.0 为本批目标态。
+  - **Q2 = 全局 TUI 同步升**：全局 pi 同步升 0.87.1，维持 ADR-0005 零漂移（升级动作归操作者，票面管适配 + 会话格式兼容冒烟）。
+  - **Q3 = 最小适配 + 新能力盘点留档**：现有功能面在新版下全绿；新版新能力不主动透出 UI，盘点留档、候选票归操作者裁决。
+  - **Q4 = 单态以新版为主**：不双态兼容旧版用户级包；诚实地板检查机制保留并更新水位。
+  - **Q5 = 断言/探针面纳入票面验收**：subagents 探针升位、smoke t134 地板断言、package.mjs 打包校验、subagent-sdk-alignment 地板常量随水位更新；契约事件增量照 additive 纪律报备。
 
 ## Q0（开工第一问）：微票 144 处置 —— **A：并入 1.8.1**
 
