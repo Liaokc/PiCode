@@ -14,3 +14,7 @@
 **Red lines:** 只动 harness；产品/shared 零改动。
 
 **Blocked by:** 无.
+
+## Comments
+
+- 2026-09-24（1.8.1 intake Q0）：操作者裁决**并入 1.8.1 批次**——本票作为 harness 微票入 1.8.1 波次表（纯 scripts/smoke 面，不阻塞任何票）；编号沿用 144、票文件留原地；状态维持 Todo 待波次派工。Linear LIA-205 已同步（addLabels iter:1.8.1，描述追加变更记录）。
