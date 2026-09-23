@@ -53,6 +53,13 @@ Status: in-progress
 - **Q7-① cost RPC 桥接（操作者问消费点，待终裁）**：事实——**用量统计页已经计入 subagent 开销**：UsageStore.listSessionFiles 递归 walk 全目录 depth<8 收全部 *.jsonl（src/main/usage/store.ts:62-80），子代理会话文件（sessions/<project>/<parent-id>/<child-uuid>/run-N/session.jsonl，三路调研 delegate 的 session 文件即此布局）的 usage 按 day×model 折入快照，ADR-0002 口径无死角。cost RPC 的差异化价值仅 **live 数据**（运行中当前会话 parent+children 即时花销、turn 边界可拉、unresolvedAsyncChildren 下界）——现有 UI 零消费点，需新 UI 设计才有意义。建议：**不入批**（历史统计已覆盖；live 消费是独立产品需求）。
 - **Q7-③ exposeResources 投影（操作者问语义，待终裁）**：事实——MCP 服务器可暴露 tools（可调用函数）与 resources（可读数据对象：文件/文档/数据库行等）；adapter 默认把每个 resource 变成可调用的「资源工具」（README "Expose MCP resources as tools (default: true)"，生成名如 read_figjam）。settings.exposeResources: false = 全局不再把任何服务器的 resources 变成工具；**每服务器自带的 exposeResources 条目胜过全局默认**（README "Per-server exposeResources overrides this"）。操作者当前未设此键 → 全局默认 true，PiCode 显示与运行时零差异。建议：**不入批**。
 - **Q9 升级委托改向（操作者 2026-09-24）**：「在你给出执行 prompt 之后你帮我升级」——intake 交付执行 prompt 后由 intake 执行环境升级（pi update → self 0.87.1；pi update --extensions → pi-subagents 0.71.0 / pi-mcp-adapter 2.37.0）+ 验证版本 + 报告；intake 自身进程不热替换无碍（升级后不再派工）。操作者随后启动执行会话——环境已是终态，零重启场景。
+- **Q7 终裁（操作者 2026-09-24）**：①cost RPC 桥接 = **不接入**（用量页已计入 subagent 花销，live 消费是独立产品需求）；③exposeResources 投影 = **不接入**（未启用该设置，零差异）。四项可选项（cost 桥接 / started 转发 / exposeResources 投影 / jev setup UI）全部不入批、留盘点（research 报告盘点节，候选票归操作者）。
+
+## 定稿（前沿树空）
+
+- 裁决链完整：R0 转向（三件齐升）→ Round 1（Q1–Q5）→ Round 2（Q6–Q10）→ Q7 细化轮（①–④）。无未决问题。
+- 产出：spec（R0–R3 ↔ 票 144/146/147/148）+ Linear 镜像（146/147/148 新建 Todo，144=LIA-205 已在）+ session-prompts 手册 + 主执行 Agent prompt；随后 intake 执行环境升级。
+- 本批定桂：零 shared-contract 增量、无新术语、无 ADR 变更、无多模态票、无参照帧；模型分派 = 全批 bella-local/GLM-5.3:max。
 
 ## Q0（开工第一问）：微票 144 处置 —— **A：并入 1.8.1**
 
