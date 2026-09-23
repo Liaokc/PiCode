@@ -784,6 +784,31 @@ async function onHostExit(exited, code) {
     })()
     const seedDir086 = path.join(tmpdir(), 'picode-smoke-seed086-workspace')
     mkdirSync(seedDir086, { recursive: true })
+    // Ticket 143 (machine-absolute cwd hygiene): the fixture's session-header
+    // `cwd` names a worktree that no longer exists on this machine
+    // (.worktrees/wt-105-terminal-focus), and the host validates the stored
+    // cwd on open/resume (dead-cwd exit(1) — the ticket-123 dim-row source),
+    // so Round L only ever passed behind a hand-made placeholder directory.
+    // Rewrite the header cwd to the harness-seeded seedDir086 (created above,
+    // always exists) AT SEED TIME instead of editing the committed fixture:
+    // the byte-real fixture is the stage's value (structure/id linkage,
+    // 0.86 unknown-type lines) and cwd is a string field, not part of the
+    // format compatibility under test. The JSON round-trip preserves the
+    // header's key order; every other line stays byte-identical, and the
+    // lossless-closeout comparison below reads this same rewritten string, so
+    // seeded-vs-disk stays the exact invariant. The fixture's second <cwd>…
+    // occurrence is toolResult payload text — harmless message content, left
+    // byte-real. A header-shape drift fails loudly here rather than
+    // resurfacing as the dead-cwd open error downstream.
+    fixture086 = ((lines) => {
+      const header = JSON.parse(lines[0])
+      if (header.type !== 'session' || typeof header.cwd !== 'string') {
+        fail('tui-086 fixture: the first line is no longer a session header with a cwd — the seed-time cwd rewrite needs updating')
+      }
+      header.cwd = seedDir086
+      lines[0] = JSON.stringify(header)
+      return lines.join('\n')
+    })(fixture086.split('\n'))
     session086File = path.join(process.env.PICODE_SESSION_DIR, 'tui086-seeded.jsonl')
     writeFileSync(session086File, fixture086)
     console.log('SMOKE round K shutdown ok — starting round L (ticket-112 pi-0.86 session-format compatibility, TUI-built fixture: ' + census086.entries.length + ' entries)')
