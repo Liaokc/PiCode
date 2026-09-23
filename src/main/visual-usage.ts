@@ -7,6 +7,12 @@
  *   u1-usage-overview  — headline cards + Token activity heatmap (daily);
  *                        the 52×7 grid fully fits its container (no
  *                        horizontal scroll — ticket 140)
+ *   u10-usage-narrow   — the same daily grid with the window resized to a
+ *                        narrow width (~760px content, below the app's own
+ *                        1040 minimum — the minimum is relaxed for the frame
+ *                        and restored after): 52 columns × 7 rows all
+ *                        rendered, columns shrink and share the width, no
+ *                        horizontal overflow (ticket 140 narrow-window fit)
  *   u1b-usage-heat-daily-hover — real-input hover on an active daily box:
  *                        white card above the box (z19-heatmap-daily-2 form);
  *                        the hovered box keeps its deeper outline (daily
@@ -35,7 +41,8 @@
  *
  * Retired frames (ticket 140, recorded in the ticket Comments): u7-usage-
  * trend-7d and u8-usage-trend-7d-hover — the 7/30 switch they exercised is
- * gone; u3 + u6 now capture the fixed one-week trend and its hover.
+ * gone; u3 + u6 now capture the fixed one-week trend and its hover. The
+ * tracked PNGs were removed from the repo in review round 1.
  *
  * PNGs land in $PICODE_VISUAL_OUT (default: <cwd>/.scratch/visual/). Not part
  * of `npm test`; a human compares them against the reference screenshots.
@@ -223,6 +230,21 @@ const heatFitsContainer = `(() => {
   return scroll !== null && scroll.scrollWidth <= scroll.clientWidth + 1
 })()`
 
+/** All 364 day boxes render (52 columns × 7 rows — nothing dropped). */
+const heatCellsAll = `document.querySelectorAll('.heat').length === 364`
+
+/** The grid fills the scroll box's padded content and never spills past it
+ * (ticket 140 narrow-window fit): the columns share the width instead of
+ * keeping a fixed pitch that could overflow. */
+const heatFillsContainer = `(() => {
+  const scroll = document.querySelector('.heatmap-scroll')
+  const grid = document.querySelector('.heatmap')
+  if (!scroll || !grid) return false
+  const g = grid.getBoundingClientRect()
+  const s = scroll.getBoundingClientRect()
+  return g.width >= s.width - 12 && g.right <= s.right + 1
+})()`
+
 /** Daily hover keeps its deeper box outline (ticket 140): the hovered box
  * under the real pointer carries a non-none outline (button.heat:hover). */
 const dailyHoverBoxOutlined = `(() => {
@@ -295,6 +317,28 @@ export function startUsageVisualIfEnabled(getWindow: () => BrowserWindow | null)
         'u1-usage-overview',
         `(${heatModeActive('Daily')}) && ${noHeatCard} && ${heatFitsContainer}`
       )
+
+      // ---- ticket 140: the narrow-window fit frame (u10) ------------------
+      // The columns must shrink and share the container at ANY width. The
+      // app's own minimum is 1040px, so the harness relaxes it for this one
+      // frame (~760px content — inside the review's 720–800px band), then
+      // restores BOTH the minimum and the content size so every later frame
+      // runs at the original geometry.
+      {
+        const [origW, origH] = win.getContentSize()
+        const [minW, minH] = win.getMinimumSize()
+        win.setMinimumSize(0, 0)
+        win.setContentSize(760, origH)
+        await sleep(400)
+        await capture(
+          win,
+          'u10-usage-narrow',
+          `(${heatModeActive('Daily')}) && ${noHeatCard} && ${heatCellsAll} && ${heatFitsContainer} && ${heatFillsContainer}`
+        )
+        win.setContentSize(origW, origH)
+        win.setMinimumSize(minW, minH)
+        await sleep(400)
+      }
 
       // ---- ticket 139: the six heat frames (three modes × normal/hover) ----
       // Hover target: the LAST active box (the fixture's streak ends today,
