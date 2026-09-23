@@ -1,6 +1,6 @@
 # 141: package:verify 彩票终结——t89 OAuth 垫片被 hostForkEnv 冻结 PATH 吞掉（t134 回归）+ 焦点腿缺窗口焦点前置保险
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 ## What to build
 
@@ -75,3 +75,11 @@ t89 到达即死（打包 2/2、近期 dev 跑同死）；t132/t105 过与不过
 - UI/文案无涉。
 
 **Blocked by:** 无.
+
+## Comments
+
+- 2026-09-23 (implementation, tip a7e3a66)：R1——`src/main/spawn-path.ts` 改「缓存贵事实 + 读取时活组合」：缓存对象改为 `{ loginShellPath, probePaths }` 事实，`getSpawnPath()` 每次读取用**当前** `process.env['PATH']` 作 currentPath 重组（事实未落地 → 当前 PATH，回退语义不变）；`hostForkEnv()`/`whenSpawnPathReady()` 签名与消费方零改动；`composeSpawnPath` 纯模型不动（current 恒最前、不降级次序契约保留——运行时注入的垫片目录恒在最前）。R2——`src/main/smoke.ts` 抽 `ensureWindowFocused(label)` helper（t44 内联块原样抽取：show/focus/app.focus(steal) + hasFocus ≤10s 轮询逐 tick 重请求 + 未得 fail），调用三处：t132 armed press 前、t132 inShell 探针前、t105 leg1 pressJ 前；t44 内联块重构为 helper 调用（行为零变化）；t105 leg2 逐击键 re-steal 与 t135 rider 原样不动；全部断言文本与探针零改动。测试：新增 `tests/main/spawn-path-live.test.ts` 3 例（突变 PATH 后 getSpawnPath/hostForkEnv 反映哨兵前置 + 次序保持；未落地回退；事实不随 PATH 变化）。
+  **顺带修复（必要，超范围已披露）**：① `tests/main/package-verify-launch.test.ts` 期望同步 30eb3a1（openLaunchArgs 新增 PICODE_FAKE_USAGE=1 后既有测试期望滞后而红）；② `package-lock.json` version 同步 6ab00fe（bump 提交漏同步）。
+  **验证**：typecheck 绿；eslint（touched files）绿；`env -u PI_SUBAGENTS_PI_CODING_AGENT_PACKAGE_ROOT npm test` = 125 files / 2188 全绿；dev electron smoke（`node scripts/smoke/electron-smoke.mjs`，ps 自查后，带 PATH 前置）跑 2/4 **过 t89 段**——`mcp_oauth_autocomplete_ok` 哨兵首次出现（自 t134 起的首次），R1 直接证据；t134-sanitized 段（`PICODE_SMOKE_STAGE=t134-sanitized`）exit 0（无降级契约 `composed ≠ bare` 原样可过）。跑 3 死 t90（codecard blob，历史 flaky 族）、跑 4 死 t119（idle viewport pin，不同段），按纪律原文披露、断言未动。首跑环境教训：electron 二进制需首次下载；直接 `node` 调 wrapper 需带 `node_modules/.bin` PATH（npm script 才自动加）。
+- 2026-09-23 (dual-axis review)：**standards pass-with-notes**（0 阻断 / 0 major / 2 minor / 3 nit，零 must-fix）：minor ① patch 测试未验证 loginShell/probes 不随 PATH 突变而变（live compose 次序风险面）② t132 二处调用（armed press 前 + 探针前）重复语义建议合并一处前置；nit：测试描述措辞、fixture 复用注释、ensureWindowFocused 重试注释对齐 t44 措辞。红线全过（产品行为零改动、断言文本零改动、无残留临时改）。**spec pass**（零缺失零误实现）：R1/R2 逐项对票面验收实现；两处超范围（package-verify-launch.test.ts 期望同步、package-lock version 同步）均为发布门绿的前提且已披露；t89 哨兵证据 + sanitized 段 exit 0 采信。
+- 提交谱系：实现 a7e3a66（单笔，含顺带修复与测试）。合并以 tip 为准：`bash scripts/merge-ticket.sh 141`。
