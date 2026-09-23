@@ -2,6 +2,7 @@
   "name": "picode",
   "private": true,
   "version": "1.8.0",
+  "license": "MIT",
   "description": "PiCode — a ZCode-shaped desktop shell around the Pi agent brain",
   "main": "./out/main/index.js",
   "scripts": {
