@@ -61,6 +61,12 @@ Status: in-progress
 - 产出：spec（R0–R3 ↔ 票 144/146/147/148）+ Linear 镜像（146/147/148 新建 Todo，144=LIA-205 已在）+ session-prompts 手册 + 主执行 Agent prompt；随后 intake 执行环境升级。
 - 本批定桂：零 shared-contract 增量、无新术语、无 ADR 变更、无多模态票、无参照帧；模型分派 = 全批 bella-local/GLM-5.3:max。
 
+## 环境升级执行记录（intake，2026-09-24，交付执行 prompt 后）
+
+- `pi update`：pi 0.86.1 → **0.87.1**（changed 144 packages）；`pi update --extensions`：用户级包更新（removed 1, changed 7）。
+- 验证：`pi --version` = **0.87.1**；`~/.pi/agent/npm/node_modules/pi-subagents` = **0.71.0**；`~/.pi/agent/npm/node_modules/pi-mcp-adapter` = **2.37.0**。ADR-0005 零漂移终态就位（全局 TUI 0.87.1；仓库捆绑 SDK 待 T146 bump 后对齐）。
+- intake 会话自身进程不热替换无碍（升级后不再派工）；执行会话启动时按手册核对三项版本。
+
 ## Q0（开工第一问）：微票 144 处置 —— **A：并入 1.8.1**
 
 - **问题**：微票 144（forkHost 环境标记剥离——`scripts/smoke/host-contract-smoke.mjs:408-415` 直 fork host 时不剥 `PI_SUBAGENT_CHILD`/`PI_SUBAGENTS_HERDR_BRIDGE`；从 subagent 会话驱动的 smoke:host 死 Round K，票 143 实现工实证、`env -u` 三变量后全套过；Linear LIA-205 Todo）仍待派。
