@@ -477,25 +477,58 @@ function diffDays(from: string, to: string): number {
   return Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd)) / 86_400_000)
 }
 
-/** Project a snapshot onto the last `rangeDays` days for the per-model trend chart. */
-export function trendView(snapshot: UsageSnapshot, rangeDays: 7 | 30): TrendView {
+/** The shared chart window (ticket 140 — the trend and the model-usage donut
+ * read ONE window so the two charts cannot drift): the last `rangeDays` local
+ * days ending at the snapshot's today — exactly `rangeDays` dates, each paired
+ * with its DayUsage or null (days before the data start zero-fill). */
+function usageWindow(snapshot: UsageSnapshot, rangeDays: 7 | 30): { dates: string[]; days: (DayUsage | null)[] } {
   const today = dayKeyFromMs(Date.parse(snapshot.generatedAt), snapshot.timeZone)
   const dailyByDate = new Map(snapshot.daily.map((d) => [d.date, d]))
 
   const dates: string[] = []
-  const filledDaily: (DayUsage | null)[] = []
+  const days: (DayUsage | null)[] = []
   const windowStart = addDays(today, -(rangeDays - 1))
   const first = snapshot.daily.length > 0 && snapshot.daily[0].date > windowStart ? windowStart : snapshot.daily[0]?.date ?? windowStart
   for (let date = first; ; date = addDays(date, 1)) {
     dates.push(date)
-    filledDaily.push(dailyByDate.get(date) ?? null)
+    days.push(dailyByDate.get(date) ?? null)
     if (date === today) break
   }
   // keep at most the last rangeDays entries (the snapshot may span longer)
   while (dates.length > rangeDays) {
     dates.shift()
-    filledDaily.shift()
+    days.shift()
   }
+  return { dates, days }
+}
+
+/** Model totals inside the shared chart window (ticket 140): one slice per
+ * model with cells in the window, folded from the same DayUsage rows the
+ * trend reads (snapshot.daily[].byModel) — descending by tokens, ties by
+ * model id, shares relative to the window's own total. Zero-token models are
+ * NOT dropped here: charts apply excludeZeroTokenModels before their top cut
+ * (ticket 124 R9, filter-then-cut). Cost is not carried by the DayUsage
+ * source (tokens only), so the slice's cost zeroes — the donut renders
+ * tokens and share, never cost. */
+export function modelWindowTotals(snapshot: UsageSnapshot, rangeDays: 7 | 30): ModelUsageSlice[] {
+  const { days } = usageWindow(snapshot, rangeDays)
+  const tokensByModel = new Map<string, number>()
+  for (const day of days) {
+    if (!day) continue
+    for (const [model, tokens] of Object.entries(day.byModel)) {
+      tokensByModel.set(model, (tokensByModel.get(model) ?? 0) + tokens)
+    }
+  }
+  let total = 0
+  for (const tokens of tokensByModel.values()) total += tokens
+  return [...tokensByModel.entries()]
+    .map(([model, tokens]) => ({ model, tokens, cost: estimated(0), share: total > 0 ? tokens / total : 0 }))
+    .sort((a, b) => b.tokens - a.tokens || a.model.localeCompare(b.model))
+}
+
+/** Project a snapshot onto the last `rangeDays` days for the per-model trend chart. */
+export function trendView(snapshot: UsageSnapshot, rangeDays: 7 | 30): TrendView {
+  const { dates, days: filledDaily } = usageWindow(snapshot, rangeDays)
 
   const rangeTokensByModel = new Map<string, number>()
   for (const row of filledDaily) {

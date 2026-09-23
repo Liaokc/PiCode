@@ -144,7 +144,6 @@ export default function SettingsWindow({
             snapshot={snapshot}
             error={error}
             heatmapMode={ui.heatmapMode}
-            trendRange={ui.trendRange}
             drillDown={ui.drillDown}
             dispatch={dispatch}
           />

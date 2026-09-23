@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildUsageSnapshot, excludeZeroTokenModels, foldSessionFile, trendView, type ModelUsageSlice } from '../../src/shared/usage/aggregate.ts'
+import { buildUsageSnapshot, excludeZeroTokenModels, foldSessionFile, modelWindowTotals, trendView, type ModelUsageSlice } from '../../src/shared/usage/aggregate.ts'
 
 const headerLine = (id: string) =>
   JSON.stringify({ type: 'session', version: 3, id, timestamp: '2026-08-25T00:00:00.000Z', cwd: '/tmp/proj' })
@@ -165,6 +165,69 @@ describe('trendView', () => {
     )
     expect(trendView(snap, 7).series.map((s) => s.model)).toEqual(['m-recent'])
     expect(trendView(snap, 30).series.map((s) => s.model)).toEqual(['m-quiet', 'm-recent'])
+  })
+})
+
+describe('modelWindowTotals (ticket 140 — the model-usage donut\'s shared one-week window)', () => {
+  it('counts only the window\'s days: a model quiet inside 7d is out, back inside 30d', () => {
+    // m-quiet spent 20 days before the window end; m-recent is active today.
+    const snap = buildUsageSnapshot(
+      [
+        foldSessionFile(
+          [headerLine('s-quiet'), assistant('q1', '2026-08-08T09:00:00.000Z', 400, 'm-quiet'), ''].join('\n'),
+          { timeZone: 'UTC' }
+        ),
+        foldSessionFile(
+          [headerLine('s-recent'), assistant('r1', '2026-08-28T09:00:00.000Z', 100, 'm-recent'), ''].join('\n'),
+          { timeZone: 'UTC' }
+        )
+      ],
+      { timeZone: 'UTC', now: '2026-08-28T12:00:00.000Z' }
+    )
+    expect(modelWindowTotals(snap, 7).map((s) => [s.model, s.tokens])).toEqual([['m-recent', 100]])
+    expect(modelWindowTotals(snap, 30).map((s) => [s.model, s.tokens])).toEqual([
+      ['m-quiet', 400],
+      ['m-recent', 100]
+    ])
+  })
+
+  it('folds the same window the trend reads, with shares against the window\'s own total', () => {
+    // twoFileSnapshot's 7-day window (08-22..28) sees m1: 100+200, m2: 50+400+10.
+    const slices = modelWindowTotals(twoFileSnapshot, 7)
+    expect(slices.map((s) => [s.model, s.tokens])).toEqual([
+      ['m2', 460],
+      ['m1', 300]
+    ])
+    expect(slices.map((s) => s.share)).toEqual([460 / 760, 300 / 760])
+    // Same source, same window: the trend series totals equal the donut slices.
+    const trend = trendView(twoFileSnapshot, 7)
+    expect(slices.map((s) => [s.model, s.tokens])).toEqual(
+      trend.series.map((series) => [series.model, series.tokens.reduce((a, b) => a + b, 0)])
+    )
+  })
+
+  it('keeps zero-token models in the raw slices — the caller filters then cuts (t124 R9 order)', () => {
+    const zeroModel = foldSessionFile(
+      [
+        headerLine('s-zero'),
+        assistant('z1', '2026-08-28T09:00:00.000Z', 0, 'zero-model'),
+        assistant('a1', '2026-08-28T10:00:00.000Z', 100, 'm1'),
+        ''
+      ].join('\n'),
+      { timeZone: 'UTC' }
+    )
+    const snap = buildUsageSnapshot([zeroModel], { timeZone: 'UTC', now: '2026-08-28T12:00:00.000Z' })
+    const slices = modelWindowTotals(snap, 7)
+    expect(slices.map((s) => [s.model, s.tokens, s.share])).toEqual([
+      ['m1', 100, 1],
+      ['zero-model', 0, 0]
+    ])
+    expect(excludeZeroTokenModels(slices).map((s) => s.model)).toEqual(['m1'])
+  })
+
+  it('is empty for an empty snapshot', () => {
+    const empty = buildUsageSnapshot([], { timeZone: 'UTC', now: '2026-08-28T12:00:00.000Z' })
+    expect(modelWindowTotals(empty, 7)).toEqual([])
   })
 })
 

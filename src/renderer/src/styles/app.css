@@ -3114,11 +3114,12 @@ kbd {
 }
 
 .heatmap-scroll {
-  overflow-x: auto;
-  /* The scroll box clips at its padding box, so the cells need outline room
-   * inside it: the leftmost cell's hover/focus ring used to lose its left
-   * line at the container edge (ticket 125). 4px covers the widest ring the
-   * app draws on a cell (2px focus ring + 1px offset). */
+  /* The grid never scrolls (ticket 140): the 52×7 grid always fits the
+   * container — columns shrink with the width instead of overflowing. The
+   * padding stays for the ring room the cells draw around themselves: the
+   * leftmost cell's hover/focus ring must keep its left line (ticket 125).
+   * 4px covers the widest ring the app draws on a cell (2px focus ring +
+   * 1px offset). */
   padding: 4px 4px 2px;
 }
 
@@ -3153,18 +3154,27 @@ kbd {
 .heatmap {
   display: flex;
   gap: 2.5px;
-  width: max-content;
+  /* Always fits (ticket 140): 52 columns share the container's width via
+   * flex — the ZCode composition keeps every column visible, no horizontal
+   * scroll at any window width. */
+  width: 100%;
 }
 
 .heatmap-col {
   display: flex;
   flex-direction: column;
   gap: 4.5px;
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .heat {
-  width: 13px;
-  height: 13px;
+  /* One square box per day: the width follows the (flexed) column, the
+   * height follows the width via aspect-ratio — the z19 cell pitch is
+   * 15.57×17.5 at the reference width, and the square look holds as the
+   * columns shrink (no minimum column width — ZCode is always 52 columns). */
+  width: 100%;
+  aspect-ratio: 1;
   border-radius: 4px;
   padding: 0;
   flex: none;
@@ -3178,9 +3188,17 @@ button.heat:hover {
   outline: 1.5px solid var(--text-secondary);
 }
 
-/* weekly/cumulative hover: the anchored column's boxes ring (z19-heatmap-
- * weekly-2 — the ringed column under the floating card). */
-.heatmap-col-hover .heat {
+/* weekly/cumulative hover (ticket 140): the whole-week column ring is the
+ * ONLY hover chrome — the anchored column's boxes ring (z19-heatmap-
+ * weekly-2, the ringed column under the floating card) and the hovered box
+ * reads exactly like its column siblings. button.heat:hover outranks the
+ * ring rule (1.5px deeper frame — the pre-ticket-140 double outline), so
+ * the ring is re-asserted on the hovered box (same 1px line); the
+ * :focus-visible guard keeps the keyboard ring intact on a focused box
+ * under the pointer. Daily mode never carries heatmap-col-hover, so its
+ * hovered-box highlight is untouched. */
+.heatmap-col-hover .heat,
+.heatmap-col-hover button.heat:hover:not(:focus-visible) {
   outline: 1px solid var(--border-strong);
   outline-offset: 1px;
 }
@@ -3208,12 +3226,15 @@ button.heat:hover {
 .heatmap-months {
   display: flex;
   gap: 2.5px;
-  width: max-content;
+  /* Same fit rule as the grid (ticket 140): the 52 label slots share the
+   * width exactly like the columns above them. */
+  width: 100%;
   margin-top: 7px;
 }
 
 .heatmap-month {
-  width: 13px;
+  flex: 1 1 0;
+  min-width: 0;
   font-size: 10.5px;
   line-height: 1;
   color: var(--text-secondary);
@@ -3221,20 +3242,8 @@ button.heat:hover {
   overflow: visible;
 }
 
-/* time-range row + trend */
-
-.range-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 12px;
-}
-
-.range-label {
-  font-size: 13px;
-  font-weight: 600;
-}
+/* trend (the Time Range switch row is retired — ticket 140 fixes the
+ * trend to a one-week window) */
 
 .trend-legend {
   display: flex;
