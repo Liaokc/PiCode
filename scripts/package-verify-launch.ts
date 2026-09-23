@@ -48,13 +48,17 @@ export interface OpenLaunchPaths {
  * streams, and deliver the smoke env — PICODE_SMOKE enables the in-app smoke,
  * PICODE_SESSION_DIR isolates the session store, PICODE_PI_AGENT_DIR isolates
  * the agent dir for the tickets 63/64 skills/packages stages (they refuse to
- * touch the real ~/.pi/agent when it's absent). */
+ * touch the real ~/.pi/agent when it's absent), and PICODE_FAKE_USAGE feeds
+ * the ticket-65/t124 usage stage the deterministic fixture — the same env the
+ * electron-smoke wrapper delivers (the stage asserts fixture models like
+ * glm-4.7-air that no real usage history can provide). */
 export function openLaunchArgs({ appPath, sessionDir, piAgentDir, stdoutLog, stderrLog }: OpenLaunchPaths): string[] {
   return [
     '-W', // block until the smoke app quits
     '--stdout', stdoutLog,
     '--stderr', stderrLog,
     '--env', 'PICODE_SMOKE=1',
+    '--env', 'PICODE_FAKE_USAGE=1',
     '--env', `PICODE_SESSION_DIR=${sessionDir}`,
     '--env', `PICODE_PI_AGENT_DIR=${piAgentDir}`,
     appPath
