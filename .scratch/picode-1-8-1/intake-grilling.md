@@ -39,6 +39,12 @@ Status: in-progress
 - **升级次序无死锁**：0.71.0+SDK 0.86.1 已验证可行；0.71.0+SDK 0.87.1 可行（peer `>=0.86.1`/`*`）；adapter 2.37 peer 含 ^0.86 与 ^0.87。
 - **本地事实补齐**：`smoke:subagents070` 不在 run-all.sh（独立脚本，更名零风险）；interop-smoke.ts 无版本字面量（import 捆绑 SDK + 读最新 TUI 会话，天然验证终态）；run-all.sh:68 electron smoke 已带 env -u 净化。
 - **Round 2（Q6–Q10）已摆**：dev 动态激活处置 / 可选项入批与否 / 探针更名口径 / 环境升级时序 / 模型分派。答后回填。
+- **Round 2 裁决（操作者 2026-09-24）**：
+  - **Q6 = A 接受现状**：dev 形态动态激活零改动（打包 app 保持 eager；dev 往返为上游设计意图——省上下文）。
+  - **Q7 = 待解释后决定**：四个可选项已向操作者解释（cost RPC 桥接 / started 转发 / exposeResources 投影 / jev setup UI），待裁决入批与否。
+  - **Q8 = A 更名+补断言**：subagents-070-probe → subagents-071-probe + package.json 脚本 smoke:subagents070 → smoke:subagents071 + 补 0.71 断言（ping.capabilities.cost、steps[].externalProcess census）。
+  - **Q9 = 先升环境、操作者亲为**：操作者在启动执行会话**之前**完成三件环境升级（`pi update` → 0.87.1；`pi update --extensions` → pi-subagents 0.71.0 / pi-mcp-adapter 2.37.0）。理由：执行会话自身跑在 pi 进程上，中途升级不热替换（扩展加载不热换、self 替换不热载）→ 会话自身机器滞留旧版，正是操作者要避免的重启场景。手册前置节 = 操作者先升环境再启动执行会话，执行会话零环境操作。
+  - **Q10 = 模型分派（原话）**：思考强度使用 max；非多模态票的模型使用 bella-local 的 GLM-5.3；需要多模态的票使用 bella 的 GLM-5.3-flash。本批全票非多模态（依赖/桥/探针面，无 UI 帧）→ 全批 bella-local/GLM-5.3:max。事实核对：bella-local/GLM-5.3 在 ~/.pi/agent/models.json 在案。
 
 ## Q0（开工第一问）：微票 144 处置 —— **A：并入 1.8.1**
 
