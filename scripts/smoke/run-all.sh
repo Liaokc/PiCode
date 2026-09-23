@@ -61,7 +61,7 @@ echo "SMOKE skills hygiene: isolated agent dir=$SMOKE_PI_AGENT_DIR"
 
 STEPS=(
   "build:npm run build"
-  "host contract:node scripts/smoke/host-contract-smoke.mjs"
+  "host contract:env -u PI_SUBAGENT_CHILD -u PI_SUBAGENTS_HERDR_BRIDGE node scripts/smoke/host-contract-smoke.mjs"
   "pty:ELECTRON_RUN_AS_NODE=1 electron scripts/smoke/pty-smoke.mjs"
   "usage aggregation:node scripts/smoke/usage-smoke.ts"
   "TUI↔SDK interop:node scripts/smoke/interop-smoke.ts"

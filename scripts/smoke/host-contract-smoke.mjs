@@ -406,7 +406,16 @@ function assertQueueShape(event) {
 }
 
 function forkHost(args, handler, opts = {}) {
-  const c = fork(HOST_ENTRY, args, { stdio: ['ignore', 'inherit', 'inherit', 'ipc'], ...opts })
+  // Ticket 144: the suite may be driven from inside a subagent session, and
+  // this process then inherits the runner's child markers; a stale
+  // PI_SUBAGENT_CHILD makes pi-subagents refuse to register in the forked
+  // host (round K's stop leg dies on "pi-subagents did not answer"). A host
+  // fork is a top-level agent process, never a subagent child — strip the
+  // markers with the same semantics as the app's hostForkEnv() (ticket 142).
+  const env = { ...process.env }
+  delete env['PI_SUBAGENT_CHILD']
+  delete env['PI_SUBAGENTS_HERDR_BRIDGE']
+  const c = fork(HOST_ENTRY, args, { stdio: ['ignore', 'inherit', 'inherit', 'ipc'], env, ...opts })
   c.on('message', (event) => {
     if (typeof event === 'object' && event !== null && typeof event.type === 'string') handler(event)
   })
