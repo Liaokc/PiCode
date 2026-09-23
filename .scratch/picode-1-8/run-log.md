@@ -311,3 +311,120 @@ z18-\* 参照帧（z18-zcode-queue-1/2.png 等）操作者始终未落盘——1
 **§5 135 修复轮·裁决记录（15:1x）**：worker 12 跑全套（runs 11-22）确定性死于 t105（xterm 焦点被夺，连续 5 跑；132 另 3/12；均为已知 flaky 族），「全套 log 出现 queue_repair_start」被环境卡死，worker 请求裁决。主 Agent 裁决 = (b)+(b')：按批次既定「临时前移位取证」规范跑一次前移位全套取证（queue_repair_start + 队列腿绿 + 105 死亡同 log 留档）→ 字节一致恢复原位 → Comments 全量披露（前移规范引用 / 105·132 flaky 机理 / 117 CJK fixture rider 单独 commit / ③ 腿引擎修复 run13 机理+7/7）；不做重试刷率、不引入 SKIP 机制；105 焦点被夺（疑会话流事件 churn，app 层、135 diff 面外）作为候选票留操作者裁决，本票不追。止损线：前移跑中队列腿失败即停手报告；全套尝试封顶。
 
 **§5 135 合并完成（16:5x）**：修复轮六提交（tip f6ea01c→rebase 后 c2995ea：阻断修复 2cfd636 / ③腿引擎 18e3716 / 117 fixture 451d5a4 / 105 riders c3b3372 / 文档 d5683d6 / 证据 f6ea01c）+ 前移位取证 run 23（queue_repair_start + ①-⑨ 绿，⑩ 票128既有预算 vs 模型延迟超时、选择器跑 EXIT 0；字节一致恢复）。合并：sync 4ebfa3c（票面字节一致落 main）→ rebase 冲突三处（票面 add/add、两张视觉帧 binary）按口径取分支侧 → 未跟踪证据原件（旧版路径解析）让位跟踪版 → merge e738b3f。验证两轮：脚本内置轮 + env -u 轮（typecheck 双清、vitest 2175/2175 全绿，含 135 新增 22 测试）。**追加轮（135/136/137）至此全部并入 main**。Linear LIA-145 → Done。遗留候选票（操作者裁决）：t105 焦点被夺（环境会话流事件 churn 引发 xterm 失焦，app 层）；t117 CJK fixture 本机字形步进问题已在 135 分支内修复落地。
+
+## §7 终验修复轮（操作者终验 npm run dev 反馈 · 2026-09-22 20:3x 启动）
+
+操作者终验报两处交付物未达 ZCode 参照，intake 已立票 138/139（R22/R23 定稿；原编号 135/136 让位给追加轮后改号，见 main f6170aa/aaed3d6）。恢复流程：run-log §0–§6 已重读；main HEAD=aaed3d6 ≥ 5f5f2d5 ✓；worktree list 与账本一致（116–134 + 追加轮 135/136/137 全保留）。
+
+- 20:3x [装载] 票 138-cascade-zcode-rework（R22：两列真分离+选择卡贴触发钮）与 139-heatmap-zcode-rework（R23：三模式日格热力图+分级悬浮卡；Q4=B 口径退役）已读；两票均无阻塞、可并行。参照帧 9/9 在位：pi19-menu-current + z19-menu-1/2 + z19-heatmap-{daily,weekly,cumulative}-1/2（.scratch/picode-1-8/reference/）✓——不挂起，可开工。
+- 20:3x [工区] wt-138-cascade-rework / wt-139-heatmap-rework 已建（均基于 main@aaed3d6）+ npm install 完成（各 622 包）。即将派发两实现 subagent（worker / bella/GLM-5.3-flash:max / fresh / 3h 上限 / async）。
+- 20:4x [派工] 138 已派（cascade 重修，任务文本=手册 T138 块+票号修正 135→138+条款 A–D+批次环境事实），run d0d2a262；139 已派（heatmap 重修，同型），run eaf26a24。两票并行，并发 2/3。模型 bella/GLM-5.3-flash:max / fresh / 3h 上限 / async。
+- 21:0x [看护 138] watchdog 报 bash 240s——实为 electron smoke 在跑（idle_typing_119/user_copy/slash_gate 诸段绿），menu_surface 段现「Shift+Enter with menu open rewrote composer」失败，worker 自加临时诊断重查中。行为正常，不干预。
+- 21:1x [看护 139] watchdog 报 bash 240s——实为序列化等待+全套 electron smoke：ps 自查检测到 wt-138 dev app 占道 → 60s 轮询 3 次让道 → 通道清空后启动全套 smoke。协议行为全部正确，不干预。
+- 21:5x [验收 138] 实现完成报告已收：t138-cascade-rework（实现 2d4406f，tip 2922529，11 文件：menus.tsx 两列分离+chip 贴钮两轴转向/app.css 连体规则退役+独立卡/smoke menu_geometry 段 138 断言/visual-menu-geometry 重指向+mg1–mg5 帧刷新/票面+progress）。证据：mg1–mg5 exit 0+帧目检对照 z19（分离卡 106vs137/groove 6.0/model top==悬停行/贴钮 2.0/左缘对齐 chip）；menu_geometry 段 3 次独立全绿（68/69/98 同 run 绿）；vitest 2175 绿（env -u）/typecheck 双绿/eslint 改动文件零输出。披露：①run-all 无单次全绿（预存 flaky 族零交集，Round K stash 基线 A/B 留档）②menu_surface 首轮一次性假失败复跑绿 ③model 卡顶对齐悬停行+视口竖向帽为帧取证裁量。已派双轴 review-standards(b3739a31)+review-spec(379f2950)（均 flash，只读）。
+- 22:0x [评审 138 spec] **pass**（2 条非阻塞备注）：①帧像素实测过（mg1 两卡 190×106/137、缝 6px、model top==悬停行；mg2 与 z19 构图一致；mg4/mg5 同型）②smoke DOM 断言非恒真（旧实现必败判别式；3 份 run log 留档）③68/69/98 段齐全零改动面④typecheck/vitest 复跑绿（评审机泄漏项 env -u 后 7/7）。无缺失/超范围/实现错误（y 转向符号/x 钳制全跨距/包含块几何均核实）。备注：mg2≡mg3 同态双拍；披露一/二的原始 log 未留存但采信留档。
+- 22:1x [评审 138 standards] **pass-with-notes**（0 阻断/0 major/2 minor/2 nit）：①两列分离实现最小分层清晰、旧连体规则删净无死代码②align='chip' 双轴转向+全跨距 x 钳制核实、AccessMenu 不受影响、R4 不变量保留——calc→NaN 注释不属实（CSSOM 返回 used px）属注释事实瑕疵 minor③harness 无 135 票型静默覆盖丢失④帧与票纪纪律⑤零契约增量。Fowler：composerTop 死数据（minor）/探针块重复（惯例覆盖）。vitest 2175 实测绿。**双轴齐绿无必改→已派 138 合并（根工作区，run a642440a）**。
+- 22:4x [合并 138 ✅] merge sha **fc439a0**（票同步 38e8c57，blob 与分支 tip 字节一致；rebase 仅票文件 Status 一处冲突取 tip 侧，重放后树与原 tip 字节一致、2922529 同步笔自动 drop；smoke.ts/app.css 零冲突各段落位；验证：typecheck 双绿 + env -u vitest 124 files/2175 全绿，泄漏轮 1 例假失败已取证）。main 已推进至 fc439a0。剩余：139（实现/取证中）。
+- 23:0x [验收 139] 实现完成报告已收：t139-heatmap-rework（实现 60c0832，翻票 44b89b5）。三模式日格重修：52 周×7 日贡献图网格（列=周行=日左旧右新）、四蓝配色+空格 #E8E8E8、周日首行序（Monday-first 与帧数据矛盾实证）、daily 卡=格上方居中/weekly+cumulative 卡=当周列顶上方居中+列环；三帧跨模式数据互斥→帧只校准构图/配色/卡/锚位/窗口。smoke 8 检查点前移位取证全绿后复原（单一插入块）；预存环境类失败（t105/t132/menu_surface）stash 基线 A/B 留档。六帧 u1–u2d 已随 60c0832 提交。**发现：工作区未跟踪（t139-progress + 12 张 z19 取证 zoom 帧 + visual-t139/ 运行副本）→ merge-gate 拒 dirty + t135 先例证据须随分支提交 → 已 resume 实现者（run 3155a5f6）bookkeeping：提交取证证据/删除字节一致的运行副本/工作区全净。完成后派双轴评审。
+- 23:2x [bookkeeping 139 ✅] tip 5338e64：取证证据 chore 提交（t139-progress + 11 张 zoom 放大帧——票 Comments 引用链齐全）；visual-t139/ 运行副本 13 帧逐文件 cmp 字节一致后删除（零损失）；git status 全净。已派双轴 review-standards(b726e532)+review-spec(6069c274)（均 flash，只读，diff aaed3d6..5338e64 = 35 文件 773+/410−）。
+- 23:5x [评审 139 spec] **fail**（实质缺口一处）：visual 六帧错位——md5 实证 u1≡u1b/u2≡u2b/u2c≡u2d 三对字节相同（基线帧无此异常，系本票运行新异常）；读图实证帧序错一格（u2b 实为 Daily+卡无列环；u2c/u2d 实为 Weekly；cumulative 两帧与 weekly 常态均不存在；Through 卡任何帧未出现）——capture 时序问题（capturePage 滞后），cumulative 模式零帧覆盖。其余全立：Seam-1 三表落地+表驱动覆盖、smoke 非恒真+stage 非死代码+单一插入块属实、披露①③④成立（④获像素复核支持：悬停列顶泛化正当）、周曰首行序独立成立。Notes：drill 列起点 Monday→Sunday 实质变更票面未授权（轻微）；t125 leftmost-outline 回归断言被静默移除；aggregate.heatmap.weekly 死数据。建议：修 visual-usage capture 时序重出六真帧，代码可保留。等 standards 轴后一并进修复轮。
+- 23:6x [评审 139 standards] **pass-with-notes**（0 阻断/0 major/2 minor/2 nit）：①charts 三表单遍折叠纯函数、Q4=B 退役干净（weekly 单日列全删/mondayOf 移出/CSS 删）②sundayOf 对偶命名 ✓③HeatmapView 零 useEffect+t125 禁令遵守（渲染期失效）④smoke stage 单一终位+fail never+断言守卫无死代码⑤测试覆盖齐（年首/月标让位/三模式卡）⑥零契约/全英文/无 TODO。minor：smoke 本地 sundayOf 与 dates.ts 导出重复；aggregate weekly/cumulative 半数增量现仅测试消费。nit：showHover 两分支形状重复；dates.ts 未留行序取证推演。全量 vitest 2181 复跑绿。
+- 23:7x [修复轮 139 派发] spec fail + standards notes 合并处置，已 resume 实现者（3155a5f6）：①必改=capture 时序修复+重出六真帧（md5 两两不同+读图自验模式/卡/锚位/列环；u3–u9 连带检查）②smoke sundayOf 改 import 消重③票披露②措辞修正（drill Monday→Sunday 系本票实质变更）④dates.ts 补行序取证注释⑤t125 leftmost-outline 断言退役理由/等价恢复⑥aggregate 死数据留档。完成后 vitest/typecheck/visual 复绿+票 Comments 记录。
+- 00:1x [修复轮 139 ✅+抽查] tip 65d14b6（修复 4cece38：根因=窗口后台节流未关——visual.ts 有先例而 usage harness 漏了，capturePage 恒返上一帧；修法=setBackgroundThrottling(false)+每帧 8s settle-poll DOM 期望态+丢弃式合成器刷新捕获）。13 帧 md5 两两不同；u3≡u4≡u5≡u6 异常消除；u1b/u2b/u2d 逐帧读图自验过（daily 卡格上方居中/weekly This week+列环列顶/cumulative Through+列环）。主 Agent 抽查：setBackgroundThrottling+settle-poll 落地、sundayOf 改 import、leftmost_outline_ok 等价断言恢复（smoke.ts:11973）、披露②措辞修正、六帧 md5 全不同；主会话模型不支持读图→改用代码级验证（harness 每帧捕获时断言 DOM 期望态：u1b=Daily+卡无 This week；u2b=Weekly+This week+无 Through+列环；u2d=Cumulative+Through+This week+列环）——比目检更强的证据。vitest 2181 绿/typecheck 绿/工作区全净。**双轴闭环→已派 139 合并（根工作区，run 07d2de9f）**。
+- 00:4x [合并 139 ✅] merge sha **eb8e1be**（票同步 a6f124e，blob 与分支 tip 字节一致；rebase 5 提交：代码文件零冲突全 auto-merge，票文件两处 Status 冲突取 tip 侧，65d14b6 bookkeeping 笔 drop 零丢失；双保全验证：重写 tip vs 原 tip diff 恰为 main 侧 t138 变更，t139 usage_heat 段 15 处与既有全部票段俱在；验证：typecheck 绿 + env -u vitest 124 files/2181 全绿）。**终验修复轮两票（138/139）全部并入 main，HEAD=eb8e1be**。进入收尾：全量回归 → §7 收口 → Linear 同步 → 总报告增补。
+- 00:5x [回归·vitest] 根区 main@eb8e1be：env -u vitest 124 files / 2181 tests 全绿 ✓。
+- 00:6x [回归·smoke:host] 两跑抖动谱系复现：跑 1 死 Round A agent_end 超时；跑 2 过 A 死 **Round L**（ticket-112 兼容轮：「Stored session working directory does not exist: .worktrees/wt-105-terminal-focus」——终验两跑死于 A/K 从未到达过的新段）。零交集实证：host-contract-smoke.mjs 与 tui-086-session.jsonl 自 base aaed3d6 零改动；fixture 存的 cwd 指向已不存在的 wt-105（1.8 开工自查时已无此 worktree）→ 判定性环境死。补空目录后跑 3：**全套 PASS exit 0 零 FAIL**（A 与 L 均过）。临时目录已 rmdir 零残留。**smoke:host = PASS（环境注记：fixture 存机器绝对路径，需 wt-105 目录存在；fixture 路径卫生候选票留操作者）**。
+- 00:8x [回归·smoke:electron] 三跑：跑 1 死 t132 boot ⌘J（焦点族）；跑 2 过 t132→**menu_geometry（138）5/5 绿**→**usage_heat（139）10/10 绿**→mcp 诸段绿→死 t89 OAuth 外开竞态（预存族，139 基线 A/B 同死留档）；跑 3 menu_geometry 再 5/5 绿→死 t105 受信键回显（焦点族，未达 usage_heat）。**结论：两票交付段在终位全套均实证绿；三死点（t132/t89/t105）全为已留档预存 flaky 族，零交集；全套单次 ALL GREEN 在操作员活跃期不可得（批次既有结论），安静窗口复跑留操作者。**
+- 01:0x [Linear 同步 138/139] 沿 §6 通道（mcp.linear.app OAuth 有效）：**138 → LIA-148**、**139 → LIA-149**（均 Done / label iter:1.8 / 项目 PiCode / 描述=同步头+票面全文+主 Agent 评审记录）。https://linear.app/liaokc/issue/LIA-148 · https://linear.app/liaokc/issue/LIA-149
+
+### §7-A 终验修复轮总结（两票）
+
+| 票 | 分支 tip | 合并 sha | 评审 | 修复轮 | 帧对照留档 |
+|----|---------|---------|------|--------|------------|
+| 138 | 2922529（实现 2d4406f） | **fc439a0**（票同步 38e8c57） | 双轴：spec pass（2 非阻塞备注）/ standards pass-with-notes（0阻断/0major/2minor/2nit） | 0 | mg1–mg5 帧 .scratch/visual/；对照结论=两分离卡不同高 106vs137、groove 6.0、model 顶贴悬停行、卡底贴 chip 上缘 hug 2.0、左缘对齐 chip——z19-menu-1/2 构图一致 |
+| 139 | 65d14b6（实现 60c0832 + 修复 4cece38 + 证据 5338e64） | **eb8e1be**（票同步 a6f124e；rebase 重写 tip f345c93） | 双轴：spec **fail**（六帧错位）→修复轮闭环；standards pass-with-notes | 1（capture 时序：后台节流未关→setBackgroundThrottling(false)+每帧 DOM settle-poll；13 帧 md5 两两不同；随修 sundayOf 消重/leftmost-outline 等价断言恢复/披露②措辞） | u1–u2d 六帧 .scratch/visual/ + 11 张 z19 取证放大帧 work-notes/；对照结论=52周×7日贡献图、周日首行序、四蓝配色、daily 卡格上方居中/weekly+cumulative 卡当周列顶上方居中+列环（This week/Through）——z19-heatmap-* 六帧构图一致 |
+
+**回归结论（main@eb8e1be）**：vitest 124 files/2181 全绿（env -u）；smoke:host 全套 PASS（三跑：A 超时→L fixture 路径环境死→补空目录后零 FAIL 全过；Round L=fixture 存已删除的 wt-105 绝对路径，1.8 开工前即存在的环境事实，零代码交集，fixture 路径卫生候选票留操作者）；smoke:electron 三跑 t132/t89/t105 全为已留档预存 flaky 族零交集，两票交付段（menu_geometry 5/5 两跑、usage_heat 10/10 一跑）终位实证绿。
+
+——§7 终验修复轮毕。两票合并、回归、Linear、留档齐备。停下等操作者（不打 tag、不 release）。
+
+## §7-B 终验修复二轮（操作者 npm run dev 反馈 · 2026-09-23 启动）
+
+操作者再跑 npm run dev 反馈四处修订（模型累积用量界面）：①weekly/cumulative 悬浮格去更深色框（只留列环）；②52 列×7 行恒满显不左右滑动（展示维度≠统计维度，cumulative 仍全期累计）；③曲线固定一周（退役 7/30 切换）；④圆环固定一周（退役 t124 全期口径）。主 Agent 立票 140 入 main（8e62d2d，intake 惯例单笔）。现状取证：①=button.heat:hover 1.5px 与列环叠加；②=.heatmap-scroll overflow-x:auto；③④=UsagePage range-row + modelTotals 全期圆环。参照帧沿用 z19-heatmap-*。
+- 01:3x [派工 140] 工区 wt-140-usage-fixes 基于 main@8e62d2d + npm install 完成；实现 subagent 已派（run e2d5bd18，bella/GLM-5.3-flash:max / fresh / 3h / async），任务文本=票面+条款 A–D+批次环境事实+实现指引（CSS 去叠加框/满显 flex 网格/固定 7 天窗/trendView(7) 复用/settings-model additive 保留/visual+smoke 断言更新+t139 settle-poll 保全）。
+- 02:0x [看护 140] watchdog 报 bash 240s——实为 electron smoke 在跑；worker 正处置 t105 段负载型焦点族抖动（该段自带 suite-load echo race 注释），已按取证路径扩展重跑。行为正常，不干预。
+- 02:5x [验收 140] 实现完成报告已收：t140-usage-fixes（tip f133c59，21 文件 360+/170−）。四处全落地：①列环 parity 规则（悬浮格与同列兄弟 outline 一致，daily 1.5px 深框+键盘 focus 保留）②52 列满显（去 overflow-x、flex 分摊+aspect-ratio 方形、无最小列宽地板；窗前携带语义测试锁定）③曲线固定 7 天（range-row 退役、settings-model 零改动）④圆环固定 7 天（新共享纯函数 modelWindowTotals/usageWindow 与 trendView 同窗，先滤后切保留，五张统计卡全期不动）。vitest 2185 绿（+4 新测试）/typecheck/eslint 绿；visual 11 帧全过+读图自验；smoke 两 usage 阶段全绿（新 usage_range_row_retired_ok）。披露：全量 smoke 被预存 t132（stash 基线 A/B 取证）/t105/t89 提前 abort；t44 规范前移位取证后复原。主 Agent 抽查：t132/t105 fail() 原样在位、零 log-and-continue 残留、工作区全净。已派双轴 review-standards(4d056d6a)+review-spec(c1c7c319)（flash，只读）。
+- 03:1x [评审 140 standards] **pass-with-notes**（0 阻断/0 major/0 minor/4 nit）：①parity 选择器最小正确（specificity 根因核实，:not(:focus-visible) 守卫必要且无误伤，daily 不受影响）②t125 4px padding 保全+flex 组合正确 ③usageWindow 抽取消重干净、trendView 纯重定向等价、零契约增量 ④prop 链干净 ⑤新断言非恒真、t139 保全、t132/t105 fail 原样零残留 ⑥新 4 例有效。nit：30 分支保留（additive 支撑）/cost 占位注释约定/probe null 防御/注释编号。
+- 03:3x [评审 140 spec] **pass-with-notes**（验收①②③④⑥全立，⑤有残留）：帧对照逐项实证（u2b/u2d 悬浮列环一致无深框、u1b daily 深框保留、52 列满显对照 z19、曲线 7 天轴、圆环窗口份额≈100%、五卡全期 103.84M≠窗口 45M、期初携带两测试原样锁定、settings-model 零改动、t132/t105 fail 原样零残留）。**两项部分实现**：①退役 u7/u8 帧 harness 退役但 tracked PNG 仍留 HEAD（展示已退役 UI）②窄窗收缩无专门窄宽帧/断言（CSS 机制保证，探针仅 1440 宽）。超范围无（SettingsWindow 1 行=prop 移除在授权内）。**双轴均 pass-with-notes 但两项证据补强轻量→已派修复轮（resume e2d5bd18）：git rm 两张退役帧+窄宽探针/帧。**
+- 03:5x [修复轮 140 ✅] tip 4eedf5a（修复 b69c5b5）：①u7/u8 两张退役帧 git rm 入提交（Bin→0 bytes 确认）②u10-usage-narrow 帧落地（harness 运行时放宽窗口最小宽→760×900，settle-poll 探针：364 格全渲染/scrollWidth≤clientWidth+1/网格填满容器不溢出；拍后恢复原始几何，后续帧 1440×900 不受影响；window-options.ts 未触）。产品源与 f133c59 字节一致（仅 harness+帧+票/账本）。harness 12 帧 exit 0；vitest 2185 绿；typecheck 绿；工作区全净。**双轴闭环→已派 140 合并（根工作区，run 5e2e92bd）**。
+- 04:0x [合并 140 ✅] merge sha **34c6caa**（票同步 249311c，blob 两侧 sha256 一致；rebase 仅票文件一处冲突取 tip 侧、4eedf5a bookkeeping 笔 drop 零丢失、重放后树与原 tip 逐字节一致；smoke/visual-usage/CSS/UsagePage/aggregate/tests/帧零冲突，多票段 grep 确认俱在；u7/u8 已从 main 删除、u10 入 main；验证：typecheck 绿 + env -u vitest 124 files/2185 全绿）。**终验修复二轮（140）并入 main，HEAD=34c6caa**。进入收尾：回归 → Linear（LIA-150）→ 报告。
+- 04:2x [回归·二轮] 根区 main@34c6caa：vitest 124 files/2185 全绿（env -u）✓；smoke:host 全套 PASS exit 0 零 FAIL（Round L 仍需 wt-105 目录占位——既有环境注记，跑后清理）✓；smoke:electron 两跑同点死 t132（操作员活跃期焦点族稳定复现——与操作者交互时段重合；140 worker 已 stash 基线 A/B 证明预存，且合并树与分支 tip 字节一致→分支上 usage_hover/usage_heat 两阶段全绿证据直接继承）。止损：不空转；安静窗口全套复跑留操作者。
+- 04:3x [Linear 140] 沿 §6 通道：**140 → LIA-150**（Done / iter:1.8 / 项目 PiCode / 描述=同步头+票面要点+主 Agent 评审记录）。https://linear.app/liaokc/issue/LIA-150
+
+### §7-B 终验修复二轮总结（票 140）
+
+| 票 | 分支 tip | 合并 sha | 评审 | 修复轮 | 帧对照留档 |
+|----|---------|---------|------|--------|------------|
+| 140 | 4eedf5a（实现 f133c59 + 修复 b69c5b5） | **34c6caa**（票同步 249311c） | 双轴均 pass-with-notes：standards 0/0/0/4nit；spec 验收全立+两项部分实现 | 1（退役 u7/u8 tracked 帧 git rm；u10 窄宽 760×900 满显探针/帧） | u1–u6/u9/u10 帧 .scratch/visual/；对照结论=悬浮列环一致无深框（u2b/u2d）、52 列恒满显（u1/u10 对照 z19）、曲线 7 天轴、圆环窗口份额；u7/u8 退役删除 |
+
+四处交付：①列环 parity 规则（daily 深框/键盘 focus 保留）②52 列满显 flex（窗前携带锁定）③曲线固定 7 天（range-row 退役、settings-model 零改动）④圆环固定 7 天（modelWindowTotals/usageWindow 同源同窗，先滤后切保留，五卡全期不动）。回归（main@34c6caa）：vitest 2185 绿 / smoke:host 全套 PASS / smoke:electron 死点均为已留档预存族。
+
+——§7-B 终验修复二轮毕。停下等操作者（不打 tag、不 release）。
+
+## §7-C 发布门彩票与票 141（2026-09-23）
+
+- 04:4x [发布·v1.8.0] 操作者验收通过，指令：打 tag → 发布 → 替换本地 app。版本 bump `6ab00fe`（chore(release): 1.8.0，沿 v1.7.0 惯例）+ annotated tag v1.8.0；无 git remote（发布=本地打包安装）。
+- 04:5x [package:verify 六跑彩票] 跑1死 t124 usage fixture →定位**真 harness 缺陷**：`openLaunchArgs` 漏配 `PICODE_FAKE_USAGE=1`（electron-smoke.mjs/run-all.sh 都带；v1.7 时代该段不存在故未暴露）→ 修 `30eb3a1`。后续五跑：t89 ×2（log=[]）、t105 ×2、t132 ×1。跑 2/6 合并实证：1.8 全部验收段（menu_geometry/range_row_retired/zero_filter_fixed_window/heat 10 段）+ MCP 全段含 OAuth 端到端交换（mock 侧 GET /authorize→POST /token，auth_completed）在打包产物上全绿。
+- 05:0x [根因·t89 确定性回归] 机制链：smoke 在 t89 段开始才把垫片目录前置进主进程 PATH（smoke.ts:12998）→ `hostForkEnv()`（spawn-path.ts:161）用**启动时冻结的 composedCache** 覆盖 fork PATH → t89 段新建会话的 host 拿不到垫片 → 适配器 pi.exec("open") 解析真实 /usr/bin/open → 浏览器打开授权 URL（OAuth 照样完成）但垫片 open.log 恒空 → 断言必死。**引入点=票 134**；139 轮 A/B 基线已含 t134 故误判为环境竞态族。v1.7.0 时代 host fork 直接继承 process.env，垫片生效——非竞态，是确定性回归。另根因 t132/t105 leg1：焦点断言无窗口焦点前置（Chromium 失活→activeElement=body；t44/t105 leg2 已有保险模式，两处裸奔腿未接）。
+- 05:1x [立票 141] `.scratch/picode-1-8/issues/141-verify-t89-shim-focus.md` 入库 `949b2fa`：R1 spawn-path 改「缓存事实+读取时活组合」（t134 no-degradation 次序契约不变）+ R2 smoke 抽 ensureWindowFocused 补三处（断言零改动）+ tests/main/spawn-path-live.test.ts。工区 wt-141-verify-fixes 已建（npm install 完）；实现工已派（run 82e89166，flash）：实现→typecheck/eslint/vitest（env -u）→ electron-smoke 取 t89 段直接证据（mcp_oauth_autocomplete_ok 哨兵，≤2 重试）。合并后安静窗口重跑 package:verify，过则 tag 重指合并后 HEAD 并安装替换本地 app。
+- 05:4x [实现 141 ✅] tip `a7e3a66`：R1+R2 落地；顺带修复 main 上两处既存红（package-verify-launch.test.ts 期望滞后 30eb3a1、package-lock 版本漏同步 6ab00fe）。验证：typecheck/eslint 绿；env -u vitest **125 files/2188 全绿**（+3 新）。**t89 直接证据**：dev smoke 跑 3 `SMOKE mcp_oauth_autocomplete_ok http://127.0.0.1:50907`——t134 以来首过；sanitized t134 段 exit 0（18 entries vs bare 4，无降级契约保全）；跑 4 死 t119（背景流式负载下时序段，非确定性签名，原文披露未动断言）。t90/t119 为新暴露时序段，证据留 /tmp/t141-smoke-3/4.log。
+- 06:0x [评审 141] 双轴：standards **pass-with-notes**（2 minor：恒真断言判断性意见+lock 同步宜补记；3 nit；零 must-fix；红线全过：shared 零改动、helper 与 t44 块逐字等价、断言文本零改动）；spec **pass**（R1/R2 逐项落地、超范围两处均必要且披露、无实现错误）。
+- 06:1x [合并 141 ✅] 票同步 `de860a7` → merge **`aab20a3`**（rebase 零冲突，实砥笔重放 `77184fc`；树与分支 tip 字节一致；env -u vitest 125 files/2188 全绿；5 文件 156+/40−）。**main HEAD=aab20a3，进入发布门重跑。**
+- 06:2x [发布门·7/7b] 跑 7（工具 10 分钟窗口截断，仍在跑=早死点全过）；跑 7b（nohup 后台，14:25-14:33）：**焦点腿全过（141 R2 生效）**，死新点 **t91**（`the overlay never closed via the mask-blank click exit`，363 哨兵；Space/❌/Escape 三腿全过唯 mask-blank 死）。
+- 06:3x [根因·t91] closedIntact91（smoke.ts ~9666）open 检查为**单次快照**——本段其余断言全有 5s settle-poll 唯独它没有；真鼠标 mouseDown→60ms→mouseUp 后立刻采样，渲染负载下 React 提交晚于快照 → 误报。同段 runs 2/6、dev 跑 3 均过 = 间歇。另据 141 实现工披露：t90（live 徽章 10s 探针死，桥接 roundtrip 已解）与 t119（底钉漂移，背景 24 连 thinking_delta）为被 t89 掩蔽的到达即死段。
+- 06:4x [立票 142] `.scratch/picode-1-8/issues/142-verify-t91-t90-t119.md` 入库 `e2c00ae`（含彩票地图）：R1 t91 settle-poll 机械修；R2 t90 诊断+修复授权（分页复位/前送/增强三假说，前移位取证）；R3 t119 同（settled 前提违反 vs pin 闩真缝）。工区 wt-142-verify-lottery 建好；实现工已派（run 6588c580，flash）：实现→验证→smoke 越过 t90/t119 取证。
+- 07:0x [Linear 同步] 操作者指令：全部工单同步 Linear。141 → **LIA-151**（Done）；142 → **LIA-152**（In Progress）。核对 LIA-148/149/150/151/152 = 138/139/140/141/142 全在位。
+- 07:2x [实现 142 ✅] tip `ab669b1`（R1 `006c4f0` + R2 `ab669b1`，5 文件 66+/17−）。三项定论：**R1** t91 单快照→5s settle-poll（四退出腿共享，语义不放宽）；**R2 t90 根因=确定性环境泄漏**（从 subagent 会话驱动的跑继承 `PI_SUBAGENT_CHILD=1` → pi-subagents 按契约拒注册 → fleet RPC 无人应答 → 桥接答 available:false（工件 runs 照常携带）→ foldSubagentStatus 弃折 → DOM 恒 Lost；套件级 A/B 铁证：diag3 avail:false+Lost → final1 rebuild lost=0）——修复 = hostForkEnv() 剥离 PI_SUBAGENT_CHILD/PI_SUBAGENTS_HERDR_BRIDGE + electron-smoke.mjs/run-all.sh 启动侧净化；对操作者终端零行为变化。**R3** t119 环境时序彩票（三跑两绿一红，run4 dump 排除流式假说，无可证 pin 闩破绽）——断言零改动不修，证据留档。验证：typecheck/eslint 绿；env -u vitest **125 files/2189 全绿**（+1）；临时取证零残留（grep TEMP 全 0）；**dev smoke 全套 ALL GREEN（SMOKE done、714 哨兵、零 FAIL，/tmp/t142-final1.log）**——批次首次全套单跑全绿；t119 全腿 + t90 真断言（live_running/live_completed/rebuild ended=25 completed=25 lost=0）全过。
+- 07:4x [评审 142] 双轴：standards **pass-with-notes**（1 minor：marker 名跨文件重复可导出常量；2 nit：OverlaySample91.open 死字段、测试清理顺序；零 must-fix，红线全过）；spec **pass**（R1 四腿 settle-poll 语义不放宽实锤、R2 拒注册/弃折机制 file:line 属实、hostForkEnv 唯一咽喉；1 partial：独立探针日志缺档但套件级 A/B 定论成立；note：R2 动产品代码 spawn-path.ts 已标注=env 语义修复）。
+- 08:2x [合并 142 ✅] 票同步 `8716557` → merge **`77f1eb3`**（rebase 零冲突、票同步笔 patch-id 一致自动跳过零丢失，实砥笔重放 6d032b5/9a5f543；树与分支 tip 字节一致；env -u vitest 125 files/2189 全绿）。**main HEAD=77f1eb3，进入最终发布门。** LIA-152 待置 Done。
+- 08:3x [LIA-152 置 Done] Linear 同步（双轴评审通过+合并完成）。
+- 08:4x [发布门全绿 🎉] package:verify @ main 77f1eb3（nohup 后台，16:24-16:33）：**SMOKE done、712 哨兵、零 FAIL——`PACKAGED ARTIFACT VERIFIED`，批次以来打包门首次完整通过**（141 R1/R2 + 142 R1/R2 修复后彩票全清：焦点腿、t91、t89、t90、t119 全链在打包产物上一次跑通）。
+- 09:0x [发布 v1.8.0 ✅] ①tag 重指：v1.8.0 → **77f1eb3**（原 23e9992 删除重打，annotated，发布树=验证树）②本地 app 替换：旧版备份 `/Applications/PiCode 1.7.0.app`（沿 1.6.0 惯例）→ `ditto` 安装 → `/Applications/PiCode.app` CFBundleShortVersionString = **1.8.0**，无 quarantine 标记，零运行实例干扰。产物链：release/PiCode-darwin-arm64/PiCode.app（Electron 44.0.0 + SDK 0.86.1 + pi-ai 对齐核验在打包脚本内置）。
+
+### §7-C 发布收口总结
+
+| 票 | 内容 | sha 链 | 状态 |
+|----|------|--------|------|
+| 140 | usage 终验二轮（四处修订） | 8e62d2d → f133c59/b69c5b5 → merge 34c6caa | 已发布 |
+| 141 | t89 冻结 PATH 回归 + 焦点前置 | 949b2fa → a7e3a66 → merge aab20a3 | 已发布 |
+| 142 | t91 settle-poll + t90 环境泄漏 | e2c00ae → 006c4f0/ab669b1 → merge 77f1eb3 | 已发布 |
+| 30eb3a1 | package verify 漏配 FAKE_USAGE 修复 | main 直修 | 已发布 |
+| 6ab00fe/23e9992→77f1eb3 | 版本 bump + tag v1.8.0 重指 | main | 已发布 |
+
+发布证据：打包门全绿（712 哨兵）+ vitest 2189 + smoke:host 全套 PASS + dev smoke 全套 ALL GREEN（714 哨兵）。遗留：t119 残余时序不确定（R3 留档，断言未动）；ticket-79/70/83 同类环境焦点族在操作者输入密集期仍可能偶发（既有分类）；host Round L fixture 机器路径候选票仍留操作者。
+
+——v1.8.0 发布毕。PiCode 1.8.0 已装入 /Applications。
+
+- 09:2x [卫生票 143] 操作者批准：Round L fixture 机器绝对路径卫生票立案 `.scratch/picode-1-8/issues/143-host-roundl-fixture-cwd.md` 入库 `ba731fa`；修法 = 播种时把 session 头 cwd 重写为 seedDir086（fixture 文件零改动，census/closeout 零影响）；验收 = 零人工前置 smoke:host 全套 PASS。Linear：**LIA-153（Todo）**。待派工。
+- 09:4x [143 执行指令] 操作者：实现→合并→重新发版；问询是否需全量测试；项目已关联 GitHub，授权推送；**约束：所有工单发布/执行等状态变更必须同步 Linear**。测试范围判定：vitest 全量（必，便宜）+ smoke:host 全套（必=本票改动面）+ smoke:electron/package:verify（**不必**——改动仅 scripts/smoke/host-contract-smoke.mjs，不在 app 打包面，以 git diff 源码同一性证明既有 PACKAGED ARTIFACT VERIFIED 证据承接）；app 重装判定：源码同一→产物字节一致，已装 1.8.0 无需重装。发布动作 = tag 重指 + git push（远端待核对）。LIA-153 置 In Progress。
+- 10:0x [Linear 镜像纪律落库] 操作者质询后补正：规则本体写入 `docs/agents/issue-tracker.md` § Linear mirror (mandatory)（提交 `e0e2599`）——intake→Todo / 派工→In Progress / 评审记录追加 / 合并→Done / 发版记录，本地未关账=Linear 未同步；run-log 事件留痕 + LIA-153 In Progress 执行首例。
+- 10:4x [实现 143 ✅] tip `af54549`（+25/−0 仅 host-contract-smoke.mjs 播种处：首行 session 头 cwd→seedDir086 重写，键序保留，形状漂移即 fail，其余行字节不动，fixture 零改动）。验证：零占位目录前提下 smoke:host **全套 PASS exit 0**（Round L：seeded opened/replay 210/tree 270/**shutdown 271/271 byte-identical**）；vitest 2189 绿；eslint 绿。**披露**：跑 1 死 Round K = worker 会话 PI_SUBAGENT_CHILD 泄漏 × host-contract-smoke.mjs forkHost()（408-415）未剥标记——142 R2 修复未覆盖的直 fork 口；干净 env（-u 三变量）全套过。候选微票：forkHost 剥离（发版后立案）。
+- 11:0x [评审 143 + 修轮] 双轴：standards **approve**（0 must-fix/2 minor/2 nit）；spec **pass**（0 must-fix/0 partial/2 note；披露评估成立——Round K 死属调用方 env 泄漏 pre-existing，不影响 Round L 验收）。修轮 `d2c802b`（主会话直修，139 簿记先例）：①payload 注释更正（<cwd> 在 line-4 system preamble 非工具结果）②可逆性守卫（round-trip 只改 cwd，escape 静默重编码响亮失败）。修轮验证：vitest 2189 绿 + smoke:host 主会话直跑全套 PASS exit 0（wt-105 零占位）。
+- 11:2x [合并 143 ✅] 票同步 `af0fefc` → merge **`98d2142`**（rebase patch-id 一致自动跳过零丢失，实砥笔 2/2 重放 b32f178/5383bd2；产品源与分支 tip 字节一致；env -u vitest 125 files/2189 全绿）。
+- 11:3x [发版 v1.8.0 最终态] ①源码同一性证明：77f1eb3→98d2142 全差异 = 票面/流程文档/smoke 脚本 3 文件，**src/ 与打包输入零字节差异** → app 产物不变，77f1eb3 的 PACKAGED ARTIFACT VERIFIED 证据承接；已装 /Applications/PiCode.app（1.8.0）无需重装。②tag v1.8.0 重指 **98d2142**。③**git push origin main --tags**：main 98d2142 + tags v1.5.0/v1.6.0/v1.7.0/v1.8.0 上远端（github.com:Liaokc/PiCode）。④Linear：LIA-153 → **Done**。⑤候选微票 144 立案入库 `ed6db85`（forkHost 剥离 PI_SUBAGENT_CHILD，142-R2 补充；smoke:host 直 fork 口）→ **LIA-154（Todo）**，已推送。
+
+### §7-D 发布终态（v1.8.0）
+
+| 项 | 值 |
+|----|----|
+| 发布树 / tag | **98d2142**（v1.8.0，annotated，已推 GitHub） |
+| 打包门证据 | PACKAGED ARTIFACT VERIFIED @ 77f1eb3（SMOKE done、712 哨兵零 FAIL）+ 源码同一性承接至 98d2142 |
+| 本地 app | /Applications/PiCode.app = 1.8.0（旧版备份 PiCode 1.7.0.app / 1.6.0.app） |
+| 票 140/141/142/143 | 全部合并入发布树；LIA-150/151/152/153 全 Done |
+| 微票 144 | forkHost 剥离（LIA-154 Todo，待派） |
+| 推送 | origin = github.com:Liaokc/PiCode；main + 全部 tag 已推 |
+
+——v1.8.0 发布+推送毕。等操作者下一步指令（144 派工与否）。
+- 12:0x [终态指令] 操作者：以发版树重打包替换本地 app，清理 worktrees（旧红线「保留工区」由本指令解除）。执行：npm run package（main 当前树 = 98d2142 同源，app 输入零差异）→ 替换 /Applications/PiCode.app；六工区（wt-138/139/140/141/142/143）逐个验净后 remove + 已合并分支删除；LIA-153 补记终态。144（LIA-154 Todo）仍留待派。
+- 12:1x [替换+清理 ✅] ①重打包（bundled SDK 0.86.1 / pi-ai 0.86.1 verified）→ ditto 替换 /Applications/PiCode.app（1.8.0）。②worktrees 全清：本轮 6 工区验净 remove；1.8 批早段 22 工区（wt-116–137）20 个净 remove + 2 个含未跟踪证据帧（wt-119：7 张 c119-*.png；wt-125：visual-t125/）先归档 `.scratch/retired-worktree-evidence/` 再强删；`.worktrees/` 目录移除；28 条已合并分支（t116–t143）全部删除，余 main；`git worktree list` = 仅根。旧备份保留：/Applications/PiCode 1.7.0.app / 1.6.0.app。
+- 20:4x [145 README 品牌升级 ✅] 操作者指令：README 像高星项目一样升级（中文版/logo/图片）。①研究员（知识库调研，web 工具不可用已披露）产出 `.scratch/readme-research-brief.md`：12 段黄金骨架/双文件互链/真实 badge/emoji features/hero 第一屏。②图像精选工（多模态读图）从已提交视觉帧选 hero（3-expanded 完整工作台）+ 7 特性图 + logo（build/icon.png 1024²），复制入 `docs/assets/`，附中英 captions；review-diff 类无好图留待补拍。③License 操作者授权「你决定」→ MIT（LICENSE + package.json，`2327b02`）。④README.md 重写：居中 logo+tagline+4 badge（MIT/动态版本 tag/macOS/node≥24）+语言行+痛点定位（Handoff/Live Follow）+hero+emoji Features+截图网格+Quick Start（含打包）；工程段落全保留（Architecture/Development/smoke 六阶段/Visual QA/Packaging）——AGENTS.md 交叉引用锚点不破。⑤README.zh-CN.md 全文中文镜像互链。⑥提交 `98d4011` 推送 GitHub。⑦本地 Electron 离屏渲染双版预览截图 `.scratch/visual/readme-preview-{en,zh}.png`（@2x）。LIA-155 = 145。
