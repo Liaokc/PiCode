@@ -793,20 +793,28 @@ async function onHostExit(exited, code) {
     // always exists) AT SEED TIME instead of editing the committed fixture:
     // the byte-real fixture is the stage's value (structure/id linkage,
     // 0.86 unknown-type lines) and cwd is a string field, not part of the
-    // format compatibility under test. The JSON round-trip preserves the
-    // header's key order; every other line stays byte-identical, and the
-    // lossless-closeout comparison below reads this same rewritten string, so
-    // seeded-vs-disk stays the exact invariant. The fixture's second <cwd>…
-    // occurrence is toolResult payload text — harmless message content, left
-    // byte-real. A header-shape drift fails loudly here rather than
+    // format compatibility under test. The lossless-closeout comparison
+    // below reads this same rewritten string, so seeded-vs-disk stays the
+    // exact invariant. The reversibility guard proves the round-trip only
+    // swapped the cwd value — a future header escape (e.g. \uXXXX) that
+    // silently re-encoded other bytes would otherwise never surface
+    // downstream. The fixture's other machine-path mentions (the <cwd> tag
+    // in the line-4 system preamble text, the bare path inside a later
+    // toolResult) are message payload, not header state — harmless content,
+    // left byte-real. A header-shape drift fails loudly here rather than
     // resurfacing as the dead-cwd open error downstream.
     fixture086 = ((lines) => {
-      const header = JSON.parse(lines[0])
+      const originalFirst = lines[0]
+      const header = JSON.parse(originalFirst)
       if (header.type !== 'session' || typeof header.cwd !== 'string') {
         fail('tui-086 fixture: the first line is no longer a session header with a cwd — the seed-time cwd rewrite needs updating')
       }
+      const originalCwd = header.cwd
       header.cwd = seedDir086
       lines[0] = JSON.stringify(header)
+      if (lines[0].replace(JSON.stringify(seedDir086), JSON.stringify(originalCwd)) !== originalFirst) {
+        fail('tui-086 fixture: the seed-time cwd round-trip re-encoded more than the cwd value — fixture header shape drifted')
+      }
       return lines.join('\n')
     })(fixture086.split('\n'))
     session086File = path.join(process.env.PICODE_SESSION_DIR, 'tui086-seeded.jsonl')
