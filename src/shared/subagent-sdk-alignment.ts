@@ -11,6 +11,10 @@
  * package.json and the operator's ~/.pi/agent npm pi-subagents) and this
  * model decides whether the honest startup notice must fire — never a
  * silent failure.
+ *
+ * pi-subagents 0.71.0 removed that transcript-tools hard import upstream
+ * (#2377), so the floors below stay 0.86.1/0.70.0 unchanged — they keep
+ * guarding old 0.70.x installs; the semantics remain accurate.
  */
 
 /** The SDK floor pi-subagents 0.70.x needs (transcript utilities export). */

@@ -812,9 +812,12 @@ app.whenReady().then(() => {
   // Ticket 134: the startup SDK/subagents alignment self-check — a bundled
   // SDK older than 0.86.1 cannot feed pi-subagents ≥ 0.70's transcript-tools
   // import (the extension fails to load; in-app subagents die silently
-  // otherwise). The rare broken-bundle case rides the existing host_notice
-  // toast: broadcast once the renderer can show it (did-finish-load plus a
-  // settle beat for React's mount-time subscription) and log it regardless.
+  // otherwise). pi-subagents 0.71.0 has deleted that hard import upstream
+  // (#2377), so the floor constants stay 0.86.1/0.70.0 unchanged — they keep
+  // guarding old 0.70.x installs and the semantics remain accurate. The
+  // rare broken-bundle case rides the existing host_notice toast: broadcast
+  // once the renderer can show it (did-finish-load plus a settle beat for
+  // React's mount-time subscription) and log it regardless.
   const alignmentNotice = subagentSdkAlignmentNoticeForInstallation()
   if (alignmentNotice !== null) {
     console.error(`[picode] ${alignmentNotice}`)
