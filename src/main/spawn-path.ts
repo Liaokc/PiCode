@@ -19,10 +19,16 @@
  *      ~/.pi/agent/bin.
  *
  * The merge itself is the pure model in src/shared/spawn-path.ts. The
- * composition is cached once per process (failures degrade to the current
- * PATH — a broken shell never breaks the app); `hostForkEnv()` injects it
- * into every host-family fork so the whole host → runner → pi child chain
- * resolves `node` the way a terminal launch always could.
+ * expensive half — the login-shell snapshot and the on-disk probe results —
+ * is gathered once per process (failures degrade to the current PATH — a
+ * broken shell never breaks the app); the merge runs on every read against
+ * the LIVE process PATH (ticket 141), so entries injected after startup —
+ * the smoke's PATH-prepended `open` shim, any runtime PATH change — reach
+ * the next host fork instead of being swallowed by a startup-frozen cache,
+ * while the no-degradation order (current PATH first, verbatim) keeps the
+ * t134 rich-PATH semantics. `hostForkEnv()` injects the result into every
+ * host-family fork so the whole host → runner → pi child chain resolves
+ * `node` the way a terminal launch always could.
  */
 
 import { execFile } from 'node:child_process'
@@ -33,10 +39,20 @@ import { composeSpawnPath, normalizePathEntry, resolveNvmVersion } from '../shar
 
 const LOGIN_SHELL_TIMEOUT_MS = 5_000
 
+/** The slow-moving half of the composition (ticket 141): the login-shell
+ * snapshot and the on-disk probe results. Both are expensive (a shell
+ * spawn, a filesystem walk), so they are gathered once per process; the
+ * cheap fast-moving half — the PATH the process carries RIGHT NOW — is
+ * merged live on every read. */
+interface SpawnPathFacts {
+  loginShellPath: string | undefined
+  probePaths: string[]
+}
+
 /** The login-shell snapshot runs once; failures degrade to current + probes. */
-let composition: Promise<string> | null = null
-/** The finished composition, for synchronous readers (null until then). */
-let composedCache: string | null = null
+let composition: Promise<SpawnPathFacts> | null = null
+/** The finished facts, for synchronous readers (null until then). */
+let factsCache: SpawnPathFacts | null = null
 
 function shellPath(): string | null {
   const candidates = [process.env['SHELL'], userInfo().shell]
@@ -121,17 +137,17 @@ function staticProbePaths(): string[] {
   return probes
 }
 
-async function composeOnce(): Promise<string> {
+async function gatherFacts(): Promise<SpawnPathFacts> {
   const loginShellPath = await loginShellSnapshot()
   const probePaths = staticProbePaths()
-  return composeSpawnPath({ currentPath: process.env['PATH'], loginShellPath, probePaths })
+  return { loginShellPath, probePaths }
 }
 
-function ensureComposition(): Promise<string> {
+function ensureComposition(): Promise<SpawnPathFacts> {
   if (composition === null) {
-    composition = composeOnce().then((composed) => {
-      composedCache = composed
-      return composed
+    composition = gatherFacts().then((facts) => {
+      factsCache = facts
+      return facts
     })
   }
   return composition
@@ -142,21 +158,28 @@ export function initSpawnPath(): void {
   void ensureComposition()
 }
 
-/** The best PATH to spawn host-family children with RIGHT NOW: the composed
- * PATH once ready, the app's own PATH until then (the async window is a
- * fraction of the first window's load). */
+/** The best PATH to spawn host-family children with RIGHT NOW: once the
+ * slow facts have landed, the pure model merges them with the LIVE
+ * process PATH on every read (ticket 141) — anything the process's PATH
+ * gained after startup reaches the next fork, while the no-degradation
+ * order keeps the current PATH first, verbatim. Before the facts land
+ * (a fraction of the first window's load), the app's own PATH. */
 export function getSpawnPath(): string {
-  return composedCache ?? process.env['PATH'] ?? ''
+  const currentPath = process.env['PATH']
+  if (factsCache === null) return currentPath ?? ''
+  return composeSpawnPath({ currentPath, loginShellPath: factsCache.loginShellPath, probePaths: factsCache.probePaths })
 }
 
-/** Await the one-shot composition (bounded by the login-shell timeout);
- * resolves even when every input failed. */
+/** Await the one-shot facts gathering (bounded by the login-shell timeout);
+ * resolves even when every input failed — with the live-composed PATH for
+ * the caller's convenience (the t134-sanitized stage compares it against
+ * the launch PATH). */
 export function whenSpawnPathReady(): Promise<string> {
-  return ensureComposition()
+  return ensureComposition().then(() => getSpawnPath())
 }
 
 /** The env for every host-family fork: the app's environment with the
- * composed PATH (so the host, pi-subagents' runner and every pi child
+ * live-composed PATH (so the host, pi-subagents' runner and every pi child
  * resolve `node`) and the run-as-node marker the fork protocol needs. */
 export function hostForkEnv(): NodeJS.ProcessEnv {
   return { ...process.env, ELECTRON_RUN_AS_NODE: '1', PATH: getSpawnPath() }

@@ -26,6 +26,7 @@ describe('openLaunchArgs', () => {
       '--stdout', '/tmp/picode-smoke-verify-x/smoke-stdout.log',
       '--stderr', '/tmp/picode-smoke-verify-x/smoke-stderr.log',
       '--env', 'PICODE_SMOKE=1',
+      '--env', 'PICODE_FAKE_USAGE=1',
       '--env', 'PICODE_SESSION_DIR=/tmp/picode-smoke-verify-x/sessions',
       '--env', 'PICODE_PI_AGENT_DIR=/tmp/picode-smoke-verify-x/pi-agent',
       '/repo/release/picode-darwin-arm64/PiCode.app'

@@ -691,6 +691,34 @@ export function startSmokeIfEnabled(
     const win = smokeWin
     let pickedModelId: string | null = null
 
+    // Ticket 141: the t132/t105 focus legs assert document.activeElement —
+    // which Chromium reverts to <body> whenever the OS window is inactive —
+    // so those legs run the t44 clipboard leg's window-focus precondition
+    // first. Extracted verbatim from that leg (show/focus/steal + a
+    // hasFocus poll that re-requests the steal every tick, because macOS 15
+    // denies activation while the user is typing elsewhere); the assertions
+    // themselves stay untouched. The withWindow stages (t44/t105) close
+    // over this same window instance.
+    const ensureWindowFocused = async (message: string): Promise<void> => {
+      win.show()
+      win.focus()
+      app.focus({ steal: true })
+      let focused = false
+      for (let waited = 0; waited < 10_000 && !focused; waited += 100) {
+        focused = (await win.webContents.executeJavaScript('document.hasFocus()')) === true
+        if (!focused) {
+          // macOS 15 denies a focus steal while the user is actively typing
+          // in another app and coalesces activation requests — re-request
+          // every poll tick so the steal lands the moment that interaction
+          // pauses (ticket-47 harness-robustness class: smoke-mode only,
+          // the assertion itself is untouched).
+          if (!win.isFocused()) app.focus({ steal: true })
+          await new Promise((r) => setTimeout(r, 100))
+        }
+      }
+      if (!focused) fail(message)
+    }
+
     // Ticket 135 (validation harness): the queue-panel stage body
     // (tickets 100 → 128 → 135) as a callable closure. The full suite
     // runs it in its original position near the end of the sequence;
@@ -1384,6 +1412,7 @@ export function startSmokeIfEnabled(
         if ((await win.webContents.executeJavaScript(DOCK_STATE_T132).catch(() => 'probe-failed')) !== 'closed') {
           fail('ticket 132 (boot empty): the dock did not start closed at the boot empty state')
         }
+        await ensureWindowFocused('ticket 132 (boot empty): the window never took focus for the armed ⌘J press')
         await win.webContents.executeJavaScript(
           `window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyJ', metaKey: true, bubbles: true }))`
         )
@@ -1460,6 +1489,7 @@ export function startSmokeIfEnabled(
         20_000
       )
       if (!shellMounted) fail('ticket 132 (boot empty): the first shell never mounted after the session was announced')
+      await ensureWindowFocused('ticket 132 (boot empty): the window never took focus before the first-shell focus probe')
       const inShell = await waitForProbe(
         win,
         `document.activeElement !== null && document.activeElement.classList.contains('xterm-helper-textarea')`,
@@ -2103,23 +2133,7 @@ export function startSmokeIfEnabled(
       // ② Real clipboard round-trip: focus the window for real, park a
       // sentinel, click Copy, then poll the pasteboard from main until the
       // sentinel is replaced by the message's raw text.
-      win.show()
-      win.focus()
-      app.focus({ steal: true })
-      let focused = false
-      for (let waited = 0; waited < 10_000 && !focused; waited += 100) {
-        focused = (await js('document.hasFocus()')) === true
-        if (!focused) {
-          // macOS 15 denies a focus steal while the user is actively typing
-          // in another app and coalesces activation requests — re-request
-          // every poll tick so the steal lands the moment that interaction
-          // pauses (ticket-47 harness-robustness class: smoke-mode only,
-          // the assertion itself is untouched).
-          if (!win.isFocused()) app.focus({ steal: true })
-          await new Promise((r) => setTimeout(r, 100))
-        }
-      }
-      if (!focused) fail('ticket-44 stage: the window never took focus for the real-clipboard click')
+      await ensureWindowFocused('ticket-44 stage: the window never took focus for the real-clipboard click')
       const previous = await clipboard.readText()
       try {
         await clipboard.writeText('PICODE_CLIPBOARD_SENTINEL_44')
@@ -4164,6 +4178,7 @@ export function startSmokeIfEnabled(
       if (((await js(DOCK_STATE)) as string) !== 'closed') fail('ticket 105: the dock never normalized to closed')
 
       // Leg 1: ⌘J opens the dock → focus lands in the user shell.
+      await ensureWindowFocused('ticket 105: the window never took focus for the ⌘J open leg')
       await pressJ(false)
       await ensureDockState('terminal', 'ticket 105: ⌘J never opened the terminal dock')
       await ensureShellFocus('ticket 105: ⌘J open did not focus the user shell (activeElement is not the xterm textarea)')
