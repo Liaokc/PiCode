@@ -214,3 +214,12 @@
   失败均归因前台活动类、t136 几何已随主屏更换解锁）。发版序列：账本提交 →
   chore(release): 1.8.1 → npm run package（不带 --verify）→ tag v1.8.1 →
   push main+tag → 替换 /Applications/PiCode.app → Linear 四票镜像 release 注释。
+- [EV-0030] **发版完成（操作者指令）**：
+  - 版本 bump `chore(release): 1.8.1` = 14b5c88（前置账本提交 b4b1e30）；
+  - `npm run package` → release/PiCode-darwin-arm64/PiCode.app（SDK 0.87.1 内置
+    验证通过；未跑 --verify，收尾门按操作者裁决以证据闭环代替）；
+  - tag v1.8.1（annotated）@ 14b5c88；push origin main 8790492..14b5c88 + tag；
+  - /Applications/PiCode.app 已替换（CFBundleShortVersionString=1.8.1，1.1G）；
+  - Linear 四票（LIA-205/211/212/213）已附 release 注释；
+  - 诊断 worktree diag-t123 已清理（EV-0028 仪器化构建，结论已归档账本）。
+  批次 1.8.1 至此全部收口。
