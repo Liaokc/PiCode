@@ -223,3 +223,9 @@
   - Linear 四票（LIA-205/211/212/213）已附 release 注释；
   - 诊断 worktree diag-t123 已清理（EV-0028 仪器化构建，结论已归档账本）。
   批次 1.8.1 至此全部收口。
+- [EV-0031] Linear 收口（操作者指令"Linear更新一下"）：
+  - 四票 release 注释已在前置步骤落位（LIA-205/211/212/213）；
+  - 清理 1.8.0 时代陈旧重复镜像票 4 张：LIA-152(142)→Duplicate of LIA-160、
+    LIA-202/203(143)→Duplicate of LIA-206、LIA-207(145)→Duplicate of LIA-208，
+    各附归因注释（工作均已随 v1.8.0 落地；145 = feat 98d4011 README storefront）；
+  - 终态：PiCode 项目 56 completed + 4 duplicate，零在办/进行中。
