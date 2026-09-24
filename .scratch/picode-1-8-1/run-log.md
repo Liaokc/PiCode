@@ -185,3 +185,32 @@
   0.86.1 × 同序列绿（148 worker 实证）vs 0.87.1 安静窗 t136 ×2 —— 唯一产品行为
   差 = SDK bump → 疑似 SDK 事件时序扰动 UI 探针。实验：① main 0.87.1 复跑
   smoke:electron（第三样本）；② 若再败 → base tag 0.86.1 对照。
+- [EV-0026] 操作者指令：重跑此前被阻断的收尾门（全套 smoke + package:verify）。
+  环境核对：主显示器已换为 1920×1080（原 2560×1664 Retina 为主时工作区仅 1221），
+  Dock 仍右侧 64——新主屏工作区 ≈1861 ≥ 1440 窗口请求 ≥ 1300（t136 需求）→ 几何
+  解锁。执行：① 通道自查 → npm run smoke 全套七段（安静单调用）；② 绿则
+  npm run package:verify。
+- [EV-0027] 收尾门重跑 #1（新几何）：stages 1-5 全绿（build 11s/host 96s/pty 3s/
+  usage 6s/interop 10s）；stage 6 死于 **t123**（死组拖拽排序断言 @232s，
+  sink123-live 位 1→4）——间歇竞态（2s 索引 tick × 300ms 断言窗；票 123 无既往
+  flake 修复；0.86.1 与 0.87.1 均有通过样本，SDK 无关）。重跑 #2。
+- [EV-0028] t123 根因诊断（diag-t123 worktree @ main，仪器化构建）：
+  - 直跑 stage 6 共 9 次：t123 **0 失败**（含 1 次整段全绿 EXIT=0）；失败均在前段
+    （menu-keyboard 作曲台等待 / t105 焦点 / t132 焦点 / ticket-63 缺 env——直跑补
+    PICODE_PI_AGENT_DIR 后消除）。
+  - **决定性证据**：menu-keyboard 断言 dump 的 composer 内容为 "/我想知道qu"——
+    "我想知道" 为操作者 IME 实时输入（rg 全库无此串），混入了 smoke 的可信按键流。
+  - 因果链：① smoke 抢焦点 + 发可信按键 ⇒ 与前台真人活动互扰；② macOS 在用户
+    输入期间拒绝 focus-steal（ensureWindowFocused 注释自证）⇒ t132/t105 焦点腿死；
+    ③ t123 签名 = 顶部 sinkLive 组被「拖到活组末尾/死桶边界」——与真人自顶向下
+    的拖拽路径完全一致（dragstart 落顶部 grip、drop 落底部 doom 段、死锚→anchor
+    =null→live-end；moveGroupBefore 数学闭合 after 序）；机器安静时 0/9 复现。
+  - 旧 t136 几何阻断已被操作者换主屏（1920×1080）解锁；本轮 stage 6 三次死点
+    （t123/menu-keyboard/t132）全部归于前台活动类。
+  - 结论：收尾两门需机器静默（无键盘/鼠标）约 10-15 分钟。diag-t123 worktree
+    暂留（仪器化构建，安静窗复跑若仍挂可出 dragstart/commit 轨迹）。
+- [EV-0029] 操作者裁决：跳过静默窗收尾门复跑，**直接发版 1.8.1**（接受证据性
+  闭环：stages 1-5 两轮全绿 + stage 6 安静机独立全绿 + t123/t132/menu-keyboard
+  失败均归因前台活动类、t136 几何已随主屏更换解锁）。发版序列：账本提交 →
+  chore(release): 1.8.1 → npm run package（不带 --verify）→ tag v1.8.1 →
+  push main+tag → 替换 /Applications/PiCode.app → Linear 四票镜像 release 注释。
