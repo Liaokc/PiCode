@@ -41,6 +41,20 @@
 - **新能力盘点**（报告 §8-C）：stdio `~/` 展开（运行时 spawn 展开、文件层不展开——PiCode 显示保真成立，无需模型跟进；表单帮助文案可透出，S）；search 转正/keep-alive 修复/OpenCode v2/mcpScript 统计/orca viewer/keyring 复用——均无 PiCode 消费面。
 - **遗留项交互检查**（报告 §6）：exposeResources = 无新交互；jev setup UI = 无交互；cost RPC/child-status（pi-subagents 面）= 2.38 变更集零 subagent 文件，零交互。
 
-### Round 2 裁决（待操作者）
+### Round 2 裁决（操作者 2026-09-26：「全部按照推荐来」）
 
-- （回填位：定稿轮裁决——T149 范围确认 + stdio `~/` 帮助文案归属）
+- **R1 提案照立**：T149 = 全批唯一工单（两处 fidelity 注释 + McpSection stdio `~/` 提示行 + MCP smoke 段复核）。
+- **裁决点 A = 并入 T149**（推荐项）：stdio `~/` 帮助文案作 T149 验收项（复用 `settings-mcp-form-note` 类零新 CSS；`visual:settings` 不截对话框 → 收尾手截帧）。
+- **裁决点 B 照 Q2 维持**：exposeResources 投影等四项遗留 + SDK 0.87 新能力跟进 + 2.38 其余新能力均留盘点。
+
+## 环境升级执行记录（intake，2026-09-26，定稿落库后）
+
+- `pi update --extensions`：pi-mcp-adapter 2.37.0 → **2.38.0**（changed 3 packages；`@napi-rs/keyring` 随升 ^2.1.0——调研残余风险项的实测条件已就位）；pi-subagents 维持 0.71.0（已是最新，未动）；pi self 0.87.1。
+- 验证（四项实读）：adapter = 2.38.0 ✓ · pi-subagents = 0.71.0 ✓ · pi = 0.87.1 ✓ · `git worktree list` 仅根 ✓。
+- 定稿落库：commit 53144f4（intake batch：research + spec + ticket 149 + grilling）+ b60245d（session-prompts + LIA-214 镜像账）；Linear **LIA-214** 已建（Todo · iter:1.8.2 · 描述 = 同步头 + 票面全文）。
+
+## 定稿（前沿树空）
+
+- 裁决链完整：Round 1（Q1–Q4）→ Round 2（调研证据轮 + 定稿轮裁决）。无未决问题。
+- spec：`.scratch/picode-1-8-2/spec.md`（R1 ↔ 票 149）；票面：`issues/149-mcp-238-fidelity.md`（ready-for-agent）；session-prompts：`session-prompts.md`（W1 单票 + 收尾门）；research：`research/pi-mcp-adapter-2.38.0-diff.md`。
+- 本批无携带票、无并行票、无多模态票、无参照帧、零 shared-contract 增量。
