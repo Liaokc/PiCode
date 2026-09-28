@@ -1,6 +1,6 @@
 # 149: pi-mcp-adapter 2.38.0 fidelity——注释水位 + stdio `~/` 提示 + MCP smoke 段复核
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 **Branch:** t149-mcp-238-fidelity
 **Blocked by:** —
 
@@ -41,3 +41,9 @@
 ## Comments
 
 - 2026-09-26（intake 立票）：定稿轮操作者裁决「全部按照推荐来」——R1 提案照立（唯一工单）；stdio `~/` 帮助文案并入本票（裁决点 A 推荐）；exposeResources 投影等四项遗留维持留盘点（Q2 + 调研 §6 零新交互）。环境前置（adapter → 2.38.0）由 intake 在交付执行 prompt 后执行（Q3）。
+- 2026-09-27（implementation，43c516e）：三件交付——①两处 fidelity 注释 2.37.0→2.38.0 + 2.38 重验注记（mcp-management.ts:9：合并本体与全部写器逐行未变——mergeConfigs / mergeServerMaps / URL-bound auth 剥离 / transport 清场 / writeProjectServerDisabledOverride / writeSharedServerEntry / `/mcp setup` 两写目标 / applySettingDefaults / writeJevSemanticSearchConfig，README:76 引语逐字在案；OpenCode v2 导入归一化 + ancestorConfigRoots 放宽 = host-import/发现面永不镜像永不写；stdio `~/` = 运行时 spawn 行为，config 文件与合并视图保存原始 `~/...` 串，显示保真成立；mcp-status.ts:10：adapter mcp-status.ts 字节相同，MCP_STATUS_SNAPSHOT_VERSION=1 与频道 pi-mcp-adapter/status/v1 未 bump，PR #670 转正与 #671 keep-alive 均运行时行为不触碰快照形状；另 OAuth 面注记：/mcp-auth 流文件 2.38 字节不变 + #657 keyring 读复用修复为 adapter 内部行为）；②McpSection.tsx stdio 分支提示行（精确文案、settings-mcp-form-note 复用、零新 CSS、仅 stdio 分支，Remote 无）；③MCP smoke 段复核：smoke:host 全套 PASS exit 0（Round G ticket-89 OAuth 桥 + Round I ticket-96 mcp_status v1 绿，用户级 adapter 2.38.0 实装核对）。其余门：vitest 2193/2193（env -u 纪律）、typecheck ×2、eslint touched 零问题。恰三文件 44+/8-，零其他源码改动。
+- 2026-09-27（过程披露——smoke:electron 六跑未过；操作者裁决 1(a) 证据式闭环，1.8.1 EV-0029 先例）：**精确分解**：runs 1-3（本分支，环境嘈杂）死于 t105「the trusted keystroke never echoed in the shell」×3；run 4（stash 后干净 base be58710 A/B；src 与 1.8.1 发版提交 14b5c88 字节相同）t105 逐字同败；run 5（操作者静默窗 #1）死于 menu_keyboard「the slash menu walk rested at 5/11」（页内 dispatchEvent 时序类，t105 未到达）；run 6（静默窗 #2）menu_keyboard 全绿（含 run 5 失败的同一条行走）后再死 t105 同一逐字失败。t105 合计可达即败 5/5（runs 1,2,3,4,6）；MCP 段（t105 之后）六跑均未到达。机制（run 6 fail log recent-events dump 实证）：smoke 自身后台会话（8828a5）真实模型流（默认 GLM-5.3 重思考，29+ thinking_delta）恰在 t105 按键探测期饱和 renderer 任务队列，keyDown→pty→echo 往返超出 t135 时代 1.5s echo 轮询窗——命中 smoke.ts t135 harness rider 注释记载的套件负载类；smoke:pty 独立绿（fish 4.2.1，装于 2025-12-17，早于 Sep 24 全绿证据）排除 pty/shell/echo seam。本票 diff 无罪（t105 A/B 实证；menu_keyboard 结构性无关）。残余风险：MCP 段 16 断言 + OAuth 双腿（@napi-rs/keyring ^1.3.0→^2.1.0 major bump 的 macOS keychain 实测，调研 §4-f）本轮 app 级未实测——缓解：smoke:host Round G OAuth 桥合约绿 + /mcp-auth 流面 2.38 字节不变（§2.4）+ keyring 服务/账号名未变；T150（LIA-215）harness 修复后将重交 MCP 段 2.38.0 证据。
+- 2026-09-27（双轴评审，双 pass-with-notes，零 blocker）：
+  - Spec 轴（review-spec）：pass-with-notes——①Acceptance 第 4 项 smoke:electron 未达成 = 已裁决闭环 + T150 跟进，披露如实；②mcp-management.ts:69-72 OAuth bullet #657 注记为注释级轻微超范围（证据 §2.4/§4-f 在案、目标文件内、零行为影响）；③commit body 六跑分解句压缩有歧义（本 Comments 已给精确分解）。逐项确认：两处注释要点齐全 + 历史叙述保留；提示行文案 md5 逐字符匹配 + 类复用 + 仅 stdio；红线恰三文件零 adapter import；声明与证据（六份 /tmp 日志）逐份吻合。
+  - Standards 轴（review-standards）：pass-with-notes，零 blocker——注记逐条对上调研（§2.1/§2.2/§3/§4-a/b/e/f），与 CONTEXT.md MCP 节术语一致；提示行 McpSection.tsx:575-577 合规；提交信息惯例符合、验证声明逐项核实。Non-blockers：①commit body 六跑措辞压缩（同 Spec ③，本 Comments 已给精确分解）；②2.38 重验叙述三处近重复（票面明令此型，repo 先例覆盖）。
+- 2026-09-27（验证记录）：smoke:host 全套 PASS exit 0（Round G/I 绿）；vitest 2193/2193；typecheck ×2；eslint touched 零问题；smoke:electron 六跑受阻（见上披露，操作者证据式闭环）；smoke:pty EXIT=0。日志：/tmp/t149-smoke-host.log、/tmp/t149-smoke-electron{,-2,-3,-base,-rulingA,-run6}.log。
