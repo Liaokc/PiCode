@@ -10,6 +10,8 @@
 
 ## §1 账本（时间倒序追加在上）
 
+- [→] **发版序列启动（操作者指令「已验收，请发版然后替换我本地的 app」——红线解除）**，按 1.8.1 EV-0030 先例：账本提交 → chore(release): 1.8.2（bump package.json + package-lock 版本字段，修掉锁文件长期滞留 1.8.0 的噪声源）→ npm run package（不带 --verify，收尾门已 PACKAGED ARTIFACT VERIFIED）→ tag v1.8.2（annotated @ release commit）→ push origin main+tag → 替换 /Applications/PiCode.app（验 CFBundleShortVersionString=1.8.2）→ Linear LIA-214/LIA-215 release 注释 → 终账。
+
 - [x] **截图交付完成**：CDP 驱动（/tmp/picode-182-dialog-capture.mjs，一次性脚本不入仓）打开 Settings → MCP → Project servers Add → 「Add a project server」对话框（stdio 默认分支），tip 行逐字验证 + viewport 可见，Page.captureScreenshot 落盘；多模态独立目检（bella/GLM-5.3-flash）确认：title ✓、tip 逐字完整两行折行无截断 ✓、Local (command) 选中 ✓、Cancel/Add server 按钮行 ✓。路径：`.scratch/picode-1-8-2/reference/149-mcp-add-project-server-stdio-tip.png`。零写入（表单仅打开未保存，session store 隔离，app 已杀）。
 - [x] 收尾证据落库：closing-smoke-all-green.log / closing-package-verify.log / t150-smoke-electron-full-green.log → `.scratch/picode-1-8-2/evidence/`；run-log + work-notes + reference + evidence git add 提交 main。批次 1.8.2 收口。
 
