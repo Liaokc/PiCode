@@ -1,6 +1,6 @@
 # 150: smoke:electron t105 trusted-keystroke 腿 harness 加固——后台会话流静默等待 + echo 轮询扩窗
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 **Branch:** t150-smoke-t105-quiesce
 **Blocked by:** —
 
@@ -20,12 +20,16 @@
 
 ## Acceptance
 
-- [ ] t105 腿加固在案：按键前静默等待 + echo 轮询扩窗；断言文本与 3-attempt 结构逐字不变；仅 smoke 路径（不触碰产品面）
-- [ ] `npm run smoke:electron` 全套 PASS（t105 + MCP 段 16 断言 + OAuth 双腿全绿；dev-app serialization 纪律照旧：ps 自查 + sleep 60 重试上限 30 分钟）
-- [ ] vitest 全绿（`env -u PI_SUBAGENT_CHILD -u PI_SUBAGENTS_HERDR_BRIDGE -u PI_SUBAGENTS_PI_CODING_AGENT_PACKAGE_ROOT`）/ typecheck ×2 / eslint touched
-- [ ] 除 `src/main/smoke.ts` 外零源码改动
-- [ ] T149 MCP 段 2.38.0 app 级证据补齐记录（绿跑日志引用，含 keyring bump OAuth 双腿实测结论）
+- [x] t105 腿加固在案：按键前静默等待 + echo 轮询扩窗；断言文本与 3-attempt 结构逐字不变；仅 smoke 路径（不触碰产品面）（另：经操作者批准的 echo 探测谓词修复——真因为右侧提示行长恒定致旧谓词确定性失明，详见 Comments 取证；断言语义保留且更严）
+- [x] `npm run smoke:electron` 全套 PASS（t105 + MCP 段 16 断言 + OAuth 双腿全绿；dev-app serialization 纪律照旧：ps 自查 + sleep 60 重试上限 30 分钟）
+- [x] vitest 全绿（`env -u PI_SUBAGENT_CHILD -u PI_SUBAGENTS_HERDR_BRIDGE -u PI_SUBAGENTS_PI_CODING_AGENT_PACKAGE_ROOT`）/ typecheck ×2 / eslint touched
+- [x] 除 `src/main/smoke.ts` 外零源码改动
+- [x] T149 MCP 段 2.38.0 app 级证据补齐记录（绿跑日志引用，含 keyring bump OAuth 双腿实测结论）
 
 ## Comments
 
 - 2026-09-27（执行会话立票）：操作者裁决 1(a)+2(i) 并明令「2(i)开票然后修复」。本票为 T149 smoke:electron t105 阻断的 harness 修复后续票；T149 已按证据式闭环（1.8.1 EV-0029 先例）处理，本票修复合入后收尾门全套重跑（期望全绿；若修复不 hold，收尾门回退 2(i) 证据闭环）。
+- 2026-09-28（实现 + 取证修正 + 全套验证；smoke.ts 单文件，待评审）：
+  - **真因取证（修正 T149 机制误判）**：三次插桩运行（/tmp/t150-smoke-electron.log、/tmp/t150-diag-run.log、/tmp/t150-diag-run2.log）实证 t105 失败**与渲染饱和/时序无关，是 echo 探测谓词的确定性失明**：①keystroke tap 实捕 pty 对 'z' 的回显字节（fish 语法高亮重绘 `\u001b[38;2;204;102;102mz` + 右侧提示重绘）——keyDown→pty→echo 全链路健康；②fresh bridge pty（同 preload IPC 路径新起 shell）echo 正常；③rows 实有 zzz——三次按键全部回显成功，shell 活着、焦点在 xterm textarea、无 restart strip；④精确数字：before len=371 zcount=1 → 三次 attempt 后 len=371 zcount=2/3/4——行长恒定，z 计数递增。**机制**：操作者 fish 提示符带右侧提示（`(base)` conda 标记）——每敲一字符左侧增长 1 列、右提示前填充缩 1 列，行 textContent 长度不变，`rowsText.length > before.length` 永假。解释：Sep 24 全绿（彼时无右侧提示）vs Sep 27 起 8/8 确定性失败（含 T149 干净 base A/B）vs smoke:pty 绿（裸字节匹配不用行长启发式）。T149「renderer 饱和」理论证伪：recent-events 环是 last-40 无时间戳，T149 所见 thinking_delta 环数据实为 bg 阶段数分钟前的陈旧流（bg stage 的 deny 回合在 keymap 前已 agent_end）。环境变化 = conda/提示符（待操作者确认），非模型流。
+  - **修复（两件，均仅 smoke 路径，断言文本逐字不动、3-attempt 结构不动）**：①票面时序加固照实：按键前静默门（轮询 noteEvent 同源时间戳流，连续 ~500ms 无新会话事件才放行第一个 keystroke，上限 ~120s 超限尽力而为）+ echo 轮询窗 1.5s→~10s/attempt（防御性时序余量，t135/t141 harness-rider 同型）；②**经操作者（supervisor 通道）批准的谓词修复**：echo 探测 `rowsText.length > before.length && rowsText.includes('z')` → z 计数增长 `rowsText.split('z').length > beforeZs`（快照时捕获）——断言语义保留且更严（必须出现一个【新的】'z'；旧 includes('z') 可被提示符自带 'z' 满足），对恒定行长免疫。同型排查：t105 是全套唯一终端 rows 探测点，无同型兄弟。注：时序加固单独无法变绿（行长永不变），谓词修复才是解锁项。
+  - **验证（全绿）**：`npm run smoke:electron` 全套 PASS（SMOKE start → SMOKE done，零 FAIL；t105 七标记全绿含 `terminal_focus_105_typing_ok`；其后 t132/MCP 段全过）——**T149 残余风险补齐：MCP 段 16 断言全绿**（mcp_section_open / add_global / layer_entries / cards_badges / enable_flag / disable_flag / edit_global / remove / status_projection / status_live_update / status_lazy_untouched / external_zero_write / credentials_zero_leak / oauth_autocomplete / paste_dialog / oauth_manual_paste）**含 OAuth 双腿**（自动腿 `mcp_oauth_autocomplete_ok` + 手动粘贴腿 `mcp_oauth_manual_paste_ok`）——即 `@napi-rs/keyring` ^1.3.0→^2.1.0 major bump 的 macOS keychain 实测通过（T149 调研 §4-f / 残余风险闭环：系统浏览器 → localhost 回调自动完成 + 手动粘贴兑底两路均绿，凭据全程只在 adapter/钥匙串）。vitest 2193/2193（env -u 纪律）、typecheck ×2、eslint touched 零问题；除 src/main/smoke.ts 外零源码改动（树净，无 package-lock 噪声）。绿跑日志：/tmp/t150-smoke-electron-final.log；取证插桩日志：/tmp/t150-diag-run.log、/tmp/t150-diag-run2.log。
