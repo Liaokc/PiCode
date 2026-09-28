@@ -7,7 +7,7 @@
  * additive `mcp_status` contract event, and the renderer projects it onto
  * the config rows.
  *
- * Adapter fidelity (pi-mcp-adapter 2.37.0, re-verified for ticket 148;
+ * Adapter fidelity (pi-mcp-adapter 2.38.0, re-verified for ticket 149;
  * README "Runtime status
  * snapshots" + mcp-status.ts):
  * - the snapshot is READ-ONLY machine-readable data: reading it never
@@ -38,6 +38,20 @@
  *   `settings.deferWithMissingMetadata` may delay the initial snapshot or
  *   show zero tools until the first call — mcpStatusLine's not-yet-reported
  *   and empty-snapshot notes already cover that honestly.
+ * - 2.38 re-verification (research/pi-mcp-adapter-2.38.0-diff.md
+ *   §2.2/§4-b/§4-e): the adapter's mcp-status.ts is byte-identical
+ *   again, and neither MCP_STATUS_SNAPSHOT_VERSION = 1 nor the
+ *   `pi-mcp-adapter/status/v1` channel is bumped or renamed — the v1
+ *   projection and the pinned-channel subscription below stay exactly
+ *   valid. 2.38's runtime changes — a search-mode tool becoming a full
+ *   direct tool after one successful proxy call (PR #670), and
+ *   runtime-registered keep-alive servers publishing their tools when
+ *   Pi starts with zero enabled servers (#671) — do not touch the
+ *   snapshot shape: directToolCount still comes from the direct-tool
+ *   surface sync, the activation path never re-emits a snapshot, and a
+ *   snapshot that now names a keep-alive server joins by name onto the
+ *   config rows exactly like an imported server (no config row, no
+ *   projected badge).
  *
  * Pure module: no node builtins, no SDK imports, no adapter imports
  * (Seam-1 guardrail — the adapter is not a PiCode dependency; the channel

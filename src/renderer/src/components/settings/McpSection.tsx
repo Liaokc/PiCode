@@ -572,6 +572,9 @@ function McpForm({ form, busy, onForm, onCancel, onSave }: McpFormProps): JSX.El
               <span>Environment (KEY=value per line)</span>
               <textarea rows={2} value={f.env} aria-label="Environment" onChange={(event) => set({ env: event.target.value })} placeholder="API_KEY=…" />
             </label>
+            <p className="settings-mcp-form-note">
+              Tip: paths starting with ~/ are supported in the command and arguments (expanded when the server starts).
+            </p>
           </>
         ) : (
           <>
