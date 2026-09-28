@@ -445,7 +445,13 @@ export function startSmokeIfEnabled(
   /** Ring buffer of the last scoped events — dumped on failure so a timeout
    * says WHAT actually arrived instead of just what never did. */
   const recentEvents: string[] = []
+  /** Arrival time of the most recent scoped event — the SAME stream the
+   * recent-events ring records, timestamped. Ticket-150's t105 quiet gate
+   * polls it to hold the keystroke probe until the stream goes quiet (a
+   * live background stream ended and the renderer's queue drained). */
+  let lastEventAt = Date.now()
   const noteEvent = (scoped: Scoped): void => {
+    lastEventAt = Date.now()
     const detail =
       scoped.type === 'approval_resolved'
         ? `(${String(scoped.approved)}:${scoped.reason ?? '-'})`
@@ -4195,7 +4201,40 @@ export function startSmokeIfEnabled(
       if ((await js('document.hasFocus()').catch(() => false)) !== true) {
         fail('ticket 105: the smoke window never took focus for the trusted keystroke leg')
       }
+      // (Ticket-150 harness rider: hold the FIRST keystroke until the
+      // smoke's event stream goes quiet — defensive timing hygiene in the
+      // t135/t141 harness-rider class. The t149 forensics INITIALLY read
+      // the failure as renderer saturation by the background session's
+      // model stream (the recent-events ring held a bg turn's 29+
+      // thinking_delta); the t150 instrumented runs disproved that reading
+      // — the ring is last-40 without timestamps, its data was minutes
+      // stale, and the real breaker was the echo probe's length-growth
+      // blindness (see the z-count note below). The gate still earns its
+      // keep: it polls the same stream the fail dump's "recent events"
+      // ring records — timestamped — and proceeds once ~500ms pass with no
+      // new session event (a live background stream ended AND the
+      // renderer's queue drained), so the keystroke probes a quiet
+      // renderer. Bounded at ~120s; past the bound the leg continues
+      // best-effort and the widened echo poll below carries the timing.
+      // The assertions are unchanged.)
+      for (let waitedQuiet = 0; waitedQuiet < 120_000; waitedQuiet += 100) {
+        if (Date.now() - lastEventAt >= 500) break
+        await new Promise((r) => setTimeout(r, 100))
+      }
       const before = ((await js(rowsText)) as string) ?? ''
+      // Baseline 'z' count for the echo probe below: the assertion is that
+      // a NEW 'z' appears in the rows. A row-LENGTH probe is blind under a
+      // right-side prompt (the operator's fish paints `(base)` on the
+      // right): every typed column grows the left side while the prompt's
+      // padding shrinks by one, so the line's textContent length stays
+      // constant (t150 forensics: len=371 across all three attempts with
+      // zcount 1→2→3→4 — the echo was always landing; the T149
+      // renderer-saturation theory is disproven, the recent-events ring is
+      // last-40 without timestamps and held only stale bg-stage data).
+      // Counting z's is robust to that padding AND stricter than the old
+      // probe (a prompt-native 'z' can no longer satisfy it). The
+      // assertion text and the 3-attempt structure are unchanged.
+      const beforeZs = before.split('z').length
       let typedOk = false
       for (let attempt = 0; attempt < 3 && !typedOk; attempt++) {
         // The operator's machine can steal activation between legs (the
@@ -4222,11 +4261,15 @@ export function startSmokeIfEnabled(
         // task queue) the keyDown → pty → echo round trip can land well
         // past 80ms, and the leg failed three consecutive runs on that
         // timing alone. The assertion is unchanged: the keystroke must
-        // genuinely echo in the rows.)
-        for (let waitedEcho = 0; waitedEcho < 1_500 && !typedOk; waitedEcho += 100) {
+        // genuinely echo in the rows. Ticket-150 widened the window from
+        // ~1.5s to ~10s per attempt as defensive timing headroom — the
+        // t149/t150 forensics then showed the real t105 breaker was NOT
+        // timing at all, but the length-growth probe's blindness under a
+        // right-side prompt: see the z-count note at the snapshot above.
+        // The 3-attempt structure and the assertion stay as they were.)
+        for (let waitedEcho = 0; waitedEcho < 10_000 && !typedOk; waitedEcho += 100) {
           await new Promise((r) => setTimeout(r, 100))
-          typedOk =
-            (await js(`${rowsText}.length > ${before.length} && ${rowsText}.includes('z')`).catch(() => false)) === true
+          typedOk = (await js(`${rowsText}.split('z').length > ${beforeZs}`).catch(() => false)) === true
         }
         if (!typedOk && (await js(FOCUS_IN_TERM).catch(() => false)) !== true) {
           fail('ticket 105: focus left the shell before the keystroke probe')
