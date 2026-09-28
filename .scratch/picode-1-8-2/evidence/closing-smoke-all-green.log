@@ -1,0 +1,2401 @@
+
+> picode@1.8.1 smoke
+> bash scripts/smoke/run-all.sh
+
+SMOKE session hygiene: real store=/Users/liaokechen/.pi/agent/sessions (591 session files)
+SMOKE session hygiene: isolated store=/var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-sessions-T8HrP58D
+SMOKE skills hygiene: isolated agent dir=/var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-piagent-dLBYBjeV
+
+==== SMOKE SUITE stage: build ====
+
+> picode@1.8.1 build
+> electron-vite build
+
+vite v7.3.6 building ssr environment for production...
+transforming...
+✓ 122 modules transformed.
+rendering chunks...
+out/main/chunks/artifact-DFeAwCCu.js     38.54 kB
+out/main/host.js                         74.91 kB
+out/main/index.js                     1,465.81 kB
+✓ built in 519ms
+vite v7.3.6 building ssr environment for production...
+transforming...
+✓ 2 modules transformed.
+rendering chunks...
+out/preload/index.js  12.86 kB
+✓ built in 9ms
+vite v7.3.6 building client environment for production...
+transforming...
+✓ 2810 modules transformed.
+rendering chunks...
+../../out/renderer/index.html                                           0.58 kB
+../../out/renderer/assets/index-C6K3hew3.css                          195.60 kB
+../../out/renderer/assets/channel-h8Wj_xuT.js                           0.20 kB
+../../out/renderer/assets/init-ZxktEp_H.js                              0.26 kB
+../../out/renderer/assets/chunk-JWPE2WC7-DT15cr33.js                    0.37 kB
+../../out/renderer/assets/chunk-2Q5K7J3B-CDia74Oh.js                    0.38 kB
+../../out/renderer/assets/chunk-5VM5RSS4-CDNgw5h4.js                    0.43 kB
+../../out/renderer/assets/chunk-XXDRQBXY-BQL3fouH.js                    0.48 kB
+../../out/renderer/assets/swimlanesDiagram-TC7HE7FX-BZ7oTVEq.js         0.75 kB
+../../out/renderer/assets/infoDiagram-VRGFBTTK-B0Hd2nJP.js              0.98 kB
+../../out/renderer/assets/chunk-WEXAMYUT-uoJSQisX.js                    1.07 kB
+../../out/renderer/assets/sizeCapture-INFHLROL-DCfVrFoa.js              1.78 kB
+../../out/renderer/assets/ordinal-CxptdPJm.js                           2.20 kB
+../../out/renderer/assets/railroadDiagram-XR7U4H2S-BOcrfuq5.js          2.82 kB
+../../out/renderer/assets/abnfDiagram-O67JEVCF-ClYuJs4Z.js              3.45 kB
+../../out/renderer/assets/pegDiagram-GJSIUBJH-Bb6Pq7Z4.js               3.69 kB
+../../out/renderer/assets/chunk-GWA4HPMP-DMehM0x4.js                    3.75 kB
+../../out/renderer/assets/ebnfDiagram-ZINNZB2B-CoesAtnJ.js              3.86 kB
+../../out/renderer/assets/arc-CfSMRV6Z.js                               6.95 kB
+../../out/renderer/assets/diagram-MLGK6HIB-C-RBcCCm.js                  7.35 kB
+../../out/renderer/assets/defaultLocale-B2RvLBDe.js                     9.37 kB
+../../out/renderer/assets/linear-D4EpBo5e.js                           11.25 kB
+../../out/renderer/assets/diagram-MPIPVDR6-VDhQlmjH.js                 11.42 kB
+../../out/renderer/assets/pieDiagram-5QR66LMP-BGpN8EvD.js              12.53 kB
+../../out/renderer/assets/chunk-NETBCI7D-CUeT9pYJ.js                   12.96 kB
+../../out/renderer/assets/diagram-CDSNMT55-DsoKvA95.js                 16.01 kB
+../../out/renderer/assets/_basePickBy-DYAg5xYG.js                      17.91 kB
+../../out/renderer/assets/cynefinDiagram-VND7K2PF-Dsi9WHaj.js          18.33 kB
+../../out/renderer/assets/diagram-ATOU4E4O-0rLB4WVI.js                 21.57 kB
+../../out/renderer/assets/chunk-3FUC2YCW-i5qUF2c3.js                   23.59 kB
+../../out/renderer/assets/graph-Bvha9izY.js                            24.12 kB
+../../out/renderer/assets/chunk-GTNCS2PH-CuxzVC-1.js                   30.85 kB
+../../out/renderer/assets/diagram-3UASUU5V-OxQhs6tp.js                 32.35 kB
+../../out/renderer/assets/ishikawaDiagram-OU5B5YK6-BJQLXm6o.js         35.07 kB
+../../out/renderer/assets/kanban-definition-PNTS6WVX-XwsY0tkn.js       38.11 kB
+../../out/renderer/assets/_baseUniq-D5pVdbvJ.js                        42.60 kB
+../../out/renderer/assets/mindmap-definition-NLK3R4M7-DsWebmel.js      43.29 kB
+../../out/renderer/assets/wardleyDiagram-VNRHLVJA-DXe2LZjZ.js          44.51 kB
+../../out/renderer/assets/journeyDiagram-ZHPQQLJL-BwBUXe0d.js          45.28 kB
+../../out/renderer/assets/sankeyDiagram-IPEJSGJF-Cht4Y-tv.js           46.13 kB
+../../out/renderer/assets/requirementDiagram-PLB6GJNP-CZFr2803.js      52.74 kB
+../../out/renderer/assets/erDiagram-OPXOYQCR-BPPf7dae.js               56.21 kB
+../../out/renderer/assets/gitGraphDiagram-X574FWY7-Cj1s4akS.js         57.47 kB
+../../out/renderer/assets/timeline-definition-EJHVYXUP-CpzLcm4S.js     60.70 kB
+../../out/renderer/assets/quadrantDiagram-O4NWA36T-BEhLW7HH.js         61.63 kB
+../../out/renderer/assets/blockDiagram-BEXU5L5S-DS1TKJ88.js            78.00 kB
+../../out/renderer/assets/stateDiagram-v2-GCMORJYK-MT1GhCUm.js         79.10 kB
+../../out/renderer/assets/xychartDiagram-PMCCYNJV-D_bhGgCP.js          83.25 kB
+../../out/renderer/assets/classDiagram-v2-NBCMYWYE-Bvm81ESV.js         85.71 kB
+../../out/renderer/assets/dagre-6A5THRUB-BZi3SyO5.js                   86.30 kB
+../../out/renderer/assets/vennDiagram-UO4OBE2U-Bz4Tadmv.js             88.90 kB
+../../out/renderer/assets/flowDiagram-KWPJA3E3-6dHy0g-J.js            108.49 kB
+../../out/renderer/assets/c4Diagram-YGBWAQC7-BUzBNJP1.js              111.94 kB
+../../out/renderer/assets/ganttDiagram-FUAMR5RP-DtoYWvH0.js           133.55 kB
+../../out/renderer/assets/diagram-22UHCM2B-Bqly3caw.js                153.52 kB
+../../out/renderer/assets/sequenceDiagram-PO4LG4MO-BTkZXJGd.js        205.61 kB
+../../out/renderer/assets/cose-bilkent-JH36ORCC-DZMmdiCW.js           214.53 kB
+../../out/renderer/assets/swimlanes-2SLR337P-Cmke_jnu.js              287.34 kB
+../../out/renderer/assets/usecaseDiagram-POWQR4AR-f1F-MSEe.js         376.37 kB
+../../out/renderer/assets/architectureDiagram-NJMV4G6O-D6h3JjMU.js    423.23 kB
+../../out/renderer/assets/katex-oVG3DVWa.js                           484.52 kB
+../../out/renderer/assets/cytoscape.esm-Ct9zsnh1.js                   961.04 kB
+../../out/renderer/assets/mermaid-api-DGzbXneT.js                   1,184.82 kB
+../../out/renderer/assets/cynefin-OW5HDTMX-CnrpjHeb.js              1,304.47 kB
+../../out/renderer/assets/index-DiHkgqFc.js                         2,630.61 kB
+../../out/renderer/assets/elk-276RUBZZ-D6VpnVfn.js                  3,354.11 kB
+✓ built in 8.19s
+==== SMOKE SUITE stage ok: build (9s) ====
+
+==== SMOKE SUITE stage: host contract ====
+SMOKE git repo initialized on branch picode-smoke-branch
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[],"totalTools":0,"totalResources":0,"connectedCount":0,"disabledCount":0}}
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[{"name":"mcp","status":"cached","toolCount":68,"directToolCount":0,"disabled":false,"resourceCount":0},{"name":"zotero","status":"not-connected"
+[contract] {"type":"session_created","sessionId":"01a0e641-bd9d-70f7-96e2-2c435dfaa4f2","cwd":"/var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-i8KtI2","model":"GLM-5.3-flash","sessionFile":"/var/fo
+SMOKE session_created ok
+[contract] {"type":"composer_state","model":{"providerId":"bella","modelId":"GLM-5.3-flash","name":"GLM-5.3-flash","contextWindow":1000000},"thinkingLevel":"max","availableLevels":["low","high","max"],"accessMod
+[contract] {"type":"models_available","providers":[{"providerId":"bella","name":"bella","models":[{"providerId":"bella","modelId":"GLM-5.3","name":"GLM-5.3","contextWindow":1000000},{"providerId":"bella","modelI
+[contract] {"type":"slash_commands","commands":[{"name":"compact","description":"Compact the session context","source":"builtin"},{"name":"council","description":"Run a bounded supervisor-mediated council of adv
+SMOKE composer push ok (4 provider(s), 3 thinking levels)
+[contract] {"type":"agent_start"}
+SMOKE agent_start (round 1)
+[contract] {"type":"user_message","text":"Count slowly from one to twenty, one number per sentence.","images":[{"kind":"image","mimeType":"image/png","data":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQ
+[contract] {"type":"message_start"}
+[contract] {"type":"thinking_delta","delta":"The"}
+[contract] {"type":"thinking_delta","delta":" user"}
+[contract] {"type":"thinking_delta","delta":" wants"}
+[contract] {"type":"thinking_delta","delta":" me"}
+[contract] {"type":"thinking_delta","delta":" to"}
+[contract] {"type":"thinking_delta","delta":" count"}
+[contract] {"type":"thinking_delta","delta":" slowly"}
+[contract] {"type":"thinking_delta","delta":" from"}
+[contract] {"type":"thinking_delta","delta":" one"}
+[contract] {"type":"thinking_delta","delta":" to"}
+[contract] {"type":"thinking_delta","delta":" twenty"}
+[contract] {"type":"thinking_delta","delta":","}
+[contract] {"type":"thinking_delta","delta":" one"}
+[contract] {"type":"thinking_delta","delta":" number"}
+[contract] {"type":"thinking_delta","delta":" per"}
+[contract] {"type":"thinking_delta","delta":" sentence"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_delta","delta":" I"}
+[contract] {"type":"thinking_delta","delta":" should"}
+[contract] {"type":"thinking_delta","delta":" include"}
+[contract] {"type":"thinking_delta","delta":" reasoning"}
+[contract] {"type":"thinking_delta","delta":" in"}
+[contract] {"type":"thinking_delta","delta":" my"}
+[contract] {"type":"thinking_delta","delta":" response"}
+[contract] {"type":"thinking_delta","delta":" since"}
+[contract] {"type":"thinking_delta","delta":" the"}
+[contract] {"type":"thinking_delta","delta":" user"}
+[contract] {"type":"thinking_delta","delta":" asked"}
+[contract] {"type":"thinking_delta","delta":" me"}
+[contract] {"type":"thinking_delta","delta":" to"}
+[contract] {"type":"thinking_delta","delta":" \""}
+[contract] {"type":"thinking_delta","delta":"count"}
+[contract] {"type":"thinking_delta","delta":" slowly"}
+[contract] {"type":"thinking_delta","delta":"\""}
+[contract] {"type":"thinking_delta","delta":" —"}
+[contract] {"type":"thinking_delta","delta":" they"}
+[contract] {"type":"thinking_delta","delta":" want"}
+[contract] {"type":"thinking_delta","delta":" to"}
+[contract] {"type":"thinking_delta","delta":" see"}
+[contract] {"type":"thinking_delta","delta":" the"}
+[contract] {"type":"thinking_delta","delta":" process"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_delta","delta":" Let"}
+[contract] {"type":"thinking_delta","delta":" me"}
+[contract] {"type":"thinking_delta","delta":" write"}
+[contract] {"type":"thinking_delta","delta":" out"}
+[contract] {"type":"thinking_delta","delta":" each"}
+[contract] {"type":"thinking_delta","delta":" number"}
+[contract] {"type":"thinking_delta","delta":" as"}
+[contract] {"type":"thinking_delta","delta":" its"}
+[contract] {"type":"thinking_delta","delta":" own"}
+[contract] {"type":"thinking_delta","delta":" sentence"}
+[contract] {"type":"thinking_delta","delta":","}
+[contract] {"type":"thinking_delta","delta":" one"}
+[contract] {"type":"thinking_delta","delta":" through"}
+[contract] {"type":"thinking_delta","delta":" twenty"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_end","durationMs":1298}
+[contract] {"type":"text_delta","delta":"One"}
+[contract] {"type":"text_delta","delta":"."}
+[contract] {"type":"text_delta","delta":" Two"}
+SMOKE renaming mid-run (ticket 104)
+[contract] {"type":"session_renamed","name":"PICODE_SMOKE_RENAMED_MIDRUN"}
+SMOKE ticket-104 mid-run rename ok (session_renamed while running)
+SMOKE aborting mid-stream
+[contract] {"type":"session_tree","tree":{"sessionId":"01a0e641-bd9d-70f7-96e2-2c435dfaa4f2","leafId":"f2f4c893","name":"PICODE_SMOKE_RENAMED_MIDRUN","nodes":[{"id":"801aeb4a","kind":"other","label":null,"name":
+[contract] {"type":"message_end","entryId":"5f4b58bf"}
+[contract] {"type":"agent_end"}
+SMOKE ticket-97 prompt echo images ok (persisted content → parts on the live echo)
+SMOKE abort ok — streaming round 2 (tool round through the approval gate)
+[contract] {"type":"agent_start"}
+SMOKE agent_start (round 2 — gated tool round)
+[contract] {"type":"user_message","text":"Use the bash tool to run exactly: echo picode_tool_round. Then report the command's output.","entryId":"55e56bb6"}
+[contract] {"type":"message_start"}
+[contract] {"type":"thinking_delta","delta":"The"}
+[contract] {"type":"thinking_delta","delta":" user"}
+[contract] {"type":"thinking_delta","delta":" asked"}
+[contract] {"type":"thinking_delta","delta":" me"}
+[contract] {"type":"thinking_delta","delta":" to"}
+[contract] {"type":"thinking_delta","delta":" count"}
+[contract] {"type":"thinking_delta","delta":" from"}
+[contract] {"type":"thinking_delta","delta":" one"}
+[contract] {"type":"thinking_delta","delta":" to"}
+[contract] {"type":"thinking_delta","delta":" twenty"}
+[contract] {"type":"thinking_delta","delta":","}
+[contract] {"type":"thinking_delta","delta":" one"}
+[contract] {"type":"thinking_delta","delta":" number"}
+[contract] {"type":"thinking_delta","delta":" per"}
+[contract] {"type":"thinking_delta","delta":" sentence"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_delta","delta":" Then"}
+[contract] {"type":"thinking_delta","delta":" there"}
+[contract] {"type":"thinking_delta","delta":"'s"}
+[contract] {"type":"thinking_delta","delta":" a"}
+[contract] {"type":"thinking_delta","delta":" follow"}
+[contract] {"type":"thinking_delta","delta":"-up"}
+[contract] {"type":"thinking_delta","delta":":"}
+[contract] {"type":"thinking_delta","delta":" use"}
+[contract] {"type":"thinking_delta","delta":" bash"}
+[contract] {"type":"thinking_delta","delta":" to"}
+[contract] {"type":"thinking_delta","delta":" run"}
+[contract] {"type":"thinking_delta","delta":" exactly"}
+[contract] {"type":"thinking_delta","delta":" `"}
+[contract] {"type":"thinking_delta","delta":"echo"}
+[contract] {"type":"thinking_delta","delta":" pic"}
+[contract] {"type":"thinking_delta","delta":"ode"}
+[contract] {"type":"thinking_delta","delta":"_tool"}
+[contract] {"type":"thinking_delta","delta":"_round"}
+[contract] {"type":"thinking_delta","delta":"`"}
+[contract] {"type":"thinking_delta","delta":" and"}
+[contract] {"type":"thinking_delta","delta":" report"}
+[contract] {"type":"thinking_delta","delta":" the"}
+[contract] {"type":"thinking_delta","delta":" command"}
+[contract] {"type":"thinking_delta","delta":"'s"}
+[contract] {"type":"thinking_delta","delta":" output"}
+[contract] {"type":"thinking_delta","delta":".\n\n"}
+[contract] {"type":"thinking_delta","delta":"Let"}
+[contract] {"type":"thinking_delta","delta":" me"}
+[contract] {"type":"thinking_delta","delta":" run"}
+[contract] {"type":"thinking_delta","delta":" the"}
+[contract] {"type":"thinking_delta","delta":" bash"}
+[contract] {"type":"thinking_delta","delta":" command"}
+[contract] {"type":"thinking_delta","delta":" first"}
+[contract] {"type":"thinking_delta","delta":","}
+[contract] {"type":"thinking_delta","delta":" then"}
+[contract] {"type":"thinking_delta","delta":" respond"}
+[contract] {"type":"thinking_delta","delta":" to"}
+[contract] {"type":"thinking_delta","delta":" both"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_end","durationMs":1268}
+[contract] {"type":"message_end","entryId":"afecd5e1","usage":{"input":7828,"output":70,"cacheRead":704,"cacheWrite":0,"total":8602}}
+[contract] {"type":"tool_start","toolCallId":"call_9f2d4d441d78443b8c04b311","name":"bash","args":{"command":"echo picode_tool_round"}}
+[contract] {"type":"approval_required","toolCallId":"call_9f2d4d441d78443b8c04b311","toolName":"bash","args":{"command":"echo picode_tool_round","timeout":600}}
+SMOKE approval_required ok — approving with remember
+[contract] {"type":"approval_resolved","toolCallId":"call_9f2d4d441d78443b8c04b311","approved":true,"reason":null}
+SMOKE approval_resolved ok (approved)
+[contract] {"type":"tool_update","toolCallId":"call_9f2d4d441d78443b8c04b311","partial":""}
+[contract] {"type":"tool_update","toolCallId":"call_9f2d4d441d78443b8c04b311","partial":"picode_tool_round\n"}
+[contract] {"type":"tool_end","toolCallId":"call_9f2d4d441d78443b8c04b311","output":"picode_tool_round\n","isError":false}
+[contract] {"type":"message_start"}
+[contract] {"type":"thinking_delta","delta":"The"}
+[contract] {"type":"thinking_delta","delta":" bash"}
+[contract] {"type":"thinking_delta","delta":" command"}
+[contract] {"type":"thinking_delta","delta":" output"}
+[contract] {"type":"thinking_delta","delta":" is"}
+[contract] {"type":"thinking_delta","delta":" `"}
+[contract] {"type":"thinking_delta","delta":"p"}
+[contract] {"type":"thinking_delta","delta":"icode"}
+[contract] {"type":"thinking_delta","delta":"_tool"}
+[contract] {"type":"thinking_delta","delta":"_round"}
+[contract] {"type":"thinking_delta","delta":"`."}
+[contract] {"type":"thinking_delta","delta":" Now"}
+[contract] {"type":"thinking_delta","delta":" I"}
+[contract] {"type":"thinking_delta","delta":" also"}
+[contract] {"type":"thinking_delta","delta":" need"}
+[contract] {"type":"thinking_delta","delta":" to"}
+[contract] {"type":"thinking_delta","delta":" fulfill"}
+[contract] {"type":"thinking_delta","delta":" the"}
+[contract] {"type":"thinking_delta","delta":" first"}
+[contract] {"type":"thinking_delta","delta":" request"}
+[contract] {"type":"thinking_delta","delta":":"}
+[contract] {"type":"thinking_delta","delta":" count"}
+[contract] {"type":"thinking_delta","delta":" slowly"}
+[contract] {"type":"thinking_delta","delta":" from"}
+[contract] {"type":"thinking_delta","delta":" one"}
+[contract] {"type":"thinking_delta","delta":" to"}
+[contract] {"type":"thinking_delta","delta":" twenty"}
+[contract] {"type":"thinking_delta","delta":","}
+[contract] {"type":"thinking_delta","delta":" one"}
+[contract] {"type":"thinking_delta","delta":" number"}
+[contract] {"type":"thinking_delta","delta":" per"}
+[contract] {"type":"thinking_delta","delta":" sentence"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_end","durationMs":646}
+[contract] {"type":"text_delta","delta":"The"}
+[contract] {"type":"text_delta","delta":" command"}
+[contract] {"type":"text_delta","delta":"'s"}
+[contract] {"type":"text_delta","delta":" output"}
+[contract] {"type":"text_delta","delta":" was"}
+[contract] {"type":"text_delta","delta":":"}
+[contract] {"type":"text_delta","delta":" `"}
+[contract] {"type":"text_delta","delta":"p"}
+[contract] {"type":"text_delta","delta":"icode"}
+[contract] {"type":"text_delta","delta":"_tool"}
+[contract] {"type":"text_delta","delta":"_round"}
+[contract] {"type":"text_delta","delta":"`\n\n"}
+[contract] {"type":"text_delta","delta":"And"}
+[contract] {"type":"text_delta","delta":" here"}
+[contract] {"type":"text_delta","delta":"'s"}
+[contract] {"type":"text_delta","delta":" the"}
+[contract] {"type":"text_delta","delta":" count"}
+[contract] {"type":"text_delta","delta":" from"}
+[contract] {"type":"text_delta","delta":" one"}
+[contract] {"type":"text_delta","delta":" to"}
+[contract] {"type":"text_delta","delta":" twenty"}
+[contract] {"type":"text_delta","delta":","}
+[contract] {"type":"text_delta","delta":" one"}
+[contract] {"type":"text_delta","delta":" number"}
+[contract] {"type":"text_delta","delta":" per"}
+[contract] {"type":"text_delta","delta":" sentence"}
+[contract] {"type":"text_delta","delta":":\n\n"}
+[contract] {"type":"text_delta","delta":"One"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Two"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Three"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Four"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Five"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Six"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Seven"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Eight"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Nine"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Ten"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Ele"}
+[contract] {"type":"text_delta","delta":"ven"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Tw"}
+[contract] {"type":"text_delta","delta":"elve"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Th"}
+[contract] {"type":"text_delta","delta":"irteen"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Four"}
+[contract] {"type":"text_delta","delta":"teen"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"F"}
+[contract] {"type":"text_delta","delta":"if"}
+[contract] {"type":"text_delta","delta":"teen"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Six"}
+[contract] {"type":"text_delta","delta":"teen"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Se"}
+[contract] {"type":"text_delta","delta":"vent"}
+[contract] {"type":"text_delta","delta":"een"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Eight"}
+[contract] {"type":"text_delta","delta":"een"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"N"}
+[contract] {"type":"text_delta","delta":"in"}
+[contract] {"type":"text_delta","delta":"ete"}
+[contract] {"type":"text_delta","delta":"en"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Twenty"}
+[contract] {"type":"text_delta","delta":"."}
+[contract] {"type":"message_end","entryId":"50d7efa1","usage":{"input":99,"output":115,"cacheRead":8512,"cacheWrite":0,"total":8726}}
+[contract] {"type":"agent_end"}
+SMOKE ticket-97 imageless echo shape ok (field absent, pre-97 shape intact)
+SMOKE gated tool round ok: {"tool_start":1,"tool_update":2,"tool_end":1,"approval_required":1}
+SMOKE remember round: same tool should not ask again
+[contract] {"type":"agent_start"}
+[contract] {"type":"user_message","text":"Use the bash tool to run exactly: echo picode_remember_round. Then report the output.","entryId":"78d97ba0"}
+[contract] {"type":"message_start"}
+[contract] {"type":"thinking_delta","delta":"The"}
+[contract] {"type":"thinking_delta","delta":" user"}
+[contract] {"type":"thinking_delta","delta":" wants"}
+[contract] {"type":"thinking_delta","delta":" me"}
+[contract] {"type":"thinking_delta","delta":" to"}
+[contract] {"type":"thinking_delta","delta":" run"}
+[contract] {"type":"thinking_delta","delta":" exactly"}
+[contract] {"type":"thinking_delta","delta":":"}
+[contract] {"type":"thinking_delta","delta":" echo"}
+[contract] {"type":"thinking_delta","delta":" pic"}
+[contract] {"type":"thinking_delta","delta":"ode"}
+[contract] {"type":"thinking_delta","delta":"_re"}
+[contract] {"type":"thinking_delta","delta":"member"}
+[contract] {"type":"thinking_delta","delta":"_round"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_delta","delta":" Then"}
+[contract] {"type":"thinking_delta","delta":" report"}
+[contract] {"type":"thinking_delta","delta":" the"}
+[contract] {"type":"thinking_delta","delta":" output"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_delta","delta":" Simple"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_end","durationMs":3}
+[contract] {"type":"message_end","entryId":"6d3f2448","usage":{"input":172,"output":38,"cacheRead":8576,"cacheWrite":0,"total":8786}}
+[contract] {"type":"tool_start","toolCallId":"call_c65a63efe0e9411c8481d7bf","name":"bash","args":{"command":"echo picode_remember_round"}}
+[contract] {"type":"tool_update","toolCallId":"call_c65a63efe0e9411c8481d7bf","partial":""}
+[contract] {"type":"tool_update","toolCallId":"call_c65a63efe0e9411c8481d7bf","partial":"picode_remember_round\n"}
+[contract] {"type":"tool_end","toolCallId":"call_c65a63efe0e9411c8481d7bf","output":"picode_remember_round\n","isError":false}
+[contract] {"type":"message_start"}
+[contract] {"type":"thinking_delta","delta":"The"}
+[contract] {"type":"thinking_delta","delta":" command"}
+[contract] {"type":"thinking_delta","delta":" output"}
+[contract] {"type":"thinking_delta","delta":" is"}
+[contract] {"type":"thinking_delta","delta":" `"}
+[contract] {"type":"thinking_delta","delta":"p"}
+[contract] {"type":"thinking_delta","delta":"icode"}
+[contract] {"type":"thinking_delta","delta":"_re"}
+[contract] {"type":"thinking_delta","delta":"member"}
+[contract] {"type":"thinking_delta","delta":"_round"}
+[contract] {"type":"thinking_delta","delta":"`."}
+[contract] {"type":"thinking_delta","delta":" Report"}
+[contract] {"type":"thinking_delta","delta":" it"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_end","durationMs":285}
+[contract] {"type":"text_delta","delta":"The"}
+[contract] {"type":"text_delta","delta":" command"}
+[contract] {"type":"text_delta","delta":"'s"}
+[contract] {"type":"text_delta","delta":" output"}
+[contract] {"type":"text_delta","delta":" was"}
+[contract] {"type":"text_delta","delta":":"}
+[contract] {"type":"text_delta","delta":" `"}
+[contract] {"type":"text_delta","delta":"p"}
+[contract] {"type":"text_delta","delta":"icode"}
+[contract] {"type":"text_delta","delta":"_remember_round`"}
+[contract] {"type":"message_end","entryId":"168c78e4","usage":{"input":92,"output":29,"cacheRead":8704,"cacheWrite":0,"total":8825}}
+[contract] {"type":"agent_end"}
+SMOKE remember ok — bash ran without a second ask
+SMOKE diff projection: prompting an edit round (ticket 78)
+[contract] {"type":"agent_start"}
+SMOKE agent_start (edit round — diff projection)
+[contract] {"type":"user_message","text":"Use the edit tool to change alpha.txt: replace the text \"mention me\" with \"mention me edited\". Then report the result.","entryId":"b13fb7de"}
+[contract] {"type":"message_start"}
+[contract] {"type":"thinking_delta","delta":"The"}
+[contract] {"type":"thinking_delta","delta":" user"}
+[contract] {"type":"thinking_delta","delta":" wants"}
+[contract] {"type":"thinking_delta","delta":" me"}
+[contract] {"type":"thinking_delta","delta":" to"}
+[contract] {"type":"thinking_delta","delta":" edit"}
+[contract] {"type":"thinking_delta","delta":" alpha"}
+[contract] {"type":"thinking_delta","delta":".txt"}
+[contract] {"type":"thinking_delta","delta":","}
+[contract] {"type":"thinking_delta","delta":" replacing"}
+[contract] {"type":"thinking_delta","delta":" \""}
+[contract] {"type":"thinking_delta","delta":"mention"}
+[contract] {"type":"thinking_delta","delta":" me"}
+[contract] {"type":"thinking_delta","delta":"\""}
+[contract] {"type":"thinking_delta","delta":" with"}
+[contract] {"type":"thinking_delta","delta":" \""}
+[contract] {"type":"thinking_delta","delta":"mention"}
+[contract] {"type":"thinking_delta","delta":" me"}
+[contract] {"type":"thinking_delta","delta":" edited"}
+[contract] {"type":"thinking_delta","delta":"\"."}
+[contract] {"type":"thinking_delta","delta":" Let"}
+[contract] {"type":"thinking_delta","delta":" me"}
+[contract] {"type":"thinking_delta","delta":" first"}
+[contract] {"type":"thinking_delta","delta":" check"}
+[contract] {"type":"thinking_delta","delta":" if"}
+[contract] {"type":"thinking_delta","delta":" the"}
+[contract] {"type":"thinking_delta","delta":" file"}
+[contract] {"type":"thinking_delta","delta":" exists"}
+[contract] {"type":"thinking_delta","delta":" to"}
+[contract] {"type":"thinking_delta","delta":" see"}
+[contract] {"type":"thinking_delta","delta":" its"}
+[contract] {"type":"thinking_delta","delta":" content"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_end","durationMs":546}
+[contract] {"type":"message_end","entryId":"df5d2c6f","usage":{"input":86,"output":45,"cacheRead":8768,"cacheWrite":0,"total":8899}}
+[contract] {"type":"tool_start","toolCallId":"call_22e18698720b45eea913b82c","name":"read","args":{"path":"alpha.txt"}}
+[contract] {"type":"tool_end","toolCallId":"call_22e18698720b45eea913b82c","output":"mention me","isError":false}
+[contract] {"type":"message_start"}
+[contract] {"type":"message_end","entryId":"13fee4a1","usage":{"input":73,"output":37,"cacheRead":8832,"cacheWrite":0,"total":8942}}
+[contract] {"type":"tool_start","toolCallId":"call_488c27e7437f4b6999580746","name":"edit","args":{"path":"alpha.txt","edits":[{"oldText":"mention me","newText":"mention me edited"}]}}
+[contract] {"type":"approval_required","toolCallId":"call_488c27e7437f4b6999580746","toolName":"edit","args":{"path":"alpha.txt","edits":[{"oldText":"mention me","newText":"mention me edited"}]}}
+SMOKE approval_required ok for edit — approving
+[contract] {"type":"approval_resolved","toolCallId":"call_488c27e7437f4b6999580746","approved":true,"reason":null}
+[contract] {"type":"tool_end","toolCallId":"call_488c27e7437f4b6999580746","output":"Successfully replaced 1 block(s) in alpha.txt.","isError":false,"diff":"-1 mention me\n+1 mention me edited"}
+SMOKE edit tool_end diff ok (2 diff lines)
+[contract] {"type":"message_start"}
+[contract] {"type":"thinking_delta","delta":"The"}
+[contract] {"type":"thinking_delta","delta":" edit"}
+[contract] {"type":"thinking_delta","delta":" was"}
+[contract] {"type":"thinking_delta","delta":" successful"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_delta","delta":" Let"}
+[contract] {"type":"thinking_delta","delta":" me"}
+[contract] {"type":"thinking_delta","delta":" report"}
+[contract] {"type":"thinking_delta","delta":" the"}
+[contract] {"type":"thinking_delta","delta":" result"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_end","durationMs":156}
+[contract] {"type":"text_delta","delta":"The"}
+[contract] {"type":"text_delta","delta":" edit"}
+[contract] {"type":"text_delta","delta":" succeeded"}
+[contract] {"type":"text_delta","delta":" —"}
+[contract] {"type":"text_delta","delta":" `"}
+[contract] {"type":"text_delta","delta":"alpha"}
+[contract] {"type":"text_delta","delta":".txt"}
+[contract] {"type":"text_delta","delta":"`"}
+[contract] {"type":"text_delta","delta":" now"}
+[contract] {"type":"text_delta","delta":" contains"}
+[contract] {"type":"text_delta","delta":" \""}
+[contract] {"type":"text_delta","delta":"mention"}
+[contract] {"type":"text_delta","delta":" me"}
+[contract] {"type":"text_delta","delta":" edited"}
+[contract] {"type":"text_delta","delta":"\""}
+[contract] {"type":"text_delta","delta":" instead"}
+[contract] {"type":"text_delta","delta":" of"}
+[contract] {"type":"text_delta","delta":" \"mention me\"."}
+[contract] {"type":"message_end","entryId":"02bc4731","usage":{"input":61,"output":34,"cacheRead":8896,"cacheWrite":0,"total":8991}}
+[contract] {"type":"agent_end"}
+SMOKE diff projection ok — edit diff rode the live event
+SMOKE read-only tier: switching access mode
+[contract] {"type":"access_mode_changed","mode":"read-only"}
+SMOKE access_mode_changed ok — prompting under Read Only
+[contract] {"type":"agent_start"}
+[contract] {"type":"user_message","text":"Use the bash tool to run exactly: echo picode_readonly_round. Then report the output.","entryId":"ed335daa"}
+[contract] {"type":"message_start"}
+[contract] {"type":"thinking_delta","delta":"The"}
+[contract] {"type":"thinking_delta","delta":" user"}
+[contract] {"type":"thinking_delta","delta":" wants"}
+[contract] {"type":"thinking_delta","delta":" me"}
+[contract] {"type":"thinking_delta","delta":" to"}
+[contract] {"type":"thinking_delta","delta":" run"}
+[contract] {"type":"thinking_delta","delta":" exactly"}
+[contract] {"type":"thinking_delta","delta":" `"}
+[contract] {"type":"thinking_delta","delta":"echo"}
+[contract] {"type":"thinking_delta","delta":" pic"}
+[contract] {"type":"thinking_delta","delta":"ode"}
+[contract] {"type":"thinking_delta","delta":"_read"}
+[contract] {"type":"thinking_delta","delta":"only"}
+[contract] {"type":"thinking_delta","delta":"_round"}
+[contract] {"type":"thinking_delta","delta":"`"}
+[contract] {"type":"thinking_delta","delta":" and"}
+[contract] {"type":"thinking_delta","delta":" report"}
+[contract] {"type":"thinking_delta","delta":" the"}
+[contract] {"type":"thinking_delta","delta":" output"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_end","durationMs":463}
+[contract] {"type":"message_end","entryId":"c5fc8d17","usage":{"input":117,"output":36,"cacheRead":8896,"cacheWrite":0,"total":9049}}
+[contract] {"type":"tool_start","toolCallId":"call_ca42b5db9d504dbd8d9dc779","name":"bash","args":{"command":"echo picode_readonly_round"}}
+[contract] {"type":"tool_end","toolCallId":"call_ca42b5db9d504dbd8d9dc779","output":"Denied by the approval gate: Access Mode \"Read Only\" does not allow \"bash\". Switch Access Mode to run it.","isError":true}
+[contract] {"type":"message_start"}
+[contract] {"type":"thinking_delta","delta":"The"}
+[contract] {"type":"thinking_delta","delta":" bash"}
+[contract] {"type":"thinking_delta","delta":" command"}
+[contract] {"type":"thinking_delta","delta":" was"}
+[contract] {"type":"thinking_delta","delta":" denied"}
+[contract] {"type":"thinking_delta","delta":" by"}
+[contract] {"type":"thinking_delta","delta":" the"}
+[contract] {"type":"thinking_delta","delta":" approval"}
+[contract] {"type":"thinking_delta","delta":" gate"}
+[contract] {"type":"thinking_delta","delta":" because"}
+[contract] {"type":"thinking_delta","delta":" the"}
+[contract] {"type":"thinking_delta","delta":" current"}
+[contract] {"type":"thinking_delta","delta":" Access"}
+[contract] {"type":"thinking_delta","delta":" Mode"}
+[contract] {"type":"thinking_delta","delta":" is"}
+[contract] {"type":"thinking_delta","delta":" \""}
+[contract] {"type":"thinking_delta","delta":"Read"}
+[contract] {"type":"thinking_delta","delta":" Only"}
+[contract] {"type":"thinking_delta","delta":"\""}
+[contract] {"type":"thinking_delta","delta":" which"}
+[contract] {"type":"thinking_delta","delta":" doesn"}
+[contract] {"type":"thinking_delta","delta":"'t"}
+[contract] {"type":"thinking_delta","delta":" allow"}
+[contract] {"type":"thinking_delta","delta":" bash"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_delta","delta":" I"}
+[contract] {"type":"thinking_delta","delta":" should"}
+[contract] {"type":"thinking_delta","delta":" report"}
+[contract] {"type":"thinking_delta","delta":" this"}
+[contract] {"type":"thinking_delta","delta":" to"}
+[contract] {"type":"thinking_delta","delta":" the"}
+[contract] {"type":"thinking_delta","delta":" user"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_end","durationMs":656}
+[contract] {"type":"text_delta","delta":"The"}
+[contract] {"type":"text_delta","delta":" command"}
+[contract] {"type":"text_delta","delta":" could"}
+[contract] {"type":"text_delta","delta":" not"}
+[contract] {"type":"text_delta","delta":" be"}
+[contract] {"type":"text_delta","delta":" run"}
+[contract] {"type":"text_delta","delta":" —"}
+[contract] {"type":"text_delta","delta":" it"}
+[contract] {"type":"text_delta","delta":" was"}
+[contract] {"type":"text_delta","delta":" denied"}
+[contract] {"type":"text_delta","delta":" by"}
+[contract] {"type":"text_delta","delta":" the"}
+[contract] {"type":"text_delta","delta":" approval"}
+[contract] {"type":"text_delta","delta":" gate"}
+[contract] {"type":"text_delta","delta":":"}
+[contract] {"type":"text_delta","delta":" Access"}
+[contract] {"type":"text_delta","delta":" Mode"}
+[contract] {"type":"text_delta","delta":" \""}
+[contract] {"type":"text_delta","delta":"Read"}
+[contract] {"type":"text_delta","delta":" Only"}
+[contract] {"type":"text_delta","delta":"\""}
+[contract] {"type":"text_delta","delta":" does"}
+[contract] {"type":"text_delta","delta":" not"}
+[contract] {"type":"text_delta","delta":" allow"}
+[contract] {"type":"text_delta","delta":" \""}
+[contract] {"type":"text_delta","delta":"bash"}
+[contract] {"type":"text_delta","delta":"\"."}
+[contract] {"type":"text_delta","delta":" You"}
+[contract] {"type":"text_delta","delta":"'ll"}
+[contract] {"type":"text_delta","delta":" need"}
+[contract] {"type":"text_delta","delta":" to"}
+[contract] {"type":"text_delta","delta":" switch"}
+[contract] {"type":"text_delta","delta":" Access"}
+[contract] {"type":"text_delta","delta":" Mode to run it."}
+[contract] {"type":"message_end","entryId":"07af83eb","usage":{"input":118,"output":73,"cacheRead":8960,"cacheWrite":0,"total":9151}}
+[contract] {"type":"agent_end"}
+SMOKE read-only ok — mutation blocked by the tier
+SMOKE back to standard: deny-with-reason round
+[contract] {"type":"access_mode_changed","mode":"standard"}
+[contract] {"type":"agent_start"}
+[contract] {"type":"user_message","text":"Use the write tool to create a file named picode-deny-probe.txt whose content is exactly: nope. Then confirm.","entryId":"96bb1591"}
+[contract] {"type":"message_start"}
+[contract] {"type":"thinking_delta","delta":"The"}
+[contract] {"type":"thinking_delta","delta":" user"}
+[contract] {"type":"thinking_delta","delta":" asks"}
+[contract] {"type":"thinking_delta","delta":" me"}
+[contract] {"type":"thinking_delta","delta":" to"}
+[contract] {"type":"thinking_delta","delta":" use"}
+[contract] {"type":"thinking_delta","delta":" the"}
+[contract] {"type":"thinking_delta","delta":" write"}
+[contract] {"type":"thinking_delta","delta":" tool"}
+[contract] {"type":"thinking_delta","delta":" to"}
+[contract] {"type":"thinking_delta","delta":" create"}
+[contract] {"type":"thinking_delta","delta":" a"}
+[contract] {"type":"thinking_delta","delta":" file"}
+[contract] {"type":"thinking_delta","delta":" named"}
+[contract] {"type":"thinking_delta","delta":" pic"}
+[contract] {"type":"thinking_delta","delta":"ode"}
+[contract] {"type":"thinking_delta","delta":"-d"}
+[contract] {"type":"thinking_delta","delta":"eny"}
+[contract] {"type":"thinking_delta","delta":"-pro"}
+[contract] {"type":"thinking_delta","delta":"be"}
+[contract] {"type":"thinking_delta","delta":".txt"}
+[contract] {"type":"thinking_delta","delta":" with"}
+[contract] {"type":"thinking_delta","delta":" content"}
+[contract] {"type":"thinking_delta","delta":" exactly"}
+[contract] {"type":"thinking_delta","delta":" \""}
+[contract] {"type":"thinking_delta","delta":"no"}
+[contract] {"type":"thinking_delta","delta":"pe"}
+[contract] {"type":"thinking_delta","delta":"\"."}
+[contract] {"type":"thinking_delta","delta":" The"}
+[contract] {"type":"thinking_delta","delta":" current"}
+[contract] {"type":"thinking_delta","delta":" access"}
+[contract] {"type":"thinking_delta","delta":" mode"}
+[contract] {"type":"thinking_delta","delta":" is"}
+[contract] {"type":"thinking_delta","delta":" \""}
+[contract] {"type":"thinking_delta","delta":"Read"}
+[contract] {"type":"thinking_delta","delta":" Only"}
+[contract] {"type":"thinking_delta","delta":"\""}
+[contract] {"type":"thinking_delta","delta":" based"}
+[contract] {"type":"thinking_delta","delta":" on"}
+[contract] {"type":"thinking_delta","delta":" the"}
+[contract] {"type":"thinking_delta","delta":" previous"}
+[contract] {"type":"thinking_delta","delta":" denial"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_delta","delta":" The"}
+[contract] {"type":"thinking_delta","delta":" write"}
+[contract] {"type":"thinking_delta","delta":" tool"}
+[contract] {"type":"thinking_delta","delta":" will"}
+[contract] {"type":"thinking_delta","delta":" likely"}
+[contract] {"type":"thinking_delta","delta":" be"}
+[contract] {"type":"thinking_delta","delta":" denied"}
+[contract] {"type":"thinking_delta","delta":" too"}
+[contract] {"type":"thinking_delta","delta":","}
+[contract] {"type":"thinking_delta","delta":" but"}
+[contract] {"type":"thinking_delta","delta":" let"}
+[contract] {"type":"thinking_delta","delta":" me"}
+[contract] {"type":"thinking_delta","delta":" try"}
+[contract] {"type":"thinking_delta","delta":" —"}
+[contract] {"type":"thinking_delta","delta":" the"}
+[contract] {"type":"thinking_delta","delta":" user"}
+[contract] {"type":"thinking_delta","delta":" explicitly"}
+[contract] {"type":"thinking_delta","delta":" asked"}
+[contract] {"type":"thinking_delta","delta":" for"}
+[contract] {"type":"thinking_delta","delta":" this"}
+[contract] {"type":"thinking_delta","delta":" probe"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_end","durationMs":1071}
+[contract] {"type":"message_end","entryId":"40418301","usage":{"input":156,"output":89,"cacheRead":9024,"cacheWrite":0,"total":9269}}
+[contract] {"type":"tool_start","toolCallId":"call_d1811fccfb29447b96efc8f7","name":"write","args":{"path":"picode-deny-probe.txt","content":"nope"}}
+[contract] {"type":"approval_required","toolCallId":"call_d1811fccfb29447b96efc8f7","toolName":"write","args":{"path":"picode-deny-probe.txt","content":"nope"}}
+SMOKE approval_required ok (write) — denying with a reason
+[contract] {"type":"approval_resolved","toolCallId":"call_d1811fccfb29447b96efc8f7","approved":false,"reason":"PICODE_DENY_REASON: not today"}
+SMOKE approval_resolved ok (denied, reason round-tripped)
+[contract] {"type":"tool_end","toolCallId":"call_d1811fccfb29447b96efc8f7","output":"PICODE_DENY_REASON: not today","isError":true}
+[contract] {"type":"agent_end"}
+SMOKE deny-with-reason ok — turn stopped
+SMOKE queue round: steer + follow-up + clear
+[contract] {"type":"agent_start"}
+[contract] {"type":"user_message","text":"Count slowly from thirty to fifty, one number per sentence.","entryId":"7e12db9a"}
+[contract] {"type":"queue_update","steering":["Skip ahead — count slowly from sixty to eighty, one number per sentence."],"followUp":[]}
+SMOKE queue_update ok (steering=1)
+[contract] {"type":"message_start"}
+[contract] {"type":"thinking_delta","delta":"The"}
+[contract] {"type":"thinking_delta","delta":" user"}
+[contract] {"type":"thinking_delta","delta":" wants"}
+[contract] {"type":"thinking_delta","delta":" me"}
+[contract] {"type":"thinking_delta","delta":" to"}
+[contract] {"type":"thinking_delta","delta":" count"}
+[contract] {"type":"thinking_delta","delta":" from"}
+[contract] {"type":"thinking_delta","delta":" thirty"}
+[contract] {"type":"thinking_delta","delta":" to"}
+[contract] {"type":"thinking_delta","delta":" fifty"}
+[contract] {"type":"thinking_delta","delta":","}
+[contract] {"type":"thinking_delta","delta":" one"}
+[contract] {"type":"thinking_delta","delta":" number"}
+[contract] {"type":"thinking_delta","delta":" per"}
+[contract] {"type":"thinking_delta","delta":" sentence"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_delta","delta":" Simple"}
+[contract] {"type":"thinking_delta","delta":" task"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_end","durationMs":344}
+[contract] {"type":"text_delta","delta":"Thirty"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Thirty"}
+[contract] {"type":"text_delta","delta":"-one"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Thirty"}
+[contract] {"type":"text_delta","delta":"-two"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Thirty"}
+[contract] {"type":"text_delta","delta":"-three"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Thirty"}
+[contract] {"type":"text_delta","delta":"-four"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Thirty"}
+[contract] {"type":"text_delta","delta":"-five"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Thirty"}
+[contract] {"type":"text_delta","delta":"-six"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Thirty"}
+[contract] {"type":"text_delta","delta":"-seven"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Thirty"}
+[contract] {"type":"text_delta","delta":"-eight"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Thirty"}
+[contract] {"type":"text_delta","delta":"-nine"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Fort"}
+[contract] {"type":"text_delta","delta":"y"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Fort"}
+[contract] {"type":"text_delta","delta":"y"}
+[contract] {"type":"text_delta","delta":"-one"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Fort"}
+[contract] {"type":"text_delta","delta":"y"}
+[contract] {"type":"text_delta","delta":"-two"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Fort"}
+[contract] {"type":"text_delta","delta":"y"}
+[contract] {"type":"text_delta","delta":"-three"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Fort"}
+[contract] {"type":"text_delta","delta":"y"}
+[contract] {"type":"text_delta","delta":"-four"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Fort"}
+[contract] {"type":"text_delta","delta":"y"}
+[contract] {"type":"text_delta","delta":"-five"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Fort"}
+[contract] {"type":"text_delta","delta":"y"}
+[contract] {"type":"text_delta","delta":"-six"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Fort"}
+[contract] {"type":"text_delta","delta":"y"}
+[contract] {"type":"text_delta","delta":"-seven"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Fort"}
+[contract] {"type":"text_delta","delta":"y"}
+[contract] {"type":"text_delta","delta":"-eight"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Fort"}
+[contract] {"type":"text_delta","delta":"y"}
+[contract] {"type":"text_delta","delta":"-nine"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"F"}
+[contract] {"type":"text_delta","delta":"ifty."}
+[contract] {"type":"message_end","entryId":"b3945da6","usage":{"input":142,"output":92,"cacheRead":9152,"cacheWrite":0,"total":9386}}
+[contract] {"type":"queue_update","steering":[],"followUp":[]}
+SMOKE steer delivered ok (steering=0)
+[contract] {"type":"user_message","text":"Skip ahead — count slowly from sixty to eighty, one number per sentence.","images":[{"kind":"image","mimeType":"image/png","data":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAA
+[contract] {"type":"queue_update","steering":[],"followUp":["PICODE_100 beta steer"]}
+SMOKE queue_update ok (followUp=[B])
+[contract] {"type":"queue_update","steering":[],"followUp":["PICODE_100 beta steer","PICODE_100 delta steer"]}
+SMOKE queue_update ok (followUp=[B, D] — enqueue order)
+[contract] {"type":"queue_update","steering":[],"followUp":["PICODE_100 beta steer","PICODE_100 delta steer","PICODE_100 gamma follow"]}
+SMOKE queue_update ok (followUp=[B, D, C])
+[contract] {"type":"queue_update","steering":[],"followUp":[]}
+[contract] {"type":"queue_update","steering":[],"followUp":["PICODE_100 delta steer"]}
+[contract] {"type":"queue_update","steering":[],"followUp":["PICODE_100 delta steer","PICODE_100 gamma follow"]}
+SMOKE remove_queue_entry ok (B out, D/C in place — order preserved)
+[contract] {"type":"queue_update","steering":[],"followUp":[]}
+[contract] {"type":"queue_update","steering":[],"followUp":["PICODE_100 gamma follow"]}
+[contract] {"type":"queue_update","steering":[],"followUp":["PICODE_100 gamma follow","PICODE_100 delta steer"]}
+SMOKE reorder_queue_entry ok (D/C swapped — new-order re-feed, queue_update shape unchanged)
+[contract] {"type":"queue_update","steering":[],"followUp":[]}
+[contract] {"type":"queue_update","steering":[],"followUp":["PICODE_100 delta steer"]}
+[contract] {"type":"queue_entry_edited","requestId":"smoke-qedit-1","found":true,"text":"PICODE_100 gamma follow","images":[{"kind":"image","mimeType":"image/png","data":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAf
+SMOKE edit_queue_entry ok (reply carries the raw text + image for the composer prefill)
+[contract] {"type":"message_start"}
+[contract] {"type":"thinking_delta","delta":"The"}
+[contract] {"type":"thinking_delta","delta":" user"}
+[contract] {"type":"thinking_delta","delta":" wants"}
+[contract] {"type":"thinking_delta","delta":" me"}
+[contract] {"type":"thinking_delta","delta":" to"}
+[contract] {"type":"thinking_delta","delta":" count"}
+[contract] {"type":"thinking_delta","delta":" from"}
+[contract] {"type":"thinking_delta","delta":" sixty"}
+[contract] {"type":"thinking_delta","delta":" to"}
+[contract] {"type":"thinking_delta","delta":" eighty"}
+[contract] {"type":"thinking_delta","delta":","}
+[contract] {"type":"thinking_delta","delta":" one"}
+[contract] {"type":"thinking_delta","delta":" number"}
+[contract] {"type":"thinking_delta","delta":" per"}
+[contract] {"type":"thinking_delta","delta":" sentence"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_end","durationMs":203}
+[contract] {"type":"text_delta","delta":"Six"}
+[contract] {"type":"text_delta","delta":"ty"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Six"}
+[contract] {"type":"text_delta","delta":"ty"}
+[contract] {"type":"text_delta","delta":"-one"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Six"}
+[contract] {"type":"text_delta","delta":"ty"}
+[contract] {"type":"text_delta","delta":"-two"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Six"}
+[contract] {"type":"text_delta","delta":"ty"}
+[contract] {"type":"text_delta","delta":"-three"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Six"}
+[contract] {"type":"text_delta","delta":"ty"}
+[contract] {"type":"text_delta","delta":"-four"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Six"}
+[contract] {"type":"text_delta","delta":"ty"}
+[contract] {"type":"text_delta","delta":"-five"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Six"}
+[contract] {"type":"text_delta","delta":"ty"}
+[contract] {"type":"text_delta","delta":"-six"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Six"}
+[contract] {"type":"text_delta","delta":"ty"}
+[contract] {"type":"text_delta","delta":"-seven"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Six"}
+[contract] {"type":"text_delta","delta":"ty"}
+[contract] {"type":"text_delta","delta":"-eight"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Six"}
+[contract] {"type":"text_delta","delta":"ty"}
+[contract] {"type":"text_delta","delta":"-nine"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Se"}
+[contract] {"type":"text_delta","delta":"vent"}
+[contract] {"type":"text_delta","delta":"y"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Se"}
+[contract] {"type":"text_delta","delta":"vent"}
+[contract] {"type":"text_delta","delta":"y"}
+[contract] {"type":"text_delta","delta":"-one"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Se"}
+[contract] {"type":"text_delta","delta":"vent"}
+[contract] {"type":"text_delta","delta":"y"}
+[contract] {"type":"text_delta","delta":"-two"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Se"}
+[contract] {"type":"text_delta","delta":"vent"}
+[contract] {"type":"text_delta","delta":"y"}
+[contract] {"type":"text_delta","delta":"-three"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Se"}
+[contract] {"type":"text_delta","delta":"vent"}
+[contract] {"type":"text_delta","delta":"y"}
+[contract] {"type":"text_delta","delta":"-four"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Se"}
+[contract] {"type":"text_delta","delta":"vent"}
+[contract] {"type":"text_delta","delta":"y"}
+[contract] {"type":"text_delta","delta":"-five"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Se"}
+[contract] {"type":"text_delta","delta":"vent"}
+[contract] {"type":"text_delta","delta":"y"}
+[contract] {"type":"text_delta","delta":"-six"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Se"}
+[contract] {"type":"text_delta","delta":"vent"}
+[contract] {"type":"text_delta","delta":"y"}
+[contract] {"type":"text_delta","delta":"-seven"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Se"}
+[contract] {"type":"text_delta","delta":"vent"}
+[contract] {"type":"text_delta","delta":"y"}
+[contract] {"type":"text_delta","delta":"-eight"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Se"}
+[contract] {"type":"text_delta","delta":"vent"}
+[contract] {"type":"text_delta","delta":"y"}
+[contract] {"type":"text_delta","delta":"-nine"}
+[contract] {"type":"text_delta","delta":".\n"}
+[contract] {"type":"text_delta","delta":"Eight"}
+[contract] {"type":"text_delta","delta":"y."}
+[contract] {"type":"message_end","entryId":"bf68825a","usage":{"input":141,"output":109,"cacheRead":9280,"cacheWrite":0,"total":9530}}
+[contract] {"type":"queue_update","steering":[],"followUp":[]}
+[contract] {"type":"user_message","text":"PICODE_100 delta steer","images":[{"kind":"image","mimeType":"image/png","data":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5E
+SMOKE re-fed followUp delivery echo images ok (mirror → re-feed → persisted parts)
+[contract] {"type":"queue_update","steering":[],"followUp":[]}
+SMOKE clear_queue ok (queue empty — global Clear 照旧)
+[contract] {"type":"message_start"}
+[contract] {"type":"thinking_delta","delta":"The"}
+[contract] {"type":"thinking_delta","delta":" user"}
+[contract] {"type":"thinking_delta","delta":" says"}
+[contract] {"type":"thinking_delta","delta":" \""}
+[contract] {"type":"thinking_delta","delta":"P"}
+[contract] {"type":"thinking_delta","delta":"ICODE"}
+[contract] {"type":"thinking_delta","delta":"_"}
+[contract] {"type":"thinking_delta","delta":"100"}
+[contract] {"type":"thinking_delta","delta":" delta"}
+[contract] {"type":"thinking_delta","delta":" steer"}
+[contract] {"type":"thinking_delta","delta":"\"."}
+[contract] {"type":"thinking_delta","delta":" This"}
+[contract] {"type":"thinking_delta","delta":" is"}
+[contract] {"type":"thinking_delta","delta":" crypt"}
+[contract] {"type":"thinking_delta","delta":"ic"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_delta","delta":" Let"}
+[contract] {"type":"thinking_delta","delta":" me"}
+[contract] {"type":"thinking_delta","delta":" think"}
+[contract] {"type":"thinking_delta","delta":" about"}
+[contract] {"type":"thinking_delta","delta":" the"}
+[contract] {"type":"thinking_delta","delta":" context"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_delta","delta":" Previous"}
+[contract] {"type":"thinking_delta","delta":" turns"}
+[contract] {"type":"thinking_delta","delta":" involved"}
+[contract] {"type":"thinking_delta","delta":" commands"}
+[contract] {"type":"thinking_delta","delta":" like"}
+[contract] {"type":"thinking_delta","delta":" `"}
+[contract] {"type":"thinking_delta","delta":"echo"}
+[contract] {"type":"thinking_delta","delta":" pic"}
+[contract] {"type":"thinking_delta","delta":"ode"}
+[contract] {"type":"thinking_delta","delta":"_tool"}
+[contract] {"type":"thinking_delta","delta":"_round"}
+[contract] {"type":"thinking_delta","delta":"`,"}
+[contract] {"type":"thinking_delta","delta":" `"}
+[contract] {"type":"thinking_delta","delta":"echo"}
+[contract] {"type":"thinking_delta","delta":" pic"}
+[contract] {"type":"thinking_delta","delta":"ode"}
+[contract] {"type":"thinking_delta","delta":"_re"}
+[contract] {"type":"thinking_delta","delta":"member"}
+[contract] {"type":"thinking_delta","delta":"_round"}
+[contract] {"type":"thinking_delta","delta":"`,"}
+[contract] {"type":"thinking_delta","delta":" `"}
+[contract] {"type":"thinking_delta","delta":"echo"}
+[contract] {"type":"thinking_delta","delta":" pic"}
+[contract] {"type":"thinking_delta","delta":"ode"}
+[contract] {"type":"thinking_delta","delta":"_read"}
+[contract] {"type":"thinking_delta","delta":"only"}
+[contract] {"type":"thinking_delta","delta":"_round"}
+[contract] {"type":"thinking_delta","delta":"`,"}
+[contract] {"type":"thinking_delta","delta":" an"}
+[contract] {"type":"thinking_delta","delta":" edit"}
+[contract] {"type":"thinking_delta","delta":" to"}
+[contract] {"type":"thinking_delta","delta":" alpha"}
+[contract] {"type":"thinking_delta","delta":".txt"}
+[contract] {"type":"thinking_delta","delta":","}
+[contract] {"type":"thinking_delta","delta":" a"}
+[contract] {"type":"thinking_delta","delta":" denied"}
+[contract] {"type":"thinking_delta","delta":" write"}
+[contract] {"type":"thinking_delta","delta":" with"}
+[contract] {"type":"thinking_delta","delta":" \""}
+[contract] {"type":"thinking_delta","delta":"P"}
+[contract] {"type":"thinking_delta","delta":"ICODE"}
+[contract] {"type":"thinking_delta","delta":"_DEN"}
+[contract] {"type":"thinking_delta","delta":"Y"}
+[contract] {"type":"thinking_delta","delta":"_REASON"}
+[contract] {"type":"thinking_delta","delta":":"}
+[contract] {"type":"thinking_delta","delta":" not"}
+[contract] {"type":"thinking_delta","delta":" today"}
+[contract] {"type":"thinking_delta","delta":"\".\n\n"}
+[contract] {"type":"thinking_delta","delta":"This"}
+[contract] {"type":"thinking_delta","delta":" looks"}
+[contract] {"type":"thinking_delta","delta":" like"}
+[contract] {"type":"thinking_delta","delta":" some"}
+[contract] {"type":"thinking_delta","delta":" kind"}
+[contract] {"type":"thinking_delta","delta":" of"}
+[contract] {"type":"thinking_delta","delta":" smoke"}
+[contract] {"type":"thinking_delta","delta":" test"}
+[contract] {"type":"thinking_delta","delta":" or"}
+[contract] {"type":"thinking_delta","delta":" probe"}
+[contract] {"type":"thinking_delta","delta":" session"}
+[contract] {"type":"thinking_delta","delta":" ("}
+[contract] {"type":"thinking_delta","delta":"the"}
+[contract] {"type":"thinking_delta","delta":" cwd"}
+[contract] {"type":"thinking_delta","delta":" is"}
+[contract] {"type":"thinking_delta","delta":" /"}
+[contract] {"type":"thinking_delta","delta":"var"}
+[contract] {"type":"thinking_delta","delta":"/f"}
+[contract] {"type":"thinking_delta","delta":"olders"}
+[contract] {"type":"thinking_delta","delta":"/"}
+[contract] {"type":"thinking_delta","delta":"..."}
+[contract] {"type":"thinking_delta","delta":"/"}
+[contract] {"type":"thinking_delta","delta":"p"}
+[contract] {"type":"thinking_delta","delta":"icode"}
+[contract] {"type":"thinking_delta","delta":"-sm"}
+[contract] {"type":"thinking_delta","delta":"oke"}
+[contract] {"type":"thinking_delta","delta":"-i"}
+[contract] {"type":"thinking_delta","delta":"8"}
+[contract] {"type":"thinking_delta","delta":"K"}
+[contract] {"type":"thinking_delta","delta":"t"}
+[contract] {"type":"thinking_delta","delta":"I"}
+[contract] {"type":"thinking_delta","delta":"2"}
+[contract] {"type":"thinking_delta","delta":" —"}
+[contract] {"type":"thinking_delta","delta":" a"}
+[contract] {"type":"thinking_delta","delta":" temp"}
+[contract] {"type":"thinking_delta","delta":" smoke"}
+[contract] {"type":"thinking_delta","delta":" test"}
+[contract] {"type":"thinking_delta","delta":" directory"}
+[contract] {"type":"thinking_delta","delta":")."}
+[contract] {"type":"thinking_delta","delta":" The"}
+[contract] {"type":"thinking_delta","delta":" user"}
+[contract] {"type":"thinking_delta","delta":" is"}
+[contract] {"type":"thinking_delta","delta":" sending"}
+[contract] {"type":"thinking_delta","delta":" probes"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_delta","delta":" \""}
+[contract] {"type":"thinking_delta","delta":"P"}
+[contract] {"type":"thinking_delta","delta":"ICODE"}
+[contract] {"type":"thinking_delta","delta":"_"}
+[contract] {"type":"thinking_delta","delta":"100"}
+[contract] {"type":"thinking_delta","delta":" delta"}
+[contract] {"type":"thinking_delta","delta":" steer"}
+[contract] {"type":"thinking_delta","delta":"\""}
+[contract] {"type":"thinking_delta","delta":" —"}
+[contract] {"type":"thinking_delta","delta":" perhaps"}
+[contract] {"type":"thinking_delta","delta":" they"}
+[contract] {"type":"thinking_delta","delta":" want"}
+[contract] {"type":"thinking_delta","delta":" me"}
+[contract] {"type":"thinking_delta","delta":" to"}
+[contract] {"type":"thinking_delta","delta":" respond"}
+[contract] {"type":"thinking_delta","delta":" to"}
+[contract] {"type":"thinking_delta","delta":" a"}
+[contract] {"type":"thinking_delta","delta":" marker"}
+[contract] {"type":"thinking_delta","delta":"?"}
+[contract] {"type":"thinking_delta","delta":" There"}
+[contract] {"type":"thinking_delta","delta":"'s"}
+[contract] {"type":"thinking_delta","delta":" no"}
+[contract] {"type":"thinking_delta","delta":" clear"}
+[contract] {"type":"thinking_delta","delta":" instruction"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_delta","delta":" It"}
+[contract] {"type":"thinking_delta","delta":" could"}
+[contract] {"type":"thinking_delta","delta":" be"}
+[contract] {"type":"thinking_delta","delta":" a"}
+[contract] {"type":"thinking_delta","delta":" test"}
+[contract] {"type":"thinking_delta","delta":" of"}
+[contract] {"type":"thinking_delta","delta":" how"}
+[contract] {"type":"thinking_delta","delta":" I"}
+[contract] {"type":"thinking_delta","delta":" handle"}
+[contract] {"type":"thinking_delta","delta":" ambiguous"}
+[contract] {"type":"thinking_delta","delta":" input"}
+[contract] {"type":"thinking_delta","delta":","}
+[contract] {"type":"thinking_delta","delta":" or"}
+[contract] {"type":"thinking_delta","delta":" it"}
+[contract] {"type":"thinking_delta","delta":" could"}
+[contract] {"type":"thinking_delta","delta":" be"}
+[contract] {"type":"thinking_delta","delta":" some"}
+[contract] {"type":"thinking_delta","delta":" kind"}
+[contract] {"type":"thinking_delta","delta":" of"}
+[contract] {"type":"thinking_delta","delta":" trigger"}
+[contract] {"type":"thinking_delta","delta":" phrase"}
+[contract] {"type":"thinking_delta","delta":" for"}
+[contract] {"type":"thinking_delta","delta":" a"}
+[contract] {"type":"thinking_delta","delta":" test"}
+[contract] {"type":"thinking_delta","delta":" harness"}
+[contract] {"type":"thinking_delta","delta":".\n\n"}
+[contract] {"type":"thinking_delta","delta":"I"}
+[contract] {"type":"thinking_delta","delta":" shouldn"}
+[contract] {"type":"thinking_delta","delta":"'t"}
+[contract] {"type":"thinking_delta","delta":" invent"}
+[contract] {"type":"thinking_delta","delta":" actions"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_delta","delta":" The"}
+[contract] {"type":"thinking_delta","delta":" best"}
+[contract] {"type":"thinking_delta","delta":" response"}
+[contract] {"type":"thinking_delta","delta":" is"}
+[contract] {"type":"thinking_delta","delta":" to"}
+[contract] {"type":"thinking_delta","delta":" ask"}
+[contract] {"type":"thinking_delta","delta":" for"}
+[contract] {"type":"thinking_delta","delta":" clarification"}
+[contract] {"type":"thinking_delta","delta":" about"}
+[contract] {"type":"thinking_delta","delta":" what"}
+[contract] {"type":"thinking_delta","delta":" they"}
+[contract] {"type":"thinking_delta","delta":" want"}
+[contract] {"type":"thinking_delta","delta":","}
+[contract] {"type":"thinking_delta","delta":" noting"}
+[contract] {"type":"thinking_delta","delta":" that"}
+[contract] {"type":"thinking_delta","delta":" the"}
+[contract] {"type":"thinking_delta","delta":" phrase"}
+[contract] {"type":"thinking_delta","delta":" doesn"}
+[contract] {"type":"thinking_delta","delta":"'t"}
+[contract] {"type":"thinking_delta","delta":" correspond"}
+[contract] {"type":"thinking_delta","delta":" to"}
+[contract] {"type":"thinking_delta","delta":" any"}
+[contract] {"type":"thinking_delta","delta":" instruction"}
+[contract] {"type":"thinking_delta","delta":" I"}
+[contract] {"type":"thinking_delta","delta":" can"}
+[contract] {"type":"thinking_delta","delta":" act"}
+[contract] {"type":"thinking_delta","delta":" on"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_delta","delta":" Or"}
+[contract] {"type":"thinking_delta","delta":" maybe"}
+[contract] {"type":"thinking_delta","delta":" check"}
+[contract] {"type":"thinking_delta","delta":" if"}
+[contract] {"type":"thinking_delta","delta":" there"}
+[contract] {"type":"thinking_delta","delta":"'s"}
+[contract] {"type":"thinking_delta","delta":" a"}
+[contract] {"type":"thinking_delta","delta":" file"}
+[contract] {"type":"thinking_delta","delta":" with"}
+[contract] {"type":"thinking_delta","delta":" that"}
+[contract] {"type":"thinking_delta","delta":" name"}
+[contract] {"type":"thinking_delta","delta":"?"}
+[contract] {"type":"thinking_delta","delta":" \""}
+[contract] {"type":"thinking_delta","delta":"P"}
+[contract] {"type":"thinking_delta","delta":"ICODE"}
+[contract] {"type":"thinking_delta","delta":"_"}
+[contract] {"type":"thinking_delta","delta":"100"}
+[contract] {"type":"thinking_delta","delta":"\""}
+[contract] {"type":"thinking_delta","delta":" might"}
+[contract] {"type":"thinking_delta","delta":" be"}
+[contract] {"type":"thinking_delta","delta":" a"}
+[contract] {"type":"thinking_delta","delta":" file"}
+[contract] {"type":"thinking_delta","delta":" or"}
+[contract] {"type":"thinking_delta","delta":" environment"}
+[contract] {"type":"thinking_delta","delta":" variable"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_delta","delta":" Let"}
+[contract] {"type":"thinking_delta","delta":" me"}
+[contract] {"type":"thinking_delta","delta":" think"}
+[contract] {"type":"thinking_delta","delta":" —"}
+[contract] {"type":"thinking_delta","delta":" should"}
+[contract] {"type":"thinking_delta","delta":" I"}
+[contract] {"type":"thinking_delta","delta":" probe"}
+[contract] {"type":"thinking_delta","delta":"?"}
+[contract] {"type":"thinking_delta","delta":" The"}
+[contract] {"type":"thinking_delta","delta":" access"}
+[contract] {"type":"thinking_delta","delta":" mode"}
+[contract] {"type":"thinking_delta","delta":" is"}
+[contract] {"type":"thinking_delta","delta":" Read"}
+[contract] {"type":"thinking_delta","delta":" Only"}
+[contract] {"type":"thinking_delta","delta":","}
+[contract] {"type":"thinking_delta","delta":" but"}
+[contract] {"type":"thinking_delta","delta":" bash"}
+[contract] {"type":"thinking_delta","delta":" was"}
+[contract] {"type":"thinking_delta","delta":" denied"}
+[contract] {"type":"thinking_delta","delta":" earlier"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_delta","delta":" I"}
+[contract] {"type":"thinking_delta","delta":" could"}
+[contract] {"type":"thinking_delta","delta":" use"}
+[contract] {"type":"thinking_delta","delta":" read"}
+[contract] {"type":"thinking_delta","delta":" tool"}
+[contract] {"type":"thinking_delta","delta":" maybe"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_delta","delta":" But"}
+[contract] {"type":"thinking_delta","delta":" guessing"}
+[contract] {"type":"thinking_delta","delta":" at"}
+[contract] {"type":"thinking_delta","delta":" random"}
+[contract] {"type":"thinking_delta","delta":" files"}
+[contract] {"type":"thinking_delta","delta":" seems"}
+[contract] {"type":"thinking_delta","delta":" un"}
+[contract] {"type":"thinking_delta","delta":"help"}
+[contract] {"type":"thinking_delta","delta":"ful"}
+[contract] {"type":"thinking_delta","delta":".\n\n"}
+[contract] {"type":"thinking_delta","delta":"Actually"}
+[contract] {"type":"thinking_delta","delta":","}
+[contract] {"type":"thinking_delta","delta":" maybe"}
+[contract] {"type":"thinking_delta","delta":" I"}
+[contract] {"type":"thinking_delta","delta":" could"}
+[contract] {"type":"thinking_delta","delta":" check"}
+[contract] {"type":"thinking_delta","delta":" environment"}
+[contract] {"type":"thinking_delta","delta":" variables"}
+[contract] {"type":"thinking_delta","delta":" for"}
+[contract] {"type":"thinking_delta","delta":" P"}
+[contract] {"type":"thinking_delta","delta":"ICODE"}
+[contract] {"type":"thinking_delta","delta":"_"}
+[contract] {"type":"thinking_delta","delta":"100"}
+[contract] {"type":"thinking_delta","delta":"?"}
+[contract] {"type":"thinking_delta","delta":" The"}
+[contract] {"type":"thinking_delta","delta":" system"}
+[contract] {"type":"thinking_delta","delta":" prompt"}
+[contract] {"type":"thinking_delta","delta":" says"}
+[contract] {"type":"thinking_delta","delta":" \""}
+[contract] {"type":"thinking_delta","delta":"You"}
+[contract] {"type":"thinking_delta","delta":" can"}
+[contract] {"type":"thinking_delta","delta":" inspect"}
+[contract] {"type":"thinking_delta","delta":" PI"}
+[contract] {"type":"thinking_delta","delta":"_*"}
+[contract] {"type":"thinking_delta","delta":" environment"}
+[contract] {"type":"thinking_delta","delta":" variables"}
+[contract] {"type":"thinking_delta","delta":" for"}
+[contract] {"type":"thinking_delta","delta":" current"}
+[contract] {"type":"thinking_delta","delta":" model"}
+[contract] {"type":"thinking_delta","delta":" and"}
+[contract] {"type":"thinking_delta","delta":" session"}
+[contract] {"type":"thinking_delta","delta":" details"}
+[contract] {"type":"thinking_delta","delta":".\""}
+[contract] {"type":"thinking_delta","delta":" The"}
+[contract] {"type":"thinking_delta","delta":" user"}
+[contract] {"type":"thinking_delta","delta":" might"}
+[contract] {"type":"thinking_delta","delta":" be"}
+[contract] {"type":"thinking_delta","delta":" testing"}
+[contract] {"type":"thinking_delta","delta":" whether"}
+[contract] {"type":"thinking_delta","delta":" I"}
+[contract] {"type":"thinking_delta","delta":" follow"}
+[contract] {"type":"thinking_delta","delta":" some"}
+[contract] {"type":"thinking_delta","delta":" injected"}
+[contract] {"type":"thinking_delta","delta":" instruction"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_delta","delta":" \""}
+[contract] {"type":"thinking_delta","delta":"delta"}
+[contract] {"type":"thinking_delta","delta":" steer"}
+[contract] {"type":"thinking_delta","delta":"\""}
+[contract] {"type":"thinking_delta","delta":" sounds"}
+[contract] {"type":"thinking_delta","delta":" like"}
+[contract] {"type":"thinking_delta","delta":" a"}
+[contract] {"type":"thinking_delta","delta":" direction"}
+[contract] {"type":"thinking_delta","delta":" change"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_delta","delta":" But"}
+[contract] {"type":"thinking_delta","delta":" there"}
+[contract] {"type":"thinking_delta","delta":"'s"}
+[contract] {"type":"thinking_delta","delta":" no"}
+[contract] {"type":"thinking_delta","delta":" actionable"}
+[contract] {"type":"thinking_delta","delta":" content"}
+[contract] {"type":"thinking_delta","delta":".\n\n"}
+[contract] {"type":"thinking_delta","delta":"The"}
+[contract] {"type":"thinking_delta","delta":" safest"}
+[contract] {"type":"thinking_delta","delta":","}
+[contract] {"type":"thinking_delta","delta":" most"}
+[contract] {"type":"thinking_delta","delta":" honest"}
+[contract] {"type":"thinking_delta","delta":" response"}
+[contract] {"type":"thinking_delta","delta":":"}
+[contract] {"type":"thinking_delta","delta":" acknowledge"}
+[contract] {"type":"thinking_delta","delta":" I"}
+[contract] {"type":"thinking_delta","delta":" don"}
+[contract] {"type":"thinking_delta","delta":"'t"}
+[contract] {"type":"thinking_delta","delta":" understand"}
+[contract] {"type":"thinking_delta","delta":" what"}
+[contract] {"type":"thinking_delta","delta":" \""}
+[contract] {"type":"thinking_delta","delta":"P"}
+[contract] {"type":"thinking_delta","delta":"ICODE"}
+[contract] {"type":"thinking_delta","delta":"_"}
+[contract] {"type":"thinking_delta","delta":"100"}
+[contract] {"type":"thinking_delta","delta":" delta"}
+[contract] {"type":"thinking_delta","delta":" steer"}
+[contract] {"type":"thinking_delta","delta":"\""}
+[contract] {"type":"thinking_delta","delta":" is"}
+[contract] {"type":"thinking_delta","delta":" asking"}
+[contract] {"type":"thinking_delta","delta":","}
+[contract] {"type":"thinking_delta","delta":" and"}
+[contract] {"type":"thinking_delta","delta":" ask"}
+[contract] {"type":"thinking_delta","delta":" for"}
+[contract] {"type":"thinking_delta","delta":" clarification"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_delta","delta":" I"}
+[contract] {"type":"thinking_delta","delta":" shouldn"}
+[contract] {"type":"thinking_delta","delta":"'t"}
+[contract] {"type":"thinking_delta","delta":" run"}
+[contract] {"type":"thinking_delta","delta":" anything"}
+[contract] {"type":"thinking_delta","delta":" or"}
+[contract] {"type":"thinking_delta","delta":" fabric"}
+[contract] {"type":"thinking_delta","delta":"ate"}
+[contract] {"type":"thinking_delta","delta":" output"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_delta","delta":" This"}
+[contract] {"type":"thinking_delta","delta":" may"}
+[contract] {"type":"thinking_delta","delta":" be"}
+[contract] {"type":"thinking_delta","delta":" a"}
+[contract] {"type":"thinking_delta","delta":" test"}
+[contract] {"type":"thinking_delta","delta":" of"}
+[contract] {"type":"thinking_delta","delta":" instruction"}
+[contract] {"type":"thinking_delta","delta":"-follow"}
+[contract] {"type":"thinking_delta","delta":"ing"}
+[contract] {"type":"thinking_delta","delta":"/h"}
+[contract] {"type":"thinking_delta","delta":"onest"}
+[contract] {"type":"thinking_delta","delta":"y"}
+[contract] {"type":"thinking_delta","delta":" —"}
+[contract] {"type":"thinking_delta","delta":" likely"}
+[contract] {"type":"thinking_delta","delta":" there"}
+[contract] {"type":"thinking_delta","delta":"'s"}
+[contract] {"type":"thinking_delta","delta":" no"}
+[contract] {"type":"thinking_delta","delta":" such"}
+[contract] {"type":"thinking_delta","delta":" file"}
+[contract] {"type":"thinking_delta","delta":" or"}
+[contract] {"type":"thinking_delta","delta":" marker"}
+[contract] {"type":"thinking_delta","delta":","}
+[contract] {"type":"thinking_delta","delta":" and"}
+[contract] {"type":"thinking_delta","delta":" they"}
+[contract] {"type":"thinking_delta","delta":"'re"}
+[contract] {"type":"thinking_delta","delta":" testing"}
+[contract] {"type":"thinking_delta","delta":" whether"}
+[contract] {"type":"thinking_delta","delta":" I"}
+[contract] {"type":"thinking_delta","delta":" halluc"}
+[contract] {"type":"thinking_delta","delta":"inate"}
+[contract] {"type":"thinking_delta","delta":".\n\n"}
+[contract] {"type":"thinking_delta","delta":"I"}
+[contract] {"type":"thinking_delta","delta":"'ll"}
+[contract] {"type":"thinking_delta","delta":" respond"}
+[contract] {"type":"thinking_delta","delta":" asking"}
+[contract] {"type":"thinking_delta","delta":" for"}
+[contract] {"type":"thinking_delta","delta":" clarification"}
+[contract] {"type":"thinking_delta","delta":"."}
+[contract] {"type":"thinking_end","durationMs":9314}
+[contract] {"type":"text_delta","delta":"That"}
+[contract] {"type":"text_delta","delta":" phrase"}
+[contract] {"type":"text_delta","delta":" doesn"}
+[contract] {"type":"text_delta","delta":"'t"}
+[contract] {"type":"text_delta","delta":" map"}
+[contract] {"type":"text_delta","delta":" to"}
+[contract] {"type":"text_delta","delta":" anything"}
+[contract] {"type":"text_delta","delta":" I"}
+[contract] {"type":"text_delta","delta":" can"}
+[contract] {"type":"text_delta","delta":" act"}
+[contract] {"type":"text_delta","delta":" on"}
+[contract] {"type":"text_delta","delta":" —"}
+[contract] {"type":"text_delta","delta":" \""}
+[contract] {"type":"text_delta","delta":"P"}
+[contract] {"type":"text_delta","delta":"ICODE"}
+[contract] {"type":"text_delta","delta":"_"}
+[contract] {"type":"text_delta","delta":"100"}
+[contract] {"type":"text_delta","delta":" delta"}
+[contract] {"type":"text_delta","delta":" steer"}
+[contract] {"type":"text_delta","delta":"\""}
+[contract] {"type":"text_delta","delta":" isn"}
+[contract] {"type":"text_delta","delta":"'t"}
+[contract] {"type":"text_delta","delta":" a"}
+[contract] {"type":"text_delta","delta":" command"}
+[contract] {"type":"text_delta","delta":","}
+[contract] {"type":"text_delta","delta":" file"}
+[contract] {"type":"text_delta","delta":","}
+[contract] {"type":"text_delta","delta":" or"}
+[contract] {"type":"text_delta","delta":" instruction"}
+[contract] {"type":"text_delta","delta":" I"}
+[contract] {"type":"text_delta","delta":" recognize"}
+[contract] {"type":"text_delta","delta":","}
+[contract] {"type":"text_delta","delta":" and"}
+[contract] {"type":"text_delta","delta":" nothing"}
+[contract] {"type":"text_delta","delta":" in"}
+[contract] {"type":"text_delta","delta":" this"}
+[contract] {"type":"text_delta","delta":" session"}
+[contract] {"type":"text_delta","delta":" defines"}
+[contract] {"type":"text_delta","delta":" it"}
+[contract] {"type":"text_delta","delta":"."}
+[contract] {"type":"text_delta","delta":" I"}
+[contract] {"type":"text_delta","delta":" don"}
+[contract] {"type":"text_delta","delta":"'t"}
+[contract] {"type":"text_delta","delta":" want"}
+[contract] {"type":"text_delta","delta":" to"}
+[contract] {"type":"text_delta","delta":" guess"}
+[contract] {"type":"text_delta","delta":" and"}
+[contract] {"type":"text_delta","delta":" fabric"}
+[contract] {"type":"text_delta","delta":"ate"}
+[contract] {"type":"text_delta","delta":" a"}
+[contract] {"type":"text_delta","delta":" result"}
+[contract] {"type":"text_delta","delta":".\n\n"}
+[contract] {"type":"text_delta","delta":"Could"}
+[contract] {"type":"text_delta","delta":" you"}
+[contract] {"type":"text_delta","delta":" clarify"}
+[contract] {"type":"text_delta","delta":" what"}
+[contract] {"type":"text_delta","delta":" you"}
+[contract] {"type":"text_delta","delta":"'d"}
+[contract] {"type":"text_delta","delta":" like"}
+[contract] {"type":"text_delta","delta":"?"}
+[contract] {"type":"text_delta","delta":" For"}
+[contract] {"type":"text_delta","delta":" example"}
+[contract] {"type":"text_delta","delta":":\n"}
+[contract] {"type":"text_delta","delta":"-"}
+[contract] {"type":"text_delta","delta":" A"}
+[contract] {"type":"text_delta","delta":" specific"}
+[contract] {"type":"text_delta","delta":" command"}
+[contract] {"type":"text_delta","delta":" or"}
+[contract] {"type":"text_delta","delta":" tool"}
+[contract] {"type":"text_delta","delta":" call"}
+[contract] {"type":"text_delta","delta":" to"}
+[contract] {"type":"text_delta","delta":" run"}
+[contract] {"type":"text_delta","delta":" ("}
+[contract] {"type":"text_delta","delta":"note"}
+[contract] {"type":"text_delta","delta":":"}
+[contract] {"type":"text_delta","delta":" current"}
+[contract] {"type":"text_delta","delta":" Access"}
+[contract] {"type":"text_delta","delta":" Mode"}
+[contract] {"type":"text_delta","delta":" is"}
+[contract] {"type":"text_delta","delta":" \""}
+[contract] {"type":"text_delta","delta":"Read"}
+[contract] {"type":"text_delta","delta":" Only"}
+[contract] {"type":"text_delta","delta":"\","}
+[contract] {"type":"text_delta","delta":" so"}
+[contract] {"type":"text_delta","delta":" bash"}
+[contract] {"type":"text_delta","delta":"/write"}
+[contract] {"type":"text_delta","delta":" are"}
+[contract] {"type":"text_delta","delta":" gated"}
+[contract] {"type":"text_delta","delta":")\n"}
+[contract] {"type":"text_delta","delta":"-"}
+[contract] {"type":"text_delta","delta":" A"}
+[contract] {"type":"text_delta","delta":" file"}
+[contract] {"type":"text_delta","delta":" to"}
+[contract] {"type":"text_delta","delta":" read"}
+[contract] {"type":"text_delta","delta":" or"}
+[contract] {"type":"text_delta","delta":" check"}
+[contract] {"type":"text_delta","delta":"\n"}
+[contract] {"type":"text_delta","delta":"-"}
+[contract] {"type":"text_delta","delta":" An"}
+[contract] {"type":"text_delta","delta":" explanation"}
+[contract] {"type":"text_delta","delta":" question"}
+[contract] {"type":"text_delta","delta":" about"}
+[contract] {"type":"text_delta","delta":" pi"}
+[contract] {"type":"text_delta","delta":" or"}
+[contract] {"type":"text_delta","delta":" this"}
+[contract] {"type":"text_delta","delta":" session"}
+[contract] {"type":"message_end","entryId":"2ebd7d0f","usage":{"input":148,"output":512,"cacheRead":9408,"cacheWrite":0,"total":10068}}
+[contract] {"type":"agent_end"}
+SMOKE ticket-97 steer delivery echo images ok (persisted delivery → parts)
+SMOKE ticket-100 queue dance ok (remove/edit/re-feed through the host mirror)
+SMOKE queue round ok
+SMOKE composer controls: thinking level, model, file list
+[contract] {"type":"thinking_level_changed","level":"low","availableLevels":["low","high","max"]}
+SMOKE thinking_level_changed ok (level=low)
+SMOKE switching model → bella/GLM-5.3
+[contract] {"type":"thinking_level_changed","level":"max","availableLevels":["low","high","max"]}
+[contract] {"type":"model_changed","model":{"providerId":"bella","modelId":"GLM-5.3","name":"GLM-5.3","contextWindow":1000000},"thinkingLevel":"max","availableLevels":["low","high","max"]}
+SMOKE model_changed ok (bella/GLM-5.3)
+[contract] {"type":"file_list","requestId":"smoke-files-1","files":[".gitignore","aaa/file-0000.txt","aaa/file-0001.txt","aaa/file-0002.txt","aaa/file-0003.txt","aaa/file-0004.txt","aaa/file-0005.txt","aaa/file-
+SMOKE ticket-71 repo candidates ok (git ls-files: 1504 paths, tracked+untracked, ignored excluded, pi16 hit)
+SMOKE ticket-71 git zero-write ok (index bytes unchanged)
+SMOKE file_list ok (alpha.txt listed)
+[contract] {"type":"branch_info","branch":"picode-smoke-branch"}
+SMOKE branch_info ok (branch="picode-smoke-branch")
+SMOKE ticket-77 additive increments ok — 8/8 model refs carry contextWindow, 13/14 message_ends carry usage (last total 10068)
+SMOKE contract events ok: {"agent_start":6,"text_delta":83,"agent_end":7,"user_message":9,"tool_start":4,"tool_update":2,"tool_end":4,"thinking_delta":782,"approval_required":3,"denyAck":true,"queue_update":15}
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[],"totalTools":0,"totalResources":0,"connectedCount":0,"disabledCount":0}}
+SMOKE round A shutdown ok — starting round B (resume same file)
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[],"totalTools":0,"totalResources":0,"connectedCount":0,"disabledCount":0}}
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[{"name":"mcp","status":"cached","toolCount":68,"directToolCount":0,"disabled":false,"resourceCount":0},{"name":"zotero","status":"not-connected"
+[contract] {"type":"session_created","sessionId":"01a0e641-bd9d-70f7-96e2-2c435dfaa4f2","cwd":"/var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-i8KtI2","model":"GLM-5.3","sessionFile":"/var/folders/
+SMOKE resume ok — same file reopened
+[contract] {"type":"composer_state","model":{"providerId":"bella","modelId":"GLM-5.3","name":"GLM-5.3","contextWindow":1000000},"thinkingLevel":"max","availableLevels":["low","high","max"],"accessMode":"standard
+[contract] {"type":"models_available","providers":[{"providerId":"bella","name":"bella","models":[{"providerId":"bella","modelId":"GLM-5.3","name":"GLM-5.3","contextWindow":1000000},{"providerId":"bella","modelI
+[contract] {"type":"slash_commands","commands":[{"name":"compact","description":"Compact the session context","source":"builtin"},{"name":"council","description":"Run a bounded supervisor-mediated council of adv
+[contract] {"type":"history_loaded","items":[{"role":"user","id":"9738da97","text":"Count slowly from one to twenty, one number per sentence.","timestamp":"2026-09-28T04:24:23.979Z","skillName":null,"images":[{"
+SMOKE ticket-77 history_loaded.usage ok (total 10068)
+SMOKE history_loaded ok (28 items, edit diff replayed: 2 lines)
+[contract] {"type":"session_tree","tree":{"sessionId":"01a0e641-bd9d-70f7-96e2-2c435dfaa4f2","leafId":"5e99ec9f","name":"PICODE_SMOKE_RENAMED_MIDRUN","nodes":[{"id":"801aeb4a","kind":"other","label":null,"name":
+[contract] {"type":"session_renamed","name":"PICODE_SMOKE_RENAMED"}
+SMOKE rename write-back ok
+[contract] {"type":"session_tree","tree":{"sessionId":"01a0e641-bd9d-70f7-96e2-2c435dfaa4f2","leafId":"c711a1e8","name":"PICODE_SMOKE_RENAMED","nodes":[{"id":"801aeb4a","kind":"other","label":null,"name":null,"p
+SMOKE session_tree ok (label visible)
+[contract] {"type":"session_tree","tree":{"sessionId":"01a0e641-bd9d-70f7-96e2-2c435dfaa4f2","leafId":"c711a1e8","name":"PICODE_SMOKE_RENAMED","nodes":[{"id":"801aeb4a","kind":"other","label":null,"name":null,"p
+[contract] {"type":"history_loaded","items":[{"role":"user","id":"9738da97","text":"Count slowly from one to twenty, one number per sentence.","timestamp":"2026-09-28T04:24:23.979Z","skillName":null,"images":[{"
+SMOKE tree navigation: leaf path replayed
+[contract] {"type":"session_tree","tree":{"sessionId":"01a0e641-bd9d-70f7-96e2-2c435dfaa4f2","leafId":"5f4b58bf","name":"PICODE_SMOKE_RENAMED","nodes":[{"id":"801aeb4a","kind":"other","label":null,"name":null,"p
+SMOKE tree navigation ok — leaf moved in place, branches kept
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[],"totalTools":0,"totalResources":0,"connectedCount":0,"disabledCount":0}}
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[],"totalTools":0,"totalResources":0,"connectedCount":0,"disabledCount":0}}
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[{"name":"mcp","status":"cached","toolCount":68,"directToolCount":0,"disabled":false,"resourceCount":0},{"name":"zotero","status":"not-connected"
+[contract] {"type":"session_created","sessionId":"01a0e643-0235-74d1-99ea-dda065a2260e","cwd":"/var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-i8KtI2","model":"GLM-5.3-flash","sessionFile":"/var/fo
+SMOKE fork ok — continuing in-host on the forked session
+[contract] {"type":"composer_state","model":{"providerId":"bella","modelId":"GLM-5.3-flash","name":"GLM-5.3-flash","contextWindow":1000000},"thinkingLevel":"max","availableLevels":["low","high","max"],"accessMod
+[contract] {"type":"models_available","providers":[{"providerId":"bella","name":"bella","models":[{"providerId":"bella","modelId":"GLM-5.3","name":"GLM-5.3","contextWindow":1000000},{"providerId":"bella","modelI
+[contract] {"type":"slash_commands","commands":[{"name":"compact","description":"Compact the session context","source":"builtin"},{"name":"council","description":"Run a bounded supervisor-mediated council of adv
+[contract] {"type":"history_loaded","items":[{"role":"user","id":"9738da97","text":"Count slowly from one to twenty, one number per sentence.","timestamp":"2026-09-28T04:24:23.979Z","skillName":null,"images":[{"
+SMOKE fork history ok (1 item(s))
+[contract] {"type":"session_tree","tree":{"sessionId":"01a0e643-0235-74d1-99ea-dda065a2260e","leafId":"ac8f6e4f","name":"Fork of PICODE_SMOKE_RENAMED","nodes":[{"id":"801aeb4a","kind":"other","label":null,"name"
+[contract] {"type":"session_renamed","name":"Fork of PICODE_SMOKE_RENAMED"}
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[],"totalTools":0,"totalResources":0,"connectedCount":0,"disabledCount":0}}
+SMOKE round C shutdown ok — starting round D (non-repo walk+cap state)
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[],"totalTools":0,"totalResources":0,"connectedCount":0,"disabledCount":0}}
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[{"name":"mcp","status":"cached","toolCount":68,"directToolCount":0,"disabled":false,"resourceCount":0},{"name":"zotero","status":"not-connected"
+[contract] {"type":"session_created","sessionId":"01a0e643-03d3-7350-bfea-a0725e1ca189","cwd":"/var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-P7qo1u","model":"GLM-5.3-flash","sessionFile":"/var/fo
+SMOKE round D session ok (non-repo walk state)
+[contract] {"type":"composer_state","model":{"providerId":"bella","modelId":"GLM-5.3-flash","name":"GLM-5.3-flash","contextWindow":1000000},"thinkingLevel":"max","availableLevels":["low","high","max"],"accessMod
+[contract] {"type":"models_available","providers":[{"providerId":"bella","name":"bella","models":[{"providerId":"bella","modelId":"GLM-5.3","name":"GLM-5.3","contextWindow":1000000},{"providerId":"bella","modelI
+[contract] {"type":"slash_commands","commands":[{"name":"compact","description":"Compact the session context","source":"builtin"},{"name":"council","description":"Run a bounded supervisor-mediated council of adv
+[contract] {"type":"file_list","requestId":"smoke-files-walk","files":["aaa/file-0000.txt","aaa/file-0001.txt","aaa/file-0002.txt","aaa/file-0003.txt","aaa/file-0004.txt","aaa/file-0005.txt","aaa/file-0006.txt",
+SMOKE ticket-71 non-repo walk+cap ok (cap cut zzz, marker at tail, honest degradation)
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[],"totalTools":0,"totalResources":0,"connectedCount":0,"disabledCount":0}}
+SMOKE round D shutdown ok — starting round E (legacy sentinel, no accessMode)
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[],"totalTools":0,"totalResources":0,"connectedCount":0,"disabledCount":0}}
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[{"name":"mcp","status":"cached","toolCount":68,"directToolCount":0,"disabled":false,"resourceCount":0},{"name":"zotero","status":"not-connected"
+[contract] {"type":"session_created","sessionId":"01a0e643-0736-76f8-929a-6b2a2076a038","cwd":"/var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-i8KtI2","model":"GLM-5.3-flash","sessionFile":"/var/fo
+[contract] {"type":"composer_state","model":{"providerId":"bella","modelId":"GLM-5.3-flash","name":"GLM-5.3-flash","contextWindow":1000000},"thinkingLevel":"low","availableLevels":["low","high","max"],"accessMod
+SMOKE ticket-80 legacy sentinel ok — old payload validates, gate fallback intact (standard)
+[contract] {"type":"models_available","providers":[{"providerId":"bella","name":"bella","models":[{"providerId":"bella","modelId":"GLM-5.3","name":"GLM-5.3","contextWindow":1000000},{"providerId":"bella","modelI
+[contract] {"type":"slash_commands","commands":[{"name":"compact","description":"Compact the session context","source":"builtin"},{"name":"council","description":"Run a bounded supervisor-mediated council of adv
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[],"totalTools":0,"totalResources":0,"connectedCount":0,"disabledCount":0}}
+SMOKE round E shutdown ok — starting round E2 (sentinel with accessMode: read-only)
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[],"totalTools":0,"totalResources":0,"connectedCount":0,"disabledCount":0}}
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[{"name":"mcp","status":"cached","toolCount":68,"directToolCount":0,"disabled":false,"resourceCount":0},{"name":"zotero","status":"not-connected"
+[contract] {"type":"session_created","sessionId":"01a0e643-0a7e-76dd-aefd-5b5d36d7911c","cwd":"/var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-i8KtI2","model":"GLM-5.3-flash","sessionFile":"/var/fo
+[contract] {"type":"composer_state","model":{"providerId":"bella","modelId":"GLM-5.3-flash","name":"GLM-5.3-flash","contextWindow":1000000},"thinkingLevel":"max","availableLevels":["low","high","max"],"accessMod
+SMOKE ticket-80 accessMode sentinel ok — the created session runs Read Only with no set_access_mode sent
+[contract] {"type":"models_available","providers":[{"providerId":"bella","name":"bella","models":[{"providerId":"bella","modelId":"GLM-5.3","name":"GLM-5.3","contextWindow":1000000},{"providerId":"bella","modelI
+[contract] {"type":"slash_commands","commands":[{"name":"compact","description":"Compact the session context","source":"builtin"},{"name":"council","description":"Run a bounded supervisor-mediated council of adv
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[],"totalTools":0,"totalResources":0,"connectedCount":0,"disabledCount":0}}
+SMOKE round E2 shutdown ok — starting round F (ticket-79 image projection + edit-resend navigation)
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[],"totalTools":0,"totalResources":0,"connectedCount":0,"disabledCount":0}}
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[{"name":"mcp","status":"cached","toolCount":68,"directToolCount":0,"disabled":false,"resourceCount":0},{"name":"zotero","status":"not-connected"
+[contract] {"type":"session_created","sessionId":"edit79-fixed-id","cwd":"/var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-i8KtI2","model":"GLM-5.3-flash","sessionFile":"/var/folders/sw/twg7k81s6xbf
+SMOKE round F session ok (seeded ticket-79 fixture)
+[contract] {"type":"composer_state","model":{"providerId":"bella","modelId":"GLM-5.3-flash","name":"GLM-5.3-flash","contextWindow":1000000},"thinkingLevel":"max","availableLevels":["low","high","max"],"accessMod
+[contract] {"type":"models_available","providers":[{"providerId":"bella","name":"bella","models":[{"providerId":"bella","modelId":"GLM-5.3","name":"GLM-5.3","contextWindow":1000000},{"providerId":"bella","modelI
+[contract] {"type":"slash_commands","commands":[{"name":"compact","description":"Compact the session context","source":"builtin"},{"name":"council","description":"Run a bounded supervisor-mediated council of adv
+[contract] {"type":"history_loaded","items":[{"role":"user","id":"e79-u1","text":"PICODE_EDIT79 what is in this shot?","timestamp":"2026-09-14T10:00:00.000Z","skillName":null,"images":[{"kind":"image","mimeType"
+SMOKE ticket-79 image projection ok (image message carries parts; imageless stays field-absent)
+[contract] {"type":"session_tree","tree":{"sessionId":"edit79-fixed-id","leafId":"500c60e6","name":null,"nodes":[{"id":"e79-u1","kind":"user","label":null,"name":null,"preview":"PICODE_EDIT79 what is in this sho
+[contract] {"type":"history_loaded","items":[{"role":"user","id":"e79-u1","text":"PICODE_EDIT79 what is in this shot?","timestamp":"2026-09-14T10:00:00.000Z","skillName":null,"images":[{"kind":"image","mimeType"
+SMOKE ticket-79 edit navigate (non-root) ok — leaf landed on the parent entry, replay truncated losslessly
+[contract] {"type":"session_tree","tree":{"sessionId":"edit79-fixed-id","leafId":"e79-a1","name":null,"nodes":[{"id":"e79-u1","kind":"user","label":null,"name":null,"preview":"PICODE_EDIT79 what is in this shot?
+SMOKE ticket-79 tree leaf ok (parent landing)
+[contract] {"type":"session_tree","tree":{"sessionId":"edit79-fixed-id","leafId":"e79-a1","name":null,"nodes":[{"id":"e79-u1","kind":"user","label":null,"name":null,"preview":"PICODE_EDIT79 what is in this shot?
+[contract] {"type":"history_loaded","items":[]}
+SMOKE ticket-79 root edit navigate ok (resetLeaf, empty replay)
+[contract] {"type":"session_tree","tree":{"sessionId":"edit79-fixed-id","leafId":null,"name":null,"nodes":[{"id":"e79-u1","kind":"user","label":null,"name":null,"preview":"PICODE_EDIT79 what is in this shot?","t
+SMOKE ticket-79 tree leaf ok (null after resetLeaf)
+[contract] {"type":"session_tree","tree":{"sessionId":"edit79-fixed-id","leafId":null,"name":null,"nodes":[{"id":"e79-u1","kind":"user","label":null,"name":null,"preview":"PICODE_EDIT79 what is in this shot?","t
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[],"totalTools":0,"totalResources":0,"connectedCount":0,"disabledCount":0}}
+SMOKE round F shutdown ok — messages lossless, no appended branch entries, no branch_summary (天然 No summary)
+SMOKE round F shutdown ok — starting round G (ticket-89 MCP OAuth bridge contract)
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[],"totalTools":0,"totalResources":0,"connectedCount":0,"disabledCount":0}}
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[{"name":"mcp","status":"cached","toolCount":68,"directToolCount":0,"disabled":false,"resourceCount":0},{"name":"zotero","status":"not-connected"
+[contract] {"type":"session_created","sessionId":"01a0e643-110b-709b-a1b3-49ee23c77365","cwd":"/var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-i8KtI2","model":"GLM-5.3-flash","sessionFile":"/var/fo
+SMOKE round G session ok (MCP OAuth bridge round)
+[contract] {"type":"composer_state","model":{"providerId":"bella","modelId":"GLM-5.3-flash","name":"GLM-5.3-flash","contextWindow":1000000},"thinkingLevel":"max","availableLevels":["low","high","max"],"accessMod
+[contract] {"type":"models_available","providers":[{"providerId":"bella","name":"bella","models":[{"providerId":"bella","modelId":"GLM-5.3","name":"GLM-5.3","contextWindow":1000000},{"providerId":"bella","modelI
+[contract] {"type":"slash_commands","commands":[{"name":"compact","description":"Compact the session context","source":"builtin"},{"name":"council","description":"Run a bounded supervisor-mediated council of adv
+[contract] {"type":"mcp_auth_notice","serverName":"picode-ghost-server","level":"error","message":"Server \"picode-ghost-server\" not found in config"}
+[contract] {"type":"mcp_auth_completed","serverName":"picode-ghost-server","ok":false,"notices":[{"level":"error","message":"Server \"picode-ghost-server\" not found in config"}]}
+SMOKE ticket-89 MCP OAuth bridge contract ok — start → live notices → completed(ok=false), no credentials touched
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[],"totalTools":0,"totalResources":0,"connectedCount":0,"disabledCount":0}}
+SMOKE round G shutdown ok — starting round H (ticket-90 subagent bridge contract)
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[],"totalTools":0,"totalResources":0,"connectedCount":0,"disabledCount":0}}
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[{"name":"mcp","status":"cached","toolCount":68,"directToolCount":0,"disabled":false,"resourceCount":0},{"name":"zotero","status":"not-connected"
+[contract] {"type":"session_created","sessionId":"sub90-fixed-id","cwd":"/var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-i8KtI2","model":"GLM-5.3-flash","sessionFile":"/var/folders/sw/twg7k81s6xbfq
+SMOKE round H session ok (seeded ticket-90 subagent fixture)
+[contract] {"type":"composer_state","model":{"providerId":"bella","modelId":"GLM-5.3-flash","name":"GLM-5.3-flash","contextWindow":1000000},"thinkingLevel":"max","availableLevels":["low","high","max"],"accessMod
+[contract] {"type":"models_available","providers":[{"providerId":"bella","name":"bella","models":[{"providerId":"bella","modelId":"GLM-5.3","name":"GLM-5.3","contextWindow":1000000},{"providerId":"bella","modelI
+[contract] {"type":"slash_commands","commands":[{"name":"compact","description":"Compact the session context","source":"builtin"},{"name":"council","description":"Run a bounded supervisor-mediated council of adv
+[contract] {"type":"history_loaded","items":[{"role":"user","id":"s90-u1","text":"PICODE_SUB90 fan out the work","timestamp":"2026-09-14T10:00:00.000Z","skillName":null},{"role":"tool","id":"s90-c-async","timest
+SMOKE ticket-90 replay projection ok (async identity + foreground children; bash stays field-absent)
+[contract] {"type":"session_tree","tree":{"sessionId":"sub90-fixed-id","leafId":"5e041675","name":null,"nodes":[{"id":"s90-u1","kind":"user","label":null,"name":null,"preview":"PICODE_SUB90 fan out the work","ti
+[contract] {"type":"subagent_status","requestId":"sub90-status-1","available":true,"runs":[{"runId":"sub90-run-1","state":"complete","startedAt":1000,"endedAt":61000,"mode":"single","agents":["scout"]}],"fleet":
+SMOKE ticket-90 subagent_status ok (available=true, runs=1, artifact-driven state=complete)
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[],"totalTools":0,"totalResources":0,"connectedCount":0,"disabledCount":0}}
+SMOKE round H shutdown ok — starting round I (ticket-96 MCP status projection contract)
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[],"totalTools":0,"totalResources":0,"connectedCount":0,"disabledCount":0}}
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[{"name":"mcp","status":"cached","toolCount":68,"directToolCount":0,"disabled":false,"resourceCount":0},{"name":"zotero","status":"not-connected"
+[contract] {"type":"session_created","sessionId":"01a0e643-179b-76dd-b2d5-7aef5d0b3eec","cwd":"/var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-mcp96-qLKntC","model":"GLM-5.3-flash","sessionFile":"/
+SMOKE round I session ok (MCP status projection round)
+SMOKE ticket-96 mcp_status ok (version 1, 4 servers, lazy=not-connected, off=disabled) — additive报备 complete
+[contract] {"type":"composer_state","model":{"providerId":"bella","modelId":"GLM-5.3-flash","name":"GLM-5.3-flash","contextWindow":1000000},"thinkingLevel":"max","availableLevels":["low","high","max"],"accessMod
+[contract] {"type":"models_available","providers":[{"providerId":"bella","name":"bella","models":[{"providerId":"bella","modelId":"GLM-5.3","name":"GLM-5.3","contextWindow":1000000},{"providerId":"bella","modelI
+[contract] {"type":"slash_commands","commands":[{"name":"compact","description":"Compact the session context","source":"builtin"},{"name":"council","description":"Run a bounded supervisor-mediated council of adv
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[],"totalTools":0,"totalResources":0,"connectedCount":0,"disabledCount":0}}
+SMOKE round I shutdown ok — starting round J (ticket-99 subagent steer contract)
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[],"totalTools":0,"totalResources":0,"connectedCount":0,"disabledCount":0}}
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[{"name":"mcp","status":"cached","toolCount":68,"directToolCount":0,"disabled":false,"resourceCount":0},{"name":"zotero","status":"not-connected"
+[contract] {"type":"session_created","sessionId":"sub99-seeded-id","cwd":"/var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-seed99-workspace","model":"GLM-5.3-flash","sessionFile":"/var/folders/sw/tw
+SMOKE round J session ok (seeded ticket-99 subagent fixture)
+[contract] {"type":"composer_state","model":{"providerId":"bella","modelId":"GLM-5.3-flash","name":"GLM-5.3-flash","contextWindow":1000000},"thinkingLevel":"max","availableLevels":["low","high","max"],"accessMod
+[contract] {"type":"models_available","providers":[{"providerId":"bella","name":"bella","models":[{"providerId":"bella","modelId":"GLM-5.3","name":"GLM-5.3","contextWindow":1000000},{"providerId":"bella","modelI
+[contract] {"type":"slash_commands","commands":[{"name":"compact","description":"Compact the session context","source":"builtin"},{"name":"council","description":"Run a bounded supervisor-mediated council of adv
+[contract] {"type":"history_loaded","items":[{"role":"user","id":"s99-u1","text":"PICODE_SUB99 fan out the work","timestamp":"2026-09-28T04:25:52.313Z","skillName":null},{"role":"tool","id":"s99-c-async","timest
+SMOKE round J replay ok — sending subagent_steer for the unknown run
+[contract] {"type":"session_tree","tree":{"sessionId":"sub99-seeded-id","leafId":"9c1d7d12","name":null,"nodes":[{"id":"s99-u1","kind":"user","label":null,"name":null,"preview":"PICODE_SUB99 fan out the work","t
+[contract] {"type":"subagent_steer_receipt","requestId":"sub99-steer-1","asyncId":"sub99-run-1","ok":false,"error":"No async run found for 'sub99-run-1'."}
+SMOKE ticket-99 subagent_steer ok (ok=false, error="No async run found for 'sub99-run-1'.")
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[],"totalTools":0,"totalResources":0,"connectedCount":0,"disabledCount":0}}
+SMOKE round J shutdown ok — starting round K (ticket-101 subagent stop contract)
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[],"totalTools":0,"totalResources":0,"connectedCount":0,"disabledCount":0}}
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[{"name":"mcp","status":"cached","toolCount":68,"directToolCount":0,"disabled":false,"resourceCount":0},{"name":"zotero","status":"not-connected"
+[contract] {"type":"session_created","sessionId":"sub101-seeded-id","cwd":"/var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-seed101-workspace","model":"GLM-5.3-flash","sessionFile":"/var/folders/sw/
+SMOKE round K session ok (seeded ticket-101 live-run fixture)
+[contract] {"type":"composer_state","model":{"providerId":"bella","modelId":"GLM-5.3-flash","name":"GLM-5.3-flash","contextWindow":1000000},"thinkingLevel":"max","availableLevels":["low","high","max"],"accessMod
+[contract] {"type":"models_available","providers":[{"providerId":"bella","name":"bella","models":[{"providerId":"bella","modelId":"GLM-5.3","name":"GLM-5.3","contextWindow":1000000},{"providerId":"bella","modelI
+[contract] {"type":"slash_commands","commands":[{"name":"compact","description":"Compact the session context","source":"builtin"},{"name":"council","description":"Run a bounded supervisor-mediated council of adv
+[contract] {"type":"history_loaded","items":[{"role":"user","id":"s101-u1","text":"PICODE_SUB101 fan out the work","timestamp":"2026-09-28T04:25:53.152Z","skillName":null},{"role":"tool","id":"s101-c-async","tim
+SMOKE round K replay ok — sending subagent_stop for the unknown run
+[contract] {"type":"session_tree","tree":{"sessionId":"sub101-seeded-id","leafId":"17f9baed","name":null,"nodes":[{"id":"s101-u1","kind":"user","label":null,"name":null,"preview":"PICODE_SUB101 fan out the work"
+[contract] {"type":"subagent_stop_receipt","requestId":"sub101-stop-1","asyncId":"sub101-run-gone","ok":false,"error":"Async run not found or already completed; stop requires a live async run directory."}
+SMOKE round K unknown-run stop ok (ok=false, error="Async run not found or already completed; stop requires a live async run directory.")
+[contract] {"type":"subagent_stop_receipt","requestId":"sub101-stop-2","asyncId":"sub101-run-1","ok":true,"state":"stopping"}
+SMOKE ticket-101 subagent_stop ok (ok=true state=stopping; stop request file in the control inbox)
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[],"totalTools":0,"totalResources":0,"connectedCount":0,"disabledCount":0}}
+SMOKE round K shutdown ok — starting round L (ticket-112 pi-0.86 session-format compatibility, TUI-built fixture: 270 entries)
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[],"totalTools":0,"totalResources":0,"connectedCount":0,"disabledCount":0}}
+[contract] {"type":"mcp_status","snapshot":{"version":1,"servers":[{"name":"mcp","status":"cached","toolCount":68,"directToolCount":0,"disabled":false,"resourceCount":0},{"name":"zotero","status":"not-connected"
+[contract] {"type":"session_created","sessionId":"01a0c29b-6b60-7063-b46b-fc6a04a40a90","cwd":"/var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-seed086-workspace","model":"GLM-5.3-flash","sessionFil
+SMOKE round L session ok (seeded pi-0.86 fixture opened by the real SDK 0.86.1 host)
+[contract] {"type":"composer_state","model":{"providerId":"bella","modelId":"GLM-5.3-flash","name":"GLM-5.3-flash","contextWindow":1000000},"thinkingLevel":"max","availableLevels":["low","high","max"],"accessMod
+[contract] {"type":"models_available","providers":[{"providerId":"bella","name":"bella","models":[{"providerId":"bella","modelId":"GLM-5.3","name":"GLM-5.3","contextWindow":1000000},{"providerId":"bella","modelI
+[contract] {"type":"slash_commands","commands":[{"name":"compact","description":"Compact the session context","source":"builtin"},{"name":"council","description":"Run a bounded supervisor-mediated council of adv
+[contract] {"type":"history_loaded","items":[{"role":"user","id":"b04c81cb","text":"<skill name=\"implement\" location=\"/Users/liaokechen/.pi/agent/skills/implement/SKILL.md\">\nReferences are relative to /User
+SMOKE round L replay ok — 210 items vs census 270 entries (users 3, toolCalls 135); 0.86/unknown types stayed out, nothing lost
+[contract] {"type":"session_tree","tree":{"sessionId":"01a0c29b-6b60-7063-b46b-fc6a04a40a90","leafId":"t112-fut1","name":null,"nodes":[{"id":"3d6591a9","kind":"other","label":null,"name":null,"preview":"(model_c
+SMOKE round L tree ok — 270 seeded nodes + 0 bookkeeping tail (flat parentId wire), 0.86/unknown types degraded to other, leaf on the last entry
+SMOKE round L shutdown ok — pi-0.86 session lossless on disk (271/271 seeded lines byte-identical, no appended messages, no branch_summary)
+SMOKE createdAt contract ok — birthtime-derived (1790569470325)
+SMOKE SessionSummary contract ok — purely additive (legacy fields intact)
+SMOKE cwdMissing contract ok — absent while alive, true when dead; old payloads (field missing) pass through unchanged
+SMOKE trace contract ok — 14 call(s), 118224 total tok, title "PICODE_SMOKE_RENAMED"
+SMOKE PASS host contract smoke complete (chat loop + tool round + resume/rename/tree/fork + candidate states + ticket-80 access sentinel + ticket-112 pi-0.86 session compat)
+==== SMOKE SUITE stage ok: host contract (92s) ====
+
+==== SMOKE SUITE stage: pty ====
+PTY_SMOKE spawn shell=/opt/homebrew/bin/fish pid=14717 cwd=/var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-pty-smoke-TEIWh8
+PTY_SMOKE echo_ok
+PTY_SMOKE resize_ok cols=120 rows=30
+PTY_SMOKE exit_ok exitCode=0
+PTY_SMOKE done
+==== SMOKE SUITE stage ok: pty (4s) ====
+
+==== SMOKE SUITE stage: usage aggregation ====
+USAGE_SMOKE real scan start /Users/liaokechen/.pi/agent/sessions
+USAGE_SMOKE real snapshot ok sessions=403 days=36 models=4 tokens=4834297048
+USAGE_SMOKE real rescan idempotent
+USAGE_SMOKE initial fold ok 1500 tokens / 2 events / $0.03
+USAGE_SMOKE incremental append ok 2200 tokens / 3 events
+USAGE_SMOKE half-written tail handled ok folded only after the newline completed it
+USAGE_SMOKE truncate-refold ok 90 tokens after rewrite
+USAGE_SMOKE file-removal ok
+USAGE_SMOKE PASS usage aggregation smoke complete (real store + incremental temp store)
+==== SMOKE SUITE stage ok: usage aggregation (5s) ====
+
+==== SMOKE SUITE stage: TUI↔SDK interop ====
+INTEROP index lists TUI store 216 session(s); newest with tools: PiCode v1.8.2 — 主执行 Agent prompt 角色：你是 PiCode v1
+INTEROP structured transcript parses 215 item(s): 4 user, 89 assistant, 122 tool
+INTEROP SDK opens TUI session 252 entr(y/ies), id=01a0df0b-cccc-7789-bb33-4dedf32633d9
+INTEROP host session created /var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-sessions-T8HrP58D/2026-09-28T04-26-06-004Z_01a0e643-4f33-71a3-8092-fb1825962d40.jsonl
+INTEROP real turn completed
+INTEROP index lists PiCode session title="Reply with exactly: PICODE_INTEROP_OK"
+INTEROP SDK re-opens PiCode session 5 entries carry the marker
+INTEROP usage fold ok 1 event(s), 0 skipped lines
+INTEROP resume ok 2 structured history item(s) replayed
+INTEROP cleaned up created session file
+INTEROP PASS TUI↔SDK session interop smoke complete (both directions)
+==== SMOKE SUITE stage ok: TUI↔SDK interop (9s) ====
+
+==== SMOKE SUITE stage: electron app smoke ====
+SMOKE start cwd=/var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T pid=15158
+SMOKE empty_state_start
+SMOKE mcp_status_no_session_ok
+SMOKE empty_state_chip_default_ok Model: GLM-5.3
+SMOKE empty_state_menu_catalog_ok providers=4 models=4
+SMOKE empty_state_menu_provider_order_ok bella,bella-gpt,bella-local,bella-remote
+SMOKE empty_state_menu_locate_ok bella at row 0
+SMOKE empty_state_model_pick_ok model=GLM-5.3-flash (override)
+SMOKE empty_state_thinking_levels_ok Low High Max
+SMOKE empty_state_thinking_pick_ok level=Low
+SMOKE empty_state_access_default_ok Access mode: Standard
+SMOKE empty_state_access_pick_ok tier=read-only
+SMOKE terminal_focus_132_boot_empty_open_ok dock open on the no-workspace empty state, focus request armed
+SMOKE session_created sessionId=01a0e643-7724-7729-bf09-52a1b7551c75 model=GLM-5.3-flash
+SMOKE empty_state_pick_rides_ok model=GLM-5.3-flash
+SMOKE empty_state_thinking_rides_ok thinking=low levels=low,high,max
+SMOKE terminal_focus_132_boot_empty_focus_ok the armed request landed in the first shell
+SMOKE empty_state_access_rides_ok tier=read-only
+SMOKE empty_state_access_session_chip_ok tier=read-only
+SMOKE empty_state_access_restore_ok tier=standard
+SMOKE agent_start
+SMOKE deltas_collected count=5
+SMOKE aborted_ok
+SMOKE second_turn_ok
+SMOKE renderer_dom_ok
+SMOKE sidebar_index_ok
+SMOKE idle_typing_119_start
+SMOKE idle_typing_119_single_ok
+SMOKE idle_typing_119_multiline_ok
+SMOKE idle_typing_119_attachments_ok
+SMOKE idle_typing_119_expand_ok
+SMOKE idle_typing_119_delete_ok
+SMOKE idle_typing_119_midtranscript_ok
+SMOKE idle_queue_135_start
+SMOKE idle_queue_135_appear_ok
+SMOKE idle_queue_135_grow_ok
+SMOKE idle_queue_135_clear_ok
+SMOKE idle_typing_119_done
+SMOKE user_copy_start
+SMOKE user_copy_row_shape_ok
+SMOKE user_copy_clipboard_ok
+SMOKE user_copy_feedback_ok
+SMOKE user_copy_done
+SMOKE slash_gate_start
+SMOKE slash_menu_retired_ok rows=/compact /council /gather-context-and-clarify /parallel-cleanup /parallel-research /parallel-review /review-loop /archify /ask-matt /claude-handoff /code-review /codebase-design
+SMOKE slash_gate_toast_ok
+SMOKE slash_gate_args_toast_ok
+SMOKE slash_gate_zero_send_ok
+SMOKE slash_gate_done
+SMOKE menu_surface_start
+SMOKE menu_surface_leading_token_ok
+SMOKE menu_surface_shift_enter_ok
+SMOKE menu_surface_multiline_ok
+SMOKE menu_surface_at_midtext_ok
+SMOKE menu_surface_zero_match_send_ok
+SMOKE menu_surface_done
+SMOKE menu_keyboard_start
+SMOKE menu_keyboard_text_menu_ok rows=12
+SMOKE menu_keyboard_file_enter_pick_skipped no file candidates in the smoke cwd
+SMOKE menu_keyboard_access_enter_pick_ok tier=Standard
+SMOKE menu_keyboard_access_walk_ok rows=3
+SMOKE menu_keyboard_thinking_walk_ok rows=3
+SMOKE menu_keyboard_model_parity_ok bella,bella-gpt,bella-local,bella-remote
+SMOKE menu_keyboard_model_providers_ok providers=4
+SMOKE menu_keyboard_done
+SMOKE chip_toggle_start
+SMOKE chip_toggle_press_closes Access mode:
+SMOKE chip_toggle_press_closes Model:
+SMOKE chip_toggle_press_closes Thinking:
+SMOKE chip_toggle_inside_click_picks_ok
+SMOKE chip_toggle_cross_chip_ok
+SMOKE chip_toggle_outside_close_ok
+SMOKE chip_toggle_done
+SMOKE menu_geometry_122_start
+SMOKE menu_geometry_anchor_ok card left 1024.2 == chip left, hug gap 2.0, columns separate (gap 6.0)
+SMOKE menu_geometry_cascade_stable_ok providers=4, bbox fixed across hover
+SMOKE menu_geometry_keyboard_ok model 0 → 1, focus on the selected row
+SMOKE menu_geometry_clamp_ok innerWidth=1040, card 646.0..836.0, models right 1032.0
+SMOKE menu_geometry_thinking_anchor_ok thinking card left 861.4 == chip left, hug gap 2.0
+SMOKE menu_geometry_122_done
+SMOKE host_exit session=01a0e643-7724-7729-bf09-52a1b7551c75 code=null signal=SIGKILL
+SMOKE rebuild_ok
+SMOKE rebuild_turn_ok
+SMOKE round3_ok /var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-sessions-T8HrP58D/2026-09-28T04-27-19-506Z_01a0e644-6e52-7433-a134-ace90e4b33ef.jsonl
+SMOKE rebuilt_host_killed 01a0e644-5982-7253-9209-5ea4fcacc0c0
+SMOKE follow_live_state_ok
+SMOKE follow_view_opened
+SMOKE follow_streamed_ok
+SMOKE follow_selection_ok
+SMOKE follow_exit_ok
+SMOKE follow_reselected_ok
+SMOKE follow_structured_ok
+SMOKE follow_open_shown
+SMOKE follow_open_rejected_ok
+SMOKE takeover_resumed_ok
+SMOKE replay_payload_ok 9 structured items
+SMOKE replay_dom_ok
+SMOKE newtask_chip_default_ok T
+SMOKE newtask_dropdown_ok
+SMOKE newtask_session_created sessionId=01a0e644-c354-7383-aed3-5765e3b90a64
+SMOKE newtask_first_prompt_ok
+SMOKE newtask_turn_aborted_ok
+SMOKE multi_session_start
+SMOKE multi_dot_states_ok
+SMOKE multi_background_streaming_ok
+SMOKE multi_selection_decoupled_ok
+SMOKE multi_refocus_ok
+SMOKE multi_abort_ok
+SMOKE unread_start
+SMOKE unread_masked_ok
+SMOKE unread_lit_ok
+SMOKE unread_cleared_ok
+SMOKE multi_crash_isolation_ok
+SMOKE bg_approval_start
+SMOKE bg_approval_required tool=bash call=call_a9c3035bc829497a8f7937e4
+SMOKE bg_agent_suspended_ok
+SMOKE bg_badge_ok
+SMOKE bg_notification_ok title=T
+SMOKE bg_jump_ok
+SMOKE bg_approve_remember_ok
+SMOKE bg_remember_ok
+SMOKE bg_deny_ask call=call_e87ba775f58545d5ae29264b
+SMOKE bg_deny_ok
+SMOKE bg_approval_done
+SMOKE keymap_start
+SMOKE keymap_tooltips_ok
+SMOKE keymap_cmd_b_sidebar_ok
+SMOKE keymap_alt_cmd_b_panel_ok
+SMOKE keymap_cmd_j_terminal_ok
+SMOKE keymap_alt_cmd_j_bridge_ok
+SMOKE keymap_bridge_toggle_off_ok
+SMOKE keymap_pane_motion_ok sidebar=0px panel=420px dock=0px
+SMOKE keymap_done
+SMOKE terminal_focus_105_start
+SMOKE terminal_focus_105_cmdj_ok
+SMOKE terminal_focus_105_typing_ok
+SMOKE terminal_focus_105_titlebar_ok
+SMOKE terminal_focus_105_cycle_ok
+SMOKE terminal_focus_105_bridge_no_steal_ok
+SMOKE terminal_focus_105_swap_back_ok
+SMOKE terminal_focus_105_done
+SMOKE terminal_focus_132_start
+SMOKE terminal_focus_132_in_session_ok
+SMOKE terminal_focus_132_new_session_ok
+SMOKE terminal_focus_132_bridge_swap_back_ok
+SMOKE terminal_focus_132_done
+SMOKE panel_tabs_start
+SMOKE panel_session_ok sessionId=01a0e645-bc44-77ff-8a0c-ffe6897f396d
+SMOKE panel_review_tree_ok
+SMOKE panel_file_tab_one_ok
+SMOKE panel_retarget_in_place_ok picode-smoke-panel-qGCA1O
+SMOKE panel_file_tab_two_ok Review,picode-smoke-panel-qGCA1O,panel_beta.md
+SMOKE panel_close_independent_ok
+SMOKE panel_dropdown_ok
+SMOKE panel_search_reopen_ok
+SMOKE panel_preferences_ok
+SMOKE panel_restart_keep_ok
+SMOKE panel_reopen_after_restart_ok
+SMOKE panel_tabs_done
+SMOKE panel_collapse_86_start
+SMOKE panel_86_session_ok 01a0e645-c2a4-7462-a8d7-ee6ec3b6cb39
+SMOKE panel_86_autocollapse_ok
+SMOKE panel_86_reopen_picker_ok
+SMOKE panel_86_partial_close_ok
+SMOKE panel_86_autocollapse_again_ok
+SMOKE panel_86_recent_reopen_ok
+SMOKE panel_86_deeplink_expand_ok
+SMOKE panel_collapse_86_done
+SMOKE preview_dual_88_start
+SMOKE preview_88_session_ok
+SMOKE preview_88_review_tree_ok
+SMOKE preview_88_html_ok {"probe":"picode-88","ran":true,"node":"undefined","proc":"undefined","picode":"undefined","title":"PICODE88 report","css":"rgb(255, 240, 224)","img":true}
+SMOKE preview_88_html_source_ok
+SMOKE preview_88_svg_ok
+SMOKE preview_88_png_ok
+SMOKE preview_88_markdown_ok
+SMOKE preview_88_binary_ok
+SMOKE preview_dual_88_done
+SMOKE context_menu_start
+SMOKE archive_hidden_ok
+SMOKE archive_view_ok
+SMOKE archive_restore_ok
+SMOKE context_menu_items_ok
+SMOKE context_menu_copy_id_ok
+SMOKE context_menu_copy_cwd_ok
+SMOKE context_menu_done
+SMOKE trace_start
+SMOKE trace_tab_open_ok
+SMOKE trace_entries_ok 8 entries, stats "8 calls·61,064 tok·GLM-5.3-flash"
+SMOKE trace_refresh_ok
+SMOKE trace_growth_ok
+SMOKE trace_search_ok
+SMOKE trace_kind_toggles_ok
+SMOKE trace_expand_collapse_ok
+SMOKE trace_close_ok
+SMOKE trace_done
+SMOKE group_fold_start
+SMOKE fold_default_shape_ok
+SMOKE fold_caret_gone_ok
+SMOKE fold_step_plus5_ok
+SMOKE fold_folded_ok
+SMOKE fold_shape_restored_ok
+SMOKE fold_all_shown_ok
+SMOKE fold_show_less_reset_ok
+SMOKE fold_restart_default_ok
+SMOKE group_fold_done
+SMOKE collapse_all_start
+SMOKE collapse_default_shapes_ok
+SMOKE collapse_step_seeded_ok
+SMOKE collapse_pin_seeded_ok
+SMOKE collapse_manual_mix_ok
+SMOKE collapse_all_folds_ok
+SMOKE expand_all_restores_ok
+SMOKE collapse_timeline_hidden_ok
+SMOKE collapse_view_switch_ok
+SMOKE collapse_restart_default_ok
+SMOKE collapse_unpin_cleanup_ok
+SMOKE collapse_all_done
+SMOKE sidebar_drag_start
+SMOKE sidebar_drag_row_ok
+SMOKE sidebar_drag_manual_checked_ok
+SMOKE sidebar_drag_group_ok
+SMOKE sidebar_drag_dimmed_ok
+SMOKE sidebar_drag_sessions_untouched_ok
+SMOKE sidebar_drag_restart_ok
+SMOKE sidebar_drag_timeline_static_ok
+SMOKE sidebar_drag_pinned_static_ok
+SMOKE sidebar_drag_sort_restored_ok
+SMOKE sidebar_drag_done
+SMOKE dead_cwd_start
+SMOKE dead_cwd_control_listed_ok
+SMOKE dead_cwd_gray_row_ok
+SMOKE dead_cwd_click_toast_ok
+SMOKE dead_cwd_gray_menu_ok
+SMOKE dead_cwd_hidden_ok
+SMOKE dead_cwd_file_untouched_ok
+SMOKE dead_cwd_title_skip_ok
+SMOKE dead_cwd_palette_hidden_ok
+SMOKE dead_cwd_palette_control_ok
+SMOKE dead_cwd_live_resumed_ok
+SMOKE dead_cwd_live_exempt_ok
+SMOKE cwd_banner_shown_ok
+SMOKE cwd_banner_recovered_ok
+SMOKE cwd_row_recovered_ok
+SMOKE cwd_menu_restored_ok
+SMOKE dead_cwd_done
+SMOKE dead_group_sink_start
+SMOKE dead_group_sink_seeded_ok
+SMOKE dead_group_sink_updated_ok
+SMOKE dead_group_sink_created_ok
+SMOKE dead_group_sink_grip_frozen_ok
+SMOKE dead_group_sink_live_drag_ok
+SMOKE dead_group_sink_boundary_drop_ok
+SMOKE dead_group_sink_recovered_ok
+SMOKE dead_group_sink_done
+SMOKE history_tree_start
+SMOKE history_tree_form_ok
+SMOKE history_tree_jump_ok
+SMOKE history_tree_fork_ok
+SMOKE history_tree_done
+SMOKE history_deep_start
+SMOKE history_deep_source_rows_ok 430
+SMOKE history_deep_fork_announced e5c59f
+SMOKE history_deep_fork_rows_ok 201
+SMOKE history_deep_done
+SMOKE history_toggle_start
+SMOKE history_toggle_press_closes
+SMOKE history_toggle_inside_ok
+SMOKE history_toggle_esc_ok
+SMOKE history_toggle_outside_ok
+SMOKE history_toggle_row_ok
+SMOKE history_toggle_done
+SMOKE scroll_stay_start
+SMOKE scroll_stay_focus_pinned_ok
+SMOKE scroll_stay_no_yank_ok
+SMOKE scroll_stay_jump_back_ok
+SMOKE scroll_stay_self_send_ok
+SMOKE scroll_stay_done
+SMOKE scroll75_start
+SMOKE scroll75_hold_latched heldTop=2060
+SMOKE scroll75_hold_ok
+SMOKE scroll75_restore_ok
+SMOKE scroll75_self_send_ok
+SMOKE scroll75_done
+SMOKE scroll93_start
+SMOKE scroll93_queue_yank_ok
+SMOKE scroll93_queue_inject_ok
+SMOKE scroll93_wheel_wins_ok
+SMOKE scroll93_send_land_ok
+SMOKE scroll93_done
+SMOKE fold_anchor_start
+SMOKE fold_anchor_mid_expand_ok headerRow 262 → 262
+SMOKE fold_anchor_mid_collapse_ok
+SMOKE fold_anchor_pinned_expand_ok dist 0, headerRow 450.5 → 363.5
+SMOKE fold_anchor_pinned_collapse_ok
+SMOKE fold_anchor_follow_open_ok
+SMOKE fold_anchor_follow_expand_ok
+SMOKE fold_anchor_follow_collapse_ok
+SMOKE fold_anchor_follow_pinned_expand_ok dist 0, headerRow 646.5 → 559.5
+SMOKE fold_anchor_follow_pinned_collapse_ok
+SMOKE fold_anchor_done
+SMOKE nav_rail_start
+SMOKE nav_rail_empty_ok
+SMOKE nav_rail_one_tick_hidden_ok
+SMOKE nav_rail_two_ticks_ok
+SMOKE nav_rail_bubble_ok
+SMOKE nav_rail_bubble_close_ok
+SMOKE nav_rail_click_jump_ok
+SMOKE nav_rail_narrow_hidden_ok
+SMOKE nav_rail_done
+SMOKE nav_live_anchor_start
+SMOKE nav_live_anchor_scene_ok
+SMOKE nav_live_anchor_live_bottom_ok
+SMOKE nav_live_anchor_live_scrolled_ok
+SMOKE nav_live_anchor_settled_scrolled_ok
+SMOKE nav_live_anchor_settled_bottom_ok
+SMOKE nav_live_anchor_done
+SMOKE composer_expand_start
+SMOKE composer_expand_key_empty_state_ok
+SMOKE composer_expand_empty_state_ok
+SMOKE composer_autogrow_midband_ok
+SMOKE composer_autogrow_cap_ok
+SMOKE composer_autogrow_reset_ok
+SMOKE composer_expand_open_ok
+SMOKE composer_expand_collapse_paths_ok
+SMOKE composer_expand_key_chat_ok
+SMOKE composer_expand_send_collapse_ok
+SMOKE composer_expand_done
+SMOKE composer_typing_116_start
+SMOKE composer_typing_116_collapsed_band_ok
+SMOKE composer_typing_116_input_stable_ok
+SMOKE composer_typing_116_delete_stable_ok
+SMOKE composer_typing_116_resize_reproject_ok
+SMOKE composer_typing_116_send_collapse_ok
+SMOKE composer_typing_116_done
+SMOKE composer_ime_117_start
+SMOKE composer_ime_117_prefill_viewport_ok
+SMOKE composer_ime_117_matrix_ok
+SMOKE composer_ime_117_done
+SMOKE skill_keep_text_118_start
+SMOKE skill_keep_text_118_draft_staged_ok
+SMOKE skill_keep_text_118_pick_kept_ok
+SMOKE skill_keep_text_118_send_expanded_ok
+SMOKE skill_keep_text_118_send_reset_ok
+SMOKE skill_keep_text_118_done
+SMOKE composer_layout_81_start
+SMOKE composer_layout_81_band_ok
+SMOKE composer_layout_81_cap_caret_ok
+SMOKE composer_layout_81_scrollbar_ok
+SMOKE composer_layout_81_glide_ok
+SMOKE composer_layout_81_reduced_motion_ok
+SMOKE composer_layout_81_done
+SMOKE image_preview_91_start
+SMOKE image_preview_91_open_ok
+SMOKE image_preview_91_walk_ok
+SMOKE image_preview_91_space_ok
+SMOKE image_preview_91_close_btn_ok
+SMOKE image_preview_91_escape_ok
+SMOKE image_preview_91_mask_ok
+SMOKE image_preview_91_done
+SMOKE focus_discipline_98_start
+SMOKE focus_discipline_98_plus_ok
+SMOKE focus_discipline_98_model_ok
+SMOKE focus_discipline_98_keyboard_pick_ok
+SMOKE focus_discipline_98_history_ok
+SMOKE focus_discipline_98_ring_ok
+SMOKE focus_discipline_98_done
+SMOKE answer_split_start
+SMOKE answer_split_settled_ok
+SMOKE answer_split_open_ok
+SMOKE answer_split_done
+SMOKE worked_container_start
+SMOKE worked_container_replayed_ok
+SMOKE worked_container_inert_ok
+SMOKE worked_container_live_silent_ok
+SMOKE worked_container_settled_ok
+SMOKE worked_container_spinners_live_expanded_ok
+SMOKE worked_container_timer_fold_ok 1s → 2s
+SMOKE worked_container_spinners_settled_ok
+SMOKE worked_container_done
+SMOKE turn_chronology_start
+SMOKE turn_chronology_live_inline_ok
+SMOKE turn_chronology_two_states_one_slot_ok top 296 → 296
+SMOKE turn_chronology_live_thinking_inline_ok
+SMOKE turn_chronology_settled_same_position_ok
+SMOKE turn_chronology_no_rotation_ok
+SMOKE turn_chronology_settled_fold_order_ok
+SMOKE turn_chronology_done
+SMOKE turn_filebar_start
+SMOKE turn_filebar_collapsed_ok
+SMOKE turn_filebar_expanded_ok
+SMOKE turn_filebar_review_tab_ok
+SMOKE turn_filebar_open_deeplink_ok
+SMOKE turn_filebar_live_no_bar_ok
+SMOKE turn_filebar_live_settle_in_place_ok
+SMOKE turn_filebar_stop_live_no_bar_ok
+SMOKE turn_filebar_stop_turn_bar_ok
+SMOKE turn_filebar_live_no_change_no_bar_ok
+SMOKE turn_filebar_done
+SMOKE fork_live_start
+SMOKE fork_live_parent_created session=9d67cb
+SMOKE fork_live_two_turns_ok
+SMOKE fork_live_midrun_silent_ok
+SMOKE fork_live_ack_toast_ok
+SMOKE fork_live_parent_session_ok
+SMOKE fork_live_done
+SMOKE command_catalog_start
+SMOKE command_catalog_empty_state_ok
+SMOKE command_catalog_rows_ok dirA=picode-smoke-template+picode-smoke-skill
+SMOKE command_catalog_exclusions_ok bareRows=12
+SMOKE command_catalog_card_zero_send_ok
+SMOKE command_catalog_card_clear_ok
+SMOKE command_catalog_dir_switch_ok
+SMOKE command_catalog_done
+SMOKE mermaid_diagram_start
+SMOKE mermaid_card_rendered_ok
+SMOKE mermaid_fallbacks_ok
+SMOKE mermaid_download_menu_ok
+SMOKE mermaid_copy_source_ok
+SMOKE mermaid_fullscreen_open_ok
+SMOKE mermaid_fullscreen_esc_ok
+SMOKE mermaid_diagram_done
+SMOKE codecard_table_start
+SMOKE codecard_linenos_ok
+SMOKE table_tools_row_ok
+SMOKE table_copy_markdown_ok
+SMOKE table_copy_csv_ok
+SMOKE table_copy_tsv_ok
+SMOKE table_full_display_ok
+SMOKE codecard_download_ok
+SMOKE codecard_table_done
+SMOKE usage_hover_start
+SMOKE usage_page_open_ok
+SMOKE usage_trend_hover_ok
+SMOKE usage_trend_unhover_ok
+SMOKE usage_donut_hover_ok
+SMOKE usage_range_row_retired_ok
+SMOKE usage_zero_filter_fixed_window_ok
+SMOKE usage_drilldown_click_ok
+SMOKE usage_drilldown_rows_pure_ok
+SMOKE usage_hover_done
+SMOKE usage_hover_stage_done
+SMOKE usage_heat_start
+SMOKE usage_heat_leftmost_outline_ok
+SMOKE usage_heat_daily_grid_ok
+SMOKE usage_heat_weekly_grid_ok
+SMOKE usage_heat_cumulative_grid_ok
+SMOKE usage_heat_daily_hover_ok
+SMOKE usage_heat_weekly_hover_ok
+SMOKE usage_heat_cumulative_hover_ok
+SMOKE usage_heat_day_drill_ok
+SMOKE usage_heat_done
+SMOKE usage_heat_stage_done
+SMOKE settings_skills_start
+SMOKE settings_open_cmdcomma_ok
+SMOKE settings_close_cmdcomma_ok
+SMOKE settings_reopen_ok
+SMOKE settings_models_provider_order_ok bella,bella-gpt,bella-local,bella-remote,Amazon Bedrock,Ant Ling,Anthropic,Azure OpenAI,Baseten,Cerebras,Cloudflare AI Gateway,Cloudflare Workers AI,DeepSeek,Fireworks,GitHub Copilot,Google,Google Vertex AI,Groq,Hugging Face,Kimi For Coding,Meta,MiniMax,MiniMax CN,Mistral,Moonshot AI,Moonshot AI CN,NVIDIA,OpenAI,OpenAI Codex,OpenCode Go,OpenCode Zen,OpenRouter,Qwen Token Plan,Qwen Token Plan CN,Qwen Token Plan Individual,Radius,Together,Vercel AI Gateway,xAI,Xiaomi,Xiaomi Token Plan AMS,Xiaomi Token Plan CN,Xiaomi Token Plan SGP,Z.AI,Z.AI Coding CN
+SMOKE skills_rows_probed_ok real+link+dangling
+SMOKE skills_disable_written_ok -skills/picode-smoke-real/SKILL.md
+SMOKE skills_enable_written_ok +skills/picode-smoke-real/SKILL.md
+SMOKE skills_confirm_copy_ok
+SMOKE skills_delete_link_target_survives_ok
+SMOKE settings_esc_close_ok
+SMOKE settings_open_sidebar_gear_ok
+SMOKE settings_sidebar_gear_esc_ok
+SMOKE settings_skills_done
+SMOKE packages_stage_start
+SMOKE packages_section_open_ok
+SMOKE packages_empty_state_ok
+SMOKE packages_install_ok ../picode-smoke-pkg-VmsCyB
+SMOKE packages_toggle_off_ok
+SMOKE packages_toggle_on_ok
+SMOKE packages_remove_ok
+SMOKE packages_tui_side_reflected_ok
+SMOKE packages_project_untrusted_ok
+SMOKE packages_esc_close_ok
+SMOKE packages_trust_json_untouched_ok
+SMOKE packages_new_session_loads_ok
+SMOKE packages_stage_done
+SMOKE settings_mcp_start
+SMOKE mock-oauth POST /mcp
+SMOKE mock-oauth POST /mcp
+SMOKE mock-oauth POST /mcp
+SMOKE mock-oauth POST /mcp
+SMOKE mock-oauth POST /mcp
+SMOKE mock-oauth POST /mcp
+SMOKE mock-oauth POST /mcp
+SMOKE mock-oauth POST /mcp
+SMOKE mock-oauth POST /mcp
+SMOKE mock-oauth GET /.well-known/oauth-protected-resource/mcp
+SMOKE mock-oauth GET /mcp
+SMOKE mock-oauth GET /.well-known/oauth-protected-resource
+SMOKE mock-oauth POST /mcp
+SMOKE mock-oauth GET /.well-known/oauth-authorization-server
+SMOKE mcp_section_open_ok
+SMOKE mcp_cards_badges_ok
+SMOKE mock-oauth POST /register
+[host stderr] MCP: Failed to connect to eager-cms: OAuth authentication required. Run /mcp-auth eager-cms.
+SMOKE mcp_status_projection_ok
+SMOKE mcp_enable_flag_ok /var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-mcpproject-OXSqfI/.pi/mcp.json
+SMOKE mcp_disable_flag_ok /var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-mcpproject-OXSqfI/.pi/mcp.json
+SMOKE mcp_add_global_ok /var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-mcpbase-86QWK6/mcp-home/.config/mcp/mcp.json
+SMOKE mcp_edit_global_ok
+SMOKE mcp_remove_ok
+SMOKE mcp_layer_entries_ok
+SMOKE mock-oauth POST /mcp
+SMOKE mock-oauth GET /.well-known/oauth-protected-resource/mcp
+SMOKE mock-oauth GET /.well-known/oauth-protected-resource
+SMOKE mock-oauth GET /.well-known/oauth-authorization-server
+SMOKE mock-oauth POST /register
+SMOKE mock-oauth GET /authorize
+SMOKE mock-oauth POST /token
+SMOKE mock-oauth POST /mcp
+SMOKE mock-oauth POST /mcp
+SMOKE mock-oauth GET /mcp
+SMOKE mock-oauth POST /mcp
+SMOKE mcp_oauth_autocomplete_ok http://127.0.0.1:62108
+SMOKE mcp_status_live_update_ok
+SMOKE mock-oauth POST /mcp
+SMOKE mock-oauth GET /.well-known/oauth-protected-resource/mcp
+SMOKE mock-oauth GET /.well-known/oauth-protected-resource
+SMOKE mock-oauth GET /.well-known/oauth-authorization-server
+SMOKE mock-oauth POST /register
+SMOKE mcp_paste_dialog_ok
+SMOKE mock-oauth GET /authorize
+SMOKE mock-oauth POST /token
+SMOKE mock-oauth POST /mcp
+SMOKE mock-oauth POST /mcp
+SMOKE mock-oauth GET /mcp
+SMOKE mock-oauth POST /mcp
+SMOKE mcp_oauth_manual_paste_ok
+SMOKE mcp_external_zero_write_ok
+SMOKE mcp_credentials_zero_leak_ok
+SMOKE mcp_status_lazy_untouched_ok
+SMOKE settings_mcp_done
+SMOKE subagent_dir_start
+SMOKE subagent90_resumed_ok sub90-seeded-id
+SMOKE subagent90_seeded_ok shown=20 total=25
+SMOKE subagent90_paging_ok
+SMOKE subagent90_live_running_ok
+SMOKE subagent90_live_completed_ok
+SMOKE subagent90_reopened_ok
+SMOKE subagent90_rebuild_ok ended=25 completed=25 lost=0
+SMOKE subagent_dir_done
+SMOKE subagent_chat_start
+SMOKE subagent99_resumed_ok sub99-seeded-id
+SMOKE subagent99_chat_open_ok
+SMOKE subagent99_live_update_ok
+SMOKE subagent99_receipt_ok No async run found for 'sub99-live-1'.
+SMOKE subagent99_close_alive_ok
+SMOKE subagent99_close_reopen_ok
+SMOKE subagent99_readonly_ok
+SMOKE subagent99_error_path_ok
+SMOKE subagent_chat_done
+SMOKE subagent_stop_start
+SMOKE subagent101_resumed_ok sub101-seeded-id
+SMOKE subagent101_badge_zero_ok
+SMOKE subagent101_pull A.available=true A.runs=2 B.available=true B.runs=2
+SMOKE subagent101_badge_two_ok
+SMOKE subagent101_badge_click_ok
+SMOKE subagent101_cancel_ok
+SMOKE subagent101_esc_outside_ok
+SMOKE subagent101_stopping_ok
+SMOKE subagent101_stopped_ok
+SMOKE subagent101_chat_stop_ok
+SMOKE subagent101_badge_zero_again_ok
+SMOKE subagent101_foreground_abort_ok [{"commandType":"subagent_stop","sessionId":"sub101-seeded-id","asyncId":"sub101-run-a"},{"commandType":"subagent_stop","sessionId":"sub101-seeded-id","asyncId":"sub101-run-b"},{"commandType":"abort_turn","sessionId":"sub101-seeded-id"}]
+SMOKE subagent_stop_done
+SMOKE subagent_mutex_136_start
+SMOKE subagent136_entry_ok
+SMOKE subagent136_swap_side_to_sub_ok
+SMOKE subagent136_swap_sub_to_side_ok
+SMOKE subagent136_memory_ok
+SMOKE subagent_mutex_136_done
+SMOKE newtask_switch_start
+SMOKE newtask_switch_rows_ok
+SMOKE newtask_switch_focused_ok
+SMOKE newtask_switch_resume_ok
+SMOKE newtask_switch_inapp_ok
+SMOKE newtask_switch_follow_ok
+SMOKE newtask_switch_follow_exit_ok
+SMOKE draft_preserve_start
+SMOKE draft_preserve_rows_ok
+SMOKE draft_preserve_resumes_ok
+SMOKE draft_preserve_independent_ok
+SMOKE draft_preserve_image_paste_ok
+SMOKE draft_preserve_image_roundtrip_ok
+SMOKE draft_preserve_newtask_roundtrip_ok
+SMOKE draft_preserve_escape_ok
+SMOKE draft_preserve_send_clear_ok
+SMOKE draft_preserve_newtask_send_clear_ok
+SMOKE access_pick_before_restart_ok tier=read-only
+SMOKE access_pick_restart_reset_ok
+SMOKE draft_preserve_restart_empty_ok
+SMOKE draft_preserve_done
+SMOKE command_card_start
+SMOKE command_card_resume_ok
+SMOKE command_card_skill_pick_ok
+SMOKE command_card_args_follow_ok
+SMOKE command_card_clear_ok
+SMOKE command_card_replace_ok
+SMOKE command_card_send_expanded_ok
+SMOKE command_card_send_reset_ok
+SMOKE command_card_done
+SMOKE ctx_ring_start
+SMOKE ctx_ring_idle_ok
+SMOKE ctx_ring_resume_usage_ok
+SMOKE ctx_ring_live_ok
+SMOKE ctx_ring_newtask_absent_ok
+SMOKE ctx_ring_follow_absent_ok
+SMOKE ctx_ring_done
+SMOKE edit_resend_start
+SMOKE edit_resend_row_shape_ok
+SMOKE edit_resend_draft_replace_ok
+SMOKE edit_resend_old_branch_reachable_ok
+SMOKE edit_resend_prefill_image_ok
+SMOKE edit_resend_toast_ok
+SMOKE edit_resend_hidden_while_running_ok
+SMOKE edit_resend_stop_restore_ok
+SMOKE edit_resend_tree_branches_ok
+SMOKE edit_resend_done
+SMOKE bubble_trio_start
+SMOKE bubble_composition_ok
+SMOKE bubble_thumb_preview_ok
+SMOKE bubble_live_echo_images_ok
+SMOKE bubble_edit_with_images_ok
+SMOKE bubble_trio_done
+SMOKE queue_repair_start
+SMOKE queue135_above_composer_ok
+SMOKE queue100_edit_middle_ok
+SMOKE queue100_resend_ok
+SMOKE queue100_edit_with_image_ok
+SMOKE queue100_row_remove_ok
+SMOKE queue128_clear_retired_ok
+SMOKE queue128_p20_height_ok
+SMOKE queue128_followup_swap_ok
+SMOKE queue128_steer_swap_ok
+SMOKE queue128_delivery_order_ok
+SMOKE queue135_composer_invariant_ok
+SMOKE queue_repair_done
+SMOKE rename_midrun_start
+SMOKE ticket-104 session_created id=01a0e64a-c8d2-711c-a8be-ebd65f34d1d8 file=/var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-smoke-sessions-T8HrP58D/2026-09-28T04-34-15-890Z_01a0e64a-c8d2-711c-a8be-ebd65f34d1d8.jsonl cwd=/var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T
+SMOKE rename104_midrun_ack_ok
+SMOKE rename104_midrun_ui_ok
+SMOKE rename104_midrun_run_alive_ok
+SMOKE rename104_settled_ok
+SMOKE rename_midrun_done
+SMOKE instant_card_start
+SMOKE instant_pending_ok waited 307ms after dispatch
+SMOKE instant_announced session_created 1478ms after dispatch (id 01a0e64b-02e1-7684-acc4-f2d242c28207)
+SMOKE instant_reconciled_ok title="Reply with exactly: PICODE_106_INSTANT_NEW_FOLDER" time="just now" (created 1478ms; card instant)
+SMOKE instant_existing_pending_ok waited 306ms after dispatch
+SMOKE instant_existing_announced session_created 1096ms after dispatch (id 01a0e64b-229c-708a-9369-1f9ef5db5259)
+SMOKE instant_existing_reconciled_ok total=2
+SMOKE instant_dead_pending_ok
+SMOKE instant_failure_removed_ok placeholder gone + verbatim error toast, no ghost group
+SMOKE instant_card_done
+SMOKE fb107_start
+SMOKE fb107_pin_seeded_ok
+SMOKE fb107_header_form_ok
+SMOKE fb107_row_entry_opens_ok
+SMOKE fb107_sub_expanded_ok
+SMOKE fb107_create_visible_ok
+SMOKE fb107_deep_create_visible_ok
+SMOKE fb107_delete_visible_ok
+SMOKE fb107_rename_visible_ok
+SMOKE fb107_cycles_clean_ok
+SMOKE fb107_refresh_after_cycles_ok
+SMOKE fb107_unpin_cleanup_ok
+SMOKE fb107_done
+SMOKE timer_continuity_start
+SMOKE timer_continuity_rows_ok
+SMOKE timer_continuity_live_run_ok
+SMOKE timer_continuity_leg0_ok 3s (wall 3s)
+SMOKE timer_continuity_leg1_ok 3s → 6s
+SMOKE timer_continuity_leg2_ok 6s → 8s
+SMOKE timer_continuity_leg3_ok 8s → 10s
+SMOKE timer_continuity_settled_ok span ≥ 10s
+SMOKE timer_continuity_replay_ok
+SMOKE timer_continuity_unpin_ok
+SMOKE timer_continuity_done
+SMOKE thinking_memory_start
+SMOKE thinking_memory_rows_ok
+SMOKE thinking_memory_expand_ok
+SMOKE thinking_memory_settings_roundtrip_ok
+SMOKE thinking_memory_switch_ok
+SMOKE thinking_memory_fresh_default_ok
+SMOKE thinking_memory_done
+SMOKE fork_auto_name_start
+SMOKE fork_auto_name_named_announce_ok name=Fork of PICODE_130_NAMED_SOURCE_NAME
+SMOKE fork_auto_name_named_renamed_event_ok
+SMOKE fork_auto_name_named_session_info_written_ok
+SMOKE fork_auto_name_named_surfaces_ok
+SMOKE fork_auto_name_named_rename_overrides_ok
+SMOKE fork_auto_name_named_source_untouched_ok
+SMOKE fork_auto_name_unnamed_announce_ok name=Fork of PICODE_130_UNNAMED first user message
+SMOKE fork_auto_name_unnamed_renamed_event_ok
+SMOKE fork_auto_name_unnamed_session_info_written_ok
+SMOKE fork_auto_name_unnamed_surfaces_ok
+SMOKE fork_auto_name_unnamed_rename_overrides_ok
+SMOKE fork_auto_name_unnamed_source_untouched_ok
+SMOKE fork_auto_name_done
+SMOKE bubble_text_select_start
+SMOKE bubble_text_drag_select_ok 58 of 177 chars
+SMOKE bubble_widget_rows_unselectable_ok
+SMOKE bubble_thumb_drag_inert_press_ok
+SMOKE bubble_edit_row_ok
+SMOKE bubble_follow_text_select_ok 59 of 177 chars
+SMOKE bubble_copy_full_text_ok
+SMOKE bubble_text_select_done
+SMOKE multi_shutdown_no_orphans_ok 47 hosts
+SMOKE done
+==== SMOKE SUITE stage ok: electron app smoke (534s) ====
+
+==== SMOKE SUITE stage: sanitized spawn smoke ====
+SANITIZED SMOKE isolated session store: /var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-t134-sessions-h5IPDa
+SANITIZED SMOKE isolated subagent artifacts: /var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-t134-artifacts-6oEFSN
+SMOKE start cwd=/tmp pid=31003
+SMOKE spawn_path_composed node v24.13.0 via 18 entries (bare launch PATH had 4)
+SMOKE sdk_alignment sdk=0.87.1 pi-ai-floor-ok pi-subagents=0.71.0
+SMOKE t134_session_created 01a0e64b-96c7-7358-bb85-fbcbdbd7f492
+SMOKE t134_async_started runId=88969ea3-0b5e-42a9-9655-1944ab2e2925 asyncDir=/var/folders/sw/twg7k81s6xbfq1wb18bj_6wr0000gn/T/picode-t134-artifacts-6oEFSN/async-subagent-runs/88969ea3-0b5e-42a9-9655-1944ab2e2925
+SMOKE t134_spawn_proof state=running runner pid=31255
+SMOKE t134_verdict stop ok=true state=stopping terminal=stopped runner-exited=false
+SMOKE done
+==== SMOKE SUITE stage ok: sanitized spawn smoke (35s) ====
+SMOKE session hygiene ok: session files in /Users/liaokechen/.pi/agent/sessions unchanged (591)
+
+SMOKE SUITE RESULT: ALL GREEN (688s total, 7 stages)
